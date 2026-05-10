@@ -34,14 +34,14 @@
     "release:xpi": "bash scripts/release-xpi.sh"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.91.1",
+    "@anthropic-ai/sdk": "^0.95.1",
     "katex": "^0.16.45",
-    "openai": "^6.35.0",
-    "react": "^19.2.5",
-    "react-dom": "^19.2.5",
+    "openai": "^6.37.0",
+    "react": "^19.2.6",
+    "react-dom": "^19.2.6",
     "react-markdown": "^10.1.0",
     "remark-gfm": "^4.0.1",
-    "zotero-plugin-toolkit": "^5.1.0-beta.13"
+    "zotero-plugin-toolkit": "^5.1.2"
   },
   "devDependencies": {
     "@types/chai": "^5.2.3",
@@ -50,17 +50,17 @@
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "@vitest/ui": "^4.1.5",
-    "@zotero-plugin/eslint-config": "^0.6.7",
+    "@zotero-plugin/eslint-config": "^0.6.9",
     "chai": "^6.2.1",
     "esbuild": "^0.28.0",
     "eslint": "^9.39.2",
     "happy-dom": "^20.9.0",
     "mocha": "^11.7.5",
-    "prettier": "^3.7.4",
+    "prettier": "^3.8.3",
     "typescript": "^5.9.3",
     "vitest": "^4.1.5",
-    "zotero-plugin-scaffold": "^0.8.2",
-    "zotero-types": "^4.1.0-beta.4"
+    "zotero-plugin-scaffold": "^0.8.6",
+    "zotero-types": "^4.1.2"
   },
   "prettier": {
     "printWidth": 80,
