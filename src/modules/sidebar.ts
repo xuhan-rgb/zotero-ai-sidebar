@@ -25,9 +25,16 @@ import {
 import { extractPdfRange, searchPdfPassages } from "../context/retrieval";
 import { ensureArxivSource } from "../context/arxiv-source";
 import { hasArxivSource } from "../context/arxiv-store";
-import { buildArxivTocFrontBlock } from "../context/arxiv-tools";
+import {
+  buildArxivTocFrontBlock,
+  loadArxivSectionsForKey,
+} from "../context/arxiv-tools";
 import { toolsForPinnedFullTextTurn } from "../context/tool-filter";
-import { isArxivTocBlock } from "../context/tex-sections";
+import { findSection, isArxivTocBlock } from "../context/tex-sections";
+import {
+  normalizeLatexListEnvironments,
+  normalizeLatexSourceCommands,
+} from "../context/tex-clean";
 import { zoteroContextSource } from "../context/zotero-source";
 import { getProvider } from "../providers/factory";
 import type {
@@ -2134,8 +2141,8 @@ async function jumpToOverviewSection(
   try {
     pdfLocator = await createPdfLocator(reader);
     let result: LocateResult | null = null;
-    for (const needle of sectionLocateCandidates(section)) {
-      const hit = await pdfLocator.locate(needle, { minConfidence: 0.55 });
+    for (const needle of await sectionLocateNeedles(state.itemID, section)) {
+      const hit = await pdfLocator.locate(needle, { minConfidence: 0.5 });
       if (hit) {
         result = hit;
         break;
@@ -2163,15 +2170,54 @@ async function jumpToOverviewSection(
   }
 }
 
-// Candidate heading strings to locate, most specific first. A numbered prefix
-// (e.g. "3.1 Method") biases the match toward the heading over body mentions.
-function sectionLocateCandidates(section: OverviewSection): string[] {
+// Build locate needles, most accurate first. For arXiv items we have the
+// LaTeX source, so the section's first body sentence (long & near-unique)
+// pinpoints the section far better than a short heading title. Title-based
+// candidates remain as fallbacks for non-arXiv PDFs or when the body match
+// fails.
+async function sectionLocateNeedles(
+  itemID: number | null,
+  section: OverviewSection,
+): Promise<string[]> {
+  const needles: string[] = [];
+  const itemKey = resolveItemKeyForCache(itemID);
+  if (itemKey) {
+    try {
+      const sections = await loadArxivSectionsForKey(itemKey);
+      if (sections) {
+        const sec =
+          findSection(sections, section.no) ??
+          findSection(sections, section.title);
+        const hint = sec ? firstProseSentence(sec.body) : "";
+        if (hint) needles.push(hint);
+      }
+    } catch {
+      // Fall through to title-based candidates.
+    }
+  }
   const title = section.title.trim();
   const no = section.no?.trim() ?? "";
-  const out: string[] = [];
-  if (/^[\d.]+$/.test(no)) out.push(`${no} ${title}`, `${no}. ${title}`);
-  out.push(title);
-  return out.filter((s) => s.trim().length >= 3);
+  if (/^[\d.]+$/.test(no)) needles.push(`${no} ${title}`, `${no}. ${title}`);
+  needles.push(title);
+  return needles.filter((s) => s.trim().length >= 3);
+}
+
+// First distinctive prose sentence of a LaTeX section body, cleaned of markup
+// that won't appear in the PDF text layer (comments, math, \commands, braces).
+function firstProseSentence(body: string): string {
+  const cleaned = normalizeLatexSourceCommands(
+    normalizeLatexListEnvironments(body),
+  )
+    .replace(/%.*$/gm, " ")
+    .replace(/\$[^$]*\$/g, " ")
+    .replace(/\\[a-zA-Z]+\*?(\[[^\]]*\])?(\{[^{}]*\})?/g, " ")
+    .replace(/[{}]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (cleaned.length < 12) return "";
+  const slice = cleaned.slice(0, 90);
+  const boundary = slice.search(/[.。]\s/);
+  return (boundary > 20 ? slice.slice(0, boundary + 1) : slice).trim();
 }
 
 function mountReaderSelectionPopupGuard(reader: unknown): { destroy(): void } {

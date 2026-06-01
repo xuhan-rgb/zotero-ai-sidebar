@@ -101,6 +101,18 @@ export async function loadArxivSections(
   return { itemKey, sections: parseSections(text) };
 }
 
+// Section list for an item key, bypassing ToolFactoryOptions. Used by the
+// sidebar's overview jump to derive an accurate locate needle from the LaTeX
+// body. Returns null when the item has no cached arXiv source.
+export async function loadArxivSectionsForKey(
+  itemKey: string,
+): Promise<TexSection[] | null> {
+  if (!itemKey || !(await hasArxivSource(itemKey))) return null;
+  const text = await readArxivMainText(itemKey);
+  if (!text) return null;
+  return parseSections(text);
+}
+
 export async function loadArxivBibliography(
   options: ToolFactoryOptions,
 ): Promise<{ itemKey: string; files: ArxivTextFile[] } | null> {
