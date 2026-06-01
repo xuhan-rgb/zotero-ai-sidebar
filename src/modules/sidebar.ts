@@ -7602,6 +7602,11 @@ async function generateOverviewFromNoteSwitcher(
     await sendMessage(sidebar.mount, state, OVERVIEW_PROMPT, {
       taskTitle: "生成总揽",
     });
+    // Restore on success — the overview renders in the chat, not the note
+    // panel, so nothing else re-renders this switcher button for us.
+    button.textContent = originalText;
+    button.title = originalTitle;
+    button.disabled = false;
   } catch (err) {
     button.textContent = "生成失败";
     button.title = err instanceof Error ? err.message : String(err);
