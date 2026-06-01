@@ -7467,7 +7467,18 @@ function renderNoteFileSwitcher(
   });
   if (panelState?.sending) route.disabled = true;
 
-  wrap.append(normal, route);
+  // 「总揽」: one-click whole-paper overview. Sends a canned prompt that makes
+  // the model call zotero_outline_pdf + render_paper_overview; the overview
+  // block renders in the AI chat. User-clicked canned prompt, same pattern as
+  // 生成路线 — NOT code-based intent routing.
+  const overview = noteFileSwitchButton(doc, "总揽", false);
+  overview.title = "生成全文总揽（章节骨架 + 结构图纸，显示在右侧 AI 对话）";
+  overview.addEventListener("click", () => {
+    void generateOverviewFromNoteSwitcher(sidebar, overview);
+  });
+  if (panelState?.sending) overview.disabled = true;
+
+  wrap.append(normal, route, overview);
   return wrap;
 }
 
@@ -7558,6 +7569,43 @@ async function generateReadingRouteFromNoteSwitcher(
     button.textContent = "生成失败";
     button.title = err instanceof Error ? err.message : String(err);
     doc.defaultView?.setTimeout(() => {
+      button.textContent = originalText;
+      button.title = originalTitle;
+      button.disabled = false;
+    }, 1800);
+  }
+}
+
+const OVERVIEW_PROMPT = [
+  "请为当前 Zotero 论文生成「全文总揽」，目的是让我对整篇论文有一个全局概念，而不是读一点懂一点。",
+  "第一步：调用 zotero_outline_pdf 获取章节骨架（标题、字符范围、图表锚点）。",
+  "第二步：基于骨架，为每个章节写一句话 gist（中文，≤30 字），并构造一张论证结构流程图：问题→方法→结果及关键依赖；节点 type 用 root/section/point/result，效果或 SOTA 用 result；尽量给每个节点带上对应章节号 sectionNo。",
+  "第三步：调用 render_paper_overview，把 sections（含 gist、charStart、charEnd、anchors）和 flowchart 一起渲染出来。",
+  "必须调用 render_paper_overview 完成渲染，不要只用文字回答。",
+].join("\n");
+
+async function generateOverviewFromNoteSwitcher(
+  sidebar: WindowSidebarState,
+  button: HTMLButtonElement,
+): Promise<void> {
+  const state = states.get(sidebar.mount);
+  if (!state) {
+    button.textContent = "生成失败";
+    button.title = "无法找到当前 AI 对话状态";
+    return;
+  }
+  const originalText = button.textContent || "总揽";
+  const originalTitle = button.title;
+  button.textContent = "生成中...";
+  button.disabled = true;
+  try {
+    await sendMessage(sidebar.mount, state, OVERVIEW_PROMPT, {
+      taskTitle: "生成总揽",
+    });
+  } catch (err) {
+    button.textContent = "生成失败";
+    button.title = err instanceof Error ? err.message : String(err);
+    sidebar.noteMount.ownerDocument!.defaultView?.setTimeout(() => {
       button.textContent = originalText;
       button.title = originalTitle;
       button.disabled = false;
