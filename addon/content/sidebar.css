@@ -3213,6 +3213,26 @@ div.math-fallback {
   fill: var(--zai-accent-strong);
 }
 
+/* Result node (effect / SOTA emphasis in overview flowcharts) */
+.zai-mm-node-result rect {
+  fill: #eef3ea;
+  stroke: #5c8a4a;
+  stroke-width: 1.4px;
+}
+
+.zai-mm-node-result text,
+.zai-mm-node-result tspan {
+  font-size: 11.5px;
+  font-weight: 600;
+  fill: #3f6b32;
+}
+
+/* Edge label (flowchart edge annotations) */
+.zai-mm-elabel {
+  font-size: 9px;
+  fill: var(--zai-text-muted, #9b9183);
+}
+
 .mindmap-error {
   padding: 10px 12px;
   font-size: 12px;

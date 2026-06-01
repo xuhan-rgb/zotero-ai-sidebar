@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseMermaidFlowchart } from "../../src/modules/mermaid-flowchart";
+import { resolveRankdir } from "../../src/modules/mindmap-render";
 
 describe("parseMermaidFlowchart", () => {
   it("returns null for non-flowchart sources (lets mindmap parser win)", () => {
@@ -25,5 +26,12 @@ describe("parseMermaidFlowchart", () => {
     const data = parseMermaidFlowchart("graph LR\n A[a] -->|because| B[b]")!;
     expect(data.rankdir).toBe("LR");
     expect(data.edges[0].label).toBe("because");
+  });
+});
+
+describe("resolveRankdir", () => {
+  it("uses data.rankdir when present, else LR default", () => {
+    expect(resolveRankdir({ nodes: [], edges: [], rankdir: "TB" })).toBe("TB");
+    expect(resolveRankdir({ nodes: [], edges: [] })).toBe("LR");
   });
 });

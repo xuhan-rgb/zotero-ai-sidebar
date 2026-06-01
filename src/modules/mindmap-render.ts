@@ -14,6 +14,12 @@ import type { MindmapData, MindmapEdge, MindmapNode } from "../providers/types";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
 
+// Layout direction: honor an explicit rankdir (flowchart TD => TB), else keep
+// the historical LR default used by mindmaps.
+export function resolveRankdir(data: MindmapData): "TB" | "LR" {
+  return data.rankdir === "TB" ? "TB" : "LR";
+}
+
 // ── Layout constants ─────────────────────────────────────────────────────────
 const FONT_SIZE = 11.5;
 const CHAR_W = FONT_SIZE * 0.58; // approximate px per char at this font size
@@ -24,7 +30,7 @@ const MAX_LINES = 3;
 const LINE_H = FONT_SIZE * 1.35;
 
 function nodeRadius(type?: string): number {
-  return type === "root" ? 10 : type === "section" ? 7 : 5;
+  return type === "root" ? 10 : type === "section" || type === "result" ? 7 : 5;
 }
 
 function wrapLabel(label: string): string[] {
@@ -119,7 +125,7 @@ export function renderMindmapSvg(
 ): SVGSVGElement {
   const g = new DagreGraph();
   g.setGraph({
-    rankdir: "LR",
+    rankdir: resolveRankdir(data),
     ranksep: 36,
     nodesep: 12,
     marginx: 24,
@@ -138,7 +144,11 @@ export function renderMindmapSvg(
 
   for (const edge of data.edges) {
     if (nodeMap.has(edge.source) && nodeMap.has(edge.target)) {
-      g.setEdge(edge.source, edge.target);
+      g.setEdge(
+        edge.source,
+        edge.target,
+        edge.label ? { label: edge.label } : {},
+      );
     }
   }
 
@@ -175,6 +185,16 @@ export function renderMindmapSvg(
     path.setAttribute("class", "zai-mm-edge");
     path.setAttribute("marker-end", `url(#${markerId})`);
     edgeGroup.append(path);
+    if (ei.label) {
+      const mid = pts[Math.floor(pts.length / 2)];
+      const lbl = doc.createElementNS(SVG_NS, "text");
+      lbl.setAttribute("x", String(mid.x));
+      lbl.setAttribute("y", String(mid.y - 3));
+      lbl.setAttribute("text-anchor", "middle");
+      lbl.setAttribute("class", "zai-mm-elabel");
+      lbl.textContent = String(ei.label);
+      edgeGroup.append(lbl);
+    }
   }
   svg.append(edgeGroup);
 
