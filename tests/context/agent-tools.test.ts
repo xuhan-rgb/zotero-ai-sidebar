@@ -519,6 +519,7 @@ describe("createZoteroAgentTools", () => {
       "zotero_get_current_item",
       "zotero_get_annotations",
       "chat_get_previous_context",
+      "zotero_outline_pdf",
       "zotero_search_pdf",
       "zotero_read_pdf_range",
       "zotero_get_full_pdf",
@@ -1333,3 +1334,30 @@ function readerWithPdfText(text: string): unknown {
     },
   };
 }
+
+describe("zotero_outline_pdf", () => {
+  it("returns a JSON skeleton from the PDF full-text cache", async () => {
+    const text =
+      "Abstract\nWe study X.\n\n1 Introduction\nMotivation.\n\n2 Method\nWe propose Y. See Figure 2.\n\n3 Conclusion\nDone.";
+    const tools = createZoteroAgentTools({
+      source: {
+        getItem: async () => ({ title: "T" }) as never,
+        getFullText: async () => text,
+      },
+      itemID: 1,
+    });
+    const tool = tools.find((t) => t.name === "zotero_outline_pdf")!;
+    const res = await tool.execute({});
+    const payload = JSON.parse(res.output.replace(/^\[Paper outline\]\n/, ""));
+    expect(payload.source).toBe("pdf");
+    expect(payload.coverage).toBe("headings");
+    expect(payload.sections.map((s: { title: string }) => s.title)).toContain(
+      "Method",
+    );
+    const method = payload.sections.find(
+      (s: { title: string }) => s.title === "Method",
+    );
+    expect(method.anchors).toContain("Fig.2");
+    expect(res.context?.planMode).toBe("outline");
+  });
+});

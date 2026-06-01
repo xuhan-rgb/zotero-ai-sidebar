@@ -22,6 +22,8 @@ export type ContextMode =
   | "equation"
   | "figure"
   | "table"
+  | "outline"
+  | "overview"
   | "previous_context";
 
 export type ContextPlanSource = "selected" | "model" | "fallback";

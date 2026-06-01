@@ -11,6 +11,8 @@ import { createPaperTools } from "./paper-tools";
 import { createPdfLocator, type PdfLocator } from "./pdf-locator";
 import { DEFAULT_CONTEXT_POLICY, type ContextPolicy } from "./policy";
 import { extractPdfRange, searchPdfPassages } from "./retrieval";
+import { attachAnchors, detectOutline } from "./pdf-outline";
+import type { OutlineEntry, OverviewData } from "./overview-types";
 import {
   currentItemKey,
   loadArxivBibliography,
@@ -159,6 +161,70 @@ export function createZoteroAgentToolSession(
       },
     },
     createPreviousContextTool(options, policy),
+    {
+      name: "zotero_outline_pdf",
+      description:
+        "Get a cheap whole-paper skeleton (section headings, char ranges, first-line previews, figure/table anchors) WITHOUT reading the full PDF. Use this first when the user wants an overview/总揽 of the entire paper. arXiv items use the cached LaTeX section list; other PDFs use heuristic heading detection with an even-window fallback. After reading the skeleton, write a one-line gist per section and a logical flowchart, then call render_paper_overview.",
+      parameters: objectSchema({}),
+      execute: async () => {
+        const itemID = currentItemID(options);
+        if (itemID == null)
+          return errorResult("No Zotero item is currently selected.");
+        // arXiv path: reuse the reliable LaTeX section index.
+        const arxiv = await loadArxivSections(options);
+        if (arxiv) {
+          const sections = buildToc(arxiv.sections).map((entry) => ({
+            no: String(entry.number),
+            level: entry.level,
+            title: entry.title,
+            charStart: 0,
+            charEnd: 0,
+            preview: "",
+          }));
+          return {
+            output: `[Paper outline]\n${JSON.stringify(
+              { title: "", source: "arxiv", coverage: "headings", sections },
+              null,
+              2,
+            )}`,
+            summary: `生成 arXiv 大纲 ${sections.length} 节`,
+            context: { planMode: "outline" },
+          };
+        }
+        const text = await getToolPdfText(options, itemID);
+        if (!text) return errorResult(readablePdfTextError());
+        const entries: OutlineEntry[] = attachAnchors(
+          detectOutline(text, policy),
+          text,
+        );
+        const coverage = entries[0]?.no.startsWith("~")
+          ? "uniform-fallback"
+          : "headings";
+        const payload = {
+          title: "",
+          source: "pdf",
+          coverage,
+          sections: entries.map((entry) => ({
+            no: entry.no,
+            level: entry.level,
+            title: entry.title,
+            charStart: entry.charStart,
+            charEnd: entry.charEnd,
+            preview: entry.preview,
+            ...(entry.anchors ? { anchors: entry.anchors } : {}),
+          })),
+        };
+        const output = truncateByTokenBudget(
+          `[Paper outline]\n${JSON.stringify(payload, null, 2)}`,
+          Math.ceil(policy.outlineCharBudget / 4),
+        );
+        return {
+          output,
+          summary: `生成大纲 ${entries.length} 节（${coverage}）`,
+          context: { planMode: "outline" },
+        };
+      },
+    },
     {
       name: "zotero_search_pdf",
       description:

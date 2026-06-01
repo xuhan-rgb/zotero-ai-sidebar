@@ -27,6 +27,16 @@ export interface ContextPolicy {
   // an absurd `[0, 10_000_000]` range without a prior search hit.
   maxRangeChars: number;
 
+  // --- Overview map ------------------------------------------------------
+  // Hard cap on the whole `zotero_outline_pdf` output (skeleton is cheap).
+  outlineCharBudget: number;
+  // Per-section body preview length the model reads to write a gist.
+  outlinePreviewChars: number;
+  // Cap on returned sections.
+  maxOutlineEntries: number;
+  // Even-window count when headings are too sparse to detect.
+  outlineFallbackWindows: number;
+
   // --- Annotation handling ----------------------------------------------
   // Cap on annotations returned by `zotero_get_annotations` so a heavily
   // marked-up paper (hundreds of highlights) cannot flood the prompt.
@@ -91,6 +101,10 @@ export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
   maxPassageChars: 1200,
   passageOverlapChars: 160,
   maxRangeChars: 9000,
+  outlineCharBudget: 4000,
+  outlinePreviewChars: 120,
+  maxOutlineEntries: 40,
+  outlineFallbackWindows: 6,
   maxAnnotations: 80,
   retainedContextTurnCount: 4,
   retainedContextCharBudget: 8000,
