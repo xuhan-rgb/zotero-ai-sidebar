@@ -47,6 +47,13 @@ import {
   type ImportTranslateCacheResult,
   type TranslateCacheSnapshot,
 } from '../translate/cache';
+import {
+  exportOverviews,
+  importOverviews,
+  normalizeOverviewStore,
+  type ImportOverviewsResult,
+  type OverviewStoreSnapshot,
+} from '../context/overview-store';
 
 // Sync snapshot: the on-the-wire JSON we push to / pull from the cloud.
 //
@@ -76,19 +83,24 @@ export interface SyncSnapshot {
   // payloads that were uploaded before chat/cache sync existed.
   threads?: PortableThread[];
   translateCache?: TranslateCacheSnapshot;
+  // Per-item rendered paper overviews; optional on the wire for payloads
+  // uploaded before overview sync existed.
+  overviews?: OverviewStoreSnapshot;
 }
 
 export interface ApplySnapshotResult {
   annotations: ImportAnnotationsResult;
   threads: ImportThreadsResult;
   translateCache: ImportTranslateCacheResult;
+  overviews: ImportOverviewsResult;
 }
 
 export async function buildSyncSnapshot(prefs: PrefsStore): Promise<SyncSnapshot> {
-  const [annotations, threads, translateCache] = await Promise.all([
+  const [annotations, threads, translateCache, overviews] = await Promise.all([
     exportAllAnnotations(),
     exportAllThreads(),
     exportTranslateCache(),
+    exportOverviews(),
   ]);
   return {
     schema: SYNC_SCHEMA,
@@ -101,6 +113,7 @@ export async function buildSyncSnapshot(prefs: PrefsStore): Promise<SyncSnapshot
     translateSettings: loadTranslateSettings(prefs),
     threads,
     translateCache,
+    overviews,
   };
 }
 
@@ -132,6 +145,7 @@ export function parseSyncSnapshot(raw: string): SyncSnapshot {
       : normalizeTranslateSettings(parsed.translateSettings),
     threads: normalizePortableThreads(parsed.threads),
     translateCache: normalizeTranslateCache(parsed.translateCache),
+    overviews: normalizeOverviewStore(parsed.overviews),
   };
 }
 
@@ -144,12 +158,13 @@ export async function applySyncSnapshot(
   saveQuickPromptSettings(prefs, snapshot.quickPrompts);
   saveToolSettings(prefs, snapshot.toolSettings);
   if (snapshot.translateSettings) saveTranslateSettings(prefs, snapshot.translateSettings);
-  const [annotations, threads, translateCache] = await Promise.all([
+  const [annotations, threads, translateCache, overviews] = await Promise.all([
     importAllAnnotations(snapshot.annotations),
     importAllThreads(snapshot.threads ?? []),
     importTranslateCache(snapshot.translateCache),
+    importOverviews(snapshot.overviews),
   ]);
-  return { annotations, threads, translateCache };
+  return { annotations, threads, translateCache, overviews };
 }
 
 function normalizePortableThreads(value: unknown): PortableThread[] {
