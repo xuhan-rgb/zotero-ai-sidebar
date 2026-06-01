@@ -13,7 +13,12 @@ import { createPdfLocator, type PdfLocator } from "./pdf-locator";
 import { DEFAULT_CONTEXT_POLICY, type ContextPolicy } from "./policy";
 import { extractPdfRange, searchPdfPassages } from "./retrieval";
 import { attachAnchors, detectOutline } from "./pdf-outline";
-import type { OutlineEntry, OverviewData } from "./overview-types";
+import type {
+  OutlineEntry,
+  OverviewData,
+  OverviewEmphasis,
+  OverviewPhase,
+} from "./overview-types";
 import {
   currentItemKey,
   loadArxivBibliography,
@@ -665,15 +670,18 @@ export function createZoteroAgentToolSession(
     {
       name: "render_paper_overview",
       description:
-        "Render the whole-paper overview map (narrative section skeleton + a logical flowchart) into the note panel's 总揽 view. Call AFTER zotero_outline_pdf. Provide 'sections' (each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors) and a 'flowchart' (nodes with id/label/type[root|section|point|result]/optional sectionNo, and edges with source/target/optional label). type='result' marks effect/SOTA nodes.",
+        "Render the whole-paper overview map into the note panel's 总揽 view. Call AFTER zotero_outline_pdf. Provide: 'narrative' = a 2–4 sentence Chinese 核心讲述 (what the paper does and its contribution); 'sections' in document order, each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors, 'phase' (motivation|method|validation) and 'emphasis' (innovation|result|normal|background) — for emphasis='innovation' the gist MUST say what is NEW; and a 'flowchart' (nodes id/label/type[root|section|point|result|innovation]/optional sectionNo + edges source/target/optional label). Mark THIS paper's contributions as type='innovation' with sectionNo set to the matching section number; 'result' marks effect/SOTA nodes.",
       parameters: objectSchema(
         {
           title: stringSchema("Paper title."),
           source: stringSchema("'arxiv' or 'pdf'."),
           coverage: stringSchema("'headings' or 'uniform-fallback'."),
+          narrative: stringSchema(
+            "2–4 sentence Chinese whole-paper synthesis (核心讲述), ending by pointing out the contributions.",
+          ),
           sections: {
             type: "array",
-            description: "Document-order sections with one-line gists.",
+            description: "Document-order sections, each gisted and classified.",
             items: {
               type: "object",
               properties: {
@@ -685,6 +693,8 @@ export function createZoteroAgentToolSession(
                 charEnd: { type: "number" },
                 pageLabel: { type: "string" },
                 anchors: { type: "array", items: { type: "string" } },
+                phase: { type: "string" },
+                emphasis: { type: "string" },
               },
               required: ["no", "title"],
             },
@@ -717,6 +727,7 @@ export function createZoteroAgentToolSession(
             stringArg(parsed, "coverage") === "uniform-fallback"
               ? "uniform-fallback"
               : "headings",
+          narrative: stringArg(parsed, "narrative") || undefined,
           sections: rawSections
             .filter(
               (s): s is Record<string, unknown> => !!s && typeof s === "object",
@@ -733,6 +744,8 @@ export function createZoteroAgentToolSession(
               anchors: Array.isArray(s.anchors)
                 ? s.anchors.filter((a): a is string => typeof a === "string")
                 : undefined,
+              phase: overviewPhaseArg(s.phase),
+              emphasis: overviewEmphasisArg(s.emphasis),
             })),
           flowchart: normalizeOverviewFlowchart(parsed.flowchart),
         };
@@ -1489,6 +1502,21 @@ function errorResult(output: string): ToolExecutionResult {
   return { output, summary: output };
 }
 
+function overviewPhaseArg(value: unknown): OverviewPhase | undefined {
+  return value === "motivation" || value === "method" || value === "validation"
+    ? value
+    : undefined;
+}
+
+function overviewEmphasisArg(value: unknown): OverviewEmphasis | undefined {
+  return value === "innovation" ||
+    value === "result" ||
+    value === "normal" ||
+    value === "background"
+    ? value
+    : undefined;
+}
+
 // Validate + normalize a model-supplied flowchart into MindmapData. Drops
 // malformed nodes/edges and edges that reference unknown node ids, so the
 // renderer always receives a consistent graph.
@@ -1507,7 +1535,7 @@ function normalizeOverviewFlowchart(raw: unknown): MindmapData | undefined {
         .map((n) => ({
           id: n.id as string,
           label: n.label as string,
-          type: (["root", "section", "point", "result"].includes(
+          type: (["root", "section", "point", "result", "innovation"].includes(
             n.type as string,
           )
             ? (n.type as string)

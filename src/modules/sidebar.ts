@@ -7706,10 +7706,13 @@ async function generateReadingRouteFromNoteSwitcher(
 }
 
 const OVERVIEW_PROMPT = [
-  "请为当前 Zotero 论文生成「全文总揽」，目的是让我对整篇论文有一个全局概念，而不是读一点懂一点。",
+  "请为当前 Zotero 论文生成「全文总揽」，让我对整篇论文有全局概念，并一眼知道重点读哪几章。",
   "第一步：调用 zotero_outline_pdf 获取章节骨架（标题、字符范围、图表锚点）。",
-  "第二步：基于骨架，为每个章节写一句话 gist（中文，≤30 字），并构造一张论证结构流程图：问题→方法→结果及关键依赖；节点 type 用 root/section/point/result，效果或 SOTA 用 result；尽量给每个节点带上对应章节号 sectionNo。",
-  "第三步：调用 render_paper_overview，把 sections（含 gist、charStart、charEnd、anchors）和 flowchart 一起渲染出来。",
+  "第二步：基于骨架整理出：",
+  "  · narrative：2–4 句中文核心讲述，结尾点出本文贡献；",
+  "  · 每个章节：一句话 gist（中文，≤30 字）；phase（motivation｜method｜validation）；emphasis（innovation｜result｜normal｜background）。emphasis=innovation 的章节，其 gist 必须写清“新在哪”（本文贡献）；结果/SOTA 章节用 result；相关工作/总结等背景章节用 background。",
+  "  · flowchart：问题→方法→结果及关键依赖的逻辑图；把本文新提出的部分节点 type 设为 innovation 并把 sectionNo 设为对应章节号，效果/SOTA 节点用 result，其余用 section/point。",
+  "第三步：调用 render_paper_overview，把 narrative、sections（含 gist/charStart/charEnd/anchors/phase/emphasis）与 flowchart 一起渲染。",
   "必须调用 render_paper_overview 完成渲染，不要只用文字回答。",
 ].join("\n");
 

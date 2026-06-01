@@ -29,7 +29,20 @@ const MAX_LINES = 3;
 const LINE_H = FONT_SIZE * 1.35;
 
 function nodeRadius(type?: string): number {
-  return type === "root" ? 10 : type === "section" || type === "result" ? 7 : 5;
+  return type === "root"
+    ? 10
+    : type === "section" || type === "result" || type === "innovation"
+      ? 7
+      : 5;
+}
+
+// Innovation nodes get a ✦ prefix (deduped) so they read as "this is a
+// contribution" alongside the gold styling.
+function displayLabel(node: MindmapNode): string {
+  if (node.type === "innovation") {
+    return `✦ ${node.label.replace(/^✦\s*/, "")}`;
+  }
+  return node.label;
 }
 
 // Approximate rendered width. CJK / full-width glyphs are ~1 em; ASCII ~0.55 em.
@@ -168,7 +181,7 @@ export function renderMindmapSvg(
   const dimMap = new Map<string, ReturnType<typeof nodeDimensions>>();
 
   for (const node of data.nodes) {
-    const dim = nodeDimensions(node.label, node.type);
+    const dim = nodeDimensions(displayLabel(node), node.type);
     dimMap.set(node.id, dim);
     g.setNode(node.id, { width: dim.width, height: dim.height });
   }
@@ -257,6 +270,7 @@ export function renderMindmapSvg(
 
     const grp = doc.createElementNS(SVG_NS, "g");
     grp.setAttribute("class", `zai-mm-node zai-mm-node-${type}`);
+    if (orig?.sectionNo) grp.setAttribute("data-section-no", orig.sectionNo);
 
     const rect = doc.createElementNS(SVG_NS, "rect");
     rect.setAttribute("x", String(x));

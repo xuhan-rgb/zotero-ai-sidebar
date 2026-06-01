@@ -8,7 +8,7 @@ export type MessageRole = "user" | "assistant";
 export interface MindmapNode {
   id: string;
   label: string;
-  type?: "root" | "section" | "point" | "result";
+  type?: "root" | "section" | "point" | "result" | "innovation";
   sectionNo?: string; // back-link from a structural node to a document section
 }
 
