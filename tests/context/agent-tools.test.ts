@@ -4,6 +4,7 @@ import {
   createZoteroAgentToolSession,
 } from "../../src/context/agent-tools";
 import type { ContextSource } from "../../src/context/builder";
+import type { OverviewData } from "../../src/context/overview-types";
 import { writeArxivSource } from "../../src/context/arxiv-store";
 
 const source: ContextSource = {
@@ -530,6 +531,7 @@ describe("createZoteroAgentTools", () => {
       "arxiv_get_equation",
       "arxiv_get_bibliography",
       "draw_article_mindmap",
+      "render_paper_overview",
       "paper_search_arxiv",
       "paper_fetch_arxiv_fulltext",
       "zotero_get_reader_pdf_text",
@@ -1359,5 +1361,35 @@ describe("zotero_outline_pdf", () => {
     );
     expect(method.anchors).toContain("Fig.2");
     expect(res.context?.planMode).toBe("outline");
+  });
+});
+
+describe("render_paper_overview", () => {
+  it("validates and forwards structured overview to the callback", async () => {
+    let received: OverviewData | null = null;
+    const tools = createZoteroAgentTools({
+      source: { getItem: async () => null, getFullText: async () => "x" },
+      itemID: 1,
+      onOverviewReady: (d) => {
+        received = d;
+      },
+    });
+    const tool = tools.find((t) => t.name === "render_paper_overview")!;
+    const res = await tool.execute({
+      title: "T",
+      source: "pdf",
+      coverage: "headings",
+      sections: [
+        { no: "1", level: 1, title: "Intro", gist: "g", charStart: 0, charEnd: 10 },
+      ],
+      flowchart: {
+        rankdir: "TB",
+        nodes: [{ id: "a", label: "A", type: "root" }],
+        edges: [],
+      },
+    });
+    expect(received!.sections[0].title).toBe("Intro");
+    expect(received!.flowchart!.nodes.length).toBe(1);
+    expect(res.context?.planMode).toBe("overview");
   });
 });

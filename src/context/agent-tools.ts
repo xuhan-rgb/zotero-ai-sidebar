@@ -2,6 +2,7 @@ import type {
   AgentTool,
   Message,
   MindmapData,
+  MindmapNode,
   ToolExecutionResult,
 } from "../providers/types";
 import type { ContextSource, ItemMetadata } from "./builder";
@@ -74,6 +75,7 @@ export interface ToolFactoryOptions {
     usedBetterNotes: boolean;
   }>;
   onMindmapReady?: (data: MindmapData) => void;
+  onOverviewReady?: (data: OverviewData) => void;
   debugFullTextSaver?: (
     text: string,
     meta: {
@@ -660,6 +662,90 @@ export function createZoteroAgentToolSession(
       },
     },
     createDrawMindmapTool(options),
+    {
+      name: "render_paper_overview",
+      description:
+        "Render the whole-paper overview map (narrative section skeleton + a logical flowchart) into the note panel's 总揽 view. Call AFTER zotero_outline_pdf. Provide 'sections' (each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors) and a 'flowchart' (nodes with id/label/type[root|section|point|result]/optional sectionNo, and edges with source/target/optional label). type='result' marks effect/SOTA nodes.",
+      parameters: objectSchema(
+        {
+          title: stringSchema("Paper title."),
+          source: stringSchema("'arxiv' or 'pdf'."),
+          coverage: stringSchema("'headings' or 'uniform-fallback'."),
+          sections: {
+            type: "array",
+            description: "Document-order sections with one-line gists.",
+            items: {
+              type: "object",
+              properties: {
+                no: { type: "string" },
+                level: { type: "number" },
+                title: { type: "string" },
+                gist: { type: "string" },
+                charStart: { type: "number" },
+                charEnd: { type: "number" },
+                pageLabel: { type: "string" },
+                anchors: { type: "array", items: { type: "string" } },
+              },
+              required: ["no", "title"],
+            },
+          },
+          flowchart: {
+            type: "object",
+            description: "Logical structure graph (mermaid-flowchart-like).",
+            properties: {
+              rankdir: { type: "string" },
+              nodes: { type: "array", items: { type: "object" } },
+              edges: { type: "array", items: { type: "object" } },
+            },
+          },
+        },
+        ["sections"],
+      ),
+      execute: async (args) => {
+        const parsed = objectArgs(args);
+        const rawSections = Array.isArray(parsed.sections)
+          ? parsed.sections
+          : [];
+        if (!rawSections.length)
+          return errorResult(
+            "render_paper_overview requires a non-empty 'sections' array.",
+          );
+        const data: OverviewData = {
+          title: stringArg(parsed, "title"),
+          source: stringArg(parsed, "source") === "arxiv" ? "arxiv" : "pdf",
+          coverage:
+            stringArg(parsed, "coverage") === "uniform-fallback"
+              ? "uniform-fallback"
+              : "headings",
+          sections: rawSections
+            .filter(
+              (s): s is Record<string, unknown> => !!s && typeof s === "object",
+            )
+            .map((s) => ({
+              no: String(s.no ?? ""),
+              level: typeof s.level === "number" ? s.level : 1,
+              title: String(s.title ?? ""),
+              gist: typeof s.gist === "string" ? s.gist : undefined,
+              charStart: typeof s.charStart === "number" ? s.charStart : 0,
+              charEnd: typeof s.charEnd === "number" ? s.charEnd : 0,
+              pageLabel:
+                typeof s.pageLabel === "string" ? s.pageLabel : undefined,
+              anchors: Array.isArray(s.anchors)
+                ? s.anchors.filter((a): a is string => typeof a === "string")
+                : undefined,
+            })),
+          flowchart: normalizeOverviewFlowchart(parsed.flowchart),
+        };
+        options.onOverviewReady?.(data);
+        return {
+          output: `[Overview rendered] ${data.sections.length} sections${
+            data.flowchart ? `, ${data.flowchart.nodes.length} flow nodes` : ""
+          }.`,
+          summary: `渲染总揽 ${data.sections.length} 节`,
+          context: { planMode: "overview" },
+        };
+      },
+    },
     ...createPaperTools(policy),
     createGetReaderPdfTextTool(policy, highlightSession),
     createGetCurrentPdfSelectionTool(options),
@@ -1401,6 +1487,60 @@ function zoteroSourceFromMetadata(
 
 function errorResult(output: string): ToolExecutionResult {
   return { output, summary: output };
+}
+
+// Validate + normalize a model-supplied flowchart into MindmapData. Drops
+// malformed nodes/edges and edges that reference unknown node ids, so the
+// renderer always receives a consistent graph.
+function normalizeOverviewFlowchart(raw: unknown): MindmapData | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as { rankdir?: unknown; nodes?: unknown; edges?: unknown };
+  const nodes: MindmapNode[] = Array.isArray(r.nodes)
+    ? r.nodes
+        .filter(
+          (n): n is Record<string, unknown> =>
+            !!n &&
+            typeof n === "object" &&
+            typeof (n as { id?: unknown }).id === "string" &&
+            typeof (n as { label?: unknown }).label === "string",
+        )
+        .map((n) => ({
+          id: n.id as string,
+          label: n.label as string,
+          type: (["root", "section", "point", "result"].includes(
+            n.type as string,
+          )
+            ? (n.type as string)
+            : "point") as MindmapNode["type"],
+          ...(typeof n.sectionNo === "string"
+            ? { sectionNo: n.sectionNo as string }
+            : {}),
+        }))
+    : [];
+  if (!nodes.length) return undefined;
+  const ids = new Set(nodes.map((n) => n.id));
+  const edges = Array.isArray(r.edges)
+    ? r.edges
+        .filter(
+          (e): e is Record<string, unknown> =>
+            !!e &&
+            typeof e === "object" &&
+            ids.has((e as { source?: unknown }).source as string) &&
+            ids.has((e as { target?: unknown }).target as string),
+        )
+        .map((e) => ({
+          source: e.source as string,
+          target: e.target as string,
+          ...(typeof e.label === "string" && e.label
+            ? { label: e.label as string }
+            : {}),
+        }))
+    : [];
+  return {
+    nodes,
+    edges,
+    rankdir: r.rankdir === "TB" ? "TB" : r.rankdir === "LR" ? "LR" : "TB",
+  };
 }
 
 // `zotero_append_to_note` — model-driven equivalent of the user's "写入笔记"
