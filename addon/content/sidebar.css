@@ -3313,10 +3313,17 @@ div.math-fallback {
   line-height: 1.45;
 }
 
-/* 总揽 standalone view in the note column */
+/* 总揽 standalone view in the note column.
+   Override the base note-body's display:flex/overflow:hidden (meant for the
+   self-scrolling note editor) so our tall plain-DOM content actually scrolls.
+   Keep flex:1 + min-height:0 so it still fills the bounded .zai-note-root. */
 .zai-overview-window-body {
+  display: block;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  overflow-x: hidden;
   padding: 10px 12px;
-  overflow: auto;
 }
 .zai-overview-empty {
   padding: 28px 16px;
