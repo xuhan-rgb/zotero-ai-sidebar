@@ -1,5 +1,6 @@
 import type { AgentPermissionMode, ModelPreset } from "../settings/types";
 import type { MessageContext } from "../context/types";
+import type { OverviewData } from "../context/overview-types";
 import type { ToolSettings } from "../settings/tool-settings";
 
 export type MessageRole = "user" | "assistant";
@@ -34,6 +35,7 @@ export interface Message {
   context?: MessageContext;
   annotationDraft?: AssistantAnnotationDraft;
   mindmap?: MindmapData;
+  overview?: OverviewData;
   task?: ChatTaskMeta;
 }
 

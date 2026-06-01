@@ -200,6 +200,8 @@ import {
   uniqueStrings,
 } from "./reading-route-reference";
 import { renderMindmapBlock } from "./mindmap-render";
+import { renderOverviewBlock } from "./overview-view";
+import { saveOverview } from "../context/overview-store";
 import { clonePlainRecord, finiteNumber } from "./plain-utils";
 import {
   agentPermissionMode,
@@ -4640,6 +4642,13 @@ async function streamAssistant(
         const idx = state.activeAssistantIndex;
         if (idx != null) state.messages[idx].mindmap = data;
       },
+      onOverviewReady: (data) => {
+        const idx = state.activeAssistantIndex;
+        if (idx != null) state.messages[idx].overview = data;
+        // Persist + sync the rendered overview (rides WebDAV state.json).
+        const itemKey = resolveItemKeyForCache(state.itemID);
+        if (itemKey) void saveOverview(itemKey, data);
+      },
       appendToChildNote: async (content) => {
         const noteScroll = captureVisibleNoteScrollForDocument(
           mount.ownerDocument!,
@@ -7066,6 +7075,9 @@ function bubble(
   scheduleAssistantPdfQuoteLinks(body, mount, state, message, index);
   if (message.role === "assistant" && message.mindmap) {
     body.append(renderMindmapBlock(doc, message.mindmap));
+  }
+  if (message.role === "assistant" && message.overview) {
+    body.append(renderOverviewBlock(doc, message.overview));
   }
   root.append(body);
   if (message.role === "assistant" && message.usage) {
