@@ -22,7 +22,6 @@ export function resolveRankdir(data: MindmapData): "TB" | "LR" {
 
 // ── Layout constants ─────────────────────────────────────────────────────────
 const FONT_SIZE = 11.5;
-const CHAR_W = FONT_SIZE * 0.58; // approximate px per char at this font size
 const H_PAD = 18; // horizontal padding inside node
 const V_PAD = 10; // vertical padding inside node
 const MAX_LINE_W = 180; // max text width before wrapping
@@ -33,29 +32,60 @@ function nodeRadius(type?: string): number {
   return type === "root" ? 10 : type === "section" || type === "result" ? 7 : 5;
 }
 
+// Approximate rendered width. CJK / full-width glyphs are ~1 em; ASCII ~0.55 em.
+// WHY per-char: a single ASCII px-per-char constant badly under-measures Chinese
+// (no spaces to wrap on, ~2× wider), so nodes were mis-sized and overlapped.
+function charWidthPx(ch: string): number {
+  return /[⺀-鿿　-〿＀-￯]/.test(ch)
+    ? FONT_SIZE * 1.02
+    : FONT_SIZE * 0.55;
+}
+
+function textWidthPx(text: string): number {
+  let w = 0;
+  for (const ch of text) w += charWidthPx(ch);
+  return w;
+}
+
 function wrapLabel(label: string): string[] {
-  if (label.length * CHAR_W <= MAX_LINE_W) return [label];
-  const words = label.split(/(?<=[\s,/·])/);
+  if (textWidthPx(label) <= MAX_LINE_W) return [label];
+  // Split at delimiters (keep them); any unit still wider than a line is
+  // broken per-character so spaceless CJK runs still wrap.
+  const units: string[] = [];
+  for (const unit of label.split(/(?<=[\s,/·、，。：:+\-—])/)) {
+    if (!unit) continue;
+    if (textWidthPx(unit) <= MAX_LINE_W) {
+      units.push(unit);
+      continue;
+    }
+    let chunk = "";
+    for (const ch of unit) {
+      if (chunk && textWidthPx(chunk + ch) > MAX_LINE_W) {
+        units.push(chunk);
+        chunk = "";
+      }
+      chunk += ch;
+    }
+    if (chunk) units.push(chunk);
+  }
   const lines: string[] = [];
   let current = "";
-  for (const word of words) {
-    const candidate = current + word;
-    if (candidate.length * CHAR_W > MAX_LINE_W && current) {
+  for (const unit of units) {
+    if (current && textWidthPx(current + unit) > MAX_LINE_W) {
       lines.push(current.trim());
-      current = word;
+      current = unit;
     } else {
-      current = candidate;
+      current += unit;
     }
-    if (lines.length >= MAX_LINES - 1) break;
   }
   if (current.trim()) lines.push(current.trim());
-  // Hard truncate last line
-  const last = lines[lines.length - 1];
-  if (last && last.length * CHAR_W > MAX_LINE_W) {
-    lines[lines.length - 1] =
-      last.slice(0, Math.floor(MAX_LINE_W / CHAR_W) - 1) + "…";
-  }
-  return lines.length ? lines : [label];
+  if (lines.length <= MAX_LINES) return lines.length ? lines : [label];
+  // Truncated: keep MAX_LINES, ellipsize the last.
+  const kept = lines.slice(0, MAX_LINES);
+  let last = kept[MAX_LINES - 1];
+  while (last && textWidthPx(last + "…") > MAX_LINE_W) last = last.slice(0, -1);
+  kept[MAX_LINES - 1] = last + "…";
+  return kept;
 }
 
 function nodeDimensions(
@@ -63,7 +93,7 @@ function nodeDimensions(
   type?: string,
 ): { width: number; height: number; lines: string[] } {
   const lines = wrapLabel(label);
-  const maxLineW = Math.max(...lines.map((l) => l.length * CHAR_W));
+  const maxLineW = Math.max(...lines.map((l) => textWidthPx(l)));
   const width = Math.max(
     type === "root" ? 120 : type === "section" ? 100 : 80,
     Math.min(maxLineW + H_PAD * 2, MAX_LINE_W + H_PAD * 2),
@@ -126,10 +156,11 @@ export function renderMindmapSvg(
   const g = new DagreGraph();
   g.setGraph({
     rankdir: resolveRankdir(data),
-    ranksep: 36,
-    nodesep: 12,
-    marginx: 24,
-    marginy: 24,
+    ranksep: 56,
+    nodesep: 30,
+    edgesep: 14,
+    marginx: 26,
+    marginy: 26,
   });
   g.setDefaultEdgeLabel(() => ({}));
 
@@ -147,7 +178,9 @@ export function renderMindmapSvg(
       g.setEdge(
         edge.source,
         edge.target,
-        edge.label ? { label: edge.label } : {},
+        edge.label
+          ? { label: edge.label, width: textWidthPx(edge.label) + 8, height: 14 }
+          : {},
       );
     }
   }
@@ -186,13 +219,25 @@ export function renderMindmapSvg(
     path.setAttribute("marker-end", `url(#${markerId})`);
     edgeGroup.append(path);
     if (ei.label) {
-      const mid = pts[Math.floor(pts.length / 2)];
+      const text = String(ei.label);
+      const fallback = pts[Math.floor(pts.length / 2)];
+      const lx = typeof ei.x === "number" ? ei.x : fallback.x;
+      const ly = typeof ei.y === "number" ? ei.y : fallback.y;
+      const bw = textWidthPx(text) + 8;
+      const bg = doc.createElementNS(SVG_NS, "rect");
+      bg.setAttribute("x", String(lx - bw / 2));
+      bg.setAttribute("y", String(ly - 8));
+      bg.setAttribute("width", String(bw));
+      bg.setAttribute("height", "14");
+      bg.setAttribute("rx", "3");
+      bg.setAttribute("class", "zai-mm-elabel-bg");
+      edgeGroup.append(bg);
       const lbl = doc.createElementNS(SVG_NS, "text");
-      lbl.setAttribute("x", String(mid.x));
-      lbl.setAttribute("y", String(mid.y - 3));
+      lbl.setAttribute("x", String(lx));
+      lbl.setAttribute("y", String(ly + 3));
       lbl.setAttribute("text-anchor", "middle");
       lbl.setAttribute("class", "zai-mm-elabel");
-      lbl.textContent = String(ei.label);
+      lbl.textContent = text;
       edgeGroup.append(lbl);
     }
   }

@@ -3232,6 +3232,10 @@ div.math-fallback {
   font-size: 9px;
   fill: var(--zai-text-muted, #9b9183);
 }
+.zai-mm-elabel-bg {
+  fill: var(--zai-bg, #fffdf8);
+  opacity: 0.92;
+}
 
 /* Paper overview block (narrative skeleton + structural flowchart) */
 .overview-block {
