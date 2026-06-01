@@ -13,6 +13,7 @@ import {
   type LatexTextCommandKind,
 } from "../context/tex-clean";
 import { parseMermaidMindmap, renderMindmapBlock } from "./mindmap-render";
+import { parseMermaidFlowchart } from "./mermaid-flowchart";
 
 interface ListState {
   tag: "ol" | "ul";
@@ -144,6 +145,14 @@ export function renderMarkdownInto(
       if (parsed) {
         parsed.source = raw;
         target.append(renderMindmapBlock(doc, parsed));
+        codeLines = null;
+        codeLanguage = "";
+        return;
+      }
+      const flow = parseMermaidFlowchart(raw);
+      if (flow) {
+        flow.source = raw;
+        target.append(renderMindmapBlock(doc, flow));
         codeLines = null;
         codeLanguage = "";
         return;
