@@ -30,7 +30,11 @@ import {
   loadArxivSectionsForKey,
 } from "../context/arxiv-tools";
 import { toolsForPinnedFullTextTurn } from "../context/tool-filter";
-import { findSection, isArxivTocBlock } from "../context/tex-sections";
+import {
+  findSection,
+  isArxivTocBlock,
+  type TexSection,
+} from "../context/tex-sections";
 import {
   normalizeLatexListEnvironments,
   normalizeLatexSourceCommands,
@@ -2137,9 +2141,10 @@ async function jumpToOverviewSection(
     return;
   }
   setTempLoadMarkStatus(mount, "定位中");
-  let pdfLocator: Awaited<ReturnType<typeof createPdfLocator>> | null = null;
   try {
-    pdfLocator = await createPdfLocator(reader);
+    // Shared (cached) locator: text-layer extraction happens once per Reader,
+    // so repeated section clicks are fast. Do NOT dispose — it is reused.
+    const pdfLocator = await getSharedPdfLocator(reader);
     let result: LocateResult | null = null;
     for (const needle of await sectionLocateNeedles(state.itemID, section)) {
       const hit = await pdfLocator.locate(needle, { minConfidence: 0.5 });
@@ -2165,8 +2170,6 @@ async function jumpToOverviewSection(
       error: errorMessage(err),
       title: section.title,
     });
-  } finally {
-    pdfLocator?.dispose();
   }
 }
 
@@ -2175,6 +2178,18 @@ async function jumpToOverviewSection(
 // pinpoints the section far better than a short heading title. Title-based
 // candidates remain as fallbacks for non-arXiv PDFs or when the body match
 // fails.
+// Cache parsed LaTeX sections per item key so repeated section clicks don't
+// re-read and re-parse the source each time.
+const overviewSectionCache = new Map<string, Promise<TexSection[] | null>>();
+function cachedArxivSections(itemKey: string): Promise<TexSection[] | null> {
+  let pending = overviewSectionCache.get(itemKey);
+  if (!pending) {
+    pending = loadArxivSectionsForKey(itemKey);
+    overviewSectionCache.set(itemKey, pending);
+  }
+  return pending;
+}
+
 async function sectionLocateNeedles(
   itemID: number | null,
   section: OverviewSection,
@@ -2183,7 +2198,7 @@ async function sectionLocateNeedles(
   const itemKey = resolveItemKeyForCache(itemID);
   if (itemKey) {
     try {
-      const sections = await loadArxivSectionsForKey(itemKey);
+      const sections = await cachedArxivSections(itemKey);
       if (sections) {
         const sec =
           findSection(sections, section.no) ??
