@@ -17,7 +17,11 @@ import {
   toApiMessages,
 } from "../context/message-format";
 import { DEFAULT_CONTEXT_POLICY, type ContextPolicy } from "../context/policy";
-import { createPdfLocator, getSharedPdfLocator } from "../context/pdf-locator";
+import {
+  createPdfLocator,
+  getSharedPdfLocator,
+  type LocateResult,
+} from "../context/pdf-locator";
 import { extractPdfRange, searchPdfPassages } from "../context/retrieval";
 import { ensureArxivSource } from "../context/arxiv-source";
 import { hasArxivSource } from "../context/arxiv-store";
@@ -202,6 +206,7 @@ import {
 import { renderMindmapBlock } from "./mindmap-render";
 import { renderOverviewBlock } from "./overview-view";
 import { loadOverview, saveOverview } from "../context/overview-store";
+import type { OverviewSection } from "../context/overview-types";
 import { clonePlainRecord, finiteNumber } from "./plain-utils";
 import {
   agentPermissionMode,
@@ -2108,6 +2113,65 @@ async function jumpToReadingRouteReference(
   } finally {
     pdfLocator?.dispose();
   }
+}
+
+// Jump the Reader to a section by locating its heading text in the PDF.
+// Locate-by-title (not by the outline's char offsets, which come from the
+// full-text cache and are 0 for arXiv) is the robust cross-path approach.
+async function jumpToOverviewSection(
+  mount: HTMLElement,
+  state: PanelState,
+  section: OverviewSection,
+): Promise<void> {
+  const win = mount.ownerDocument?.defaultView;
+  const reader = getReaderForAttachmentOrItem(win, state.itemID, null);
+  if (!reader) {
+    setTempLoadMarkStatus(mount, "PDF 未打开");
+    return;
+  }
+  setTempLoadMarkStatus(mount, "定位中");
+  let pdfLocator: Awaited<ReturnType<typeof createPdfLocator>> | null = null;
+  try {
+    pdfLocator = await createPdfLocator(reader);
+    let result: LocateResult | null = null;
+    for (const needle of sectionLocateCandidates(section)) {
+      const hit = await pdfLocator.locate(needle, { minConfidence: 0.55 });
+      if (hit) {
+        result = hit;
+        break;
+      }
+    }
+    if (!result) {
+      setTempLoadMarkStatus(mount, "未定位到该节");
+      return;
+    }
+    const locator = pdfSelectionLocatorFromLocateResult(
+      pdfLocator.attachmentID,
+      result.matchedText || section.title,
+      result,
+    );
+    setTempLoadMarkStatus(mount, "已定位");
+    await jumpToPdfLocationOnly(mount, state, locator);
+  } catch (err) {
+    setTempLoadMarkStatus(mount, "定位失败");
+    debugZai("overview.section.jump.failed", {
+      error: errorMessage(err),
+      title: section.title,
+    });
+  } finally {
+    pdfLocator?.dispose();
+  }
+}
+
+// Candidate heading strings to locate, most specific first. A numbered prefix
+// (e.g. "3.1 Method") biases the match toward the heading over body mentions.
+function sectionLocateCandidates(section: OverviewSection): string[] {
+  const title = section.title.trim();
+  const no = section.no?.trim() ?? "";
+  const out: string[] = [];
+  if (/^[\d.]+$/.test(no)) out.push(`${no} ${title}`, `${no}. ${title}`);
+  out.push(title);
+  return out.filter((s) => s.trim().length >= 3);
 }
 
 function mountReaderSelectionPopupGuard(reader: unknown): { destroy(): void } {
@@ -7600,7 +7664,8 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   setNoteColumnVisible(sidebar, true);
   updateOpenNoteButton(sidebar);
 
-  const itemID = states.get(sidebar.mount)?.itemID ?? null;
+  const panelState = states.get(sidebar.mount);
+  const itemID = panelState?.itemID ?? null;
   const itemKey = resolveItemKeyForCache(itemID);
   const stored = itemKey ? await loadOverview(itemKey) : null;
   // The user may have switched away while the async load was in flight.
@@ -7644,7 +7709,14 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   const body = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   body.className = "zai-note-window-body zai-overview-window-body";
   if (stored?.data) {
-    body.append(renderOverviewBlock(doc, stored.data));
+    body.append(
+      renderOverviewBlock(doc, stored.data, {
+        onJumpToSection: panelState
+          ? (section) =>
+              void jumpToOverviewSection(sidebar.mount, panelState, section)
+          : undefined,
+      }),
+    );
   } else {
     const empty = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
     empty.className = "zai-overview-empty";
