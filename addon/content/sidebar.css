@@ -3313,6 +3313,19 @@ div.math-fallback {
   line-height: 1.45;
 }
 
+/* 总揽 standalone view in the note column */
+.zai-overview-window-body {
+  padding: 10px 12px;
+  overflow: auto;
+}
+.zai-overview-empty {
+  padding: 28px 16px;
+  color: var(--zai-text-muted, #9b9183);
+  font-size: 13px;
+  text-align: center;
+  line-height: 1.6;
+}
+
 .mindmap-error {
   padding: 10px 12px;
   font-size: 12px;

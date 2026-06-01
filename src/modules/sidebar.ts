@@ -201,7 +201,7 @@ import {
 } from "./reading-route-reference";
 import { renderMindmapBlock } from "./mindmap-render";
 import { renderOverviewBlock } from "./overview-view";
-import { saveOverview } from "../context/overview-store";
+import { loadOverview, saveOverview } from "../context/overview-store";
 import { clonePlainRecord, finiteNumber } from "./plain-utils";
 import {
   agentPermissionMode,
@@ -310,6 +310,7 @@ interface WindowSidebarState {
   noteSplitter: Element;
   noteMount: HTMLElement;
   noteItemID?: number;
+  overviewActive?: boolean;
   noteAutosaveTimer?: number;
   noteAutosavePromise?: Promise<void>;
   noteEditorCleanup?: () => void;
@@ -4643,11 +4644,15 @@ async function streamAssistant(
         if (idx != null) state.messages[idx].mindmap = data;
       },
       onOverviewReady: (data) => {
-        const idx = state.activeAssistantIndex;
-        if (idx != null) state.messages[idx].overview = data;
-        // Persist + sync the rendered overview (rides WebDAV state.json).
+        // Persist + sync, then refresh the 总揽 panel view if it is open.
+        // The overview is NOT shown in the chat — it lives in its own
+        // middle-column view (showOverviewWindow).
         const itemKey = resolveItemKeyForCache(state.itemID);
-        if (itemKey) void saveOverview(itemKey, data);
+        const sb = findSidebarStateByDocument(mount.ownerDocument!);
+        const saved = itemKey ? saveOverview(itemKey, data) : Promise.resolve();
+        void saved.then(() => {
+          if (sb?.overviewActive) void showOverviewWindow(sb);
+        });
       },
       appendToChildNote: async (content) => {
         const noteScroll = captureVisibleNoteScrollForDocument(
@@ -7076,9 +7081,6 @@ function bubble(
   if (message.role === "assistant" && message.mindmap) {
     body.append(renderMindmapBlock(doc, message.mindmap));
   }
-  if (message.role === "assistant" && message.overview) {
-    body.append(renderOverviewBlock(doc, message.overview));
-  }
   root.append(body);
   if (message.role === "assistant" && message.usage) {
     root.append(renderMessageUsage(doc, message.usage));
@@ -7336,7 +7338,12 @@ function renderNoteWindow(sidebar: WindowSidebarState, note: Zotero.Item) {
   title.className = "zai-note-window-title";
   title.textContent = noteTitle(note);
   title.title = "拖动左侧橙色分隔线可调整笔记栏宽度";
-  const switcher = renderNoteFileSwitcher(doc, sidebar, note);
+  sidebar.overviewActive = false;
+  const switcher = renderNoteFileSwitcher(
+    doc,
+    sidebar,
+    isReadingRouteNote(note) ? "readingRoute" : "normal",
+  );
 
   const resizeHint = doc.createElementNS(XHTML_NS, "span") as HTMLElement;
   resizeHint.className = "zai-note-resize-hint";
@@ -7417,17 +7424,16 @@ function renderNoteWindow(sidebar: WindowSidebarState, note: Zotero.Item) {
 }
 
 type NoteFileKind = "normal" | "readingRoute";
+type NotePanelView = NoteFileKind | "overview";
 
 function renderNoteFileSwitcher(
   doc: Document,
   sidebar: WindowSidebarState,
-  note: Zotero.Item,
+  activeView: NotePanelView,
 ): HTMLElement {
   const wrap = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   wrap.className = "zai-note-file-switcher";
-  const active: NoteFileKind = isReadingRouteNote(note)
-    ? "readingRoute"
-    : "normal";
+  const active = activeView;
   const panelState = states.get(sidebar.mount);
   const routeExists =
     active === "readingRoute" || hasReadingRouteNoteForSidebar(sidebar);
@@ -7467,16 +7473,14 @@ function renderNoteFileSwitcher(
   });
   if (panelState?.sending) route.disabled = true;
 
-  // 「总揽」: one-click whole-paper overview. Sends a canned prompt that makes
-  // the model call zotero_outline_pdf + render_paper_overview; the overview
-  // block renders in the AI chat. User-clicked canned prompt, same pattern as
-  // 生成路线 — NOT code-based intent routing.
-  const overview = noteFileSwitchButton(doc, "总揽", false);
-  overview.title = "生成全文总揽（章节骨架 + 结构图纸，显示在右侧 AI 对话）";
+  // 「总揽」opens a dedicated overview VIEW in this note column — NOT a note,
+  // NOT the chat. It shows the section skeleton + the mermaid-style structural
+  // flowchart, loaded from the per-item overview store.
+  const overview = noteFileSwitchButton(doc, "总揽", active === "overview");
+  overview.title = "全文总揽：章节骨架 + 结构图纸（独立视图，不写入笔记）";
   overview.addEventListener("click", () => {
-    void generateOverviewFromNoteSwitcher(sidebar, overview);
+    void showOverviewWindow(sidebar);
   });
-  if (panelState?.sending) overview.disabled = true;
 
   wrap.append(normal, route, overview);
   return wrap;
@@ -7584,7 +7588,79 @@ const OVERVIEW_PROMPT = [
   "必须调用 render_paper_overview 完成渲染，不要只用文字回答。",
 ].join("\n");
 
-async function generateOverviewFromNoteSwitcher(
+// Render the 总揽 view into the note column: a custom DOM page (section
+// skeleton + mermaid-style structural flowchart), loaded from the per-item
+// overview store. NOT a Zotero note and NOT a chat message.
+async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
+  const doc = sidebar.noteMount.ownerDocument!;
+  sidebar.noteEditorCleanup?.();
+  sidebar.noteEditorCleanup = undefined;
+  sidebar.noteItemID = undefined;
+  sidebar.overviewActive = true;
+  setNoteColumnVisible(sidebar, true);
+  updateOpenNoteButton(sidebar);
+
+  const itemID = states.get(sidebar.mount)?.itemID ?? null;
+  const itemKey = resolveItemKeyForCache(itemID);
+  const stored = itemKey ? await loadOverview(itemKey) : null;
+  // The user may have switched away while the async load was in flight.
+  if (!sidebar.overviewActive) return;
+
+  sidebar.noteMount.replaceChildren();
+  const head = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  head.className = "zai-note-window-head";
+
+  const title = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  title.className = "zai-note-window-title";
+  title.textContent = "全文总揽";
+  title.title = "章节骨架 + 结构图纸（独立视图，不写入笔记）";
+
+  const switcher = renderNoteFileSwitcher(doc, sidebar, "overview");
+
+  const resizeHint = doc.createElementNS(XHTML_NS, "span") as HTMLElement;
+  resizeHint.className = "zai-note-resize-hint";
+  resizeHint.textContent = "↔ 拖左侧边缘";
+
+  const regen = buttonEl(doc, stored?.data ? "更新总揽" : "生成总揽");
+  regen.className = "zai-note-window-button zai-note-file-switch";
+  regen.disabled = itemID == null;
+  regen.title =
+    itemID == null ? "请先选择一篇带 PDF 的文献" : "调用工具重新生成全文总揽";
+  regen.addEventListener("click", () => {
+    void generateOverviewIntoPanel(sidebar, regen);
+  });
+
+  const close = buttonEl(doc, "关闭");
+  close.className = "zai-note-window-button";
+  close.addEventListener("click", () => {
+    sidebar.overviewActive = false;
+    sidebar.noteMount.replaceChildren();
+    setNoteColumnVisible(sidebar, false);
+    updateOpenNoteButton(sidebar);
+  });
+
+  head.append(title, switcher, resizeHint, regen, close);
+
+  const body = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  body.className = "zai-note-window-body zai-overview-window-body";
+  if (stored?.data) {
+    body.append(renderOverviewBlock(doc, stored.data));
+  } else {
+    const empty = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+    empty.className = "zai-overview-empty";
+    empty.textContent =
+      itemID == null
+        ? "请先选择一篇带 PDF 的文献，再生成全文总揽。"
+        : "尚未生成全文总揽。点击右上角「生成总揽」开始。";
+    body.append(empty);
+  }
+  sidebar.noteMount.append(head, body);
+}
+
+// Trigger overview generation from the panel. The model calls
+// zotero_outline_pdf + render_paper_overview; onOverviewReady persists the
+// result and re-renders showOverviewWindow.
+async function generateOverviewIntoPanel(
   sidebar: WindowSidebarState,
   button: HTMLButtonElement,
 ): Promise<void> {
@@ -7594,7 +7670,7 @@ async function generateOverviewFromNoteSwitcher(
     button.title = "无法找到当前 AI 对话状态";
     return;
   }
-  const originalText = button.textContent || "总揽";
+  const originalText = button.textContent || "生成总揽";
   const originalTitle = button.title;
   button.textContent = "生成中...";
   button.disabled = true;
@@ -7602,8 +7678,9 @@ async function generateOverviewFromNoteSwitcher(
     await sendMessage(sidebar.mount, state, OVERVIEW_PROMPT, {
       taskTitle: "生成总揽",
     });
-    // Restore on success — the overview renders in the chat, not the note
-    // panel, so nothing else re-renders this switcher button for us.
+    // Safety net: if the model did not call render_paper_overview (so
+    // onOverviewReady never re-rendered this view), restore the button so the
+    // user can retry. If it did, this button was already replaced.
     button.textContent = originalText;
     button.title = originalTitle;
     button.disabled = false;
