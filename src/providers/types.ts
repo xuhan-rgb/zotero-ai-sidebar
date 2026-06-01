@@ -7,19 +7,22 @@ export type MessageRole = "user" | "assistant";
 export interface MindmapNode {
   id: string;
   label: string;
-  type?: "root" | "section" | "point";
+  type?: "root" | "section" | "point" | "result";
+  sectionNo?: string; // back-link from a structural node to a document section
 }
 
 export interface MindmapEdge {
   source: string;
   target: string;
+  label?: string;
 }
 
 export interface MindmapData {
   title?: string;
   nodes: MindmapNode[];
   edges: MindmapEdge[];
-  source?: string;
+  source?: string; // original mermaid text, when parsed from a code block
+  rankdir?: "TB" | "LR"; // layout direction; renderer default stays LR
 }
 
 export interface Message {
