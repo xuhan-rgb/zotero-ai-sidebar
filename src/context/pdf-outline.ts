@@ -126,6 +126,26 @@ function uniformWindows(
   return out;
 }
 
+const ANCHOR_RE = /\b(?:Figure|Fig\.?|Table|Tab\.?)\s*(\d+)/gi;
+
+// Attach figure/table caption references to the section whose char range
+// contains them, so the skeleton can surface "Fig.4 → §Method" anchors.
+export function attachAnchors(
+  entries: OutlineEntry[],
+  fullText: string,
+): OutlineEntry[] {
+  for (const m of fullText.matchAll(ANCHOR_RE)) {
+    const at = m.index ?? 0;
+    const isFig = /^f/i.test(m[0]);
+    const label = `${isFig ? "Fig." : "Tab."}${m[1]}`;
+    const sec = entries.find((e) => at >= e.charStart && at < e.charEnd);
+    if (!sec) continue;
+    sec.anchors = sec.anchors ?? [];
+    if (!sec.anchors.includes(label)) sec.anchors.push(label);
+  }
+  return entries;
+}
+
 function lineLengthAt(text: string, at: number): number {
   const nl = text.indexOf("\n", at);
   return (nl === -1 ? text.length : nl) - at + 1;

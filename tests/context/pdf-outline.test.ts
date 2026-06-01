@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { detectOutline } from "../../src/context/pdf-outline";
+import { attachAnchors, detectOutline } from "../../src/context/pdf-outline";
 
 const POLICY = {
   outlinePreviewChars: 80,
@@ -50,5 +50,15 @@ describe("detectOutline", () => {
     expect(out[0].no.startsWith("~")).toBe(true);
     expect(out[0].charStart).toBe(0);
     expect(out[5].charEnd).toBe(6000);
+  });
+});
+
+describe("attachAnchors", () => {
+  it("assigns figure/table captions to the section that contains them", () => {
+    const text =
+      "1 Intro\nbody\n\n2 Method\nWe show in Figure 4 the design.\n\nTable 1: results.\n\n3 End\nbye";
+    const out = attachAnchors(detectOutline(text, POLICY), text);
+    const method = out.find((e) => e.title === "Method")!;
+    expect(method.anchors).toEqual(["Fig.4", "Tab.1"]);
   });
 });
