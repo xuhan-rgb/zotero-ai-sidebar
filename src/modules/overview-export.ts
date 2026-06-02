@@ -22,12 +22,12 @@ export function buildOverviewExportHtml(
   block
     .querySelectorAll(".overview-sec, .overview-fig")
     .forEach((e: Element) => e.classList.add("open"));
-  const title = data.title ? escapeHtml(data.title) : "全文总揽";
+  const title = data.title ? escapeHtml(data.title) : "全文总览";
   return [
     "<!DOCTYPE html>",
     '<html lang="zh-CN"><head><meta charset="utf-8">',
     '<meta name="viewport" content="width=device-width, initial-scale=1">',
-    `<title>${title} · 全文总揽</title>`,
+    `<title>${title} · 全文总览</title>`,
     "<style>",
     ":root{--zai-bg:#fffdf8;--zai-bg-soft:#fbfaf7;--zai-panel-strong:#fbf7f0;",
     "--zai-text:#24211d;--zai-text-muted:#6b6357;--zai-border:#e3d8c8;",

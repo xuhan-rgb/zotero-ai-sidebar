@@ -96,7 +96,7 @@ export function renderOverviewBlock(
   header.className = "overview-header";
   const title = doc.createElement("span");
   title.className = "overview-title";
-  title.textContent = "📍 全文总揽";
+  title.textContent = "📍 全文总览";
 
   const right = doc.createElement("span");
   right.className = "overview-head-right";
@@ -105,7 +105,7 @@ export function renderOverviewBlock(
     const openBtn = doc.createElement("button");
     openBtn.className = "overview-open-browser";
     openBtn.textContent = "↗ 浏览器";
-    openBtn.title = "在浏览器中打开完整总揽";
+    openBtn.title = "在浏览器中打开完整总览";
     openBtn.addEventListener("click", () => handlers.onOpenInBrowser!());
     right.append(openBtn);
   }

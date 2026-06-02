@@ -1,4 +1,4 @@
-# 论文总揽地图 Implementation Plan (Phase 1)
+# 论文总览地图 Implementation Plan (Phase 1)
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
@@ -25,7 +25,7 @@
 - Modify `src/context/agent-tools.ts` — `zotero_outline_pdf`, `render_paper_overview`, `onOverviewReady` option.
 - Modify `src/context/policy.ts` — outline budgets.
 - Modify `src/settings/chat-history.ts` + `src/sync/state.ts` — persist/sync `OverviewData` per item.
-- Modify `src/modules/sidebar.ts` + `src/modules/note-dedicated.ts` — segmented `[笔记|路线|总揽]`, morphing action, live view, jump, save-to-note.
+- Modify `src/modules/sidebar.ts` + `src/modules/note-dedicated.ts` — segmented `[笔记|路线|总览]`, morphing action, live view, jump, save-to-note.
 - Tests: `tests/context/pdf-outline.test.ts`, `tests/modules/mermaid-flowchart.test.ts`, additions to `tests/context/agent-tools.test.ts`.
 
 ---
@@ -709,7 +709,7 @@ Add this tool object to the `tools` array (e.g. right after `createPreviousConte
     {
       name: "zotero_outline_pdf",
       description:
-        "Get a cheap whole-paper skeleton (section headings, char ranges, first-line previews, figure/table anchors) WITHOUT reading the full PDF. Use this first when the user wants an overview/总揽 of the entire paper. arXiv items use the cached LaTeX section list; other PDFs use heuristic heading detection with an even-window fallback. After reading the skeleton, write a one-line gist per section and a logical flowchart, then call render_paper_overview.",
+        "Get a cheap whole-paper skeleton (section headings, char ranges, first-line previews, figure/table anchors) WITHOUT reading the full PDF. Use this first when the user wants an overview/总览 of the entire paper. arXiv items use the cached LaTeX section list; other PDFs use heuristic heading detection with an even-window fallback. After reading the skeleton, write a one-line gist per section and a logical flowchart, then call render_paper_overview.",
       parameters: objectSchema({}),
       execute: async () => {
         const itemID = currentItemID(options);
@@ -840,7 +840,7 @@ Expected: FAIL — tool not found.
     {
       name: "render_paper_overview",
       description:
-        "Render the whole-paper overview map (narrative section skeleton + a logical flowchart) into the note panel's 总揽 view. Call AFTER zotero_outline_pdf. Provide 'sections' (each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors) and a 'flowchart' (nodes with id/label/type[root|section|point|result]/optional sectionNo, and edges with source/target/optional label). type='result' marks effect/SOTA nodes.",
+        "Render the whole-paper overview map (narrative section skeleton + a logical flowchart) into the note panel's 总览 view. Call AFTER zotero_outline_pdf. Provide 'sections' (each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors) and a 'flowchart' (nodes with id/label/type[root|section|point|result]/optional sectionNo, and edges with source/target/optional label). type='result' marks effect/SOTA nodes.",
       parameters: objectSchema(
         {
           title: stringSchema("Paper title."),
@@ -904,7 +904,7 @@ Expected: FAIL — tool not found.
         options.onOverviewReady?.(data);
         return {
           output: `[Overview rendered] ${data.sections.length} sections${data.flowchart ? `, ${data.flowchart.nodes.length} flow nodes` : ""}.`,
-          summary: `渲染总揽 ${data.sections.length} 节`,
+          summary: `渲染总览 ${data.sections.length} 节`,
           context: { planMode: "overview" },
         };
       },
@@ -998,7 +998,7 @@ git commit -m "feat(overview): persist and sync overview data per item"
 
 ---
 
-## Task 10: Note-panel 总揽 view + segmented switcher + jump (UI integration)
+## Task 10: Note-panel 总览 view + segmented switcher + jump (UI integration)
 
 **Files:**
 - Modify: `src/modules/sidebar.ts` (view switcher ~7430–7560, mindmap render wiring, `onOverviewReady` wiring), `src/modules/note-dedicated.ts` (if a `"overview"` kind is needed for save-to-note)
@@ -1006,21 +1006,21 @@ git commit -m "feat(overview): persist and sync overview data per item"
 
 This task touches the large `sidebar.ts`. **First read** the regions: the morphing button block (`sidebar.ts:7430–7560`), how `MindmapData` is rendered into the chat (search `renderMindmapBlock`/`onMindmapReady`), and how the note panel mounts views. Then implement against these concrete contracts:
 
-- [ ] **Step 1:** Wire `onOverviewReady` when constructing the tool session (search where `createZoteroAgentToolSession`/`onMindmapReady` is passed in `sidebar.ts`). On callback: `saveOverview(itemKey, data)` then re-render the 总揽 view if it is the active note-panel view.
+- [ ] **Step 1:** Wire `onOverviewReady` when constructing the tool session (search where `createZoteroAgentToolSession`/`onMindmapReady` is passed in `sidebar.ts`). On callback: `saveOverview(itemKey, data)` then re-render the 总览 view if it is the active note-panel view.
 
 - [ ] **Step 2:** Add a `renderOverviewView(doc, data, { onJump })` function (new file `src/modules/overview-view.ts`) that builds the skeleton `<ul>` (each `<li data-char-start>` clickable) + the flowchart via `renderMindmapSvg(doc, data.flowchart)`. Pure-ish DOM builder; unit-test the skeleton list (count of `<li>` == sections, gist text present) with the repo's DOM test approach.
 
-- [ ] **Step 3:** Convert the two view pills into a segmented control `[笔记|路线|总揽]`; extend the existing morphing action button state machine with the 总揽 cases: no overview → `生成总揽` (sends the model a generate request, same mechanism as 生成路线); overview exists → `更新总揽`. Net new persistent buttons: 0.
+- [ ] **Step 3:** Convert the two view pills into a segmented control `[笔记|路线|总览]`; extend the existing morphing action button state machine with the 总览 cases: no overview → `生成总览` (sends the model a generate request, same mechanism as 生成路线); overview exists → `更新总览`. Net new persistent buttons: 0.
 
 - [ ] **Step 4:** Click handler: on `<li>` click call the existing PDF-jump path used by reading-route note links (`note-pdf-link.ts` helpers) to scroll the Reader to the section. For fallback windows (no real page) jump by `charStart` via the existing locator.
 
-- [ ] **Step 5:** Manual verification (no unit test for full panel): build, install XPI, open a PDF, ask "给我这篇的总揽", confirm the 总揽 segment renders skeleton + flowchart and clicking a section scrolls the PDF.
+- [ ] **Step 5:** Manual verification (no unit test for full panel): build, install XPI, open a PDF, ask "给我这篇的总览", confirm the 总览 segment renders skeleton + flowchart and clicking a section scrolls the PDF.
 
 - [ ] **Step 6: Commit**
 
 ```bash
 git add src/modules/sidebar.ts src/modules/overview-view.ts addon/content/sidebar.css addon/locale tests/modules/overview-view.test.ts
-git commit -m "feat(overview): note-panel 总揽 view, segmented switcher, click-to-jump"
+git commit -m "feat(overview): note-panel 总览 view, segmented switcher, click-to-jump"
 ```
 
 ---
@@ -1028,10 +1028,10 @@ git commit -m "feat(overview): note-panel 总揽 view, segmented switcher, click
 ## Task 11: Optional save-to-note snapshot
 
 **Files:**
-- Modify: `src/modules/sidebar.ts` (toolbar 保存 handler when 总揽 active), reuse `copySvgAsImage` (SVG→PNG) from `mindmap-render.ts` and the `appendToChildNote` write path.
+- Modify: `src/modules/sidebar.ts` (toolbar 保存 handler when 总览 active), reuse `copySvgAsImage` (SVG→PNG) from `mindmap-render.ts` and the `appendToChildNote` write path.
 
-- [ ] **Step 1:** When 总揽 view is active and 保存 is pressed, rasterize the flowchart SVG to PNG (factor the canvas logic out of `copySvgAsImage` into a reusable `svgToPngBlob(svg)` if needed) and build a note body = skeleton (as a list) + the PNG image; write it to a dedicated "AI 全文总揽" note. This is a Zotero write → it must go through the existing approval-aware note write path (`appendToChildNote` / `requiresApproval` semantics).
-- [ ] **Step 2:** Manual verification: press 保存 on 总揽, confirm a "AI 全文总揽" note is created with image + skeleton and that it syncs (appears in `state.json` annotations/notes path already covered by Zotero sync).
+- [ ] **Step 1:** When 总览 view is active and 保存 is pressed, rasterize the flowchart SVG to PNG (factor the canvas logic out of `copySvgAsImage` into a reusable `svgToPngBlob(svg)` if needed) and build a note body = skeleton (as a list) + the PNG image; write it to a dedicated "AI 全文总览" note. This is a Zotero write → it must go through the existing approval-aware note write path (`appendToChildNote` / `requiresApproval` semantics).
+- [ ] **Step 2:** Manual verification: press 保存 on 总览, confirm a "AI 全文总览" note is created with image + skeleton and that it syncs (appears in `state.json` annotations/notes path already covered by Zotero sync).
 - [ ] **Step 3: Commit**
 
 ```bash

@@ -171,7 +171,7 @@ export function createZoteroAgentToolSession(
     {
       name: "zotero_outline_pdf",
       description:
-        "Get a cheap whole-paper skeleton (section headings, char ranges, first-line previews, figure/table anchors) WITHOUT reading the full PDF. Use this first when the user wants an overview/总揽 of the entire paper. arXiv items use the cached LaTeX section list; other PDFs use heuristic heading detection with an even-window fallback. After reading the skeleton, write a one-line gist per section and a logical flowchart, then call render_paper_overview.",
+        "Get a cheap whole-paper skeleton (section headings, char ranges, first-line previews, figure/table anchors) WITHOUT reading the full PDF. Use this first when the user wants an overview/总览 of the entire paper. arXiv items use the cached LaTeX section list; other PDFs use heuristic heading detection with an even-window fallback. After reading the skeleton, write a one-line gist per section and a logical flowchart, then call render_paper_overview.",
       parameters: objectSchema({}),
       execute: async () => {
         const itemID = currentItemID(options);
@@ -670,7 +670,7 @@ export function createZoteroAgentToolSession(
     {
       name: "render_paper_overview",
       description:
-        "Render the whole-paper overview map into the note panel's 总揽 view. Call AFTER zotero_outline_pdf. Provide: 'narrative' = a 2–4 sentence Chinese 核心讲述 (what the paper does and its contribution); 'sections' in document order, each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors, 'phase' (motivation|method|validation) and 'emphasis' (innovation|result|normal|background) — for emphasis='innovation' the gist MUST say what is NEW; and a 'flowchart' (nodes id/label/type[root|section|point|result|innovation]/optional sectionNo + edges source/target/optional label). Mark THIS paper's contributions as type='innovation' with sectionNo set to the matching section number; 'result' marks effect/SOTA nodes.",
+        "Render the whole-paper overview map into the note panel's 总览 view. Call AFTER zotero_outline_pdf. Provide: 'narrative' = a 2–4 sentence Chinese 核心讲述 (what the paper does and its contribution); 'sections' in document order, each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors, 'phase' (motivation|method|validation) and 'emphasis' (innovation|result|normal|background) — for emphasis='innovation' the gist MUST say what is NEW; and a 'flowchart' (nodes id/label/type[root|section|point|result|innovation]/optional sectionNo + edges source/target/optional label). Mark THIS paper's contributions as type='innovation' with sectionNo set to the matching section number; 'result' marks effect/SOTA nodes.",
       parameters: objectSchema(
         {
           title: stringSchema("Paper title."),
@@ -777,7 +777,7 @@ export function createZoteroAgentToolSession(
           output: `[Overview rendered] ${data.sections.length} sections${
             data.flowchart ? `, ${data.flowchart.nodes.length} flow nodes` : ""
           }.`,
-          summary: `渲染总揽 ${data.sections.length} 节`,
+          summary: `渲染总览 ${data.sections.length} 节`,
           context: { planMode: "overview" },
         };
       },

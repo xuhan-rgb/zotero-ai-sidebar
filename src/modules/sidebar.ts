@@ -4773,7 +4773,7 @@ async function streamAssistant(
         if (idx != null) state.messages[idx].mindmap = data;
       },
       onOverviewReady: (data) => {
-        // Persist + sync, then refresh the 总揽 panel view if it is open.
+        // Persist + sync, then refresh the 总览 panel view if it is open.
         // The overview is NOT shown in the chat — it lives in its own
         // middle-column view (showOverviewWindow).
         const itemKey = resolveItemKeyForCache(state.itemID);
@@ -7602,11 +7602,11 @@ function renderNoteFileSwitcher(
   });
   if (panelState?.sending) route.disabled = true;
 
-  // 「总揽」opens a dedicated overview VIEW in this note column — NOT a note,
+  // 「总览」opens a dedicated overview VIEW in this note column — NOT a note,
   // NOT the chat. It shows the section skeleton + the mermaid-style structural
   // flowchart, loaded from the per-item overview store.
-  const overview = noteFileSwitchButton(doc, "总揽", active === "overview");
-  overview.title = "全文总揽：章节骨架 + 结构图纸（独立视图，不写入笔记）";
+  const overview = noteFileSwitchButton(doc, "总览", active === "overview");
+  overview.title = "全文总览：章节骨架 + 结构图纸（独立视图，不写入笔记）";
   overview.addEventListener("click", () => {
     void showOverviewWindow(sidebar);
   });
@@ -7710,7 +7710,7 @@ async function generateReadingRouteFromNoteSwitcher(
 }
 
 const OVERVIEW_PROMPT = [
-  "请为当前 Zotero 论文生成「全文总揽」，让我对整篇论文有全局概念，并一眼知道重点读哪几章。",
+  "请为当前 Zotero 论文生成「全文总览」，让我对整篇论文有全局概念，并一眼知道重点读哪几章。",
   "第一步：调用 zotero_outline_pdf 获取章节骨架（标题、字符范围、图表锚点）。",
   "第二步：基于骨架整理出：",
   "  · narrative：2–4 句中文核心讲述，结尾点出本文贡献；",
@@ -7758,7 +7758,7 @@ async function openOverviewInBrowser(
   );
   const stored = itemKey ? await loadOverview(itemKey) : null;
   if (!stored?.data) {
-    setTempLoadMarkStatus(sidebar.mount, "暂无总揽");
+    setTempLoadMarkStatus(sidebar.mount, "暂无总览");
     return;
   }
   try {
@@ -7780,7 +7780,7 @@ async function openOverviewInBrowser(
   }
 }
 
-// Render the 总揽 view into the note column: a custom DOM page (section
+// Render the 总览 view into the note column: a custom DOM page (section
 // skeleton + mermaid-style structural flowchart), loaded from the per-item
 // overview store. NOT a Zotero note and NOT a chat message.
 async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
@@ -7805,7 +7805,7 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
 
   const title = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   title.className = "zai-note-window-title";
-  title.textContent = "全文总揽";
+  title.textContent = "全文总览";
   title.title = "章节骨架 + 结构图纸（独立视图，不写入笔记）";
 
   const switcher = renderNoteFileSwitcher(doc, sidebar, "overview");
@@ -7814,11 +7814,11 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   resizeHint.className = "zai-note-resize-hint";
   resizeHint.textContent = "↔ 拖左侧边缘";
 
-  const regen = buttonEl(doc, stored?.data ? "更新总揽" : "生成总揽");
+  const regen = buttonEl(doc, stored?.data ? "更新总览" : "生成总览");
   regen.className = "zai-note-window-button zai-note-file-switch";
   regen.disabled = itemID == null;
   regen.title =
-    itemID == null ? "请先选择一篇带 PDF 的文献" : "调用工具重新生成全文总揽";
+    itemID == null ? "请先选择一篇带 PDF 的文献" : "调用工具重新生成全文总览";
   regen.addEventListener("click", () => {
     void generateOverviewIntoPanel(sidebar, regen);
   });
@@ -7853,8 +7853,8 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
     empty.className = "zai-overview-empty";
     empty.textContent =
       itemID == null
-        ? "请先选择一篇带 PDF 的文献，再生成全文总揽。"
-        : "尚未生成全文总揽。点击右上角「生成总揽」开始。";
+        ? "请先选择一篇带 PDF 的文献，再生成全文总览。"
+        : "尚未生成全文总览。点击右上角「生成总览」开始。";
     body.append(empty);
   }
   sidebar.noteMount.append(head, body);
@@ -7873,13 +7873,13 @@ async function generateOverviewIntoPanel(
     button.title = "无法找到当前 AI 对话状态";
     return;
   }
-  const originalText = button.textContent || "生成总揽";
+  const originalText = button.textContent || "生成总览";
   const originalTitle = button.title;
   button.textContent = "生成中...";
   button.disabled = true;
   try {
     await sendMessage(sidebar.mount, state, OVERVIEW_PROMPT, {
-      taskTitle: "生成总揽",
+      taskTitle: "生成总览",
     });
     // Safety net: if the model did not call render_paper_overview (so
     // onOverviewReady never re-rendered this view), restore the button so the

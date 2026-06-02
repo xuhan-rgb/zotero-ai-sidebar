@@ -3675,7 +3675,7 @@ div.math-fallback {
   cursor: pointer;
 }
 
-/* 总揽 standalone view in the note column.
+/* 总览 standalone view in the note column.
    Override the base note-body's display:flex/overflow:hidden (meant for the
    self-scrolling note editor) so our tall plain-DOM content actually scrolls.
    Keep flex:1 + min-height:0 so it still fills the bounded .zai-note-root. */
