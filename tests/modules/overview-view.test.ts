@@ -85,6 +85,24 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(meta.textContent).toContain("4 章");
   });
 
+  it("morphs the meta live when a section is clicked (no re-render needed)", () => {
+    const block = renderOverviewBlock(document, data, {
+      onJumpToSection: () => {},
+    });
+    const meta = block.querySelector(".overview-meta") as HTMLElement;
+    expect(meta.classList.contains("overview-meta-locate")).toBe(false);
+    expect(meta.textContent).toContain("4 章");
+    // click leaf §1 → meta becomes 回到在读 immediately
+    (
+      block.querySelectorAll(".overview-sec")[0].querySelector(
+        ".overview-sec-head",
+      ) as HTMLElement
+    ).click();
+    expect(meta.classList.contains("overview-meta-locate")).toBe(true);
+    expect(meta.textContent).toContain("在读");
+    expect(meta.textContent).toContain("1");
+  });
+
   it("renders without narrative/flowchart when absent", () => {
     const block = renderOverviewBlock(document, {
       ...data,

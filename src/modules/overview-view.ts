@@ -91,29 +91,36 @@ export function renderOverviewBlock(
   }
   // Meta slot morphs by state (no extra button): when a section is marked 在读
   // it becomes a one-click "回到在读" — scroll the map to that row + re-jump the
-  // PDF. Otherwise it shows the chapter count.
+  // PDF. applyMeta is re-run live on every jump so the control shows the moment
+  // a section is marked, not only after a full re-render.
   const meta = doc.createElement("span");
-  meta.className = "overview-meta";
-  const activeSection =
+  const countLabel = `${data.sections.length} 章${
+    data.coverage === "uniform-fallback" ? " · 估算分段" : ""
+  }`;
+  const applyMeta = (section?: OverviewSection): void => {
+    if (section) {
+      meta.className = "overview-meta overview-meta-locate";
+      meta.textContent = `↩ 在读 ${section.no}`;
+      meta.title = `回到正在读的章节：${section.no} ${section.title}`;
+      meta.onclick = () => {
+        const target = wrap.querySelector(".is-reading") as HTMLElement | null;
+        if (target && typeof target.scrollIntoView === "function") {
+          target.scrollIntoView({ block: "center", behavior: "smooth" });
+        }
+        handlers.onJumpToSection?.(section);
+      };
+    } else {
+      meta.className = "overview-meta";
+      meta.textContent = countLabel;
+      meta.title = "";
+      meta.onclick = null;
+    }
+  };
+  applyMeta(
     handlers.activeNo != null
       ? data.sections.find((s) => s.no === handlers.activeNo)
-      : undefined;
-  if (activeSection) {
-    meta.classList.add("overview-meta-locate");
-    meta.textContent = `↩ 在读 ${activeSection.no}`;
-    meta.title = `回到正在读的章节：${activeSection.no} ${activeSection.title}`;
-    meta.addEventListener("click", () => {
-      const target = wrap.querySelector(".is-reading") as HTMLElement | null;
-      if (target && typeof target.scrollIntoView === "function") {
-        target.scrollIntoView({ block: "center", behavior: "smooth" });
-      }
-      handlers.onJumpToSection?.(activeSection);
-    });
-  } else {
-    meta.textContent = `${data.sections.length} 章${
-      data.coverage === "uniform-fallback" ? " · 估算分段" : ""
-    }`;
-  }
+      : undefined,
+  );
   header.append(meta);
   wrap.append(header);
 
@@ -145,7 +152,7 @@ export function renderOverviewBlock(
       list.className = "overview-skeleton";
       wrap.append(list);
     }
-    list!.append(renderSectionItem(doc, node, handlers));
+    list!.append(renderSectionItem(doc, node, handlers, applyMeta));
   }
 
   if (data.flowchart && data.flowchart.nodes.length) {
@@ -195,6 +202,7 @@ function renderSectionItem(
   doc: Document,
   node: SectionNode,
   handlers: OverviewViewHandlers,
+  onReading: (section: OverviewSection) => void,
 ): HTMLElement {
   const { section, children } = node;
   const li = doc.createElement("li");
@@ -256,6 +264,7 @@ function renderSectionItem(
     }
     main.addEventListener("click", () => {
       markReading(main);
+      onReading(section);
       handlers.onJumpToSection!(section);
     });
   }
@@ -274,6 +283,7 @@ function renderSectionItem(
         }
         cli.addEventListener("click", () => {
           markReading(cli);
+          onReading(child);
           handlers.onJumpToSection!(child);
         });
       }
