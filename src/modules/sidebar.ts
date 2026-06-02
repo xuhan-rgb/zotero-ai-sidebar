@@ -2235,12 +2235,26 @@ function firstProseSentence(body: string): string {
     .replace(/\$[^$]*\$/g, " ")
     .replace(/\\[a-zA-Z]+\*?(\[[^\]]*\])?(\{[^{}]*\})?/g, " ")
     .replace(/[{}]/g, " ")
+    // Markdown-ish emphasis/code markers (**bold**, _em_, `code`) never appear
+    // in the PDF text layer — strip them so the needle matches.
+    .replace(/[*_`]+/g, " ")
     .replace(/\s+/g, " ")
     .trim();
   if (cleaned.length < 12) return "";
-  const slice = cleaned.slice(0, 90);
-  const boundary = slice.search(/[.。]\s/);
-  return (boundary > 20 ? slice.slice(0, boundary + 1) : slice).trim();
+  // Want a DISTINCTIVE anchor: a too-short leading fragment (e.g. a bold run-in
+  // label like "Data collection and operations.") collides with similarly-worded
+  // text elsewhere — notably reference entries — and mis-locates. So accumulate
+  // sentences until the slice is long enough to be near-unique.
+  const MIN = 40;
+  const WINDOW = 160;
+  const window = cleaned.slice(0, WINDOW);
+  const boundary = /[.。]\s/g;
+  let m: RegExpExecArray | null;
+  while ((m = boundary.exec(window)) !== null) {
+    if (m.index + 1 >= MIN) return window.slice(0, m.index + 1).trim();
+  }
+  const lastSpace = window.lastIndexOf(" ");
+  return (lastSpace > MIN ? window.slice(0, lastSpace) : window).trim();
 }
 
 function mountReaderSelectionPopupGuard(reader: unknown): { destroy(): void } {

@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-sidebar",
   "type": "module",
-  "version": "0.7.8",
+  "version": "0.7.9",
   "description": "Chat sidebar for Zotero with Claude and GPT support and configurable model presets.",
   "config": {
     "addonName": "Zotero AI Sidebar",
