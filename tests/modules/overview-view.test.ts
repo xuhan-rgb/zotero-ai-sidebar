@@ -167,6 +167,29 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(methods.querySelectorAll(".overview-kid").length).toBe(2);
   });
 
+  it("a parent with an innovation subsection inherits the 创新 marker", () => {
+    const d: OverviewData = {
+      title: "T",
+      source: "pdf",
+      coverage: "headings",
+      sections: [
+        // §4 itself is NOT marked innovation, but its subsections are
+        { no: "4", level: 1, title: "Recipe", charStart: 0, charEnd: 1, phase: "method" },
+        { no: "4.1", level: 2, title: "Arch", charStart: 1, charEnd: 2, phase: "method", emphasis: "innovation" },
+        { no: "4.2", level: 2, title: "Misc", charStart: 2, charEnd: 3, phase: "method" },
+        // a plain leaf with no innovation children stays neutral
+        { no: "2", level: 1, title: "Related", charStart: 3, charEnd: 4, phase: "motivation", emphasis: "background" },
+      ],
+    };
+    const block = renderOverviewBlock(document, d, {});
+    const recipe = block.querySelectorAll(".overview-sec")[0];
+    expect(recipe.classList.contains("is-innovation")).toBe(true);
+    expect(recipe.querySelector(".overview-sec-head")?.textContent).toContain("创新");
+    // §2 (background, no innovation kids) must NOT become innovation
+    const related = block.querySelectorAll(".overview-sec")[1];
+    expect(related.classList.contains("is-innovation")).toBe(false);
+  });
+
   it("renders without narrative/flowchart when absent", () => {
     const block = renderOverviewBlock(document, {
       ...data,

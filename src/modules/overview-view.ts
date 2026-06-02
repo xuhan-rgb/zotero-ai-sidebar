@@ -78,8 +78,8 @@ function buildTree(sections: OverviewSection[]): SectionNode[] {
   return tree;
 }
 
-function emphasisClass(section: OverviewSection): string {
-  switch (section.emphasis) {
+function emphasisClass(emphasis: OverviewSection["emphasis"]): string {
+  switch (emphasis) {
     case "innovation":
       return " is-innovation";
     case "result":
@@ -89,6 +89,17 @@ function emphasisClass(section: OverviewSection): string {
     default:
       return "";
   }
+}
+
+// A parent that heads a cluster with an innovation subsection inherits the
+// innovation marker — UNLESS it already declares its own emphasis. Confined to
+// the parent's own row (the fill never bleeds), so non-innovation subsections
+// stay neutral. Leaves keep their own emphasis.
+function effectiveEmphasis(node: SectionNode): OverviewSection["emphasis"] {
+  const own = node.section.emphasis;
+  if (own && own !== "normal") return own;
+  if (node.children.some((c) => c.emphasis === "innovation")) return "innovation";
+  return own;
 }
 
 export function renderOverviewBlock(
@@ -298,15 +309,15 @@ function phaseBand(
 
 function emphasisChip(
   doc: Document,
-  section: OverviewSection,
+  emphasis: OverviewSection["emphasis"],
 ): HTMLElement | null {
-  if (section.emphasis === "innovation") {
+  if (emphasis === "innovation") {
     const chip = doc.createElement("span");
     chip.className = "overview-chip overview-chip-innov";
     chip.textContent = "创新";
     return chip;
   }
-  if (section.emphasis === "result") {
+  if (emphasis === "result") {
     const chip = doc.createElement("span");
     chip.className = "overview-chip overview-chip-result";
     chip.textContent = "效果锚点";
@@ -321,8 +332,9 @@ function renderSectionItem(
   ctx: RowCtx,
 ): HTMLElement {
   const { section, children } = node;
+  const emphasis = effectiveEmphasis(node);
   const li = doc.createElement("li");
-  li.className = "overview-sec" + emphasisClass(section);
+  li.className = "overview-sec" + emphasisClass(emphasis);
   li.setAttribute("data-section-no", section.no);
 
   const head = doc.createElement("div");
@@ -335,7 +347,7 @@ function renderSectionItem(
     caretEl.textContent = "▸";
     head.append(caretEl);
   }
-  if (section.emphasis === "innovation") {
+  if (emphasis === "innovation") {
     const star = doc.createElement("span");
     star.className = "overview-star";
     star.textContent = "✦";
@@ -351,7 +363,7 @@ function renderSectionItem(
   titleEl.className = "overview-sec-title";
   titleEl.textContent = section.title;
   head.append(titleEl);
-  const chip = emphasisChip(doc, section);
+  const chip = emphasisChip(doc, emphasis);
   if (chip) head.append(chip);
   for (const anchor of section.anchors ?? []) {
     const an = doc.createElement("span");
@@ -394,7 +406,7 @@ function renderSectionItem(
     kids.className = "overview-kids";
     for (const child of children) {
       const cli = doc.createElement("li");
-      cli.className = "overview-kid" + emphasisClass(child);
+      cli.className = "overview-kid" + emphasisClass(child.emphasis);
       cli.setAttribute("data-section-no", child.no);
       if (ctx.canJump) {
         cli.classList.add("overview-jump");
@@ -414,7 +426,7 @@ function renderSectionItem(
       ct.className = "overview-kid-title";
       ct.textContent = child.title;
       cli.append(cn, ct);
-      const chip = emphasisChip(doc, child);
+      const chip = emphasisChip(doc, child.emphasis);
       if (chip) cli.append(chip);
       if (child.gist) {
         const cg = doc.createElement("div");
