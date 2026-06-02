@@ -221,7 +221,11 @@ import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import { appendLocalPath } from "../utils/local-path";
 import { loadOverview, saveOverview } from "../context/overview-store";
-import { loadReading, saveReading } from "../context/reading-store";
+import {
+  listRecentReading,
+  loadReading,
+  saveReading,
+} from "../context/reading-store";
 import type {
   OverviewData,
   OverviewSection,
@@ -799,10 +803,112 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   hide.title = "隐藏 AI 对话列";
   hide.addEventListener("click", () => hideCurrentSidebar(mount));
   bottomRow.append(hide);
+  bottomRow.append(renderRecentReadingControl(doc, mount));
   bottomRow.append(renderChatFontSizeControl(doc, mount, state));
   bottomRow.append(renderCopyDebugToggle(doc, mount, state));
   bar.append(topRow, bottomRow);
   return bar;
+}
+
+// 「最近阅读」dropdown: lists papers by last-read time (from the synced reading
+// store). Clicking an entry selects the paper and opens its best PDF in the
+// Reader — a quick "resume" across the whole library (and across machines,
+// since the list is synced). Toggle-only + closes on select (no document-level
+// listener) so re-renders never leak a panel or handler.
+function renderRecentReadingControl(
+  doc: Document,
+  mount: HTMLElement,
+): HTMLElement {
+  const wrap = el(doc, "span", "zai-recent-reading");
+  const btn = buttonEl(doc, "最近阅读");
+  btn.title = "最近阅读过的论文（点击恢复打开）";
+  const panel = el(doc, "div", "zai-recent-panel");
+  panel.style.display = "none";
+  wrap.append(btn, panel);
+
+  let isOpen = false;
+  btn.addEventListener("click", async (e) => {
+    e.stopPropagation();
+    if (isOpen) {
+      isOpen = false;
+      panel.style.display = "none";
+      return;
+    }
+    isOpen = true;
+    panel.style.display = "block";
+    panel.replaceChildren();
+    const recent = await listRecentReading(12);
+    if (!recent.length) {
+      panel.append(el(doc, "div", "zai-recent-empty", "暂无最近阅读"));
+      return;
+    }
+    for (const r of recent) {
+      const row = el(doc, "div", "zai-recent-item");
+      row.append(el(doc, "div", "zai-recent-title", r.title || "(无标题)"));
+      if (r.readingNo) {
+        row.append(el(doc, "span", "zai-recent-no", `在读 ${r.readingNo}`));
+      }
+      row.addEventListener("click", () => {
+        isOpen = false;
+        panel.style.display = "none";
+        void openRecentReadingItem(mount, r.itemKey);
+      });
+      panel.append(row);
+    }
+  });
+  return wrap;
+}
+
+// Resolve a portable item key → local item, select it, and open its best PDF in
+// the Reader. Key→ID is per-machine (IDs differ across machines; the key is the
+// portable handle). Best-effort: guarded, never throws.
+async function openRecentReadingItem(
+  mount: HTMLElement,
+  itemKey: string,
+): Promise<void> {
+  try {
+    const win = mount.ownerDocument?.defaultView as
+      | { ZoteroPane?: { selectItem?: (id: number, expand?: boolean) => void } }
+      | undefined;
+    const Z = (
+      globalThis as unknown as {
+        Zotero?: {
+          Libraries?: { userLibraryID?: number };
+          Items?: {
+            getIDFromLibraryAndKey?: (lib: number, key: string) => number | false;
+            get?: (id: number) => Zotero.Item | false | undefined;
+          };
+          Reader?: { open?: (id: number) => Promise<unknown> };
+        };
+      }
+    ).Zotero;
+    const libraryID = Z?.Libraries?.userLibraryID ?? 1;
+    const id = Z?.Items?.getIDFromLibraryAndKey?.(libraryID, itemKey);
+    if (!id) {
+      setTempLoadMarkStatus(mount, "未找到该文献");
+      return;
+    }
+    win?.ZoteroPane?.selectItem?.(id, true);
+    const item = Z?.Items?.get?.(id) as
+      | (Zotero.Item & {
+          isAttachment?: () => boolean;
+          getBestAttachment?: () => Promise<{ id?: number } | false>;
+        })
+      | false
+      | undefined;
+    let attachmentID: number | null = null;
+    if (item) {
+      if (item.isAttachment?.()) attachmentID = id;
+      else {
+        const best = await item.getBestAttachment?.();
+        attachmentID = best && typeof best.id === "number" ? best.id : null;
+      }
+    }
+    if (attachmentID != null) await Z?.Reader?.open?.(attachmentID);
+  } catch (err) {
+    setTempLoadMarkStatus(mount, "打开失败");
+    debugZai("recent-reading.open.failed", { error: errorMessage(err) });
+  }
 }
 
 function renderChatFontSizeControl(

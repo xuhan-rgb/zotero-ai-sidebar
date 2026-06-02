@@ -3733,3 +3733,50 @@ div.math-fallback {
   background: var(--zai-accent-soft);
   border-color: var(--zai-accent);
 }
+
+/* 「最近阅读」dropdown in the AI 对话 header */
+.zai-recent-reading {
+  position: relative;
+  display: inline-block;
+}
+.zai-recent-panel {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  min-width: 240px;
+  max-width: 340px;
+  max-height: 320px;
+  overflow-y: auto;
+  background: var(--zai-bg, #fffdf8);
+  border: 1px solid var(--zai-border, #e3d8c8);
+  border-radius: 8px;
+  box-shadow: 0 6px 22px rgba(60, 40, 20, 0.18);
+  z-index: 60;
+  padding: 4px;
+}
+.zai-recent-item {
+  padding: 6px 8px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+.zai-recent-item:hover {
+  background: var(--zai-bg-soft, #fbfaf7);
+}
+.zai-recent-title {
+  font-size: 12px;
+  color: var(--zai-text, #24211d);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.zai-recent-no {
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--zai-accent, #c0673d);
+}
+.zai-recent-empty {
+  padding: 10px 8px;
+  font-size: 11px;
+  color: var(--zai-text-muted, #9b9183);
+}
