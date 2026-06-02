@@ -26,6 +26,9 @@ export interface OverviewViewHandlers {
   onJumpToSection?: (section: OverviewSection) => void;
   // When provided, a header button exports + opens the overview in a browser.
   onOpenInBrowser?: () => void;
+  // When provided, a header button saves the overview HTML as a Zotero child
+  // attachment on the paper item (keeps the HTML format, rides official sync).
+  onSaveToItem?: () => void;
   // Session-scoped nav state (anchor / browse cursor / back stack / lock).
   nav?: OverviewNavState;
   // Back-stack cap (policy constant). Defaults to 10.
@@ -108,6 +111,14 @@ export function renderOverviewBlock(
     openBtn.title = "在浏览器中打开完整总览";
     openBtn.addEventListener("click", () => handlers.onOpenInBrowser!());
     right.append(openBtn);
+  }
+  if (handlers.onSaveToItem) {
+    const saveBtn = doc.createElement("button");
+    saveBtn.className = "overview-save-item";
+    saveBtn.textContent = "📎 存到条目";
+    saveBtn.title = "把这份总览（HTML）作为附件存到该 Zotero 条目下";
+    saveBtn.addEventListener("click", () => handlers.onSaveToItem!());
+    right.append(saveBtn);
   }
   // Chapter count — shown only while nothing is 在读.
   const meta = doc.createElement("span");

@@ -7808,6 +7808,101 @@ function safeFileTitle(title: string | undefined): string {
   return cleaned || "untitled";
 }
 
+const OVERVIEW_ATTACHMENT_TITLE = "AI 全文总览";
+
+// Save the overview HTML as a CHILD ATTACHMENT on the paper item — keeps the
+// interactive HTML format (a note cannot) and rides Zotero's official file sync.
+// Re-saving REPLACES the previous "AI 全文总览" attachment instead of stacking.
+// User-initiated (an explicit button) → a visible, consented Zotero write.
+async function saveOverviewToItem(sidebar: WindowSidebarState): Promise<void> {
+  const doc = sidebar.noteMount.ownerDocument!;
+  const itemID = states.get(sidebar.mount)?.itemID ?? null;
+  const itemKey = resolveItemKeyForCache(itemID);
+  const stored = itemKey ? await loadOverview(itemKey) : null;
+  if (!stored?.data || itemID == null) {
+    setTempLoadMarkStatus(sidebar.mount, "暂无总览");
+    return;
+  }
+  try {
+    const html = buildOverviewExportHtml(
+      doc,
+      stored.data,
+      collectPluginCss(doc),
+    );
+    const Z = (globalThis as unknown as { Zotero: ZoteroExportApi }).Zotero;
+    const root = Z.DataDirectory?.dir ?? Z.DataDirectory?.path ?? Z.Profile.dir;
+    const folder = appendLocalPath(root, "zotero-ai-sidebar");
+    const path = appendLocalPath(
+      folder,
+      `overview-${safeFileTitle(stored.data.title)}-${itemKey}.html`,
+    );
+    const IO = (
+      globalThis as unknown as {
+        IOUtils?: {
+          makeDirectory(
+            p: string,
+            o?: { ignoreExisting?: boolean },
+          ): Promise<void>;
+        };
+      }
+    ).IOUtils;
+    if (IO) await IO.makeDirectory(folder, { ignoreExisting: true });
+    await Z.File.putContentsAsync(path, html);
+
+    const ZW = (
+      globalThis as unknown as {
+        Zotero: {
+          Items: { get(id: number): Zotero.Item | false | undefined };
+          Attachments: {
+            importFromFile(o: {
+              file: string;
+              parentItemID?: number;
+              title?: string;
+              contentType?: string;
+            }): Promise<unknown>;
+          };
+        };
+      }
+    ).Zotero;
+    const item = ZW.Items.get(itemID);
+    if (!item) {
+      setTempLoadMarkStatus(sidebar.mount, "条目未找到");
+      return;
+    }
+    const parent = parentItemForNotes(item);
+    // Replace the previous overview attachment instead of stacking duplicates.
+    const attachmentIDs =
+      (parent as Zotero.Item & { getAttachments?: () => number[] })
+        .getAttachments?.() ?? [];
+    for (const id of attachmentIDs) {
+      const att = ZW.Items.get(id) as
+        | (Zotero.Item & {
+            getField?: (f: string) => string;
+            eraseTx?: () => Promise<void>;
+          })
+        | false
+        | undefined;
+      if (
+        att &&
+        !att.deleted &&
+        att.getField?.("title") === OVERVIEW_ATTACHMENT_TITLE
+      ) {
+        await att.eraseTx?.();
+      }
+    }
+    await ZW.Attachments.importFromFile({
+      file: path,
+      parentItemID: parent.id,
+      title: OVERVIEW_ATTACHMENT_TITLE,
+      contentType: "text/html",
+    });
+    setTempLoadMarkStatus(sidebar.mount, "已存到条目");
+  } catch (err) {
+    setTempLoadMarkStatus(sidebar.mount, "保存失败");
+    debugZai("overview.save-item.failed", { error: errorMessage(err) });
+  }
+}
+
 // Render the 总览 view into the note column: a custom DOM page (section
 // skeleton + mermaid-style structural flowchart), loaded from the per-item
 // overview store. NOT a Zotero note and NOT a chat message.
@@ -7874,6 +7969,7 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
               void jumpToOverviewSection(sidebar.mount, panelState, section)
           : undefined,
         onOpenInBrowser: () => void openOverviewInBrowser(sidebar),
+        onSaveToItem: () => void saveOverviewToItem(sidebar),
       }),
     );
   } else {

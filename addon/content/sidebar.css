@@ -3344,7 +3344,8 @@ div.math-fallback {
   background: var(--zai-accent, #c0673d);
   border-color: var(--zai-accent, #c0673d);
 }
-.overview-open-browser {
+.overview-open-browser,
+.overview-save-item {
   font-size: 10.5px;
   border: 1px solid var(--zai-border, #d8c9b6);
   background: var(--zai-bg, #fffdf8);
@@ -3353,7 +3354,8 @@ div.math-fallback {
   padding: 2px 9px;
   cursor: pointer;
 }
-.overview-open-browser:hover {
+.overview-open-browser:hover,
+.overview-save-item:hover {
   background: var(--zai-bg-soft, #fbfaf7);
 }
 .overview-skeleton {
