@@ -219,6 +219,18 @@ import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import { buildPromptCacheDebug, shortHash } from "./prompt-cache-debug";
 import {
+  activeMessagesScrollLock,
+  isMessagesElementNearBottom,
+  isMessagesNearBottom,
+  lockMessagesScroll,
+  preserveMessagesScroll,
+  restoreMessagesScroll,
+  restoreSavedMessagesScroll,
+  scheduleMessagesScrollRestore,
+  scrollMessagesToBottom,
+  syncMessagesScrollState,
+} from "./message-scroll";
+import {
   COLUMN_ID,
   DEFAULT_AI_COLUMN_WIDTH,
   DEFAULT_NOTE_COLUMN_WIDTH,
@@ -6330,169 +6342,6 @@ function afterRender(mount: HTMLElement, callback: () => void) {
   } else {
     callback();
   }
-}
-
-// Scroll preservation
-// =====================================================================
-// CLAUDE.md rule: streaming output should auto-scroll only when the user
-// is already near the bottom; if they've scrolled up, preserve their
-// position while new chunks arrive.
-//
-// State lives in `state.messagesScrollTop` so it survives re-renders
-// (every chunk triggers `renderPanel`). `state.autoFollowMessages` toggles
-// based on near-bottom detection — once the user scrolls up, we don't
-// re-engage auto-follow until they scroll back to the bottom themselves.
-
-function scrollMessagesToBottom(mount: HTMLElement) {
-  const messages = mount.querySelector(".messages") as HTMLElement | null;
-  if (!messages) return;
-  messages.scrollTop = messages.scrollHeight;
-  syncMessagesScrollState(mount);
-}
-
-function syncMessagesScrollState(mount: HTMLElement) {
-  const state = states.get(mount);
-  const messages = mount.querySelector(".messages") as HTMLElement | null;
-  if (state && messages) {
-    const lockedScroll = activeMessagesScrollLock(state);
-    if (lockedScroll) {
-      state.messagesScrollTop = lockedScroll.top;
-      state.autoFollowMessages = lockedScroll.atBottom;
-      return;
-    }
-    state.messagesScrollTop = messages.scrollTop;
-  }
-}
-
-// Wraps a local DOM mutation (e.g. swapping a single bubble element) so the
-// messages-list scroll position is preserved across the swap.
-// WHY: Zotero/Firefox may collapse `.messages` scrollTop to 0 mid-mutation
-// when a focused descendant is replaced; without this guard the chat
-// visibly pages back to the top after operations like "save annotation".
-// We restore both synchronously and on the next animation frame to cover
-// async layout passes that arrive after the sync swap completes.
-function captureMessagesScrollSnapshot(
-  mount: HTMLElement,
-): MessagesScrollSnapshot | null {
-  const messages = mount.querySelector(".messages") as HTMLElement | null;
-  if (!messages) return null;
-  return {
-    top: messages.scrollTop,
-    atBottom: isMessagesElementNearBottom(messages),
-  };
-}
-
-function activeMessagesScrollLock(
-  state: PanelState | undefined,
-): MessagesScrollSnapshot | null {
-  if (!state?.messagesScrollLock) return null;
-  if (Date.now() <= state.messagesScrollLock.until) {
-    return state.messagesScrollLock.snapshot;
-  }
-  state.messagesScrollLock = undefined;
-  return null;
-}
-
-function lockMessagesScroll(
-  mount: HTMLElement,
-  snapshot: MessagesScrollSnapshot | null = captureMessagesScrollSnapshot(
-    mount,
-  ),
-  durationMs = 3000,
-): MessagesScrollSnapshot | null {
-  const state = states.get(mount);
-  if (state && snapshot) {
-    state.messagesScrollLock = {
-      snapshot,
-      until: Date.now() + durationMs,
-    };
-    const win = mount.ownerDocument?.defaultView;
-    win?.setTimeout(() => activeMessagesScrollLock(state), durationMs + 50);
-  }
-  return snapshot;
-}
-
-function restoreMessagesScrollSnapshot(
-  mount: HTMLElement,
-  snapshot: MessagesScrollSnapshot | null,
-) {
-  if (!snapshot) return;
-  const messages = mount.querySelector(".messages") as HTMLElement | null;
-  if (!messages) return;
-  const maxTop = Math.max(0, messages.scrollHeight - messages.clientHeight);
-  messages.scrollTop = snapshot.atBottom
-    ? maxTop
-    : Math.min(snapshot.top, maxTop);
-  const state = states.get(mount);
-  if (state) {
-    state.messagesScrollTop = messages.scrollTop;
-    state.autoFollowMessages = snapshot.atBottom;
-  }
-}
-
-function scheduleMessagesScrollRestore(
-  mount: HTMLElement,
-  snapshot: MessagesScrollSnapshot | null,
-) {
-  restoreMessagesScrollSnapshot(mount, snapshot);
-  const win = mount.ownerDocument?.defaultView;
-  if (!win) return;
-  win.requestAnimationFrame(() => {
-    restoreMessagesScrollSnapshot(mount, snapshot);
-    win.requestAnimationFrame(() =>
-      restoreMessagesScrollSnapshot(mount, snapshot),
-    );
-  });
-  win.setTimeout(() => restoreMessagesScrollSnapshot(mount, snapshot), 0);
-  win.setTimeout(() => restoreMessagesScrollSnapshot(mount, snapshot), 80);
-  win.setTimeout(() => restoreMessagesScrollSnapshot(mount, snapshot), 250);
-}
-
-function preserveMessagesScroll(
-  mount: HTMLElement,
-  mutate: () => void,
-  snapshot = captureMessagesScrollSnapshot(mount),
-) {
-  mutate();
-  scheduleMessagesScrollRestore(mount, snapshot);
-}
-
-function isMessagesNearBottom(mount: HTMLElement): boolean {
-  const messages = mount.querySelector(".messages") as HTMLElement | null;
-  if (!messages) return true;
-  return isMessagesElementNearBottom(messages);
-}
-
-// 40px = roughly one body line of slack. Below this we treat the user as
-// "at the bottom" and re-engage auto-follow. Tuned by hand: large enough
-// to absorb sub-pixel scroll snap, small enough that scrolling up by one
-// full message disengages follow mode.
-function isMessagesElementNearBottom(messages: HTMLElement): boolean {
-  return (
-    messages.scrollHeight - messages.scrollTop - messages.clientHeight < 40
-  );
-}
-
-function restoreSavedMessagesScroll(mount: HTMLElement) {
-  const state = states.get(mount);
-  const messages = mount.querySelector(".messages") as HTMLElement | null;
-  if (!state || !messages) return;
-  messages.scrollTop = state.messagesScrollTop;
-}
-
-function restoreMessagesScroll(
-  mount: HTMLElement,
-  state: PanelState,
-  scrollToBottom: boolean,
-) {
-  const messages = mount.querySelector(".messages") as HTMLElement | null;
-  if (!messages) return;
-  if (scrollToBottom) {
-    messages.scrollTop = messages.scrollHeight;
-    state.messagesScrollTop = messages.scrollTop;
-    return;
-  }
-  messages.scrollTop = state.messagesScrollTop;
 }
 
 function restoreChatInput(
