@@ -286,8 +286,6 @@ const ROOT_ID = "zai-root";
 const TOGGLE_BUTTON_ID = "zai-toggle-button";
 const FLOATING_TOGGLE_ID = "zai-floating-toggle";
 const READER_LAYOUT_PREF_KEY = "extensions.zotero-ai-sidebar.readerLayout";
-const READER_TRANSLATE_GROUP_ID = "zai-reader-translate-group";
-const READER_TRANSLATE_STYLE_ID = "zai-reader-translate-style";
 const contextPolicy = DEFAULT_CONTEXT_POLICY;
 const DEFAULT_AI_COLUMN_WIDTH = 380;
 const DEFAULT_NOTE_COLUMN_WIDTH = 560;
@@ -351,7 +349,6 @@ interface WindowSidebarState {
   copyHandlerCleanup?: () => void;
   selectionMenuCleanup?: () => void;
   promptShortcutCleanup?: () => void;
-  readerTranslateToolbarCleanup?: () => void;
   initialRefreshCleanup?: () => void;
   layoutSaveTimer?: number;
   layoutCleanup?: () => void;
@@ -10926,95 +10923,6 @@ function clampWidth(width: number, min: number, max: number): number {
   return Math.round(Math.max(min, Math.min(max, width)));
 }
 
-function installReaderTranslateToolbar(
-  win: Window,
-  state: WindowSidebarState,
-): void {
-  const mountedGroups: HTMLElement[] = [];
-
-  const mountIntoActiveReader = () => {
-    const reader = getActiveReader(win) as any;
-    for (const readerWin of activeReaderWindows(reader)) {
-      const doc = readerWin.document;
-      if (!doc || doc.getElementById(READER_TRANSLATE_GROUP_ID)) {
-        if (doc) syncReaderTranslateButtons(win, doc);
-        continue;
-      }
-      const toolbar = findReaderToolbar(doc);
-      if (!toolbar) continue;
-      ensureReaderTranslateToolbarStyle(doc);
-      const group = doc.createElement("span");
-      group.id = READER_TRANSLATE_GROUP_ID;
-      group.className = "zai-reader-translate-group";
-
-      const translateBtn = doc.createElement("button");
-      translateBtn.type = "button";
-      translateBtn.className = "zai-reader-translate-button";
-      translateBtn.textContent = "译";
-      translateBtn.title = "逐句翻译模式 (Alt+T)，翻译参数在插件设置中配置";
-      translateBtn.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void toggleTranslateMode(win, translateBtn);
-      });
-
-      group.append(translateBtn);
-      insertReaderTranslateGroup(toolbar, group);
-      mountedGroups.push(group);
-      syncReaderTranslateButtons(win, doc);
-    }
-  };
-
-  mountIntoActiveReader();
-  const monitorID = win.setInterval(mountIntoActiveReader, 500);
-  state.readerTranslateToolbarCleanup = () => {
-    win.clearInterval(monitorID);
-    for (const group of mountedGroups) group.remove();
-  };
-}
-
-function findReaderToolbar(doc: Document): HTMLElement | null {
-  if (
-    !doc.querySelector(
-      ".textLayer,.pdfViewer,.page[data-page-number],#viewerContainer",
-    )
-  ) {
-    return null;
-  }
-  const selectors = [
-    ".reader-toolbar",
-    "#toolbarViewer",
-    "#toolbarViewerLeft",
-    "#toolbarContainer",
-    "[role='toolbar']",
-    ".toolbar",
-    ".toolbar-container",
-  ];
-  for (const selector of selectors) {
-    for (const candidate of Array.from(doc.querySelectorAll(selector))) {
-      const toolbar = candidate as HTMLElement;
-      if (
-        typeof toolbar.querySelector === "function" &&
-        toolbar.querySelector("button,toolbarbutton")
-      ) {
-        return toolbar;
-      }
-    }
-  }
-  return null;
-}
-
-function insertReaderTranslateGroup(
-  toolbar: HTMLElement,
-  group: HTMLElement,
-): void {
-  const before =
-    toolbar.querySelector("spacer[flex='1'], .spacer, .toolbar-spacer") ??
-    toolbar.querySelector("#scaleSelectContainer, #numPages") ??
-    null;
-  toolbar.insertBefore(group, before);
-}
-
 function syncReaderTranslateButtons(win: Window, doc?: Document): void {
   const targetDoc = doc ?? win.document;
   const enabled = translateControllers.get(win)?.isEnabled() ?? false;
@@ -11026,50 +10934,6 @@ function syncReaderTranslateButtons(win: Window, doc?: Document): void {
     setTranslateButtonLabel(button, enabled);
   }
 }
-
-function ensureReaderTranslateToolbarStyle(doc: Document): void {
-  if (doc.getElementById(READER_TRANSLATE_STYLE_ID)) return;
-  const style = doc.createElement("style");
-  style.id = READER_TRANSLATE_STYLE_ID;
-  style.textContent = READER_TRANSLATE_STYLE_TEXT;
-  (doc.head ?? doc.documentElement)?.append(style);
-}
-
-const READER_TRANSLATE_STYLE_TEXT = `
-.zai-reader-translate-group {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  margin-inline: 6px;
-  vertical-align: middle;
-}
-.zai-reader-translate-button {
-  width: 28px;
-  height: 28px;
-  border-radius: 6px;
-  border: 1px solid transparent;
-  background: transparent;
-  color: inherit;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  font: 600 13px/1 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-}
-.zai-reader-translate-button:hover {
-  background: rgba(128, 128, 128, 0.14);
-}
-.zai-reader-translate-button--active {
-  color: #d34a24;
-  background: rgba(239, 91, 43, 0.14);
-  border-color: #ef5b2b;
-}
-body.zai-translate-mode-on .page { cursor: crosshair !important; }
-body.zai-translate-mode-on .textLayer span:hover {
-  background: rgba(74, 140, 247, 0.10);
-  border-radius: 2px;
-}
-`;
 
 function installReaderPromptShortcutHandler(
   win: Window,
@@ -11843,8 +11707,6 @@ export function unregisterSidebarForWindow(win: Window) {
   state.selectionMenuCleanup = undefined;
   state.promptShortcutCleanup?.();
   state.promptShortcutCleanup = undefined;
-  state.readerTranslateToolbarCleanup?.();
-  state.readerTranslateToolbarCleanup = undefined;
   state.layoutCleanup?.();
   state.layoutCleanup = undefined;
   state.initialRefreshCleanup?.();
