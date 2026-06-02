@@ -749,6 +749,29 @@ export function createZoteroAgentToolSession(
             })),
           flowchart: normalizeOverviewFlowchart(parsed.flowchart),
         };
+        // Fallbacks so the redesigned view always shows phases + emphasis even
+        // when the model under-fills the structured fields. Phase ← title;
+        // emphasis ← flowchart innovation/result nodes (by sectionNo) or a
+        // leading "新/创新:" gist prefix the model tends to write.
+        const innovationNos = new Set<string>();
+        const resultNos = new Set<string>();
+        for (const node of data.flowchart?.nodes ?? []) {
+          if (!node.sectionNo) continue;
+          if (node.type === "innovation") innovationNos.add(node.sectionNo);
+          else if (node.type === "result") resultNos.add(node.sectionNo);
+        }
+        for (const section of data.sections) {
+          if (!section.phase) section.phase = inferPhaseFromTitle(section.title);
+          if (!section.emphasis) {
+            if (innovationNos.has(section.no)) section.emphasis = "innovation";
+            else if (resultNos.has(section.no)) section.emphasis = "result";
+            else if (section.gist && /^(新|创新|本文)\s*[:：]/.test(section.gist.trim()))
+              section.emphasis = "innovation";
+          }
+          if (section.emphasis === "innovation" && section.gist) {
+            section.gist = section.gist.replace(/^(新|创新|本文)\s*[:：]\s*/, "");
+          }
+        }
         options.onOverviewReady?.(data);
         return {
           output: `[Overview rendered] ${data.sections.length} sections${
@@ -1503,18 +1526,40 @@ function errorResult(output: string): ToolExecutionResult {
 }
 
 function overviewPhaseArg(value: unknown): OverviewPhase | undefined {
-  return value === "motivation" || value === "method" || value === "validation"
-    ? value
-    : undefined;
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().toLowerCase();
+  if (v === "motivation" || v === "动机" || v === "背景") return "motivation";
+  if (v === "method" || v === "方法") return "method";
+  if (v === "validation" || v === "验证" || v === "实验" || v === "结论")
+    return "validation";
+  return undefined;
 }
 
 function overviewEmphasisArg(value: unknown): OverviewEmphasis | undefined {
-  return value === "innovation" ||
-    value === "result" ||
-    value === "normal" ||
-    value === "background"
-    ? value
-    : undefined;
+  if (typeof value !== "string") return undefined;
+  const v = value.trim().toLowerCase();
+  if (v === "innovation" || v === "创新" || v === "贡献") return "innovation";
+  if (v === "result" || v === "效果" || v === "结果" || v === "sota")
+    return "result";
+  if (v === "background" || v === "背景" || v === "相关工作") return "background";
+  if (v === "normal" || v === "普通") return "normal";
+  return undefined;
+}
+
+// Display-only fallback so the phased grouping always renders even when the
+// model omits `phase`. Normalizes the model's own output for layout; it is NOT
+// user-intent routing.
+function inferPhaseFromTitle(title: string): OverviewPhase {
+  const t = title.toLowerCase();
+  if (/introduction|related work|background|motivation|preliminar/.test(t)) {
+    return "motivation";
+  }
+  if (
+    /experiment|evaluation|result|conclusion|discussion|future|ablation/.test(t)
+  ) {
+    return "validation";
+  }
+  return "method";
 }
 
 // Validate + normalize a model-supplied flowchart into MindmapData. Drops

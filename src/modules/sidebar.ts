@@ -7713,6 +7713,8 @@ const OVERVIEW_PROMPT = [
   "  · 每个章节：一句话 gist（中文，≤30 字）；phase（motivation｜method｜validation）；emphasis（innovation｜result｜normal｜background）。emphasis=innovation 的章节，其 gist 必须写清“新在哪”（本文贡献）；结果/SOTA 章节用 result；相关工作/总结等背景章节用 background。",
   "  · flowchart：问题→方法→结果及关键依赖的逻辑图；把本文新提出的部分节点 type 设为 innovation 并把 sectionNo 设为对应章节号，效果/SOTA 节点用 result，其余用 section/point。",
   "第三步：调用 render_paper_overview，把 narrative、sections（含 gist/charStart/charEnd/anchors/phase/emphasis）与 flowchart 一起渲染。",
+  "重要：narrative 必填；每个 section 都必须带 phase 和 emphasis 两个字段，用英文值（phase: motivation|method|validation；emphasis: innovation|result|normal|background）。不要把“新：/创新：”写进 gist——改用 emphasis=innovation 表达。",
+  '示例：render_paper_overview({ "narrative":"……结尾点出贡献", "sections":[ {"no":"1","title":"Introduction","gist":"动机…","phase":"motivation","emphasis":"background"}, {"no":"5","title":"Estimator Initialization","gist":"……（新在哪）","phase":"method","emphasis":"innovation"}, {"no":"9","title":"Experiments","gist":"……","phase":"validation","emphasis":"result"} ], "flowchart":{…} })',
   "必须调用 render_paper_overview 完成渲染，不要只用文字回答。",
 ].join("\n");
 
