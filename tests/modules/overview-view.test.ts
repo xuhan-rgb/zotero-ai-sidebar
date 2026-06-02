@@ -37,13 +37,17 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(innov!.textContent).toContain("创新");
     expect(block.querySelectorAll(".overview-kid").length).toBe(1);
     expect(block.querySelector(".overview-fig .mindmap-block")).toBeTruthy();
-    // §3 Method has a subsection → clicking it expands (does not jump)
-    const methodHead = innov!.querySelector(".overview-sec-head") as HTMLElement;
-    methodHead.click();
+    // §3 Method has a subsection → the caret expands it (without jumping)…
+    const caret = innov!.querySelector(".overview-caret") as HTMLElement;
+    caret.click();
     expect(innov!.classList.contains("open")).toBe(true);
+    expect(jumped).not.toContain("3");
+    // …but clicking the title row jumps to the PDF (parents jump too)
+    (innov!.querySelector(".overview-sec-title") as HTMLElement).click();
+    expect(jumped).toContain("3");
     // §1 Introduction is a leaf → clicking it jumps to the PDF
     const intro = block.querySelectorAll(".overview-sec")[0];
-    (intro.querySelector(".overview-sec-head") as HTMLElement).click();
+    (intro.querySelector(".overview-sec-title") as HTMLElement).click();
     expect(jumped).toContain("1");
   });
 

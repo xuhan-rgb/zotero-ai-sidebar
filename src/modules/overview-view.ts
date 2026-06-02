@@ -313,11 +313,12 @@ function renderSectionItem(
   const head = doc.createElement("div");
   head.className = "overview-sec-head";
 
+  let caretEl: HTMLElement | undefined;
   if (children.length) {
-    const caret = doc.createElement("span");
-    caret.className = "overview-caret";
-    caret.textContent = "▸";
-    head.append(caret);
+    caretEl = doc.createElement("span");
+    caretEl.className = "overview-caret";
+    caretEl.textContent = "▸";
+    head.append(caretEl);
   }
   if (section.emphasis === "innovation") {
     const star = doc.createElement("span");
@@ -354,14 +355,22 @@ function renderSectionItem(
     gist.textContent = section.gist;
     main.append(gist);
   }
-  // Click rule: a section WITH subsections expands/collapses; a leaf jumps.
-  if (children.length) {
-    main.classList.add("overview-clickable");
-    main.addEventListener("click", () => li.classList.toggle("open"));
-  } else if (ctx.canJump) {
+  // Click rule: the caret toggles the subsections; clicking the row itself
+  // jumps to the PDF — parents jump too, not only expand. Leaves just jump.
+  if (children.length && caretEl) {
+    caretEl.addEventListener("click", (e) => {
+      e.stopPropagation();
+      li.classList.toggle("open");
+    });
+  }
+  if (ctx.canJump) {
     main.classList.add("overview-clickable", "overview-jump");
     ctx.register(section.no, main);
     main.addEventListener("click", () => ctx.jump(section));
+  } else if (children.length) {
+    // No jump handler (e.g. static export) → clicking the row toggles instead.
+    main.classList.add("overview-clickable");
+    main.addEventListener("click", () => li.classList.toggle("open"));
   }
   li.append(main);
 

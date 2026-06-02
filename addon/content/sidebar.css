@@ -3461,6 +3461,13 @@ div.math-fallback {
   cursor: pointer;
   display: inline-block;
   transition: transform 0.12s;
+  /* the caret is the only expand affordance now (clicking the rest of the row
+     jumps to the PDF), so give it a slightly larger, easier-to-hit target */
+  padding: 0 3px;
+  margin: 0 -1px;
+}
+.overview-caret:hover {
+  color: var(--zai-accent, #c0673d);
 }
 .overview-sec.open .overview-caret {
   transform: rotate(90deg);
