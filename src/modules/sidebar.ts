@@ -22,6 +22,7 @@ import {
   getReaderPdfApp,
   getSharedPdfLocator,
   type LocateResult,
+  type PdfRect,
 } from "../context/pdf-locator";
 import { extractPdfRange, searchPdfPassages } from "../context/retrieval";
 import { ensureArxivSource } from "../context/arxiv-source";
@@ -2214,6 +2215,40 @@ async function jumpViaPdfOutline(
   }
 }
 
+// Top-align a text-located section the SAME way the outline does: synthesize a
+// PDF destination from the matched page's ref + the rect's top, and fire the
+// reader's native goToDestination (proven to scroll-to-top with no highlight).
+// For sections NOT in the embedded outline (e.g. Acknowledgements). Returns
+// false if the page ref / link service isn't available → caller uses the
+// (centered) reader.navigate fallback. Best-effort: never throws.
+async function jumpToPageTopViaDest(
+  reader: unknown,
+  pageIndex: number,
+  rect: PdfRect | undefined,
+): Promise<boolean> {
+  const app = getReaderPdfApp(reader);
+  const linkService = app?.pdfLinkService;
+  if (!app?.pdfDocument || !linkService || !rect) return false;
+  try {
+    const page = await app.pdfDocument.getPage(pageIndex + 1);
+    const ref = page?.ref;
+    if (!ref) return false;
+    const [x0, , , y1] = rect;
+    const dest = [ref, { name: "XYZ" }, x0, y1, null];
+    if (typeof linkService.goToDestination === "function") {
+      await linkService.goToDestination(dest);
+      return true;
+    }
+    if (typeof linkService.navigateTo === "function") {
+      linkService.navigateTo(dest);
+      return true;
+    }
+    return false;
+  } catch {
+    return false;
+  }
+}
+
 // Jump the Reader to a section. Prefer the PDF's embedded outline (exact); fall
 // back to locating its heading/first-sentence text in the extracted text layer.
 async function jumpToOverviewSection(
@@ -2251,13 +2286,17 @@ async function jumpToOverviewSection(
       setTempLoadMarkStatus(mount, "未定位到该节");
       return;
     }
-    const locator = pdfSelectionLocatorFromLocateResult(
-      pdfLocator.attachmentID,
-      result.matchedText || section.title,
-      result,
-    );
     setTempLoadMarkStatus(mount, "已定位");
-    await jumpToPdfLocationOnly(mount, state, locator);
+    // Try the native top-aligned dest navigation (synthesized from the located
+    // page+rect); fall back to the centered reader.navigate if it isn't usable.
+    if (!(await jumpToPageTopViaDest(reader, result.pageIndex, result.rects?.[0]))) {
+      const locator = pdfSelectionLocatorFromLocateResult(
+        pdfLocator.attachmentID,
+        result.matchedText || section.title,
+        result,
+      );
+      await jumpToPdfLocationOnly(mount, state, locator);
+    }
   } catch (err) {
     setTempLoadMarkStatus(mount, "定位失败");
     debugZai("overview.section.jump.failed", {
