@@ -197,6 +197,12 @@ export interface MessagesScrollSnapshot {
   atBottom: boolean;
 }
 
+export interface VisualSelectionSnapshot {
+  text: string;
+  rectCount: number;
+  source: string;
+}
+
 export interface MessagesScrollLock {
   snapshot: MessagesScrollSnapshot;
   until: number;
