@@ -2228,8 +2228,17 @@ async function sectionLocateNeedles(
 // First distinctive prose sentence of a LaTeX section body, cleaned of markup
 // that won't appear in the PDF text layer (comments, math, \commands, braces).
 function firstProseSentence(body: string): string {
+  // Drop float environments (figure/table/…) and epigraph quotes FIRST: their
+  // caption/quote text is NOT the section's prose, so grabbing it makes the
+  // needle land on the wrong place (a figure caption, or a famous epigraph).
+  const deflowed = body
+    .replace(
+      /\\begin\s*\{(figure|table|wrapfigure|algorithm|algorithmic|tabular|subfigure)\*?\}[\s\S]*?\\end\s*\{\1\*?\}/g,
+      " ",
+    )
+    .replace(/\\epigraph\s*\{[^{}]*\}\s*\{[^{}]*\}/g, " ");
   const cleaned = normalizeLatexSourceCommands(
-    normalizeLatexListEnvironments(body),
+    normalizeLatexListEnvironments(deflowed),
   )
     .replace(/%.*$/gm, " ")
     .replace(/\$[^$]*\$/g, " ")
