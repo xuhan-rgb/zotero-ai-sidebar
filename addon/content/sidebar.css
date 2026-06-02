@@ -3215,8 +3215,8 @@ div.math-fallback {
 
 /* Result node (effect / SOTA emphasis in overview flowcharts) */
 .zai-mm-node-result rect {
-  fill: #eef3ea;
-  stroke: #5c8a4a;
+  fill: #eaf4ff;
+  stroke: #3b7ec0;
   stroke-width: 1.4px;
 }
 
@@ -3224,20 +3224,20 @@ div.math-fallback {
 .zai-mm-node-result tspan {
   font-size: 11.5px;
   font-weight: 600;
-  fill: #3f6b32;
+  fill: #2f6aa0;
 }
 
 /* Innovation node (this paper's contribution — gold ✦) */
 .zai-mm-node-innovation rect {
-  fill: #fff3d6;
-  stroke: #c79a3a;
+  fill: #eaf5ea;
+  stroke: #4a9a4a;
   stroke-width: 1.8px;
 }
 .zai-mm-node-innovation text,
 .zai-mm-node-innovation tspan {
   font-size: 11.5px;
   font-weight: 700;
-  fill: #8a6a00;
+  fill: #2f6b2f;
 }
 
 /* Clickable flowchart nodes (mapped to a section) + selected state */
@@ -3404,7 +3404,7 @@ div.math-fallback {
   transform: rotate(90deg);
 }
 .overview-star {
-  color: #c79a3a;
+  color: #4a9a4a;
   font-weight: 700;
 }
 .overview-chip {
@@ -3414,28 +3414,29 @@ div.math-fallback {
   padding: 0 6px;
 }
 .overview-chip-innov {
-  color: #8a6a00;
-  background: #fff3d6;
-  border: 1px solid #e2c178;
+  color: #fff;
+  background: #4a9a4a;
+  border: 1px solid #4a9a4a;
 }
 .overview-chip-result {
-  color: #3f6b32;
-  background: #eef3ea;
-  border: 1px solid #cfe0c5;
+  color: #fff;
+  background: #3b7ec0;
+  border: 1px solid #3b7ec0;
 }
 .overview-sec.is-innovation {
-  background: #fff7e8;
-  border: 1px solid #ecd9a8;
+  background: #eaf5ea;
+  border: 1px solid #bcdcb0;
+  border-left: 3px solid #4a9a4a;
 }
 .overview-sec.is-innovation .overview-sec-title {
-  color: #8a6a00;
+  color: #2f6b2f;
 }
 .overview-sec.is-result {
-  background: #f1f6ee;
-  border: 1px solid #cfe0c5;
+  background: #eaf4ff;
+  border: 1px solid #c4def5;
 }
 .overview-sec.is-result .overview-sec-title {
-  color: #3f6b32;
+  color: #2f6aa0;
 }
 .overview-sec.is-background .overview-sec-title {
   font-weight: 500;
@@ -3443,6 +3444,15 @@ div.math-fallback {
 }
 .overview-sec.is-background .overview-gist {
   color: var(--zai-text-muted, #9b9183);
+}
+/* Clickable affordance: every section row highlights on hover. Leaf rows jump
+   to the PDF, rows with subsections expand/collapse. Emphasis rows keep their
+   own colored background instead of the gray hover. */
+.overview-sec.overview-clickable {
+  cursor: pointer;
+}
+.overview-sec.overview-clickable:hover:not(.is-innovation):not(.is-result) {
+  background: var(--zai-bg-soft, #f4efe6);
 }
 .overview-kids {
   list-style: none;
@@ -3481,11 +3491,11 @@ div.math-fallback {
   margin-top: 1px;
 }
 .overview-kid.is-innovation .overview-kid-title {
-  color: #8a6a00;
+  color: #2f6b2f;
   font-weight: 600;
 }
 .overview-kid.is-result .overview-kid-title {
-  color: #3f6b32;
+  color: #2f6aa0;
 }
 .overview-kid.is-background .overview-kid-title {
   color: var(--zai-text-muted, #9b9183);

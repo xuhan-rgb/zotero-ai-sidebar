@@ -37,9 +37,14 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(innov!.textContent).toContain("创新");
     expect(block.querySelectorAll(".overview-kid").length).toBe(1);
     expect(block.querySelector(".overview-fig .mindmap-block")).toBeTruthy();
+    // §3 Method has a subsection → clicking it expands (does not jump)
     const methodHead = innov!.querySelector(".overview-sec-head") as HTMLElement;
     methodHead.click();
-    expect(jumped).toContain("3");
+    expect(innov!.classList.contains("open")).toBe(true);
+    // §1 Introduction is a leaf → clicking it jumps to the PDF
+    const intro = block.querySelectorAll(".overview-sec")[0];
+    (intro.querySelector(".overview-sec-head") as HTMLElement).click();
+    expect(jumped).toContain("1");
   });
 
   it("renders without narrative/flowchart when absent", () => {

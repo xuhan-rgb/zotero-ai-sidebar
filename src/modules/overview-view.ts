@@ -176,10 +176,6 @@ function renderSectionItem(
     const caret = doc.createElement("span");
     caret.className = "overview-caret";
     caret.textContent = "▸";
-    caret.addEventListener("click", (e) => {
-      e.stopPropagation();
-      li.classList.toggle("open");
-    });
     head.append(caret);
   }
   if (section.emphasis === "innovation") {
@@ -206,8 +202,13 @@ function renderSectionItem(
     an.textContent = anchor;
     head.append(an);
   }
-  if (handlers.onJumpToSection) {
-    li.classList.add("overview-jump");
+  // Click rule: a section WITH subsections expands/collapses; a leaf jumps to
+  // the PDF. Both get a hover background as the clickable affordance.
+  if (children.length) {
+    li.classList.add("overview-clickable");
+    head.addEventListener("click", () => li.classList.toggle("open"));
+  } else if (handlers.onJumpToSection) {
+    li.classList.add("overview-clickable", "overview-jump");
     head.addEventListener("click", () => handlers.onJumpToSection!(section));
   }
   li.append(head);
