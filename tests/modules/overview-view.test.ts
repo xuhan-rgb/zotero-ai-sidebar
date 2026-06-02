@@ -47,6 +47,23 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(jumped).toContain("1");
   });
 
+  it("marks activeNo as 在读 and moves the marker on click", () => {
+    const block = renderOverviewBlock(document, data, {
+      onJumpToSection: () => {},
+      activeNo: "1",
+    });
+    // §1 is a leaf → its main row carries the marker on render
+    const intro = block.querySelectorAll(".overview-sec")[0];
+    expect(intro.querySelector(".overview-sec-main.is-reading")).toBeTruthy();
+    expect(block.querySelectorAll(".is-reading").length).toBe(1);
+    // clicking subsection 3.1 moves the marker there, clearing §1
+    const kid = block.querySelector(".overview-kid") as HTMLElement;
+    kid.click();
+    expect(kid.classList.contains("is-reading")).toBe(true);
+    expect(intro.querySelector(".is-reading")).toBeNull();
+    expect(block.querySelectorAll(".is-reading").length).toBe(1);
+  });
+
   it("renders without narrative/flowchart when absent", () => {
     const block = renderOverviewBlock(document, {
       ...data,

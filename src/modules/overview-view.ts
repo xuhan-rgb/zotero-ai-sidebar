@@ -16,6 +16,18 @@ export interface OverviewViewHandlers {
   onJumpToSection?: (section: OverviewSection) => void;
   // When provided, a header button exports + opens the overview in a browser.
   onOpenInBrowser?: () => void;
+  // Section no the user last jumped into — gets a persistent "在读" marker so
+  // they don't lose track of where they are after reading in the PDF.
+  activeNo?: string;
+}
+
+// Move the "在读" marker to `el`, clearing it from any other row in the block.
+function markReading(el: HTMLElement): void {
+  const root = el.closest(".overview-block");
+  root
+    ?.querySelectorAll(".is-reading")
+    .forEach((x: Element) => x.classList.remove("is-reading"));
+  el.classList.add("is-reading");
 }
 
 const PHASES: Array<{ key: OverviewPhase; badge: string; name: string }> = [
@@ -219,7 +231,13 @@ function renderSectionItem(
     main.addEventListener("click", () => li.classList.toggle("open"));
   } else if (handlers.onJumpToSection) {
     main.classList.add("overview-clickable", "overview-jump");
-    main.addEventListener("click", () => handlers.onJumpToSection!(section));
+    if (handlers.activeNo && section.no === handlers.activeNo) {
+      main.classList.add("is-reading");
+    }
+    main.addEventListener("click", () => {
+      markReading(main);
+      handlers.onJumpToSection!(section);
+    });
   }
   li.append(main);
 
@@ -231,7 +249,13 @@ function renderSectionItem(
       cli.className = "overview-kid" + emphasisClass(child);
       if (handlers.onJumpToSection) {
         cli.classList.add("overview-jump");
-        cli.addEventListener("click", () => handlers.onJumpToSection!(child));
+        if (handlers.activeNo && child.no === handlers.activeNo) {
+          cli.classList.add("is-reading");
+        }
+        cli.addEventListener("click", () => {
+          markReading(cli);
+          handlers.onJumpToSection!(child);
+        });
       }
       if (child.emphasis === "innovation") {
         const star = doc.createElement("span");

@@ -3466,6 +3466,27 @@ div.math-fallback {
   );
   box-shadow: 0 1px 6px rgba(60, 40, 20, 0.14);
 }
+/* "在读" marker — the last section jumped into from the map. Uses a ring +
+   trailing pill (NOT a background fill) so it never competes with the
+   emphasis colors (创新绿 / 效果蓝 / 背景灰). */
+.overview-sec-main.is-reading,
+.overview-kid.is-reading {
+  box-shadow: inset 0 0 0 1.5px rgba(192, 103, 61, 0.6);
+  border-radius: 7px;
+}
+.overview-sec-main.is-reading .overview-sec-title::after,
+.overview-kid.is-reading .overview-kid-title::after {
+  content: "在读";
+  margin-left: 7px;
+  padding: 0 6px;
+  font-size: 9.5px;
+  font-weight: 700;
+  line-height: 1.6;
+  color: #fff;
+  background: #c0673d;
+  border-radius: 5px;
+  vertical-align: 1px;
+}
 .overview-kids {
   list-style: none;
   margin: 5px 0 2px 14px;

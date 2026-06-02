@@ -328,6 +328,9 @@ interface WindowSidebarState {
   noteMount: HTMLElement;
   noteItemID?: number;
   overviewActive?: boolean;
+  // Section no the user last jumped into from the overview map — drives the
+  // "在读" marker. Session-scoped (survives view switches, resets on restart).
+  overviewReadingNo?: string;
   noteAutosaveTimer?: number;
   noteAutosavePromise?: Promise<void>;
   noteEditorCleanup?: () => void;
@@ -7836,9 +7839,12 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   if (stored?.data) {
     body.append(
       renderOverviewBlock(doc, stored.data, {
+        activeNo: sidebar.overviewReadingNo,
         onJumpToSection: panelState
-          ? (section) =>
-              void jumpToOverviewSection(sidebar.mount, panelState, section)
+          ? (section) => {
+              sidebar.overviewReadingNo = section.no;
+              void jumpToOverviewSection(sidebar.mount, panelState, section);
+            }
           : undefined,
         onOpenInBrowser: () => void openOverviewInBrowser(sidebar),
       }),
