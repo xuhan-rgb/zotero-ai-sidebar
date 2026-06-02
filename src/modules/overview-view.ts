@@ -278,7 +278,7 @@ function renderFlowchart(
   figTitle.textContent = "📐 结构图纸";
   const hint = doc.createElement("span");
   hint.className = "overview-fig-hint";
-  hint.textContent = "点击展开 · 点节点看解释";
+  hint.textContent = "点击展开 · 点节点看解释 · 滚轮缩放/拖动";
   head.append(caret, figTitle, hint);
   head.addEventListener("click", () => card.classList.toggle("open"));
   card.append(head);

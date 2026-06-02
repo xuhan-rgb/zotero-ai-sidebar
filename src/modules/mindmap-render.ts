@@ -473,6 +473,93 @@ function copySvgAsImage(
   img.src = url;
 }
 
+// Wheel-zoom toward the cursor + drag-to-pan + double-click reset, by mutating
+// the SVG viewBox — lets users magnify a dense flowchart to read it. A drag
+// past a small threshold suppresses the trailing click so panning doesn't also
+// select a node.
+function enablePanZoom(svg: SVGSVGElement): void {
+  const W = parseFloat(svg.getAttribute("data-natural-w") || "0");
+  const H = parseFloat(svg.getAttribute("data-natural-h") || "0");
+  if (!W || !H) return;
+  let vb = { x: 0, y: 0, w: W, h: H };
+  const apply = () =>
+    svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  svg.style.cursor = "grab";
+  svg.style.touchAction = "none";
+
+  svg.addEventListener(
+    "wheel",
+    (e: WheelEvent) => {
+      const rect = svg.getBoundingClientRect();
+      if (!rect.width || !rect.height) return;
+      e.preventDefault();
+      const px = (e.clientX - rect.left) / rect.width;
+      const py = (e.clientY - rect.top) / rect.height;
+      const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85;
+      const nw = Math.max(W * 0.25, Math.min(vb.w * factor, W * 1.6));
+      const nh = Math.max(H * 0.25, Math.min(vb.h * factor, H * 1.6));
+      vb = {
+        x: vb.x + (vb.w - nw) * px,
+        y: vb.y + (vb.h - nh) * py,
+        w: nw,
+        h: nh,
+      };
+      apply();
+    },
+    { passive: false },
+  );
+
+  let dragging = false;
+  let moved = false;
+  let sx = 0;
+  let sy = 0;
+  let ox = 0;
+  let oy = 0;
+  svg.addEventListener("pointerdown", (e: PointerEvent) => {
+    dragging = true;
+    moved = false;
+    sx = e.clientX;
+    sy = e.clientY;
+    ox = vb.x;
+    oy = vb.y;
+    svg.style.cursor = "grabbing";
+  });
+  svg.addEventListener("pointermove", (e: PointerEvent) => {
+    if (!dragging) return;
+    const rect = svg.getBoundingClientRect();
+    if (!rect.width || !rect.height) return;
+    const dx = e.clientX - sx;
+    const dy = e.clientY - sy;
+    if (Math.abs(dx) + Math.abs(dy) > 4) moved = true;
+    vb.x = ox - (dx / rect.width) * vb.w;
+    vb.y = oy - (dy / rect.height) * vb.h;
+    apply();
+  });
+  const endDrag = () => {
+    dragging = false;
+    svg.style.cursor = "grab";
+  };
+  svg.addEventListener("pointerup", endDrag);
+  svg.addEventListener("pointerleave", endDrag);
+  svg.addEventListener("pointercancel", endDrag);
+  svg.addEventListener(
+    "click",
+    (e: MouseEvent) => {
+      if (moved) {
+        e.stopPropagation();
+        e.preventDefault();
+        moved = false;
+      }
+    },
+    true,
+  );
+  svg.addEventListener("dblclick", (e: MouseEvent) => {
+    e.preventDefault();
+    vb = { x: 0, y: 0, w: W, h: H };
+    apply();
+  });
+}
+
 export function renderMindmapBlock(
   doc: Document,
   data: MindmapData,
@@ -533,6 +620,7 @@ export function renderMindmapBlock(
   try {
     svgEl = renderMindmapSvg(doc, data);
     svgWrap.append(svgEl);
+    enablePanZoom(svgEl);
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     try { (globalThis as { Zotero?: { debug?: (s: string) => void } }).Zotero?.debug?.(`[zai-mindmap] render error: ${msg}`); } catch { /* ignore */ }
