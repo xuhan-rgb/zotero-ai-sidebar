@@ -3734,6 +3734,31 @@ div.math-fallback {
   border-color: var(--zai-accent);
 }
 
+/* Compact icon buttons (🕘 最近阅读 / ⚙ 设置) + » collapse in the AI 对话 header */
+.zai-icon-btn,
+.zai-collapse-btn {
+  font-size: 14px;
+  line-height: 1;
+  padding: 4px 9px;
+}
+.zai-collapse-btn {
+  font-size: 15px;
+}
+/* Rows inside the ⚙ menu hold the existing 设置 / 字号 / 调试 controls */
+.zai-menu-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  border-radius: 7px;
+}
+.zai-menu-row:hover {
+  background: var(--zai-bg-soft, #fbfaf7);
+}
+.zai-menu-row > * {
+  flex: 1 1 auto;
+}
+
 /* 「最近阅读」dropdown in the AI 对话 header */
 .zai-recent-reading {
   position: relative;

@@ -798,6 +798,13 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     });
     topRow.append(clear);
   }
+  // Panel chrome (collapse this column) lives at the header's top-right corner,
+  // not among the content-action buttons.
+  const collapse = buttonEl(doc, "»");
+  collapse.className = "zai-collapse-btn";
+  collapse.title = "隐藏 AI 对话列（收起面板）";
+  collapse.addEventListener("click", () => hideCurrentSidebar(mount));
+  topRow.append(collapse);
   const noteWindowOpen = isNoteWindowOpenForMount(mount);
   const openNote = buttonEl(doc, noteWindowOpen ? "关闭笔记" : "打开笔记");
   openNote.className = "open-note-button";
@@ -812,8 +819,6 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
       void openCurrentItemNote(doc, state.itemID, openNote);
     }
   });
-  bottomRow.append(openNote);
-  bottomRow.append(settings);
   const win = mount.ownerDocument!.defaultView!;
   const translateBtn = buttonEl(doc, "译");
   translateBtn.className = "zai-sidebar-translate-button";
@@ -822,16 +827,61 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   translateBtn.addEventListener("click", () => {
     void toggleTranslateMode(win, translateBtn);
   });
+  // ⚙ menu collects the low-frequency controls (设置 / 字号 / 调试) so the action
+  // row keeps only the frequent content actions.
+  const gear = renderIconMenu(doc, "⚙", "设置 / 字号 / 调试", [
+    settings,
+    renderChatFontSizeControl(doc, mount, state),
+    renderCopyDebugToggle(doc, mount, state),
+  ]);
+  // Content actions, then navigation (🕘) and settings (⚙) as compact icons.
+  bottomRow.append(openNote);
   bottomRow.append(translateBtn);
-  const hide = buttonEl(doc, "隐藏");
-  hide.title = "隐藏 AI 对话列";
-  hide.addEventListener("click", () => hideCurrentSidebar(mount));
-  bottomRow.append(hide);
   bottomRow.append(renderRecentReadingControl(doc, mount));
-  bottomRow.append(renderChatFontSizeControl(doc, mount, state));
-  bottomRow.append(renderCopyDebugToggle(doc, mount, state));
+  bottomRow.append(gear);
   bar.append(topRow, bottomRow);
   return bar;
+}
+
+// A small icon button that drops a menu of the given child controls. Used for
+// the ⚙ overflow (设置 / 字号 / 调试). Fixed-positioned from the button rect so
+// the toolbar row's overflow-x:auto can't clip it; toggle-only (no document
+// listener) so re-renders never leak the panel/handler.
+function renderIconMenu(
+  doc: Document,
+  label: string,
+  title: string,
+  children: HTMLElement[],
+): HTMLElement {
+  const wrap = el(doc, "span", "zai-recent-reading");
+  const btn = buttonEl(doc, label);
+  btn.classList.add("zai-icon-btn");
+  btn.title = title;
+  const panel = el(doc, "div", "zai-recent-panel");
+  panel.style.display = "none";
+  for (const child of children) {
+    const row = el(doc, "div", "zai-menu-row");
+    row.append(child);
+    panel.append(row);
+  }
+  wrap.append(btn, panel);
+  let isOpen = false;
+  btn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (isOpen) {
+      isOpen = false;
+      panel.style.display = "none";
+      return;
+    }
+    isOpen = true;
+    const w = doc.defaultView;
+    const rect = btn.getBoundingClientRect();
+    const vw = w?.innerWidth ?? rect.right;
+    panel.style.top = `${Math.round(rect.bottom + 4)}px`;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(rect.left, vw - 248)))}px`;
+    panel.style.display = "block";
+  });
+  return wrap;
 }
 
 // 「最近阅读」dropdown: lists papers by last-read time (from the synced reading
@@ -844,8 +894,9 @@ function renderRecentReadingControl(
   mount: HTMLElement,
 ): HTMLElement {
   const wrap = el(doc, "span", "zai-recent-reading");
-  const btn = buttonEl(doc, "最近阅读");
-  btn.title = "最近阅读过的论文（点击恢复打开）";
+  const btn = buttonEl(doc, "🕘");
+  btn.classList.add("zai-icon-btn");
+  btn.title = "最近阅读（点击恢复打开）";
   const panel = el(doc, "div", "zai-recent-panel");
   panel.style.display = "none";
   wrap.append(btn, panel);
