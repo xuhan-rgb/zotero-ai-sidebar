@@ -22,6 +22,7 @@ import {
   getReaderPdfApp,
   getSharedPdfLocator,
   type LocateResult,
+  type PdfRect,
 } from "../context/pdf-locator";
 import { extractPdfRange, searchPdfPassages } from "../context/retrieval";
 import { ensureArxivSource } from "../context/arxiv-source";
@@ -2214,6 +2215,31 @@ async function jumpViaPdfOutline(
   }
 }
 
+// Scroll the reader so a PDF point (page + rect top) sits at the TOP of the
+// view, with no transient highlight — mirrors the PDF outline's own navigation,
+// for sections located by text (not in the embedded outline). Returns false if
+// the PDF.js viewer scroll isn't available (caller then uses reader.navigate).
+function scrollReaderToTop(
+  reader: unknown,
+  pageIndex: number,
+  rect: PdfRect | undefined,
+): boolean {
+  const viewer = getReaderPdfApp(reader)?.pdfViewer;
+  if (!viewer || typeof viewer.scrollPageIntoView !== "function" || !rect) {
+    return false;
+  }
+  try {
+    const [x0, , , y1] = rect;
+    viewer.scrollPageIntoView({
+      pageNumber: pageIndex + 1,
+      destArray: [null, { name: "XYZ" }, x0, y1, null],
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 // Jump the Reader to a section. Prefer the PDF's embedded outline (exact); fall
 // back to locating its heading/first-sentence text in the extracted text layer.
 async function jumpToOverviewSection(
@@ -2251,13 +2277,19 @@ async function jumpToOverviewSection(
       setTempLoadMarkStatus(mount, "未定位到该节");
       return;
     }
-    const locator = pdfSelectionLocatorFromLocateResult(
-      pdfLocator.attachmentID,
-      result.matchedText || section.title,
-      result,
-    );
     setTempLoadMarkStatus(mount, "已定位");
-    await jumpToPdfLocationOnly(mount, state, locator);
+    // Prefer the SAME top-aligned, highlight-free scroll as the outline path, so
+    // sections that aren't in the PDF outline (e.g. Acknowledgements) still feel
+    // consistent. Only if the viewer scroll isn't available fall back to the
+    // (centered, briefly-highlighted) reader.navigate path.
+    if (!scrollReaderToTop(reader, result.pageIndex, result.rects?.[0])) {
+      const locator = pdfSelectionLocatorFromLocateResult(
+        pdfLocator.attachmentID,
+        result.matchedText || section.title,
+        result,
+      );
+      await jumpToPdfLocationOnly(mount, state, locator);
+    }
   } catch (err) {
     setTempLoadMarkStatus(mount, "定位失败");
     debugZai("overview.section.jump.failed", {
