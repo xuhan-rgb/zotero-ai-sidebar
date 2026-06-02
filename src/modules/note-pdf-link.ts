@@ -4,6 +4,7 @@ import { clonePlainRecord, finiteNumber } from "./plain-utils";
 export const NOTE_PDF_SELECTION_HASH_MARKER = "#zaiSelection=";
 export const NOTE_PDF_LOCATION_HASH_MARKER = "#zaiLocation=";
 export const NOTE_PDF_QUOTE_HASH_MARKER = "#zaiQuote=";
+export const NOTE_PDF_REFERENCE_HASH_MARKER = "#zaiReference=";
 
 export interface PdfQuoteNoteLinkData {
   quote: string;
