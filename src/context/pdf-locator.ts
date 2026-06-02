@@ -525,6 +525,27 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
 // garbage-collected without any explicit dispose() call.
 const sharedLocators = new WeakMap<object, Promise<PdfLocator>>();
 
+// Reach the live PDF.js document of an open Zotero PDF Reader, for APIs the
+// text-locator doesn't wrap — notably getOutline() (the embedded TOC bookmarks),
+// getPageIndex() and getDestination(). Returns null for non-PDF readers or a
+// view that isn't ready yet.
+export function getReaderPdfDocument(reader: unknown): any | null {
+  const r = reader as any;
+  const windows = [
+    r?._internalReader?._primaryView?._iframeWindow,
+    r?._internalReader?._secondaryView?._iframeWindow,
+    r?._internalReader?._iframeWindow,
+    r?._iframeWindow,
+  ];
+  for (const win of windows) {
+    for (const app of pdfViewerApplications(win)) {
+      const doc = app?.pdfDocument ?? app?.pdfViewer?.pdfDocument;
+      if (doc && typeof doc.getOutline === "function") return doc;
+    }
+  }
+  return null;
+}
+
 export function getSharedPdfLocator(reader: unknown): Promise<PdfLocator> {
   if (typeof reader !== "object" || reader === null) {
     return createPdfLocator(reader);

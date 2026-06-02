@@ -19,8 +19,10 @@ import {
 import { DEFAULT_CONTEXT_POLICY, type ContextPolicy } from "../context/policy";
 import {
   createPdfLocator,
+  getReaderPdfDocument,
   getSharedPdfLocator,
   type LocateResult,
+  type PdfRect,
 } from "../context/pdf-locator";
 import { extractPdfRange, searchPdfPassages } from "../context/retrieval";
 import { ensureArxivSource } from "../context/arxiv-source";
@@ -2134,9 +2136,91 @@ async function jumpToReadingRouteReference(
   }
 }
 
-// Jump the Reader to a section by locating its heading text in the PDF.
-// Locate-by-title (not by the outline's char offsets, which come from the
-// full-text cache and are 0 for arXiv) is the robust cross-path approach.
+// Normalize a heading for matching: lowercase, collapse whitespace, drop
+// punctuation/section numbers so "4 The π0.5 Model" ~ "The π0.5 Model".
+function normalizeHeading(s: string): string {
+  return s
+    .toLowerCase()
+    .replace(/[\s ]+/g, " ")
+    .replace(/[^\p{L}\p{N} ]+/gu, "")
+    .replace(/^\d+(\.\d+)*\s+/, "")
+    .trim();
+}
+
+// Locate a section via the PDF's embedded outline (TOC bookmarks): match the
+// section title to an outline entry, resolve its destination to a page +
+// position, and return a reader.navigate() location. Returns null when there's
+// no outline or no title match (caller then falls back to text search).
+// Best-effort: any failure → null (never throws), so it can only improve jumps.
+async function locateSectionViaOutline(
+  reader: unknown,
+  section: OverviewSection,
+): Promise<{ position: { pageIndex: number; rects: PdfRect[] } } | null> {
+  const pdf = getReaderPdfDocument(reader);
+  if (!pdf) return null;
+  try {
+    const outline = await pdf.getOutline();
+    if (!Array.isArray(outline) || !outline.length) return null;
+
+    const flat: Array<{ title: string; dest: unknown }> = [];
+    const walk = (items: unknown[]): void => {
+      for (const raw of items) {
+        const it = raw as { title?: unknown; dest?: unknown; items?: unknown };
+        if (typeof it?.title === "string") {
+          flat.push({ title: it.title, dest: it.dest });
+        }
+        if (Array.isArray(it?.items) && it.items.length) walk(it.items);
+      }
+    };
+    walk(outline);
+
+    const target = normalizeHeading(section.title);
+    if (!target) return null;
+    const entry =
+      flat.find((e) => normalizeHeading(e.title) === target) ??
+      flat.find((e) => {
+        const t = normalizeHeading(e.title);
+        return t.length >= 4 && (t.startsWith(target) || target.startsWith(t));
+      });
+    if (!entry || !entry.dest) return null;
+
+    let dest: unknown = entry.dest;
+    if (typeof dest === "string") dest = await pdf.getDestination(dest);
+    if (!Array.isArray(dest) || !dest.length) return null;
+
+    const pageIndex = await pdf.getPageIndex(dest[0]);
+    if (typeof pageIndex !== "number" || pageIndex < 0) return null;
+    const page = await pdf.getPage(pageIndex + 1);
+    const view: number[] = Array.isArray(page?.view)
+      ? page.view
+      : [0, 0, 612, 792];
+    const [x0, y0, x1, y1] = view;
+    const kind = (dest[1] as { name?: string } | undefined)?.name;
+    let left = x0;
+    let top = y1; // default to the top of the page
+    if (kind === "XYZ") {
+      if (typeof dest[2] === "number") left = dest[2];
+      if (typeof dest[3] === "number") top = dest[3];
+    } else if (kind === "FitH" || kind === "FitBH") {
+      if (typeof dest[2] === "number") top = dest[2];
+    }
+    const rectTop = Math.min(y1, Math.max(y0 + 1, top));
+    const rects: PdfRect[] = [
+      [
+        Math.max(x0, left),
+        Math.max(y0, rectTop - 18),
+        Math.min(x1, Math.max(x0, left) + 260),
+        rectTop,
+      ],
+    ];
+    return { position: { pageIndex, rects } };
+  } catch {
+    return null;
+  }
+}
+
+// Jump the Reader to a section. Prefer the PDF's embedded outline (exact); fall
+// back to locating its heading/first-sentence text in the extracted text layer.
 async function jumpToOverviewSection(
   mount: HTMLElement,
   state: PanelState,
@@ -2150,8 +2234,19 @@ async function jumpToOverviewSection(
   }
   setTempLoadMarkStatus(mount, "定位中");
   try {
-    // Shared (cached) locator: text-layer extraction happens once per Reader,
-    // so repeated section clicks are fast. Do NOT dispose — it is reused.
+    // 1. Prefer the PDF's own embedded outline (TOC bookmarks): it has the exact
+    //    destination for each section, so the jump is precise and instant — no
+    //    fuzzy text matching, no references mis-hit. Skips text-layer extraction.
+    const viaOutline = await locateSectionViaOutline(reader, section);
+    if (viaOutline && typeof (reader as { navigate?: unknown }).navigate === "function") {
+      setTempLoadMarkStatus(mount, "已定位");
+      await (reader as { navigate: (loc: unknown) => Promise<void> }).navigate(
+        viaOutline,
+      );
+      return;
+    }
+    // 2. Fall back to text-needle search over the extracted text layer. Shared
+    //    (cached) locator: extraction happens once per Reader, repeats are fast.
     const pdfLocator = await getSharedPdfLocator(reader);
     let result: LocateResult | null = null;
     for (const needle of await sectionLocateNeedles(state.itemID, section)) {
