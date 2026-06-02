@@ -224,10 +224,16 @@ function renderSectionItem(
     kids.className = "overview-kids";
     for (const child of children) {
       const cli = doc.createElement("li");
-      cli.className = "overview-kid";
+      cli.className = "overview-kid" + emphasisClass(child);
       if (handlers.onJumpToSection) {
         cli.classList.add("overview-jump");
         cli.addEventListener("click", () => handlers.onJumpToSection!(child));
+      }
+      if (child.emphasis === "innovation") {
+        const star = doc.createElement("span");
+        star.className = "overview-star";
+        star.textContent = "✦";
+        cli.append(star);
       }
       const cn = doc.createElement("span");
       cn.className = "overview-kid-no";
@@ -236,6 +242,8 @@ function renderSectionItem(
       ct.className = "overview-kid-title";
       ct.textContent = child.title;
       cli.append(cn, ct);
+      const chip = emphasisChip(doc, child);
+      if (chip) cli.append(chip);
       if (child.gist) {
         const cg = doc.createElement("div");
         cg.className = "overview-kid-gist";

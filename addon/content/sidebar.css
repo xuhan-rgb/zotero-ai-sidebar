@@ -3480,6 +3480,16 @@ div.math-fallback {
   color: var(--zai-text-muted, #9b9183);
   margin-top: 1px;
 }
+.overview-kid.is-innovation .overview-kid-title {
+  color: #8a6a00;
+  font-weight: 600;
+}
+.overview-kid.is-result .overview-kid-title {
+  color: #3f6b32;
+}
+.overview-kid.is-background .overview-kid-title {
+  color: var(--zai-text-muted, #9b9183);
+}
 .overview-fig {
   margin-top: 14px;
   border: 1px solid var(--zai-border, #e3d8c8);
