@@ -1,8 +1,25 @@
 import type {
   OverviewData,
+  OverviewEmphasis,
+  OverviewPhase,
   OverviewSection,
 } from "./overview-types";
 import type { MindmapData, MindmapNode } from "../providers/types";
+
+function asPhase(value: unknown): OverviewPhase | undefined {
+  return value === "motivation" || value === "method" || value === "validation"
+    ? value
+    : undefined;
+}
+
+function asEmphasis(value: unknown): OverviewEmphasis | undefined {
+  return value === "innovation" ||
+    value === "result" ||
+    value === "normal" ||
+    value === "background"
+    ? value
+    : undefined;
+}
 
 // Per-item store for rendered paper overviews. Mirrors translate/cache.ts:
 // a single JSON file holding a map keyed by Zotero item key, serialized
@@ -177,11 +194,14 @@ function normalizeOverviewData(raw: unknown): OverviewData | null {
       anchors: Array.isArray(s.anchors)
         ? s.anchors.filter((a): a is string => typeof a === "string")
         : undefined,
+      phase: asPhase(s.phase),
+      emphasis: asEmphasis(s.emphasis),
     }));
   return {
     title: typeof r.title === "string" ? r.title : "",
     source: r.source === "arxiv" ? "arxiv" : "pdf",
     coverage: r.coverage === "uniform-fallback" ? "uniform-fallback" : "headings",
+    narrative: typeof r.narrative === "string" ? r.narrative : undefined,
     sections,
     flowchart: normalizeStoredFlowchart(r.flowchart),
   };
@@ -202,7 +222,9 @@ function normalizeStoredFlowchart(raw: unknown): MindmapData | undefined {
     .map((n) => ({
       id: n.id as string,
       label: n.label as string,
-      type: (["root", "section", "point", "result"].includes(n.type as string)
+      type: (["root", "section", "point", "result", "innovation"].includes(
+        n.type as string,
+      )
         ? (n.type as string)
         : "point") as MindmapNode["type"],
       ...(typeof n.sectionNo === "string"

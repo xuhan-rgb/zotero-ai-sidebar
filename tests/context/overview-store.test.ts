@@ -45,6 +45,41 @@ describe("overview-store", () => {
     expect(got?.updatedAt).toBe(100);
   });
 
+  it("preserves narrative + per-section phase/emphasis on load", async () => {
+    await saveOverview(
+      "K2",
+      {
+        title: "T",
+        source: "pdf",
+        coverage: "headings",
+        narrative: "核心讲述",
+        sections: [
+          {
+            no: "5",
+            level: 1,
+            title: "Method",
+            charStart: 0,
+            charEnd: 1,
+            phase: "method",
+            emphasis: "innovation",
+          },
+        ],
+        flowchart: {
+          rankdir: "TB",
+          nodes: [{ id: "a", label: "A", type: "innovation", sectionNo: "5" }],
+          edges: [],
+        },
+      },
+      100,
+    );
+    const got = await loadOverview("K2");
+    expect(got?.data.narrative).toBe("核心讲述");
+    expect(got?.data.sections[0].phase).toBe("method");
+    expect(got?.data.sections[0].emphasis).toBe("innovation");
+    expect(got?.data.flowchart?.nodes[0].type).toBe("innovation");
+    expect(got?.data.flowchart?.nodes[0].sectionNo).toBe("5");
+  });
+
   it("merges last-write-wins by updatedAt", async () => {
     await saveOverview("K", data("old"), 100);
 
