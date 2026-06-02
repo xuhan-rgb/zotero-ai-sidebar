@@ -219,6 +219,23 @@ import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import { buildPromptCacheDebug, shortHash } from "./prompt-cache-debug";
 import {
+  ensureAllZoteroNoteEditorKatexCSS,
+  ensureZoteroNoteEditorKatexCSS,
+} from "./note-katex-css";
+import {
+  assignHrefWithDebug,
+  encodeURIComponentWithDebug,
+  readingRouteElementDebugInfo,
+  readingRouteErrorDebugInfo,
+  readingRouteNodesDebugInfo,
+  readingRouteStringDiagnostics,
+  setAttributeWithDebug,
+} from "./reading-route-debug";
+import {
+  formatSelectedTextSemantically,
+  repairPdfSelectionLineBreaks,
+} from "./selected-text-format";
+import {
   charOffsetsForPdfRects,
   charOffsetsForReaderText,
   clonePlainForScope,
@@ -5913,84 +5930,6 @@ function normalizeSelectedText(text: unknown): string {
     : normalized;
 }
 
-type SelectedTextBlockKind = "paragraph" | "list" | "heading";
-
-interface SelectedTextBlock {
-  kind: SelectedTextBlockKind;
-  text: string;
-}
-
-function formatSelectedTextSemantically(text: string): string {
-  const blocks: SelectedTextBlock[] = [];
-  let current: SelectedTextBlock | null = null;
-  const flush = () => {
-    if (!current) return;
-    const value = current.text.trim();
-    if (value) blocks.push({ ...current, text: value });
-    current = null;
-  };
-
-  for (const rawLine of text.replace(/\r\n?/g, "\n").split("\n")) {
-    const line = normalizeSelectedTextLine(rawLine);
-    if (!line) {
-      flush();
-      continue;
-    }
-    const kind = selectedTextBlockKind(line);
-    if (kind !== "paragraph") {
-      flush();
-      current = { kind, text: line };
-      continue;
-    }
-    if (!current) {
-      current = { kind: "paragraph", text: line };
-    } else {
-      current.text = `${current.text} ${line}`;
-    }
-  }
-  flush();
-  return joinSelectedTextBlocks(blocks);
-}
-
-function normalizeSelectedTextLine(line: string): string {
-  return line
-    .replace(/\u00a0/g, " ")
-    .replace(/[ \t\f\v]+/g, " ")
-    .trim();
-}
-
-function selectedTextBlockKind(line: string): SelectedTextBlockKind {
-  if (/^(?:\d{1,3}[\).]|\([a-zA-Z0-9]\)|[a-zA-Z]\))\s+/.test(line)) {
-    return "list";
-  }
-  if (/^(?:[A-Z]\.|[IVXLC]+\.|Fig(?:ure)?\.?\s*\d+[:.])\s+/.test(line)) {
-    return "heading";
-  }
-  return "paragraph";
-}
-
-function joinSelectedTextBlocks(blocks: SelectedTextBlock[]): string {
-  let output = "";
-  let previous: SelectedTextBlock | null = null;
-  for (const block of blocks) {
-    if (!output) {
-      output = block.text;
-    } else {
-      output +=
-        previous?.kind === "list" && block.kind === "list" ? "\n" : "\n\n";
-      output += block.text;
-    }
-    previous = block;
-  }
-  return output.trim();
-}
-
-function repairPdfSelectionLineBreaks(text: string): string {
-  return text
-    .replace(/([A-Za-z]{3,})-\s*\r?\n\s*([a-z]{3,})/g, "$1$2")
-    .replace(/([A-Za-z]{3,})-\s{2,}([a-z]{3,})/g, "$1$2");
-}
-
 async function extractSelectionTextFromAnnotationPosition(
   reader: unknown,
   draft: SelectionAnnotationDraft,
@@ -7822,132 +7761,6 @@ function closestNoteElement(
   return typeof start?.closest === "function" ? start.closest(selector) : null;
 }
 
-function ensureAllZoteroNoteEditorKatexCSS(doc: Document): void {
-  const editors = Array.from(
-    doc.querySelectorAll("note-editor"),
-  ) as ZoteroNoteEditorElement[];
-  let injected = 0;
-  for (const editor of editors) {
-    if (ensureZoteroNoteEditorKatexCSS(editor)) injected++;
-  }
-  debugZai("note-editor-katex-css:scan", {
-    editors: editors.length,
-    injected,
-  });
-}
-
-function ensureZoteroNoteEditorKatexCSS(
-  editor: ZoteroNoteEditorElement,
-): boolean {
-  const iframeDoc = editor.getCurrentInstance?.()?._iframeWindow?.document;
-  if (!iframeDoc) return false;
-  ensureKatexCSSInDocument(iframeDoc);
-  return true;
-}
-
-function ensureKatexCSSInDocument(doc: Document): void {
-  const root = doc.head ?? doc.documentElement;
-  if (!root) return;
-
-  if (!doc.getElementById("zai-katex-css-link")) {
-    const link = doc.createElement("link");
-    link.id = "zai-katex-css-link";
-    link.rel = "stylesheet";
-    link.href = `chrome://${addon.data.config.addonRef}/content/katex/katex.min.css`;
-    root.append(link);
-  }
-
-  if (!doc.getElementById("zai-katex-css-fallback")) {
-    const style = doc.createElement("style");
-    style.id = "zai-katex-css-fallback";
-    style.textContent = `
-.katex .katex-mathml {
-  position: absolute;
-  clip: rect(1px, 1px, 1px, 1px);
-  padding: 0;
-  border: 0;
-  height: 1px;
-  width: 1px;
-  overflow: hidden;
-}
-.katex-display {
-  display: block;
-  margin: 1em 0;
-  text-align: center;
-}
-.katex-display > .katex {
-  display: block;
-  text-align: center;
-  white-space: nowrap;
-}
-.zai-note-pdf-jump {
-  margin: 0.35em 0 0.8em;
-}
-.zai-note-pdf-selection-link {
-  display: inline-block;
-  padding: 2px 8px;
-  border: 1px solid #c7dfe8;
-  border-radius: 999px;
-  color: #2d6f8f;
-  font-size: 0.9em;
-  font-weight: 700;
-  text-decoration: none;
-}
-.zai-note-pdf-selection-link:hover {
-  border-color: #2d6f8f;
-  text-decoration: none;
-}
-/* The note editor (ProseMirror) keeps only an <a>'s href across a save —
-   class and data-* attributes are stripped. Match the surviving #zaiQuote=
-   href so the quote link stays low-key grey, not the editor's blue default. */
-.zai-pdf-quote-jump,
-a[href*="${NOTE_PDF_QUOTE_HASH_MARKER}"] {
-  margin-inline-start: 4px;
-  color: #b3b3b3 !important;
-  font-size: 0.72em;
-  font-weight: normal;
-  text-decoration: none !important;
-  cursor: pointer;
-}
-.zai-pdf-quote-jump:hover,
-a[href*="${NOTE_PDF_QUOTE_HASH_MARKER}"]:hover {
-  color: #7a7a7a !important;
-  text-decoration: none !important;
-}
-.zai-pdf-quote-active {
-  background: rgba(0, 0, 0, 0.06);
-  border-radius: 4px;
-}
-.zai-reading-route-key {
-  margin: 0 2px;
-  padding: 1px 4px;
-  border-radius: 4px;
-  box-decoration-break: clone;
-  -webkit-box-decoration-break: clone;
-}
-.zai-reading-route-key[data-zai-reading-route-tone="blue"] {
-  background: rgba(46, 168, 229, 0.28) !important;
-}
-.zai-reading-route-key[data-zai-reading-route-tone="yellow"] {
-  background: rgba(255, 212, 0, 0.36) !important;
-}
-.zai-reading-route-key[data-zai-reading-route-tone="red"] {
-  background: rgba(255, 102, 102, 0.28) !important;
-}
-.zai-reading-route-key[data-zai-reading-route-tone="green"] {
-  background: rgba(95, 178, 54, 0.28) !important;
-}
-.zai-reading-route-key[data-zai-reading-route-tone="purple"] {
-  background: rgba(162, 138, 229, 0.28) !important;
-}
-.zai-reading-route-key[data-zai-reading-route-tone="orange"] {
-  background: rgba(241, 152, 55, 0.32) !important;
-}
-`;
-    root.append(style);
-  }
-}
-
 function closeZoteroNoteWindow(
   sidebar: WindowSidebarState,
   editor: ZoteroNoteEditorElement,
@@ -8519,206 +8332,6 @@ function readingRouteNoteHTML(
       stage,
       error: readingRouteErrorDebugInfo(err),
       root: readingRouteElementDebugInfo(root),
-    });
-    throw err;
-  }
-}
-
-function readingRouteElementDebugInfo(
-  root: HTMLElement,
-): Record<string, unknown> {
-  let html = "";
-  let htmlInfo: unknown = null;
-  try {
-    html = String(root.innerHTML);
-    htmlInfo = htmlStringDebugInfo(html);
-  } catch (err) {
-    htmlInfo = { error: readingRouteErrorDebugInfo(err) };
-  }
-  return {
-    childNodes: root.childNodes.length,
-    children: root.children.length,
-    headings: root.querySelectorAll("h1,h2,h3,h4,h5,h6").length,
-    lists: root.querySelectorAll("ul,ol").length,
-    listItems: root.querySelectorAll("li").length,
-    blockquotes: root.querySelectorAll("blockquote").length,
-    links: root.querySelectorAll("a").length,
-    quoteLinks: root.querySelectorAll(
-      "[data-zai-pdf-quote],.zai-pdf-quote-jump",
-    ).length,
-    referenceLinks: root.querySelectorAll("[data-zai-pdf-reference-label]")
-      .length,
-    math: root.querySelectorAll(".math,[data-latex]").length,
-    html: htmlInfo,
-    chars: html ? readingRouteStringDiagnostics(html) : null,
-  };
-}
-
-function readingRouteNodesDebugInfo(nodes: Node[]): Record<string, unknown> {
-  let html = "";
-  let htmlInfo: unknown = null;
-  try {
-    const doc = nodes[0]?.ownerDocument;
-    const root = doc?.createElement("div");
-    if (root) {
-      for (const node of nodes) root.appendChild(node.cloneNode(true));
-      html = String(root.innerHTML);
-      htmlInfo = htmlStringDebugInfo(html);
-    }
-  } catch (err) {
-    htmlInfo = { error: readingRouteErrorDebugInfo(err) };
-  }
-
-  const elementNodes = nodes.filter((node) => node.nodeType === 1) as Element[];
-  return {
-    nodes: nodes.length,
-    elements: elementNodes.length,
-    topTags: elementNodes.slice(0, 8).map((node) => node.tagName),
-    text: textDebugInfo(nodes.map((node) => node.textContent || "").join(" ")),
-    html: htmlInfo,
-    chars: html ? readingRouteStringDiagnostics(html) : null,
-  };
-}
-
-function readingRouteErrorDebugInfo(err: unknown): Record<string, unknown> {
-  const anyErr = err as
-    | (Error & { code?: unknown; result?: unknown; name?: string })
-    | null
-    | undefined;
-  return {
-    name: anyErr?.name ?? (err == null ? String(err) : typeof err),
-    message: errorMessage(err),
-    code: anyErr?.code,
-    result: anyErr?.result,
-    stack:
-      typeof anyErr?.stack === "string"
-        ? textDebugInfo(anyErr.stack, 800)
-        : undefined,
-  };
-}
-
-function readingRouteStringDiagnostics(value: string): Record<string, unknown> {
-  const invalidControlSamples: Array<Record<string, unknown>> = [];
-  const surrogateSamples: Array<Record<string, unknown>> = [];
-  let invalidControls = 0;
-  let c1Controls = 0;
-  let loneSurrogates = 0;
-  let replacementChars = 0;
-  let lineSeparators = 0;
-
-  for (let index = 0; index < value.length; index++) {
-    const code = value.charCodeAt(index);
-    if ((code >= 0x00 && code < 0x09) || (code > 0x0d && code < 0x20)) {
-      invalidControls++;
-      if (invalidControlSamples.length < 8) {
-        invalidControlSamples.push(readingRouteCodeUnitDebug(value, index));
-      }
-    } else if (code >= 0x7f && code <= 0x9f) {
-      c1Controls++;
-      if (invalidControlSamples.length < 8) {
-        invalidControlSamples.push(readingRouteCodeUnitDebug(value, index));
-      }
-    }
-
-    if (code === 0xfffd) replacementChars++;
-    if (code === 0x2028 || code === 0x2029) lineSeparators++;
-
-    const isHigh = code >= 0xd800 && code <= 0xdbff;
-    const isLow = code >= 0xdc00 && code <= 0xdfff;
-    const next = value.charCodeAt(index + 1);
-    const prev = value.charCodeAt(index - 1);
-    const pairedHigh = isHigh && next >= 0xdc00 && next <= 0xdfff;
-    const pairedLow = isLow && prev >= 0xd800 && prev <= 0xdbff;
-    if ((isHigh && !pairedHigh) || (isLow && !pairedLow)) {
-      loneSurrogates++;
-      if (surrogateSamples.length < 8) {
-        surrogateSamples.push(readingRouteCodeUnitDebug(value, index));
-      }
-    }
-  }
-
-  return {
-    length: value.length,
-    codePoints: Array.from(value).length,
-    invalidControls,
-    c1Controls,
-    loneSurrogates,
-    replacementChars,
-    lineSeparators,
-    invalidControlSamples,
-    surrogateSamples,
-  };
-}
-
-function readingRouteCodeUnitDebug(
-  value: string,
-  index: number,
-): Record<string, unknown> {
-  const code = value.charCodeAt(index);
-  return {
-    index,
-    codeUnit: `0x${code.toString(16).padStart(4, "0")}`,
-    before: value.slice(Math.max(0, index - 12), index).replace(/\s+/g, " "),
-    after: value.slice(index + 1, index + 13).replace(/\s+/g, " "),
-  };
-}
-
-function encodeURIComponentWithDebug(
-  value: string,
-  label: string,
-  detail: Record<string, unknown>,
-): string {
-  try {
-    return encodeURIComponent(value);
-  } catch (err) {
-    debugZai("reading-route.link:encode-failed", {
-      label,
-      ...detail,
-      value: textDebugInfo(value, 200),
-      chars: readingRouteStringDiagnostics(value),
-      error: readingRouteErrorDebugInfo(err),
-    });
-    throw err;
-  }
-}
-
-function assignHrefWithDebug(
-  link: HTMLAnchorElement,
-  href: string,
-  label: string,
-  detail: Record<string, unknown>,
-): void {
-  try {
-    link.href = href;
-  } catch (err) {
-    debugZai("reading-route.link:href-failed", {
-      label,
-      ...detail,
-      href: textDebugInfo(href, 200),
-      chars: readingRouteStringDiagnostics(href),
-      error: readingRouteErrorDebugInfo(err),
-    });
-    throw err;
-  }
-}
-
-function setAttributeWithDebug(
-  element: Element,
-  name: string,
-  value: string,
-  label: string,
-  detail: Record<string, unknown>,
-): void {
-  try {
-    element.setAttribute(name, value);
-  } catch (err) {
-    debugZai("reading-route.link:attribute-failed", {
-      label,
-      name,
-      ...detail,
-      value: textDebugInfo(value, 200),
-      chars: readingRouteStringDiagnostics(value),
-      error: readingRouteErrorDebugInfo(err),
     });
     throw err;
   }
