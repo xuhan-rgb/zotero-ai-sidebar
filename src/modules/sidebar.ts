@@ -8017,6 +8017,19 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
     body.append(empty);
   }
   sidebar.noteMount.append(head, body);
+
+  // Pre-warm the expensive bits a section click needs, in the background, so the
+  // first jump is fast: the PDF text-layer extraction (per Reader) and the LaTeX
+  // section parse (per item). Both are cached, so this is a no-op on later opens.
+  if (stored?.data && itemID != null) {
+    const reader = getReaderForAttachmentOrItem(
+      doc.defaultView,
+      itemID,
+      null,
+    );
+    if (reader) void getSharedPdfLocator(reader).catch(() => undefined);
+    if (itemKey) void cachedArxivSections(itemKey).catch(() => undefined);
+  }
 }
 
 // Trigger overview generation from the panel. The model calls
