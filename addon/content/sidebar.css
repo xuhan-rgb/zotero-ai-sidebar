@@ -3313,7 +3313,11 @@ div.math-fallback {
   cursor: pointer;
 }
 .overview-jump:hover {
-  background: var(--zai-bg-soft, #fbfaf7);
+  background-image: linear-gradient(
+    rgba(255, 255, 255, 0.55),
+    rgba(255, 255, 255, 0.55)
+  );
+  box-shadow: 0 1px 5px rgba(60, 40, 20, 0.1);
 }
 .overview-sec-head {
   display: flex;
@@ -3477,7 +3481,11 @@ div.math-fallback {
   cursor: pointer;
 }
 .overview-kid.overview-jump:hover {
-  background: var(--zai-bg-soft, #fbfaf7);
+  background-image: linear-gradient(
+    rgba(255, 255, 255, 0.55),
+    rgba(255, 255, 255, 0.55)
+  );
+  box-shadow: 0 1px 5px rgba(60, 40, 20, 0.1);
 }
 .overview-kid-no {
   font-weight: 700;
