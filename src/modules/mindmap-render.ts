@@ -428,6 +428,10 @@ function copySvgAsImage(
     .zai-mm-node-section text, .zai-mm-node-section tspan { font-weight:500; }
     .zai-mm-node-root rect { fill:#fff0e7; stroke:#c0673d; stroke-width:2px; }
     .zai-mm-node-root text, .zai-mm-node-root tspan { font-weight:600; fill:#a94e25; font-size:12px; }
+    .zai-mm-node-result rect { fill:#eaf4ff; stroke:#3b7ec0; stroke-width:1.4px; }
+    .zai-mm-node-result text, .zai-mm-node-result tspan { font-weight:600; fill:#2f6aa0; }
+    .zai-mm-node-innovation rect { fill:#eaf5ea; stroke:#4a9a4a; stroke-width:1.8px; }
+    .zai-mm-node-innovation text, .zai-mm-node-innovation tspan { font-weight:700; fill:#2f6b2f; }
   `;
 
   // Clone SVG and embed the style; restore explicit pixel dimensions for rasterisation
