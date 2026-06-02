@@ -18,6 +18,15 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 - **Bring your own model** — Anthropic, OpenAI, or any OpenAI-compatible endpoint; all configured locally in Zotero preferences.
 - **Local-first, and you own the sync target** — nothing leaves this machine until you turn on WebDAV sync, which pushes a single `state.json` to *your own* endpoint. It carries settings, model presets (API keys included), chat history, PDF annotations, and translation cache — never to zotero.org or any third party.
 
+## What's New in v0.6.0-preview.1
+
+> Preview build, published as a GitHub **prerelease**. Stable users can stay on v0.5.4; grab the `.xpi` from the [v0.6.0-preview.1 release](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/tag/v0.6.0-preview.1) to try the new overview map.
+
+- **Whole-paper overview map (全文总览)**: a dedicated middle-column view — a core-summary narrative, a section skeleton grouped by phase (motivation / method / validation) with one-line gists and innovation / result markers, collapsible subsections, and a folded structural flowchart. Generated on demand through the model's tool loop; no automatic full-PDF send.
+- **Click-to-jump with a sticky header**: clicking a section navigates the PDF to it — using the PDF's embedded outline for an exact scroll-to-top, with a text-match fallback. The header keeps a ↶ back-stack, an ↩ jump-to-`在读` control, and a 🔒 lock to browse without moving your anchor.
+- **Reading position remembered & synced**: each paper's `在读` anchor persists across restarts and travels in `state.json`; a `🕘 最近阅读` list in the chat header jumps you back to recently-read papers across the whole library and across machines. Export the overview as standalone HTML (`↗ 浏览器`), or let it auto-save as a child HTML attachment.
+- **Internal**: `sidebar.ts` was split from ~12.9k lines into 14 focused modules (−38%) and ~790 lines of dead code removed — no behavior change versus the features above.
+
 ## Latest patch: v0.5.4
 
 - **Claude gets the full tool loop**: the Anthropic provider now runs the same model-driven tool loop as OpenAI — Claude calls the local Zotero/arXiv tools, and tool-returned arXiv figures are delivered as native image blocks so vision-capable Claude models actually see them. Extended thinking and tool use replay correctly across turns.
