@@ -139,12 +139,14 @@ function errorMessage(prefix: string, err: unknown): string {
 }
 
 function formatPullMessage(applied: ApplySnapshotResult): string {
-  const { annotations, threads, translateCache, overviews } = applied;
+  const { annotations, threads, translateCache, overviews, readingPositions } =
+    applied;
   const lines = [
-    `已应用云端配置（账号、显示、提示词、联网/MCP、翻译设置、AI 对话、翻译缓存、全文总览）。`,
+    `已应用云端配置（账号、显示、提示词、联网/MCP、翻译设置、AI 对话、翻译缓存、全文总览、阅读位置）。`,
     `AI 对话：导入 ${threads.imported} 条 / 跳过本地更新 ${threads.unchanged} 条 / 未匹配文献 ${threads.unresolved} 条。`,
     `翻译缓存：导入 ${translateCache.imported} 条 / 跳过本地更新 ${translateCache.unchanged} 条 / 跳过其它 ${translateCache.skipped} 条。`,
     `全文总览：导入 ${overviews.imported} 条 / 跳过本地更新 ${overviews.unchanged} 条 / 跳过其它 ${overviews.skipped} 条。`,
+    `阅读位置：导入 ${readingPositions.imported} 条 / 跳过本地更新 ${readingPositions.unchanged} 条 / 跳过其它 ${readingPositions.skipped} 条。`,
     `PDF 注释：导入 ${annotations.imported} 条 / 跳过本地更新 ${annotations.unchanged} 条 / 未匹配 PDF ${annotations.unresolved} 条 / 跳过其它 ${annotations.skipped} 条。`,
   ];
   if (threads.unresolved > 0 || annotations.unresolved > 0) {

@@ -54,6 +54,13 @@ import {
   type ImportOverviewsResult,
   type OverviewStoreSnapshot,
 } from '../context/overview-store';
+import {
+  exportReadingStore,
+  importReadingStore,
+  normalizeReadingStore,
+  type ImportReadingResult,
+  type ReadingStoreSnapshot,
+} from '../context/reading-store';
 
 // Sync snapshot: the on-the-wire JSON we push to / pull from the cloud.
 //
@@ -86,6 +93,9 @@ export interface SyncSnapshot {
   // Per-item rendered paper overviews; optional on the wire for payloads
   // uploaded before overview sync existed.
   overviews?: OverviewStoreSnapshot;
+  // Per-item reading positions ("在读" anchor) + recently-read list; optional on
+  // the wire for payloads uploaded before reading-position sync existed.
+  readingPositions?: ReadingStoreSnapshot;
 }
 
 export interface ApplySnapshotResult {
@@ -93,15 +103,18 @@ export interface ApplySnapshotResult {
   threads: ImportThreadsResult;
   translateCache: ImportTranslateCacheResult;
   overviews: ImportOverviewsResult;
+  readingPositions: ImportReadingResult;
 }
 
 export async function buildSyncSnapshot(prefs: PrefsStore): Promise<SyncSnapshot> {
-  const [annotations, threads, translateCache, overviews] = await Promise.all([
-    exportAllAnnotations(),
-    exportAllThreads(),
-    exportTranslateCache(),
-    exportOverviews(),
-  ]);
+  const [annotations, threads, translateCache, overviews, readingPositions] =
+    await Promise.all([
+      exportAllAnnotations(),
+      exportAllThreads(),
+      exportTranslateCache(),
+      exportOverviews(),
+      exportReadingStore(),
+    ]);
   return {
     schema: SYNC_SCHEMA,
     exportedAt: new Date().toISOString(),
@@ -114,6 +127,7 @@ export async function buildSyncSnapshot(prefs: PrefsStore): Promise<SyncSnapshot
     threads,
     translateCache,
     overviews,
+    readingPositions,
   };
 }
 
@@ -146,6 +160,7 @@ export function parseSyncSnapshot(raw: string): SyncSnapshot {
     threads: normalizePortableThreads(parsed.threads),
     translateCache: normalizeTranslateCache(parsed.translateCache),
     overviews: normalizeOverviewStore(parsed.overviews),
+    readingPositions: normalizeReadingStore(parsed.readingPositions),
   };
 }
 
@@ -158,13 +173,15 @@ export async function applySyncSnapshot(
   saveQuickPromptSettings(prefs, snapshot.quickPrompts);
   saveToolSettings(prefs, snapshot.toolSettings);
   if (snapshot.translateSettings) saveTranslateSettings(prefs, snapshot.translateSettings);
-  const [annotations, threads, translateCache, overviews] = await Promise.all([
-    importAllAnnotations(snapshot.annotations),
-    importAllThreads(snapshot.threads ?? []),
-    importTranslateCache(snapshot.translateCache),
-    importOverviews(snapshot.overviews),
-  ]);
-  return { annotations, threads, translateCache, overviews };
+  const [annotations, threads, translateCache, overviews, readingPositions] =
+    await Promise.all([
+      importAllAnnotations(snapshot.annotations),
+      importAllThreads(snapshot.threads ?? []),
+      importTranslateCache(snapshot.translateCache),
+      importOverviews(snapshot.overviews),
+      importReadingStore(snapshot.readingPositions),
+    ]);
+  return { annotations, threads, translateCache, overviews, readingPositions };
 }
 
 function normalizePortableThreads(value: unknown): PortableThread[] {

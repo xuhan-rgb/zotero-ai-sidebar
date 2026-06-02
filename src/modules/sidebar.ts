@@ -221,6 +221,7 @@ import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import { appendLocalPath } from "../utils/local-path";
 import { loadOverview, saveOverview } from "../context/overview-store";
+import { loadReading, saveReading } from "../context/reading-store";
 import type {
   OverviewData,
   OverviewSection,
@@ -8100,6 +8101,18 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   // The user may have switched away while the async load was in flight.
   if (!sidebar.overviewActive) return;
 
+  // Restore this item's persisted 在读 anchor (survives restart + syncs across
+  // machines), and stamp it recently-read. The back stack / lock stay ephemeral.
+  if (stored?.data && itemKey) {
+    const rec = await loadReading(itemKey);
+    if (!sidebar.overviewActive) return;
+    sidebar.overviewNav = { history: [], locked: false, readingNo: rec?.readingNo };
+    void saveReading(itemKey, {
+      readingNo: rec?.readingNo,
+      title: stored.data.title,
+    });
+  }
+
   sidebar.noteMount.replaceChildren();
   const head = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   head.className = "zai-note-window-head";
@@ -8143,8 +8156,17 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
         nav: (sidebar.overviewNav ??= { history: [], locked: false }),
         maxBack: contextPolicy.overviewBackStackMax,
         onJumpToSection: panelState
-          ? (section) =>
-              void jumpToOverviewSection(sidebar.mount, panelState, section)
+          ? (section) => {
+              void jumpToOverviewSection(sidebar.mount, panelState, section);
+              // Persist the (possibly new) 在读 anchor so it survives restart
+              // and syncs across machines. nav.readingNo is already updated.
+              if (itemKey && stored?.data) {
+                void saveReading(itemKey, {
+                  readingNo: sidebar.overviewNav?.readingNo,
+                  title: stored.data.title,
+                });
+              }
+            }
           : undefined,
         onOpenInBrowser: () => void openOverviewInBrowser(sidebar),
       }),
