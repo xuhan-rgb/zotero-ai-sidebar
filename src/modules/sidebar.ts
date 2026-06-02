@@ -7860,7 +7860,9 @@ async function writeOverviewAttachment(
               parentItemID?: number;
               title?: string;
               contentType?: string;
-            }): Promise<unknown>;
+              charset?: string;
+            }): Promise<Zotero.Item>;
+            LINK_MODE_IMPORTED_URL: number;
           };
         };
       }
@@ -7888,12 +7890,27 @@ async function writeOverviewAttachment(
         await att.eraseTx?.();
       }
     }
-    await ZW.Attachments.importFromFile({
+    const created = (await ZW.Attachments.importFromFile({
       file: path,
       parentItemID: parent.id,
       title: OVERVIEW_ATTACHMENT_TITLE,
       contentType: "text/html",
-    });
+      charset: "utf-8",
+    })) as Zotero.Item & {
+      attachmentLinkMode?: number;
+      saveTx?: () => Promise<void>;
+    };
+    // Display as a saved web page (snapshot / imported_url) so Zotero shows the
+    // HTML/web icon — an imported-FILE HTML attachment only gets the generic
+    // document icon (Zotero special-cases just PDF/EPUB). The file is unchanged.
+    try {
+      created.attachmentLinkMode = ZW.Attachments.LINK_MODE_IMPORTED_URL;
+      await created.saveTx?.();
+    } catch (linkErr) {
+      debugZai("overview.save-item.icon.failed", {
+        error: errorMessage(linkErr),
+      });
+    }
   } catch (err) {
     debugZai("overview.save-item.failed", { error: errorMessage(err) });
   }
