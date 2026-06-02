@@ -3314,10 +3314,10 @@ div.math-fallback {
 }
 .overview-jump:hover {
   background-image: linear-gradient(
-    rgba(0, 0, 0, 0.08),
-    rgba(0, 0, 0, 0.08)
+    rgba(192, 103, 61, 0.14),
+    rgba(192, 103, 61, 0.14)
   );
-  box-shadow: 0 1px 6px rgba(60, 40, 20, 0.16);
+  box-shadow: 0 1px 6px rgba(60, 40, 20, 0.14);
 }
 .overview-sec-head {
   display: flex;
@@ -3458,10 +3458,10 @@ div.math-fallback {
 }
 .overview-sec.overview-clickable:hover {
   background-image: linear-gradient(
-    rgba(0, 0, 0, 0.08),
-    rgba(0, 0, 0, 0.08)
+    rgba(192, 103, 61, 0.14),
+    rgba(192, 103, 61, 0.14)
   );
-  box-shadow: 0 1px 6px rgba(60, 40, 20, 0.16);
+  box-shadow: 0 1px 6px rgba(60, 40, 20, 0.14);
 }
 .overview-kids {
   list-style: none;
@@ -3482,10 +3482,10 @@ div.math-fallback {
 }
 .overview-kid.overview-jump:hover {
   background-image: linear-gradient(
-    rgba(0, 0, 0, 0.08),
-    rgba(0, 0, 0, 0.08)
+    rgba(192, 103, 61, 0.14),
+    rgba(192, 103, 61, 0.14)
   );
-  box-shadow: 0 1px 6px rgba(60, 40, 20, 0.16);
+  box-shadow: 0 1px 6px rgba(60, 40, 20, 0.14);
 }
 .overview-kid-no {
   font-weight: 700;
