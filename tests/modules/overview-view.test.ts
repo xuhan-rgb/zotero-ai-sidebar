@@ -47,60 +47,99 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(jumped).toContain("1");
   });
 
-  it("marks activeNo as 在读 and moves the marker on click", () => {
+  it("marks nav.readingNo as 在读; a jump moves the anchor + pushes history", () => {
+    const nav = { history: [] as string[], locked: false, readingNo: "1" };
+    const jumped: string[] = [];
     const block = renderOverviewBlock(document, data, {
-      onJumpToSection: () => {},
-      activeNo: "1",
+      onJumpToSection: (s) => jumped.push(s.no),
+      nav,
     });
-    // §1 is a leaf → its main row carries the marker on render
     const intro = block.querySelectorAll(".overview-sec")[0];
     expect(intro.querySelector(".overview-sec-main.is-reading")).toBeTruthy();
     expect(block.querySelectorAll(".is-reading").length).toBe(1);
-    // clicking subsection 3.1 moves the marker there, clearing §1
+    // clicking subsection 3.1 moves the anchor there; §1 goes onto the stack
     const kid = block.querySelector(".overview-kid") as HTMLElement;
     kid.click();
     expect(kid.classList.contains("is-reading")).toBe(true);
     expect(intro.querySelector(".is-reading")).toBeNull();
-    expect(block.querySelectorAll(".is-reading").length).toBe(1);
-  });
-
-  it("morphs the meta into a 回到在读 control that re-jumps", () => {
-    const jumped: string[] = [];
-    const block = renderOverviewBlock(document, data, {
-      onJumpToSection: (s) => jumped.push(s.no),
-      activeNo: "3.1",
-    });
-    const meta = block.querySelector(".overview-meta") as HTMLElement;
-    expect(meta.classList.contains("overview-meta-locate")).toBe(true);
-    expect(meta.textContent).toContain("在读");
-    expect(meta.textContent).toContain("3.1");
-    meta.click();
+    expect(nav.readingNo).toBe("3.1");
+    expect(nav.history).toEqual(["1"]);
     expect(jumped).toEqual(["3.1"]);
   });
 
-  it("meta shows the chapter count when nothing is 在读", () => {
-    const block = renderOverviewBlock(document, data, {});
-    const meta = block.querySelector(".overview-meta") as HTMLElement;
-    expect(meta.classList.contains("overview-meta-locate")).toBe(false);
-    expect(meta.textContent).toContain("4 章");
+  it("shows the count when nothing is 在读; ↩在读 control re-jumps", () => {
+    const empty = renderOverviewBlock(document, data, {});
+    const meta0 = empty.querySelector(".overview-meta") as HTMLElement;
+    expect(meta0.textContent).toContain("4 章");
+    expect(meta0.style.display).not.toBe("none");
+    expect(
+      (empty.querySelector(".overview-reading") as HTMLElement).style.display,
+    ).toBe("none");
+
+    const jumped: string[] = [];
+    const nav = { history: [] as string[], locked: false, readingNo: "3.1" };
+    const block = renderOverviewBlock(document, data, {
+      onJumpToSection: (s) => jumped.push(s.no),
+      nav,
+    });
+    expect((block.querySelector(".overview-meta") as HTMLElement).style.display).toBe(
+      "none",
+    );
+    const label = block.querySelector(".overview-reading-label") as HTMLElement;
+    expect(label.textContent).toContain("3.1");
+    label.click();
+    expect(jumped).toEqual(["3.1"]);
   });
 
-  it("morphs the meta live when a section is clicked (no re-render needed)", () => {
+  it("lock pins the anchor: a click marks a dashed browse cursor, 在读 stays", () => {
+    const jumped: string[] = [];
+    const nav = { history: [] as string[], locked: false, readingNo: "1" };
     const block = renderOverviewBlock(document, data, {
-      onJumpToSection: () => {},
+      onJumpToSection: (s) => jumped.push(s.no),
+      nav,
     });
-    const meta = block.querySelector(".overview-meta") as HTMLElement;
-    expect(meta.classList.contains("overview-meta-locate")).toBe(false);
-    expect(meta.textContent).toContain("4 章");
-    // click leaf §1 → meta becomes 回到在读 immediately
-    (
-      block.querySelectorAll(".overview-sec")[0].querySelector(
-        ".overview-sec-head",
-      ) as HTMLElement
-    ).click();
-    expect(meta.classList.contains("overview-meta-locate")).toBe(true);
-    expect(meta.textContent).toContain("在读");
-    expect(meta.textContent).toContain("1");
+    (block.querySelector(".overview-lock") as HTMLElement).click();
+    expect(nav.locked).toBe(true);
+    // §9 is a leaf (top-level [1,3,9] → index 2)
+    const exp = block.querySelectorAll(".overview-sec")[2];
+    (exp.querySelector(".overview-sec-main") as HTMLElement).click();
+    expect(nav.readingNo).toBe("1");
+    expect(nav.browseNo).toBe("9");
+    expect(exp.querySelector(".overview-sec-main.is-browsing")).toBeTruthy();
+    expect(
+      block.querySelectorAll(".overview-sec")[0].querySelector(".is-reading"),
+    ).toBeTruthy();
+    expect(jumped).toEqual(["9"]);
+    // unlocking clears the browse cursor
+    (block.querySelector(".overview-lock") as HTMLElement).click();
+    expect(nav.locked).toBe(false);
+    expect(nav.browseNo).toBeUndefined();
+    expect(block.querySelector(".is-browsing")).toBeNull();
+  });
+
+  it("↶返回 walks the back stack one step at a time", () => {
+    const jumped: string[] = [];
+    const nav = { history: [] as string[], locked: false, readingNo: "1" };
+    const block = renderOverviewBlock(document, data, {
+      onJumpToSection: (s) => jumped.push(s.no),
+      nav,
+    });
+    const back = block.querySelector(".overview-back") as HTMLElement;
+    expect(back.style.display).toBe("none");
+    (block.querySelectorAll(".overview-sec")[2].querySelector(
+      ".overview-sec-main",
+    ) as HTMLElement).click(); // → 9, history [1]
+    (block.querySelector(".overview-kid") as HTMLElement).click(); // → 3.1, history [1,9]
+    expect(nav.history).toEqual(["1", "9"]);
+    expect(back.style.display).not.toBe("none");
+    expect(back.textContent).toContain("9");
+    back.click(); // → 9
+    expect(nav.readingNo).toBe("9");
+    expect(nav.history).toEqual(["1"]);
+    back.click(); // → 1
+    expect(nav.readingNo).toBe("1");
+    expect(nav.history).toEqual([]);
+    expect(jumped).toEqual(["9", "3.1", "9", "1"]);
   });
 
   it("renders without narrative/flowchart when absent", () => {

@@ -7,27 +7,29 @@ import { renderMindmapBlock } from "./mindmap-render";
 
 // Read-only renderer for the whole-paper overview (lean redesign):
 //   核心讲述 → ✦-标注的章节骨架（三阶段 · gist · 创新/效果/淡）→ 折叠的结构图纸
-// One skeleton is the single source of truth (no separate contributions list);
-// the folded flowchart's nodes link back to a section's gist via sectionNo.
-// No contenteditable, so it never fights Zotero Reader keyboard handlers.
+// The sticky header carries the reading-anchor controls: ↶返回 (back stack),
+// ↩在读 (jump-to-anchor), 🔓/🔒 (lock the anchor). No contenteditable, so it
+// never fights Zotero Reader keyboard handlers.
+
+// Session-scoped reading navigation. The view MUTATES this object in place; the
+// sidebar owns it so state (anchor / browse cursor / back stack / lock) survives
+// view re-renders. NOT persisted to disk — resets on Zotero restart.
+export interface OverviewNavState {
+  readingNo?: string; // the sticky 在读 anchor (solid ring + 在读 pill)
+  browseNo?: string; // dashed browse cursor — only meaningful while locked
+  history: string[]; // back stack of positions left behind (capped by maxBack)
+  locked: boolean; // 🔒 pin the anchor: clicks jump only, never move 在读
+}
 
 export interface OverviewViewHandlers {
   // When provided, skeleton rows + flowchart-node detail become click-to-jump.
   onJumpToSection?: (section: OverviewSection) => void;
   // When provided, a header button exports + opens the overview in a browser.
   onOpenInBrowser?: () => void;
-  // Section no the user last jumped into — gets a persistent "在读" marker so
-  // they don't lose track of where they are after reading in the PDF.
-  activeNo?: string;
-}
-
-// Move the "在读" marker to `el`, clearing it from any other row in the block.
-function markReading(el: HTMLElement): void {
-  const root = el.closest(".overview-block");
-  root
-    ?.querySelectorAll(".is-reading")
-    .forEach((x: Element) => x.classList.remove("is-reading"));
-  el.classList.add("is-reading");
+  // Session-scoped nav state (anchor / browse cursor / back stack / lock).
+  nav?: OverviewNavState;
+  // Back-stack cap (policy constant). Defaults to 10.
+  maxBack?: number;
 }
 
 const PHASES: Array<{ key: OverviewPhase; badge: string; name: string }> = [
@@ -39,6 +41,13 @@ const PHASES: Array<{ key: OverviewPhase; badge: string; name: string }> = [
 interface SectionNode {
   section: OverviewSection;
   children: OverviewSection[];
+}
+
+// Per-row wiring shared with renderSectionItem / renderFlowchart.
+interface RowCtx {
+  canJump: boolean;
+  register: (no: string, el: HTMLElement) => void;
+  jump: (section: OverviewSection) => void;
 }
 
 // Group level>1 sections under the preceding level-1 section (document order).
@@ -75,54 +84,145 @@ export function renderOverviewBlock(
   const wrap = doc.createElement("div");
   wrap.className = "overview-block";
 
+  const nav: OverviewNavState = handlers.nav ?? { history: [], locked: false };
+  const maxBack = handlers.maxBack ?? 10;
+  const canJump = !!handlers.onJumpToSection;
+  const rowMap = new Map<string, HTMLElement>();
+  const sectionByNo = (no?: string): OverviewSection | undefined =>
+    no == null ? undefined : data.sections.find((s) => s.no === no);
+
+  // ── sticky header ──
   const header = doc.createElement("div");
   header.className = "overview-header";
   const title = doc.createElement("span");
   title.className = "overview-title";
   title.textContent = "📍 全文总揽";
-  header.append(title);
+
+  const right = doc.createElement("span");
+  right.className = "overview-head-right";
+
   if (handlers.onOpenInBrowser) {
     const openBtn = doc.createElement("button");
     openBtn.className = "overview-open-browser";
     openBtn.textContent = "↗ 浏览器";
     openBtn.title = "在浏览器中打开完整总揽";
     openBtn.addEventListener("click", () => handlers.onOpenInBrowser!());
-    header.append(openBtn);
+    right.append(openBtn);
   }
-  // Meta slot morphs by state (no extra button): when a section is marked 在读
-  // it becomes a one-click "回到在读" — scroll the map to that row + re-jump the
-  // PDF. applyMeta is re-run live on every jump so the control shows the moment
-  // a section is marked, not only after a full re-render.
+  // Chapter count — shown only while nothing is 在读.
   const meta = doc.createElement("span");
-  const countLabel = `${data.sections.length} 章${
+  meta.className = "overview-meta";
+  meta.textContent = `${data.sections.length} 章${
     data.coverage === "uniform-fallback" ? " · 估算分段" : ""
   }`;
-  const applyMeta = (section?: OverviewSection): void => {
-    if (section) {
-      meta.className = "overview-meta overview-meta-locate";
-      meta.textContent = `↩ 在读 ${section.no}`;
-      meta.title = `回到正在读的章节：${section.no} ${section.title}`;
-      meta.onclick = () => {
-        const target = wrap.querySelector(".is-reading") as HTMLElement | null;
-        if (target && typeof target.scrollIntoView === "function") {
-          target.scrollIntoView({ block: "center", behavior: "smooth" });
-        }
-        handlers.onJumpToSection?.(section);
-      };
-    } else {
-      meta.className = "overview-meta";
-      meta.textContent = countLabel;
-      meta.title = "";
-      meta.onclick = null;
+  // ↶ 返回 (back stack).
+  const backBtn = doc.createElement("button");
+  backBtn.className = "overview-back";
+  // ↩ 在读 control (label + lock toggle).
+  const readingCtl = doc.createElement("span");
+  readingCtl.className = "overview-reading";
+  const readingLabel = doc.createElement("span");
+  readingLabel.className = "overview-reading-label";
+  const lockBtn = doc.createElement("span");
+  lockBtn.className = "overview-lock";
+  readingCtl.append(readingLabel, lockBtn);
+  right.append(meta, backBtn, readingCtl);
+  header.append(title, right);
+  wrap.append(header);
+
+  // ── nav controller (mutates `nav` in place; updates DOM live) ──
+  const rowEl = (no?: string) => (no ? rowMap.get(no) : undefined);
+  const scrollToRow = (no?: string): void => {
+    const el = rowEl(no);
+    if (el && typeof el.scrollIntoView === "function") {
+      el.scrollIntoView({ block: "center", behavior: "smooth" });
     }
   };
-  applyMeta(
-    handlers.activeNo != null
-      ? data.sections.find((s) => s.no === handlers.activeNo)
-      : undefined,
-  );
-  header.append(meta);
-  wrap.append(header);
+  // Where a click currently "is": the browse cursor while locked, else 在读.
+  const cur = (): string | undefined =>
+    nav.locked ? nav.browseNo ?? nav.readingNo : nav.readingNo;
+  const setCur = (no: string): void => {
+    if (nav.locked) nav.browseNo = no === nav.readingNo ? undefined : no;
+    else {
+      nav.readingNo = no;
+      nav.browseNo = undefined;
+    }
+  };
+  const pushHistory = (no?: string): void => {
+    if (no == null) return;
+    nav.history.push(no);
+    while (nav.history.length > maxBack) nav.history.shift();
+  };
+  const applyMarkers = (): void => {
+    wrap
+      .querySelectorAll(".is-reading, .is-browsing")
+      .forEach((x: Element) => x.classList.remove("is-reading", "is-browsing"));
+    rowEl(nav.readingNo)?.classList.add("is-reading");
+    if (nav.locked && nav.browseNo && nav.browseNo !== nav.readingNo) {
+      rowEl(nav.browseNo)?.classList.add("is-browsing");
+    }
+  };
+  const applyHeader = (): void => {
+    const reading = sectionByNo(nav.readingNo);
+    if (reading) {
+      meta.style.display = "none";
+      readingCtl.style.display = "";
+      readingCtl.classList.toggle("locked", nav.locked);
+      readingLabel.textContent = `↩ 在读 ${reading.no}`;
+      readingCtl.title = `回到正在读的章节：${reading.no} ${reading.title}`;
+      lockBtn.textContent = nav.locked ? "🔒" : "🔓";
+      lockBtn.title = nav.locked
+        ? "已锁定：点别的章节只跳 PDF、不改在读。点此解锁"
+        : "钉死在读锚点：之后点别的章节只跳转、不改在读";
+    } else {
+      meta.style.display = "";
+      readingCtl.style.display = "none";
+    }
+    if (nav.history.length) {
+      backBtn.style.display = "";
+      backBtn.textContent = `↶ 返回 ${nav.history[nav.history.length - 1]}`;
+      backBtn.title = "退回上一处（同时跳 PDF）";
+    } else {
+      backBtn.style.display = "none";
+    }
+  };
+  const jump = (section: OverviewSection): void => {
+    const from = cur();
+    if (section.no !== from) pushHistory(from);
+    setCur(section.no);
+    applyMarkers();
+    applyHeader();
+    handlers.onJumpToSection?.(section);
+  };
+
+  backBtn.addEventListener("click", () => {
+    if (!nav.history.length) return;
+    const prev = nav.history.pop()!;
+    setCur(prev);
+    applyMarkers();
+    applyHeader();
+    scrollToRow(prev);
+    const s = sectionByNo(prev);
+    if (s) handlers.onJumpToSection?.(s);
+  });
+  readingLabel.addEventListener("click", () => {
+    scrollToRow(nav.readingNo);
+    const s = sectionByNo(nav.readingNo);
+    if (s) handlers.onJumpToSection?.(s);
+  });
+  lockBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    nav.locked = !nav.locked;
+    if (!nav.locked) nav.browseNo = undefined;
+    applyMarkers();
+    applyHeader();
+  });
+
+  const ctx: RowCtx = {
+    canJump,
+    register: (no, el) => rowMap.set(no, el),
+    jump,
+  };
 
   if (data.narrative) {
     const nar = doc.createElement("div");
@@ -152,13 +252,15 @@ export function renderOverviewBlock(
       list.className = "overview-skeleton";
       wrap.append(list);
     }
-    list!.append(renderSectionItem(doc, node, handlers, applyMeta));
+    list!.append(renderSectionItem(doc, node, ctx));
   }
 
   if (data.flowchart && data.flowchart.nodes.length) {
-    wrap.append(renderFlowchart(doc, data, handlers));
+    wrap.append(renderFlowchart(doc, data, ctx));
   }
 
+  applyMarkers();
+  applyHeader();
   return wrap;
 }
 
@@ -201,8 +303,7 @@ function emphasisChip(
 function renderSectionItem(
   doc: Document,
   node: SectionNode,
-  handlers: OverviewViewHandlers,
-  onReading: (section: OverviewSection) => void,
+  ctx: RowCtx,
 ): HTMLElement {
   const { section, children } = node;
   const li = doc.createElement("li");
@@ -242,8 +343,8 @@ function renderSectionItem(
     an.textContent = anchor;
     head.append(an);
   }
-  // Wrap the section's OWN row (head + gist) so hover/click target only this
-  // row — hovering a subsection must not highlight the whole parent section.
+  // Wrap the section's OWN row (head + gist) so hover/selection/emphasis target
+  // only this row — they must NOT bleed behind the subsection list.
   const main = doc.createElement("div");
   main.className = "overview-sec-main";
   main.append(head);
@@ -257,16 +358,10 @@ function renderSectionItem(
   if (children.length) {
     main.classList.add("overview-clickable");
     main.addEventListener("click", () => li.classList.toggle("open"));
-  } else if (handlers.onJumpToSection) {
+  } else if (ctx.canJump) {
     main.classList.add("overview-clickable", "overview-jump");
-    if (handlers.activeNo && section.no === handlers.activeNo) {
-      main.classList.add("is-reading");
-    }
-    main.addEventListener("click", () => {
-      markReading(main);
-      onReading(section);
-      handlers.onJumpToSection!(section);
-    });
+    ctx.register(section.no, main);
+    main.addEventListener("click", () => ctx.jump(section));
   }
   li.append(main);
 
@@ -276,16 +371,11 @@ function renderSectionItem(
     for (const child of children) {
       const cli = doc.createElement("li");
       cli.className = "overview-kid" + emphasisClass(child);
-      if (handlers.onJumpToSection) {
+      cli.setAttribute("data-section-no", child.no);
+      if (ctx.canJump) {
         cli.classList.add("overview-jump");
-        if (handlers.activeNo && child.no === handlers.activeNo) {
-          cli.classList.add("is-reading");
-        }
-        cli.addEventListener("click", () => {
-          markReading(cli);
-          onReading(child);
-          handlers.onJumpToSection!(child);
-        });
+        ctx.register(child.no, cli);
+        cli.addEventListener("click", () => ctx.jump(child));
       }
       if (child.emphasis === "innovation") {
         const star = doc.createElement("span");
@@ -320,7 +410,7 @@ function renderSectionItem(
 function renderFlowchart(
   doc: Document,
   data: OverviewData,
-  handlers: OverviewViewHandlers,
+  ctx: RowCtx,
 ): HTMLElement {
   const card = doc.createElement("div");
   card.className = "overview-fig";
@@ -359,7 +449,7 @@ function renderFlowchart(
   dGist.className = "overview-nd-gist";
   dContent.append(dTitle, dGist);
   let jumpBtn: HTMLButtonElement | null = null;
-  if (handlers.onJumpToSection) {
+  if (ctx.canJump) {
     const acts = doc.createElement("div");
     acts.className = "overview-nd-acts";
     jumpBtn = doc.createElement("button");
@@ -383,8 +473,8 @@ function renderFlowchart(
       dGist.textContent = section?.gist ?? "（该节点无对应章节解释）";
       dHint.style.display = "none";
       dContent.style.display = "block";
-      if (jumpBtn && section && handlers.onJumpToSection) {
-        jumpBtn.onclick = () => handlers.onJumpToSection!(section);
+      if (jumpBtn && section && ctx.canJump) {
+        jumpBtn.onclick = () => ctx.jump(section);
       }
     });
   });

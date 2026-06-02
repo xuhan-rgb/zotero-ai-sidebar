@@ -36,6 +36,9 @@ export interface ContextPolicy {
   maxOutlineEntries: number;
   // Even-window count when headings are too sparse to detect.
   outlineFallbackWindows: number;
+  // Max entries in the overview "↶ 返回" back stack (session-scoped reading
+  // navigation). Pure hygiene cap on a list you basically never fill — no UI.
+  overviewBackStackMax: number;
 
   // --- Annotation handling ----------------------------------------------
   // Cap on annotations returned by `zotero_get_annotations` so a heavily
@@ -105,6 +108,7 @@ export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
   outlinePreviewChars: 120,
   maxOutlineEntries: 40,
   outlineFallbackWindows: 6,
+  overviewBackStackMax: 10,
   maxAnnotations: 80,
   retainedContextTurnCount: 4,
   retainedContextCharBudget: 8000,

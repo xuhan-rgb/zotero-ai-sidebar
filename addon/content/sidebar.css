@@ -3263,15 +3263,21 @@ div.math-fallback {
   margin-top: 10px;
   border: 1px solid var(--zai-border, #e3d8c8);
   border-radius: 10px;
-  overflow: hidden;
   background: var(--zai-bg, #fffdf8);
 }
+/* Sticky so the reading-anchor controls (↶返回 / ↩在读 / 🔒) stay reachable no
+   matter how far you scroll. Binds to the .zai-overview-window-body scroller —
+   .overview-block must NOT set overflow (that would capture the sticky). */
 .overview-header {
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   align-items: center;
   gap: 8px;
   padding: 8px 11px;
   border-bottom: 1px solid var(--zai-border, #e3d8c8);
+  border-radius: 9px 9px 0 0;
   background: var(--zai-bg-soft, #fbfaf7);
 }
 .overview-title {
@@ -3280,20 +3286,65 @@ div.math-fallback {
   color: var(--zai-text, #24211d);
 }
 .overview-meta {
-  margin-left: auto;
   font-size: 10.5px;
   color: var(--zai-text-muted, #9b9183);
 }
-.overview-meta-locate {
-  cursor: pointer;
-  color: #c0673d;
-  font-weight: 600;
+.overview-head-right {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
 }
-.overview-meta-locate:hover {
-  text-decoration: underline;
+/* ↶ 返回 — back stack */
+.overview-back {
+  font-size: 10.5px;
+  border: 1px dashed var(--zai-border, #c9b9a4);
+  background: var(--zai-bg, #fffdf8);
+  color: var(--zai-text-muted, #6b6357);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+.overview-back:hover {
+  border-color: var(--zai-accent, #c0673d);
+  color: var(--zai-accent, #c0673d);
+}
+/* ↩ 在读 control + 🔓/🔒 lock toggle */
+.overview-reading {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--zai-accent, #c0673d);
+  border: 1px solid #e7c3ad;
+  background: #fff4ec;
+  border-radius: 7px;
+  padding: 2px 4px 2px 8px;
+}
+.overview-reading-label {
+  cursor: pointer;
+}
+.overview-reading.locked {
+  background: var(--zai-bg, #fffdf8);
+  border-color: var(--zai-accent, #c0673d);
+}
+.overview-lock {
+  font-size: 12px;
+  line-height: 1;
+  padding: 1px 4px;
+  border-radius: 5px;
+  border: 1px solid transparent;
+  color: var(--zai-text-muted, #9b9183);
+  cursor: pointer;
+}
+.overview-reading.locked .overview-lock {
+  color: #fff;
+  background: var(--zai-accent, #c0673d);
+  border-color: var(--zai-accent, #c0673d);
 }
 .overview-open-browser {
-  margin-left: auto;
   font-size: 10.5px;
   border: 1px solid var(--zai-border, #d8c9b6);
   background: var(--zai-bg, #fffdf8);
@@ -3311,7 +3362,6 @@ div.math-fallback {
   padding: 8px 10px;
 }
 .overview-sec {
-  padding: 5px 6px;
   border-radius: 7px;
 }
 .overview-sec.overview-sub {
@@ -3435,26 +3485,29 @@ div.math-fallback {
   background: #3b7ec0;
   border: 1px solid #3b7ec0;
 }
-.overview-sec.is-innovation {
+/* Emphasis fill/colors stay on the section's OWN row (> .overview-sec-main) and
+   on an innovation subsection itself — they must NOT bleed behind the
+   non-emphasis subsections nested in .overview-kids (that over-claims that every
+   subsection is an innovation). */
+.overview-sec.is-innovation > .overview-sec-main {
   background: #eaf5ea;
   border: 1px solid #bcdcb0;
-  border-left: 3px solid #4a9a4a;
 }
-.overview-sec.is-innovation .overview-sec-title {
+.overview-sec.is-innovation > .overview-sec-main .overview-sec-title {
   color: #2f6b2f;
 }
-.overview-sec.is-result {
+.overview-sec.is-result > .overview-sec-main {
   background: #eaf4ff;
   border: 1px solid #c4def5;
 }
-.overview-sec.is-result .overview-sec-title {
+.overview-sec.is-result > .overview-sec-main .overview-sec-title {
   color: #2f6aa0;
 }
-.overview-sec.is-background .overview-sec-title {
+.overview-sec.is-background > .overview-sec-main .overview-sec-title {
   font-weight: 500;
   color: var(--zai-text-muted, #6b6357);
 }
-.overview-sec.is-background .overview-gist {
+.overview-sec.is-background > .overview-sec-main .overview-gist {
   color: var(--zai-text-muted, #9b9183);
 }
 /* Clickable affordance: every section row highlights on hover. Leaf rows jump
@@ -3463,6 +3516,7 @@ div.math-fallback {
    emphasis rows (innovation/result) also get a consistent selected feel. */
 .overview-sec-main {
   border-radius: 7px;
+  padding: 5px 6px;
 }
 .overview-sec-main.overview-clickable {
   cursor: pointer;
@@ -3494,6 +3548,14 @@ div.math-fallback {
   background: #c0673d;
   border-radius: 5px;
   vertical-align: 1px;
+}
+/* dashed browse cursor — the row jumped to while the anchor is locked.
+   Dashed (vs the solid 在读 ring) = "刚跳到这, 但在读没动". */
+.overview-sec-main.is-browsing,
+.overview-kid.is-browsing {
+  outline: 1.5px dashed rgba(192, 103, 61, 0.78);
+  outline-offset: -3px;
+  border-radius: 7px;
 }
 .overview-kids {
   list-style: none;

@@ -215,7 +215,7 @@ import {
   uniqueStrings,
 } from "./reading-route-reference";
 import { renderMindmapBlock } from "./mindmap-render";
-import { renderOverviewBlock } from "./overview-view";
+import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import { loadOverview, saveOverview } from "../context/overview-store";
 import type { OverviewSection } from "../context/overview-types";
@@ -328,9 +328,9 @@ interface WindowSidebarState {
   noteMount: HTMLElement;
   noteItemID?: number;
   overviewActive?: boolean;
-  // Section no the user last jumped into from the overview map — drives the
-  // "在读" marker. Session-scoped (survives view switches, resets on restart).
-  overviewReadingNo?: string;
+  // Reading navigation for the overview map (在读 anchor / browse cursor / back
+  // stack / lock). Session-scoped: survives view switches, resets on restart.
+  overviewNav?: OverviewNavState;
   noteAutosaveTimer?: number;
   noteAutosavePromise?: Promise<void>;
   noteEditorCleanup?: () => void;
@@ -7839,12 +7839,11 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   if (stored?.data) {
     body.append(
       renderOverviewBlock(doc, stored.data, {
-        activeNo: sidebar.overviewReadingNo,
+        nav: (sidebar.overviewNav ??= { history: [], locked: false }),
+        maxBack: contextPolicy.overviewBackStackMax,
         onJumpToSection: panelState
-          ? (section) => {
-              sidebar.overviewReadingNo = section.no;
-              void jumpToOverviewSection(sidebar.mount, panelState, section);
-            }
+          ? (section) =>
+              void jumpToOverviewSection(sidebar.mount, panelState, section)
           : undefined,
         onOpenInBrowser: () => void openOverviewInBrowser(sidebar),
       }),
