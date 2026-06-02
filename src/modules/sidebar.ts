@@ -2201,8 +2201,11 @@ async function jumpViaPdfOutline(
     if (!entry || !entry.dest || bestScore < 0.6) return false;
 
     // Native, top-aligned navigation — same as clicking the PDF's own outline.
+    // Fire-and-forget: goToDestination returns a Promise from the PDF iframe's
+    // (content) scope; AWAITING it from the plugin (chrome) scope throws an Xray
+    // "Permission denied to access property 'then'". The navigation still runs.
     if (typeof linkService.goToDestination === "function") {
-      await linkService.goToDestination(entry.dest);
+      linkService.goToDestination(entry.dest);
       return true;
     }
     if (typeof linkService.navigateTo === "function") {
@@ -2231,16 +2234,30 @@ async function jumpToPageTopViaDest(
   if (!app?.pdfDocument || !linkService || !rect) return false;
   try {
     const page = await app.pdfDocument.getPage(pageIndex + 1);
-    const ref = page?.ref;
+    // This reader's PDF.js doesn't expose page.ref directly; the page reference
+    // lives in the internal _pageInfo. Try both.
+    const ref = page?.ref ?? page?._pageInfo?.ref;
     if (!ref) return false;
     const [x0, , , y1] = rect;
     const dest = [ref, { name: "XYZ" }, x0, y1, null];
+    // goToDestination's async work runs in the PDF iframe's (content) scope and
+    // can't read objects we built here (chrome) — it silently no-ops. Re-create
+    // the dest IN the content scope by JSON round-tripping through the iframe
+    // window (a string crosses compartments fine), so it's content-readable.
+    const win = (
+      app?.pdfViewer?.container as
+        | { ownerDocument?: { defaultView?: { JSON?: typeof JSON } } }
+        | undefined
+    )?.ownerDocument?.defaultView;
+    const navDest = win?.JSON ? win.JSON.parse(JSON.stringify(dest)) : dest;
+    // Fire-and-forget (no await): awaiting the content-scope Promise from the
+    // plugin scope throws an Xray "Permission denied to access 'then'".
     if (typeof linkService.goToDestination === "function") {
-      await linkService.goToDestination(dest);
+      linkService.goToDestination(navDest);
       return true;
     }
     if (typeof linkService.navigateTo === "function") {
-      linkService.navigateTo(dest);
+      linkService.navigateTo(navDest);
       return true;
     }
     return false;
