@@ -3446,13 +3446,14 @@ div.math-fallback {
   color: var(--zai-text-muted, #9b9183);
 }
 /* Clickable affordance: every section row highlights on hover. Leaf rows jump
-   to the PDF, rows with subsections expand/collapse. Emphasis rows keep their
-   own colored background instead of the gray hover. */
+   to the PDF, rows with subsections expand/collapse. Uses a translucent
+   overlay so it works on top of ANY base color (gray / green / blue) — so
+   emphasis rows (innovation/result) also get a consistent selected feel. */
 .overview-sec.overview-clickable {
   cursor: pointer;
 }
-.overview-sec.overview-clickable:hover:not(.is-innovation):not(.is-result) {
-  background: var(--zai-bg-soft, #f4efe6);
+.overview-sec.overview-clickable:hover {
+  background-image: linear-gradient(rgba(0, 0, 0, 0.05), rgba(0, 0, 0, 0.05));
 }
 .overview-kids {
   list-style: none;
