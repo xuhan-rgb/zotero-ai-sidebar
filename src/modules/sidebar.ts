@@ -217,6 +217,7 @@ import {
 import { renderMindmapBlock } from "./mindmap-render";
 import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
 import { buildOverviewExportHtml } from "./overview-export";
+import { appendLocalPath } from "../utils/local-path";
 import { loadOverview, saveOverview } from "../context/overview-store";
 import type { OverviewSection } from "../context/overview-types";
 import { clonePlainRecord, finiteNumber } from "./plain-utils";
@@ -7757,7 +7758,7 @@ async function openOverviewInBrowser(
     states.get(sidebar.mount)?.itemID ?? null,
   );
   const stored = itemKey ? await loadOverview(itemKey) : null;
-  if (!stored?.data) {
+  if (!stored?.data || !itemKey) {
     setTempLoadMarkStatus(sidebar.mount, "暂无总览");
     return;
   }
@@ -7768,16 +7769,43 @@ async function openOverviewInBrowser(
       collectPluginCss(doc),
     );
     const Z = (globalThis as unknown as { Zotero: ZoteroExportApi }).Zotero;
-    const dir = Z.DataDirectory?.dir ?? Z.DataDirectory?.path ?? Z.Profile.dir;
-    const sep = dir.includes("\\") ? "\\" : "/";
-    const path =
-      dir.replace(/[\\/]+$/g, "") + sep + "zotero-ai-sidebar-overview.html";
+    const root = Z.DataDirectory?.dir ?? Z.DataDirectory?.path ?? Z.Profile.dir;
+    // One HTML per paper, in a dedicated subfolder of the data dir. Keeps the
+    // data-dir root clean; never written into Zotero's storage/, so it is not
+    // synced and Zotero does not treat it as an attachment.
+    const folder = appendLocalPath(root, "zotero-ai-sidebar");
+    const fileName = `overview-${safeFileTitle(stored.data.title)}-${itemKey}.html`;
+    const path = appendLocalPath(folder, fileName);
+    const IO = (
+      globalThis as unknown as {
+        IOUtils?: {
+          makeDirectory(
+            p: string,
+            o?: { ignoreExisting?: boolean },
+          ): Promise<void>;
+        };
+      }
+    ).IOUtils;
+    if (IO) await IO.makeDirectory(folder, { ignoreExisting: true });
     await Z.File.putContentsAsync(path, html);
     Z.launchFile(path);
   } catch (err) {
     setTempLoadMarkStatus(sidebar.mount, "打开失败");
     debugZai("overview.open-browser.failed", { error: errorMessage(err) });
   }
+}
+
+// Filename-safe slice of the paper title: drop characters illegal in file names
+// (keep CJK / letters / digits), collapse whitespace to dashes, cap length.
+function safeFileTitle(title: string | undefined): string {
+  const cleaned = (title ?? "")
+    .replace(/[\\/:*?"<>| -]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 60)
+    .replace(/ /g, "-")
+    .replace(/^[-._]+|[-._]+$/g, "");
+  return cleaned || "untitled";
 }
 
 // Render the 总览 view into the note column: a custom DOM page (section
