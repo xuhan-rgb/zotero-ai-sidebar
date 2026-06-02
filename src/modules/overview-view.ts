@@ -202,23 +202,26 @@ function renderSectionItem(
     an.textContent = anchor;
     head.append(an);
   }
-  // Click rule: a section WITH subsections expands/collapses; a leaf jumps to
-  // the PDF. Both get a hover background as the clickable affordance.
-  if (children.length) {
-    li.classList.add("overview-clickable");
-    head.addEventListener("click", () => li.classList.toggle("open"));
-  } else if (handlers.onJumpToSection) {
-    li.classList.add("overview-clickable", "overview-jump");
-    head.addEventListener("click", () => handlers.onJumpToSection!(section));
-  }
-  li.append(head);
-
+  // Wrap the section's OWN row (head + gist) so hover/click target only this
+  // row — hovering a subsection must not highlight the whole parent section.
+  const main = doc.createElement("div");
+  main.className = "overview-sec-main";
+  main.append(head);
   if (section.gist) {
     const gist = doc.createElement("div");
     gist.className = "overview-gist";
     gist.textContent = section.gist;
-    li.append(gist);
+    main.append(gist);
   }
+  // Click rule: a section WITH subsections expands/collapses; a leaf jumps.
+  if (children.length) {
+    main.classList.add("overview-clickable");
+    main.addEventListener("click", () => li.classList.toggle("open"));
+  } else if (handlers.onJumpToSection) {
+    main.classList.add("overview-clickable", "overview-jump");
+    main.addEventListener("click", () => handlers.onJumpToSection!(section));
+  }
+  li.append(main);
 
   if (children.length) {
     const kids = doc.createElement("ul");

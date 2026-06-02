@@ -3404,7 +3404,7 @@ div.math-fallback {
   display: inline-block;
   transition: transform 0.12s;
 }
-.overview-sec.open > .overview-sec-head > .overview-caret {
+.overview-sec.open .overview-caret {
   transform: rotate(90deg);
 }
 .overview-star {
@@ -3453,10 +3453,13 @@ div.math-fallback {
    to the PDF, rows with subsections expand/collapse. Uses a translucent
    overlay so it works on top of ANY base color (gray / green / blue) — so
    emphasis rows (innovation/result) also get a consistent selected feel. */
-.overview-sec.overview-clickable {
+.overview-sec-main {
+  border-radius: 7px;
+}
+.overview-sec-main.overview-clickable {
   cursor: pointer;
 }
-.overview-sec.overview-clickable:hover {
+.overview-sec-main.overview-clickable:hover {
   background-image: linear-gradient(
     rgba(192, 103, 61, 0.14),
     rgba(192, 103, 61, 0.14)
