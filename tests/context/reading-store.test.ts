@@ -49,6 +49,15 @@ describe("reading-store", () => {
     expect(recent[1].readingNo).toBeUndefined();
   });
 
+  it("a read event without readingNo keeps the stored 在读 anchor", async () => {
+    await saveReading("K1", { readingNo: "5.2", title: "Paper One" }, 100);
+    // a plain "read this paper" stamp (no section) must NOT wipe the anchor
+    await saveReading("K1", { title: "Paper One" }, 200);
+    const got = await loadReading("K1");
+    expect(got?.readingNo).toBe("5.2");
+    expect(got?.updatedAt).toBe(200);
+  });
+
   it("merges last-write-wins by updatedAt on import", async () => {
     await saveReading("K", { readingNo: "1", title: "old" }, 100);
     const r1 = await importReadingStore({

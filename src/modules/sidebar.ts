@@ -667,7 +667,31 @@ function capturePanelState(mount: HTMLElement, state: PanelState) {
   }
 }
 
+// Dedupe key for recently-read recording: only write when the sidebar switches
+// to a DIFFERENT paper (not on every re-render).
+const lastReadingRecorded = new WeakMap<HTMLElement, string>();
+
+// Stamp the current paper as "recently read" when its PDF Reader is open (i.e.
+// the user is actually reading it), so the 最近阅读 list reflects real reading —
+// not only papers whose 总览 was opened. Title comes from the parent item;
+// readingNo is left untouched (saveReading merges, preserving the 在读 anchor).
+function maybeRecordRecentReading(mount: HTMLElement, state: PanelState): void {
+  const itemKey = resolveItemKeyForCache(state.itemID);
+  if (!itemKey || lastReadingRecorded.get(mount) === itemKey) return;
+  const win = mount.ownerDocument?.defaultView;
+  if (!getReaderForAttachmentOrItem(win, state.itemID, null)) return;
+  const item = state.itemID != null ? getZoteroItem(state.itemID) : null;
+  const titleSource = item ? parentItemForNotes(item) : null;
+  const title =
+    (
+      titleSource as (Zotero.Item & { getDisplayTitle?: () => string }) | null
+    )?.getDisplayTitle?.() ?? "";
+  void saveReading(itemKey, { title });
+  lastReadingRecorded.set(mount, itemKey);
+}
+
 function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
+  maybeRecordRecentReading(mount, state);
   const toolbarPresets = configuredPresets(state);
   const selectedForToolbar = selectedChatPreset(state);
   const bar = el(

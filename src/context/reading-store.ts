@@ -94,7 +94,10 @@ export async function loadReading(
   return state.entries[itemKey] ?? null;
 }
 
-// Upsert a reading record. Writes are serialized via writeQueue.
+// Upsert a reading record, MERGING with any existing one: an omitted readingNo
+// keeps the stored anchor (so a plain "read this paper" event never clobbers the
+// 在读 position), and an empty title keeps the stored title. Always bumps
+// updatedAt (= last-read time). Writes are serialized via writeQueue.
 export function saveReading(
   itemKey: string,
   record: { readingNo?: string; title: string },
@@ -103,9 +106,11 @@ export function saveReading(
   writeQueue = writeQueue.catch(() => undefined).then(async () => {
     if (!itemKey) return;
     const state = await readStore();
+    const prev = state.entries[itemKey];
     state.entries[itemKey] = {
-      readingNo: record.readingNo,
-      title: record.title,
+      readingNo:
+        record.readingNo !== undefined ? record.readingNo : prev?.readingNo,
+      title: record.title || prev?.title || "",
       updatedAt,
     };
     await writeStore(state);
