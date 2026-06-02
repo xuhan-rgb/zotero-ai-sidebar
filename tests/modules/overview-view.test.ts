@@ -146,6 +146,27 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(jumped).toEqual(["9", "3.1", "9", "1"]);
   });
 
+  it("nests dotted subsections under the parent even when level is wrong (=1)", () => {
+    const d: OverviewData = {
+      title: "T",
+      source: "pdf",
+      coverage: "headings",
+      sections: [
+        { no: "4", level: 1, title: "Methods", charStart: 0, charEnd: 1, phase: "method" },
+        // model returned level:1 for these dotted subsections — number wins
+        { no: "4.1", level: 1, title: "Sub A", charStart: 1, charEnd: 2, phase: "method" },
+        { no: "4.2", level: 1, title: "Sub B", charStart: 2, charEnd: 3, phase: "method" },
+        { no: "5", level: 1, title: "Exp", charStart: 3, charEnd: 4, phase: "validation" },
+      ],
+    };
+    const block = renderOverviewBlock(document, d, {});
+    // top-level = §4 and §5; 4.1/4.2 nest under §4
+    expect(block.querySelectorAll(".overview-sec").length).toBe(2);
+    expect(block.querySelectorAll(".overview-kid").length).toBe(2);
+    const methods = block.querySelectorAll(".overview-sec")[0];
+    expect(methods.querySelectorAll(".overview-kid").length).toBe(2);
+  });
+
   it("renders without narrative/flowchart when absent", () => {
     const block = renderOverviewBlock(document, {
       ...data,

@@ -50,12 +50,27 @@ interface RowCtx {
   jump: (section: OverviewSection) => void;
 }
 
-// Group level>1 sections under the preceding level-1 section (document order).
+// A dotted section number ("4.1", "5.2.1") is the authoritative subsection
+// signal: nest it under the most recent top-level section whose number is its
+// prefix. We trust the NUMBER over the model-provided `level`, which is
+// unreliable (some papers come back with level=1 for clearly-dotted
+// subsections). Fall back to `level` only when there is no usable number.
+function isSubNumberOf(childNo: string, parentNo: string): boolean {
+  if (!parentNo || parentNo === "—") return false;
+  return childNo.startsWith(`${parentNo}.`);
+}
+
 function buildTree(sections: OverviewSection[]): SectionNode[] {
   const tree: SectionNode[] = [];
   for (const section of sections) {
-    if (section.level > 1 && tree.length) {
-      tree[tree.length - 1].children.push(section);
+    const top = tree.length ? tree[tree.length - 1] : null;
+    const hasNo = !!section.no && section.no !== "—";
+    const isChild =
+      top != null &&
+      (isSubNumberOf(section.no, top.section.no) ||
+        (!hasNo && section.level > 1));
+    if (isChild) {
+      top!.children.push(section);
     } else {
       tree.push({ section, children: [] });
     }
