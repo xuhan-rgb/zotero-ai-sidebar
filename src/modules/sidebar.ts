@@ -219,7 +219,10 @@ import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import { appendLocalPath } from "../utils/local-path";
 import { loadOverview, saveOverview } from "../context/overview-store";
-import type { OverviewSection } from "../context/overview-types";
+import type {
+  OverviewData,
+  OverviewSection,
+} from "../context/overview-types";
 import { clonePlainRecord, finiteNumber } from "./plain-utils";
 import {
   agentPermissionMode,
@@ -4780,6 +4783,9 @@ async function streamAssistant(
         const itemKey = resolveItemKeyForCache(state.itemID);
         const sb = findSidebarStateByDocument(mount.ownerDocument!);
         const saved = itemKey ? saveOverview(itemKey, data) : Promise.resolve();
+        // Default behavior: also store the overview as an HTML attachment on the
+        // item (so it rides Zotero's official sync). Fire-and-forget, best-effort.
+        void writeOverviewAttachment(mount.ownerDocument!, state.itemID, data);
         void saved.then(() => {
           if (sb?.overviewActive) void showOverviewWindow(sb);
         });
@@ -7810,31 +7816,26 @@ function safeFileTitle(title: string | undefined): string {
 
 const OVERVIEW_ATTACHMENT_TITLE = "AI 全文总览";
 
-// Save the overview HTML as a CHILD ATTACHMENT on the paper item — keeps the
-// interactive HTML format (a note cannot) and rides Zotero's official file sync.
-// Re-saving REPLACES the previous "AI 全文总览" attachment instead of stacking.
-// User-initiated (an explicit button) → a visible, consented Zotero write.
-async function saveOverviewToItem(sidebar: WindowSidebarState): Promise<void> {
-  const doc = sidebar.noteMount.ownerDocument!;
-  const itemID = states.get(sidebar.mount)?.itemID ?? null;
+// Auto-save the overview as a CHILD ATTACHMENT on the paper item whenever the
+// overview is generated/updated — keeps the interactive HTML format (a note
+// cannot) and rides Zotero's official file sync. Re-saving REPLACES the previous
+// "AI 全文总览" attachment instead of stacking. Best-effort: logs (not blocks)
+// on failure. The write is the direct result of the user-initiated 生成/更新总览.
+async function writeOverviewAttachment(
+  doc: Document,
+  itemID: number | null,
+  data: OverviewData,
+): Promise<void> {
   const itemKey = resolveItemKeyForCache(itemID);
-  const stored = itemKey ? await loadOverview(itemKey) : null;
-  if (!stored?.data || itemID == null) {
-    setTempLoadMarkStatus(sidebar.mount, "暂无总览");
-    return;
-  }
+  if (!itemKey || itemID == null) return;
   try {
-    const html = buildOverviewExportHtml(
-      doc,
-      stored.data,
-      collectPluginCss(doc),
-    );
+    const html = buildOverviewExportHtml(doc, data, collectPluginCss(doc));
     const Z = (globalThis as unknown as { Zotero: ZoteroExportApi }).Zotero;
     const root = Z.DataDirectory?.dir ?? Z.DataDirectory?.path ?? Z.Profile.dir;
     const folder = appendLocalPath(root, "zotero-ai-sidebar");
     const path = appendLocalPath(
       folder,
-      `overview-${safeFileTitle(stored.data.title)}-${itemKey}.html`,
+      `overview-${safeFileTitle(data.title)}-${itemKey}.html`,
     );
     const IO = (
       globalThis as unknown as {
@@ -7865,10 +7866,7 @@ async function saveOverviewToItem(sidebar: WindowSidebarState): Promise<void> {
       }
     ).Zotero;
     const item = ZW.Items.get(itemID);
-    if (!item) {
-      setTempLoadMarkStatus(sidebar.mount, "条目未找到");
-      return;
-    }
+    if (!item) return;
     const parent = parentItemForNotes(item);
     // Replace the previous overview attachment instead of stacking duplicates.
     const attachmentIDs =
@@ -7896,9 +7894,7 @@ async function saveOverviewToItem(sidebar: WindowSidebarState): Promise<void> {
       title: OVERVIEW_ATTACHMENT_TITLE,
       contentType: "text/html",
     });
-    setTempLoadMarkStatus(sidebar.mount, "已存到条目");
   } catch (err) {
-    setTempLoadMarkStatus(sidebar.mount, "保存失败");
     debugZai("overview.save-item.failed", { error: errorMessage(err) });
   }
 }
@@ -7969,7 +7965,6 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
               void jumpToOverviewSection(sidebar.mount, panelState, section)
           : undefined,
         onOpenInBrowser: () => void openOverviewInBrowser(sidebar),
-        onSaveToItem: () => void saveOverviewToItem(sidebar),
       }),
     );
   } else {
