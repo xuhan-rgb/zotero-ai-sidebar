@@ -216,6 +216,7 @@ import {
 } from "./reading-route-reference";
 import { renderMindmapBlock } from "./mindmap-render";
 import { renderOverviewBlock } from "./overview-view";
+import { buildOverviewExportHtml } from "./overview-export";
 import { loadOverview, saveOverview } from "../context/overview-store";
 import type { OverviewSection } from "../context/overview-types";
 import { clonePlainRecord, finiteNumber } from "./plain-utils";
@@ -7718,6 +7719,64 @@ const OVERVIEW_PROMPT = [
   "必须调用 render_paper_overview 完成渲染，不要只用文字回答。",
 ].join("\n");
 
+interface ZoteroExportApi {
+  File: { putContentsAsync(path: string, contents: string): Promise<void> };
+  DataDirectory?: { dir?: string; path?: string };
+  Profile: { dir: string };
+  launchFile(path: string): void;
+}
+
+// Collect the plugin's own stylesheet rules so the browser export looks the
+// same outside Zotero. Skips unreadable (cross-origin) sheets.
+function collectPluginCss(doc: Document): string {
+  let css = "";
+  for (const sheet of Array.from(doc.styleSheets ?? [])) {
+    const href = (sheet as CSSStyleSheet).href ?? "";
+    if (!/sidebar\.css|zotero-ai-sidebar/.test(href)) continue;
+    try {
+      for (const rule of Array.from((sheet as CSSStyleSheet).cssRules)) {
+        css += rule.cssText + "\n";
+      }
+    } catch {
+      // Unreadable stylesheet — skip.
+    }
+  }
+  return css;
+}
+
+// Export the current overview to a self-contained HTML file and open it in the
+// system browser (full-size view / print / share).
+async function openOverviewInBrowser(
+  sidebar: WindowSidebarState,
+): Promise<void> {
+  const doc = sidebar.noteMount.ownerDocument!;
+  const itemKey = resolveItemKeyForCache(
+    states.get(sidebar.mount)?.itemID ?? null,
+  );
+  const stored = itemKey ? await loadOverview(itemKey) : null;
+  if (!stored?.data) {
+    setTempLoadMarkStatus(sidebar.mount, "暂无总揽");
+    return;
+  }
+  try {
+    const html = buildOverviewExportHtml(
+      doc,
+      stored.data,
+      collectPluginCss(doc),
+    );
+    const Z = (globalThis as unknown as { Zotero: ZoteroExportApi }).Zotero;
+    const dir = Z.DataDirectory?.dir ?? Z.DataDirectory?.path ?? Z.Profile.dir;
+    const sep = dir.includes("\\") ? "\\" : "/";
+    const path =
+      dir.replace(/[\\/]+$/g, "") + sep + "zotero-ai-sidebar-overview.html";
+    await Z.File.putContentsAsync(path, html);
+    Z.launchFile(path);
+  } catch (err) {
+    setTempLoadMarkStatus(sidebar.mount, "打开失败");
+    debugZai("overview.open-browser.failed", { error: errorMessage(err) });
+  }
+}
+
 // Render the 总揽 view into the note column: a custom DOM page (section
 // skeleton + mermaid-style structural flowchart), loaded from the per-item
 // overview store. NOT a Zotero note and NOT a chat message.
@@ -7781,6 +7840,7 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
           ? (section) =>
               void jumpToOverviewSection(sidebar.mount, panelState, section)
           : undefined,
+        onOpenInBrowser: () => void openOverviewInBrowser(sidebar),
       }),
     );
   } else {

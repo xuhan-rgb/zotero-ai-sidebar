@@ -3284,6 +3284,19 @@ div.math-fallback {
   font-size: 10.5px;
   color: var(--zai-text-muted, #9b9183);
 }
+.overview-open-browser {
+  margin-left: auto;
+  font-size: 10.5px;
+  border: 1px solid var(--zai-border, #d8c9b6);
+  background: var(--zai-bg, #fffdf8);
+  color: var(--zai-text-muted, #6b6357);
+  border-radius: 7px;
+  padding: 2px 9px;
+  cursor: pointer;
+}
+.overview-open-browser:hover {
+  background: var(--zai-bg-soft, #fbfaf7);
+}
 .overview-skeleton {
   list-style: none;
   margin: 0;

@@ -14,6 +14,8 @@ import { renderMindmapBlock } from "./mindmap-render";
 export interface OverviewViewHandlers {
   // When provided, skeleton rows + flowchart-node detail become click-to-jump.
   onJumpToSection?: (section: OverviewSection) => void;
+  // When provided, a header button exports + opens the overview in a browser.
+  onOpenInBrowser?: () => void;
 }
 
 const PHASES: Array<{ key: OverviewPhase; badge: string; name: string }> = [
@@ -67,6 +69,14 @@ export function renderOverviewBlock(
   title.className = "overview-title";
   title.textContent = "📍 全文总揽";
   header.append(title);
+  if (handlers.onOpenInBrowser) {
+    const openBtn = doc.createElement("button");
+    openBtn.className = "overview-open-browser";
+    openBtn.textContent = "↗ 浏览器";
+    openBtn.title = "在浏览器中打开完整总揽";
+    openBtn.addEventListener("click", () => handlers.onOpenInBrowser!());
+    header.append(openBtn);
+  }
   const meta = doc.createElement("span");
   meta.className = "overview-meta";
   meta.textContent = `${data.sections.length} 章${
