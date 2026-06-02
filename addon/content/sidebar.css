@@ -3740,19 +3740,18 @@ div.math-fallback {
   display: inline-block;
 }
 .zai-recent-panel {
-  position: absolute;
-  top: 100%;
-  left: 0;
-  margin-top: 4px;
+  /* fixed (positioned via JS from the button rect): the parent toolbar row has
+     overflow-x:auto, which would clip an absolutely-positioned dropdown. */
+  position: fixed;
   min-width: 240px;
-  max-width: 340px;
-  max-height: 320px;
+  width: 320px;
+  max-height: 340px;
   overflow-y: auto;
   background: var(--zai-bg, #fffdf8);
   border: 1px solid var(--zai-border, #e3d8c8);
   border-radius: 8px;
   box-shadow: 0 6px 22px rgba(60, 40, 20, 0.18);
-  z-index: 60;
+  z-index: 9999;
   padding: 4px;
 }
 .zai-recent-item {

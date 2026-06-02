@@ -835,6 +835,13 @@ function renderRecentReadingControl(
       return;
     }
     isOpen = true;
+    // Position (fixed) just under the button from its viewport rect; clamp so
+    // the 320px panel never runs off the right edge (the sidebar is right-side).
+    const win = doc.defaultView;
+    const rect = btn.getBoundingClientRect();
+    const vw = win?.innerWidth ?? rect.right;
+    panel.style.top = `${Math.round(rect.bottom + 4)}px`;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(rect.left, vw - 328)))}px`;
     panel.style.display = "block";
     panel.replaceChildren();
     const recent = await listRecentReading(12);
