@@ -2174,15 +2174,29 @@ async function locateSectionViaOutline(
     };
     walk(outline);
 
-    const target = normalizeHeading(section.title);
-    if (!target) return null;
-    const entry =
-      flat.find((e) => normalizeHeading(e.title) === target) ??
-      flat.find((e) => {
-        const t = normalizeHeading(e.title);
-        return t.length >= 4 && (t.startsWith(target) || target.startsWith(t));
-      });
-    if (!entry || !entry.dest) return null;
+    // Match by word-overlap (not exact/startsWith): outline titles differ from
+    // the overview's in punctuation, case, ALL-CAPS, and how π / 0.5 render, so
+    // a tolerant token score finds far more sections than a strict compare.
+    const tokenize = (s: string): string[] =>
+      normalizeHeading(s)
+        .split(" ")
+        .filter((w) => w.length > 0);
+    const targetTokens = tokenize(section.title);
+    if (!targetTokens.length) return null;
+    const targetSet = new Set(targetTokens);
+    let entry: { title: string; dest: unknown } | null = null;
+    let bestScore = 0;
+    for (const e of flat) {
+      const et = tokenize(e.title);
+      if (!et.length) continue;
+      const inter = et.filter((w) => targetSet.has(w)).length;
+      const score = inter / Math.max(targetTokens.length, et.length);
+      if (score > bestScore) {
+        bestScore = score;
+        entry = e;
+      }
+    }
+    if (!entry || !entry.dest || bestScore < 0.6) return null;
 
     let dest: unknown = entry.dest;
     if (typeof dest === "string") dest = await pdf.getDestination(dest);
