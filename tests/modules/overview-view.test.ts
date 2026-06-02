@@ -64,6 +64,27 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(block.querySelectorAll(".is-reading").length).toBe(1);
   });
 
+  it("morphs the meta into a 回到在读 control that re-jumps", () => {
+    const jumped: string[] = [];
+    const block = renderOverviewBlock(document, data, {
+      onJumpToSection: (s) => jumped.push(s.no),
+      activeNo: "3.1",
+    });
+    const meta = block.querySelector(".overview-meta") as HTMLElement;
+    expect(meta.classList.contains("overview-meta-locate")).toBe(true);
+    expect(meta.textContent).toContain("在读");
+    expect(meta.textContent).toContain("3.1");
+    meta.click();
+    expect(jumped).toEqual(["3.1"]);
+  });
+
+  it("meta shows the chapter count when nothing is 在读", () => {
+    const block = renderOverviewBlock(document, data, {});
+    const meta = block.querySelector(".overview-meta") as HTMLElement;
+    expect(meta.classList.contains("overview-meta-locate")).toBe(false);
+    expect(meta.textContent).toContain("4 章");
+  });
+
   it("renders without narrative/flowchart when absent", () => {
     const block = renderOverviewBlock(document, {
       ...data,

@@ -3284,6 +3284,14 @@ div.math-fallback {
   font-size: 10.5px;
   color: var(--zai-text-muted, #9b9183);
 }
+.overview-meta-locate {
+  cursor: pointer;
+  color: #c0673d;
+  font-weight: 600;
+}
+.overview-meta-locate:hover {
+  text-decoration: underline;
+}
 .overview-open-browser {
   margin-left: auto;
   font-size: 10.5px;

@@ -89,11 +89,31 @@ export function renderOverviewBlock(
     openBtn.addEventListener("click", () => handlers.onOpenInBrowser!());
     header.append(openBtn);
   }
+  // Meta slot morphs by state (no extra button): when a section is marked 在读
+  // it becomes a one-click "回到在读" — scroll the map to that row + re-jump the
+  // PDF. Otherwise it shows the chapter count.
   const meta = doc.createElement("span");
   meta.className = "overview-meta";
-  meta.textContent = `${data.sections.length} 章${
-    data.coverage === "uniform-fallback" ? " · 估算分段" : ""
-  }`;
+  const activeSection =
+    handlers.activeNo != null
+      ? data.sections.find((s) => s.no === handlers.activeNo)
+      : undefined;
+  if (activeSection) {
+    meta.classList.add("overview-meta-locate");
+    meta.textContent = `↩ 在读 ${activeSection.no}`;
+    meta.title = `回到正在读的章节：${activeSection.no} ${activeSection.title}`;
+    meta.addEventListener("click", () => {
+      const target = wrap.querySelector(".is-reading") as HTMLElement | null;
+      if (target && typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({ block: "center", behavior: "smooth" });
+      }
+      handlers.onJumpToSection?.(activeSection);
+    });
+  } else {
+    meta.textContent = `${data.sections.length} 章${
+      data.coverage === "uniform-fallback" ? " · 估算分段" : ""
+    }`;
+  }
   header.append(meta);
   wrap.append(header);
 
