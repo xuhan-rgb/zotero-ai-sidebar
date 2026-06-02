@@ -233,6 +233,10 @@ npm run build
 
 构建产物在 `.scaffold/build/`。本地 `.xpi` 文件已被 `.gitignore` 忽略，不要提交。
 
+### 代码结构
+
+Zotero 面板侧边栏入口是 `src/modules/sidebar.ts`，它保留核心对话编排（面板渲染、send/stream、reader 选区、笔记窗口编排），并把聚焦的职责拆到同级模块——`sidebar-state`（共享状态/类型）、`reader-access` → `pdf-navigation` → `note-pdf-render`（reader / PDF 跳转 / 引用子系统），以及 `pdf-geometry`、`client-rect-geometry`、`message-scroll`、`selected-text-format`、`prompt-cache-debug`、`reading-route-note`、`overview-attachment` 等。完整文件地图见 [`CLAUDE.md`](CLAUDE.md) 里的 **Code Reference Map**。
+
 ## 发布
 
 `/auto-commit` 完成版本号更新后，运行 `npm run release:xpi` 即可一步完成打 tag、推送、GitHub Actions 构建并发布 Release。`--republish`、显式 tag 等参数及校验细节见 [`docs/RELEASE.md`](docs/RELEASE.md)。

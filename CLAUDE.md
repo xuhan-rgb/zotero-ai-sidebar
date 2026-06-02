@@ -77,7 +77,8 @@ cd ~/Downloads/Zotero_linux-x86_64
 Use these files as the first reference points before changing behavior:
 
 - Addon entry and Zotero integration: `addon/manifest.json`, `addon/bootstrap.js`, `src/index.ts`, `src/hooks.ts`, `src/addon.ts`.
-- Sidebar UI and behavior: `src/modules/sidebar.ts`, `addon/content/sidebar.css`, `addon/content/zoteroPane.css`, locale strings under `addon/locale/`.
+- Sidebar UI and behavior: `src/modules/sidebar.ts` (core: panel render, send/stream, reader selection, note-window orchestration), `addon/content/sidebar.css`, `addon/content/zoteroPane.css`, locale strings under `addon/locale/`.
+- Sidebar sibling modules extracted from `sidebar.ts` (import from these, don't re-add to sidebar.ts): `src/modules/sidebar-state.ts` (shared consts/types/maps; the reassigned singletons `registered`/`readerSelectionHandler` must stay in sidebar.ts), `reader-access.ts` → `pdf-navigation.ts` → `note-pdf-render.ts` (reader resolution → PDF jump/scroll/route-highlight → PDF quote + note-HTML render), `pdf-geometry.ts`, `client-rect-geometry.ts`, `message-scroll.ts`, `selected-text-format.ts`, `prompt-cache-debug.ts`, `note-katex-css.ts`, `reading-route-debug.ts`, `note-pdf-link-parse.ts`, `reading-route-note.ts`, `overview-attachment.ts`, `note-autosave.ts`.
 - Preferences and model presets: `addon/prefs.js`, `addon/content/preferences.xhtml`, `src/settings/storage.ts`, `src/settings/types.ts`.
 - Chat history persistence: `src/settings/chat-history.ts`; preserve per-item threads, context, thinking, tool traces, and images.
 - Provider abstraction: `src/providers/types.ts`, `src/providers/factory.ts`.
