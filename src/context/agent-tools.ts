@@ -374,7 +374,10 @@ export function createZoteroAgentToolSession(
             "the heading [Paper full text]. Read the paper from there. Do not",
             "call zotero_get_full_pdf again this turn.",
           ].join(" "),
-          summary: `读取 PDF 全文 ${text.length}/${totalChars} 字`,
+          summary:
+            fullTextSource === "arxiv"
+              ? `读取 arXiv LaTeX 源码 ${text.length}/${totalChars} 字`
+              : `读取 PDF 全文 ${text.length}/${totalChars} 字`,
           frontBlock: text,
           context: {
             planMode: "full_pdf",

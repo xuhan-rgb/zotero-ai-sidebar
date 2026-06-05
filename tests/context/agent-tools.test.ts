@@ -1283,6 +1283,68 @@ describe("createZoteroAgentTools", () => {
     expect(result.frontBlock).toBe("FROZEN PAPER TEXT");
     expect(result.context?.planMode).toBe("full_pdf");
   });
+
+  it("zotero_get_full_pdf summary says arXiv LaTeX source (not PDF) when an arXiv source is cached", async () => {
+    const latex = "\\section{Intro}\nGraspNet LaTeX body.";
+    paperCacheStore = JSON.stringify({
+      "item:1": {
+        pinned: true,
+        fullText: latex,
+        charCount: latex.length,
+        capturedAt: "2026-06-06T00:00:00.000Z",
+        source: "full_pdf",
+      },
+    });
+    const fs = new Map<string, string | Uint8Array>();
+    Object.defineProperty(globalThis, "IOUtils", {
+      configurable: true,
+      value: {
+        makeDirectory: async () => undefined,
+        writeUTF8: async (p: string, d: string) => void fs.set(p, d),
+        write: async (p: string, d: Uint8Array) => void fs.set(p, d),
+        readUTF8: async (p: string) => {
+          const value = fs.get(p);
+          if (value == null) throw new Error("missing file");
+          return typeof value === "string"
+            ? value
+            : new TextDecoder().decode(value);
+        },
+        read: async (p: string) => fs.get(p) as Uint8Array,
+        exists: async (p: string) => fs.has(p),
+      },
+    });
+    Object.defineProperty(globalThis, "Zotero", {
+      configurable: true,
+      value: {
+        ...(globalThis as any).Zotero,
+        Items: {
+          ...(globalThis as any).Zotero.Items,
+          get: () => ({ key: "LATEXKEY1" }),
+        },
+      },
+    });
+    await writeArxivSource(
+      "LATEXKEY1",
+      [{ path: "main.tex", bytes: new TextEncoder().encode(latex) }],
+      {
+        itemKey: "LATEXKEY1",
+        arxivId: "1912.13470",
+        fetchedAt: "2026-06-06T00:00:00.000Z",
+        mainTexRelPath: "main.tex",
+        status: "ok",
+      },
+    );
+    const session = createZoteroAgentToolSession({ source, itemID: 1 });
+    const tool = session.tools.find(
+      (candidate) => candidate.name === "zotero_get_full_pdf",
+    )!;
+
+    const result = await tool.execute({});
+
+    expect(result.context?.fullTextSource).toBe("arxiv");
+    expect(result.summary).toContain("读取 arXiv LaTeX 源码");
+    expect(result.summary).not.toContain("读取 PDF 全文");
+  });
 });
 
 function sourcePolicy() {
