@@ -4,28 +4,24 @@
 // serialized writes, last-write-wins by updatedAt). Kept SEPARATE from the
 // overview store so updating a reading position never bumps the overview data's
 // updatedAt (which would risk a sync merge clobbering regenerated content).
-// Rides the same sync snapshot (see sync/state.ts) → reading positions and the
-// "recently read" list follow the user's WebDAV state.json across machines.
+// Rides the same sync snapshot (see sync/state.ts) → reading positions follow
+// the user's WebDAV state.json across machines.
 
 const MAX_READING_ENTRIES = 300;
 const STORE_FILE = "zotero-ai-sidebar-reading-store.json";
 
 export interface ReadingRecord {
-  // Section no of the 在读 anchor (e.g. "5.2"). Optional: an item can be marked
-  // recently-read before any section is jumped to.
+  // Section no of the 在读 anchor (e.g. "5.2"). Optional: absent until a section
+  // is jumped to.
   readingNo?: string;
-  // Paper title, denormalized so the "recently read" list can render without a
-  // Zotero lookup (and so it survives across machines).
+  // Paper title, denormalized into the synced record (kept for sync
+  // compatibility; the 最近阅读 list that displayed it has been removed).
   title: string;
   updatedAt: number;
 }
 
 export interface ReadingStoreSnapshot {
   entries: Record<string, ReadingRecord>;
-}
-
-export interface RecentReadingEntry extends ReadingRecord {
-  itemKey: string;
 }
 
 export interface ImportReadingResult {
@@ -116,17 +112,6 @@ export function saveReading(
     await writeStore(state);
   });
   return writeQueue;
-}
-
-// The "recently read" list: entries sorted by last-read time, newest first.
-export async function listRecentReading(
-  limit = 12,
-): Promise<RecentReadingEntry[]> {
-  const state = await readStore();
-  return Object.entries(state.entries)
-    .map(([itemKey, rec]) => ({ itemKey, ...rec }))
-    .sort((a, b) => b.updatedAt - a.updatedAt)
-    .slice(0, Math.max(0, limit));
 }
 
 export async function exportReadingStore(): Promise<ReadingStoreSnapshot> {

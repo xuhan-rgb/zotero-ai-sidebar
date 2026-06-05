@@ -2,7 +2,6 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   exportReadingStore,
   importReadingStore,
-  listRecentReading,
   loadReading,
   saveReading,
 } from "../../src/context/reading-store";
@@ -37,16 +36,6 @@ describe("reading-store", () => {
     expect(got?.readingNo).toBe("5.2");
     expect(got?.title).toBe("Paper One");
     expect(got?.updatedAt).toBe(100);
-  });
-
-  it("listRecentReading sorts newest-first and respects the limit", async () => {
-    await saveReading("A", { readingNo: "1", title: "A" }, 100);
-    await saveReading("B", { readingNo: "2", title: "B" }, 300);
-    await saveReading("C", { title: "C" }, 200); // no readingNo yet
-    const recent = await listRecentReading(2);
-    expect(recent.map((r) => r.itemKey)).toEqual(["B", "C"]);
-    expect(recent[0].readingNo).toBe("2");
-    expect(recent[1].readingNo).toBeUndefined();
   });
 
   it("a read event without readingNo keeps the stored 在读 anchor", async () => {

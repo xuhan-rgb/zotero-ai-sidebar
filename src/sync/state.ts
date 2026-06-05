@@ -93,8 +93,8 @@ export interface SyncSnapshot {
   // Per-item rendered paper overviews; optional on the wire for payloads
   // uploaded before overview sync existed.
   overviews?: OverviewStoreSnapshot;
-  // Per-item reading positions ("在读" anchor) + recently-read list; optional on
-  // the wire for payloads uploaded before reading-position sync existed.
+  // Per-item reading positions ("在读" anchor); optional on the wire for
+  // payloads uploaded before reading-position sync existed.
   readingPositions?: ReadingStoreSnapshot;
 }
 

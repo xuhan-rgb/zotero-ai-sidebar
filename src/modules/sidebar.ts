@@ -410,11 +410,7 @@ import {
 } from "./sidebar-state";
 import { appendLocalPath } from "../utils/local-path";
 import { loadOverview, saveOverview } from "../context/overview-store";
-import {
-  listRecentReading,
-  loadReading,
-  saveReading,
-} from "../context/reading-store";
+import { loadReading, saveReading } from "../context/reading-store";
 import type {
   OverviewData,
   OverviewSection,
@@ -671,31 +667,7 @@ function capturePanelState(mount: HTMLElement, state: PanelState) {
   }
 }
 
-// Dedupe key for recently-read recording: only write when the sidebar switches
-// to a DIFFERENT paper (not on every re-render).
-const lastReadingRecorded = new WeakMap<HTMLElement, string>();
-
-// Stamp the current paper as "recently read" when its PDF Reader is open (i.e.
-// the user is actually reading it), so the 最近阅读 list reflects real reading —
-// not only papers whose 总览 was opened. Title comes from the parent item;
-// readingNo is left untouched (saveReading merges, preserving the 在读 anchor).
-function maybeRecordRecentReading(mount: HTMLElement, state: PanelState): void {
-  const itemKey = resolveItemKeyForCache(state.itemID);
-  if (!itemKey || lastReadingRecorded.get(mount) === itemKey) return;
-  const win = mount.ownerDocument?.defaultView;
-  if (!getReaderForAttachmentOrItem(win, state.itemID, null)) return;
-  const item = state.itemID != null ? getZoteroItem(state.itemID) : null;
-  const titleSource = item ? parentItemForNotes(item) : null;
-  const title =
-    (
-      titleSource as (Zotero.Item & { getDisplayTitle?: () => string }) | null
-    )?.getDisplayTitle?.() ?? "";
-  void saveReading(itemKey, { title });
-  lastReadingRecorded.set(mount, itemKey);
-}
-
 function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
-  maybeRecordRecentReading(mount, state);
   const toolbarPresets = configuredPresets(state);
   const selectedForToolbar = selectedChatPreset(state);
   const bar = el(
@@ -831,43 +803,35 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   translateBtn.addEventListener("click", () => {
     void toggleTranslateMode(win, translateBtn);
   });
-  // ⚙ menu collects the low-frequency controls (设置 / 字号 / 调试) so the action
-  // row keeps only the frequent content actions.
-  const gear = renderIconMenu(doc, "⚙", "设置 / 字号 / 调试", [
-    settings,
-    renderChatFontSizeControl(doc, mount, state),
-    renderCopyDebugToggle(doc, mount, state),
-  ]);
-  // Content actions, then navigation (🕘) and settings (⚙) as compact icons.
+  // Content actions, then 设置 (opens full preferences), the 字号 menu (🎚 icon
+  // → font-size popup) and the 调试 (copy-debug context) toggle.
+  settings.title = "打开 AI 对话完整设置";
   bottomRow.append(openNote);
   bottomRow.append(translateBtn);
-  bottomRow.append(renderRecentReadingControl(doc, mount));
-  bottomRow.append(gear);
+  bottomRow.append(settings);
+  bottomRow.append(renderFontIconMenu(doc, mount, state));
+  bottomRow.append(renderCopyDebugToggle(doc, mount, state));
   bar.append(topRow, bottomRow);
   return bar;
 }
 
-// A small icon button that drops a menu of the given child controls. Used for
-// the ⚙ overflow (设置 / 字号 / 调试). Fixed-positioned from the button rect so
-// the toolbar row's overflow-x:auto can't clip it; toggle-only (no document
-// listener) so re-renders never leak the panel/handler.
-function renderIconMenu(
+const ZAI_SVG_NS = "http://www.w3.org/2000/svg";
+
+// 字号 collapsed behind a slider (🎚) icon button: clicking opens a small popup
+// with the font-size selector, keeping the toolbar compact.
+function renderFontIconMenu(
   doc: Document,
-  label: string,
-  title: string,
-  children: HTMLElement[],
+  mount: HTMLElement,
+  state: PanelState,
 ): HTMLElement {
-  const wrap = el(doc, "span", "zai-recent-reading");
-  const btn = buttonEl(doc, label);
-  btn.classList.add("zai-icon-btn");
-  btn.title = title;
-  const panel = el(doc, "div", "zai-recent-panel");
+  const wrap = el(doc, "span", "zai-icon-menu");
+  const btn = buttonEl(doc, "");
+  btn.className = "zai-icon-btn";
+  btn.title = "字号";
+  btn.append(sliderIcon(doc));
+  const panel = el(doc, "div", "zai-icon-menu-panel");
   panel.style.display = "none";
-  for (const child of children) {
-    const row = el(doc, "div", "zai-menu-row");
-    row.append(child);
-    panel.append(row);
-  }
+  panel.append(renderChatFontSizeControl(doc, mount, state));
   wrap.append(btn, panel);
   let isOpen = false;
   btn.addEventListener("click", (e) => {
@@ -882,119 +846,43 @@ function renderIconMenu(
     const rect = btn.getBoundingClientRect();
     const vw = w?.innerWidth ?? rect.right;
     panel.style.top = `${Math.round(rect.bottom + 4)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(rect.left, vw - 248)))}px`;
+    panel.style.left = `${Math.round(Math.max(8, Math.min(rect.left, vw - 220)))}px`;
     panel.style.display = "block";
   });
   return wrap;
 }
 
-// 「最近阅读」dropdown: lists papers by last-read time (from the synced reading
-// store). Clicking an entry selects the paper and opens its best PDF in the
-// Reader — a quick "resume" across the whole library (and across machines,
-// since the list is synced). Toggle-only + closes on select (no document-level
-// listener) so re-renders never leak a panel or handler.
-function renderRecentReadingControl(
-  doc: Document,
-  mount: HTMLElement,
-): HTMLElement {
-  const wrap = el(doc, "span", "zai-recent-reading");
-  const btn = buttonEl(doc, "🕘");
-  btn.classList.add("zai-icon-btn");
-  btn.title = "最近阅读（点击恢复打开）";
-  const panel = el(doc, "div", "zai-recent-panel");
-  panel.style.display = "none";
-  wrap.append(btn, panel);
-
-  let isOpen = false;
-  btn.addEventListener("click", async (e) => {
-    e.stopPropagation();
-    if (isOpen) {
-      isOpen = false;
-      panel.style.display = "none";
-      return;
-    }
-    isOpen = true;
-    // Position (fixed) just under the button from its viewport rect; clamp so
-    // the 320px panel never runs off the right edge (the sidebar is right-side).
-    const win = doc.defaultView;
-    const rect = btn.getBoundingClientRect();
-    const vw = win?.innerWidth ?? rect.right;
-    panel.style.top = `${Math.round(rect.bottom + 4)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(rect.left, vw - 328)))}px`;
-    panel.style.display = "block";
-    panel.replaceChildren();
-    const recent = await listRecentReading(12);
-    if (!recent.length) {
-      panel.append(el(doc, "div", "zai-recent-empty", "暂无最近阅读"));
-      return;
-    }
-    for (const r of recent) {
-      const row = el(doc, "div", "zai-recent-item");
-      row.append(el(doc, "div", "zai-recent-title", r.title || "(无标题)"));
-      if (r.readingNo) {
-        row.append(el(doc, "span", "zai-recent-no", `在读 ${r.readingNo}`));
-      }
-      row.addEventListener("click", () => {
-        isOpen = false;
-        panel.style.display = "none";
-        void openRecentReadingItem(mount, r.itemKey);
-      });
-      panel.append(row);
-    }
-  });
-  return wrap;
-}
-
-// Resolve a portable item key → local item, select it, and open its best PDF in
-// the Reader. Key→ID is per-machine (IDs differ across machines; the key is the
-// portable handle). Best-effort: guarded, never throws.
-async function openRecentReadingItem(
-  mount: HTMLElement,
-  itemKey: string,
-): Promise<void> {
-  try {
-    const win = mount.ownerDocument?.defaultView as
-      | { ZoteroPane?: { selectItem?: (id: number, expand?: boolean) => void } }
-      | undefined;
-    const Z = (
-      globalThis as unknown as {
-        Zotero?: {
-          Libraries?: { userLibraryID?: number };
-          Items?: {
-            getIDFromLibraryAndKey?: (lib: number, key: string) => number | false;
-            get?: (id: number) => Zotero.Item | false | undefined;
-          };
-          Reader?: { open?: (id: number) => Promise<unknown> };
-        };
-      }
-    ).Zotero;
-    const libraryID = Z?.Libraries?.userLibraryID ?? 1;
-    const id = Z?.Items?.getIDFromLibraryAndKey?.(libraryID, itemKey);
-    if (!id) {
-      setTempLoadMarkStatus(mount, "未找到该文献");
-      return;
-    }
-    win?.ZoteroPane?.selectItem?.(id, true);
-    const item = Z?.Items?.get?.(id) as
-      | (Zotero.Item & {
-          isAttachment?: () => boolean;
-          getBestAttachment?: () => Promise<{ id?: number } | false>;
-        })
-      | false
-      | undefined;
-    let attachmentID: number | null = null;
-    if (item) {
-      if (item.isAttachment?.()) attachmentID = id;
-      else {
-        const best = await item.getBestAttachment?.();
-        attachmentID = best && typeof best.id === "number" ? best.id : null;
-      }
-    }
-    if (attachmentID != null) await Z?.Reader?.open?.(attachmentID);
-  } catch (err) {
-    setTempLoadMarkStatus(mount, "打开失败");
-    debugZai("recent-reading.open.failed", { error: errorMessage(err) });
-  }
+// Two-row slider glyph (matches the toolbar's accent color via currentColor).
+function sliderIcon(doc: Document): Element {
+  const svg = doc.createElementNS(ZAI_SVG_NS, "svg");
+  svg.setAttribute("width", "15");
+  svg.setAttribute("height", "15");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  const line = (x1: string, y: string, x2: string): void => {
+    const node = doc.createElementNS(ZAI_SVG_NS, "line");
+    node.setAttribute("x1", x1);
+    node.setAttribute("y1", y);
+    node.setAttribute("x2", x2);
+    node.setAttribute("y2", y);
+    svg.append(node);
+  };
+  const knob = (cx: string, cy: string): void => {
+    const node = doc.createElementNS(ZAI_SVG_NS, "circle");
+    node.setAttribute("cx", cx);
+    node.setAttribute("cy", cy);
+    node.setAttribute("r", "2.4");
+    node.setAttribute("fill", "var(--zai-panel, #fffdf8)");
+    svg.append(node);
+  };
+  line("4", "7", "20");
+  knob("9", "7");
+  line("4", "14", "20");
+  knob("15", "14");
+  return svg;
 }
 
 function renderChatFontSizeControl(
@@ -1027,6 +915,30 @@ function renderChatFontSizeControl(
   });
   wrap.append(select);
   return wrap;
+}
+
+function renderCopyDebugToggle(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement {
+  const label = el(doc, "label", "copy-debug-toggle yolo-toggle");
+  const input = doc.createElement("input");
+  input.type = "checkbox";
+  input.checked = state.copyDebugContext;
+  input.addEventListener("change", () => {
+    state.copyDebugContext = input.checked;
+    renderPanel(mount, state);
+  });
+  label.append(
+    el(doc, "span", "yolo-toggle-text", "调试"),
+    input,
+    el(doc, "span", "yolo-toggle-track"),
+  );
+  label.title = state.copyDebugContext
+    ? "调试复制：包含工具上下文、PDF 片段和思考过程；关闭后只复制论文介绍和对话"
+    : "纯净复制：只复制论文介绍和对话；开启后包含工具上下文、PDF 片段和思考过程";
+  return label;
 }
 
 export function refreshSidebarPreferences(): void {
@@ -2651,30 +2563,6 @@ function renderYoloToggle(
     state.agentPermissionMode === "yolo"
       ? "YOLO：本地工具无需审批直接执行"
       : "Default：需要审批的本地工具会被拦截";
-  return label;
-}
-
-function renderCopyDebugToggle(
-  doc: Document,
-  mount: HTMLElement,
-  state: PanelState,
-): HTMLElement {
-  const label = el(doc, "label", "copy-debug-toggle yolo-toggle");
-  const input = doc.createElement("input");
-  input.type = "checkbox";
-  input.checked = state.copyDebugContext;
-  input.addEventListener("change", () => {
-    state.copyDebugContext = input.checked;
-    renderPanel(mount, state);
-  });
-  label.append(
-    el(doc, "span", "yolo-toggle-text", "调试"),
-    input,
-    el(doc, "span", "yolo-toggle-track"),
-  );
-  label.title = state.copyDebugContext
-    ? "调试复制：包含工具上下文、PDF 片段和思考过程；关闭后只复制论文介绍和对话"
-    : "纯净复制：只复制论文介绍和对话；开启后包含工具上下文、PDF 片段和思考过程";
   return label;
 }
 
@@ -5251,15 +5139,11 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   if (!sidebar.overviewActive) return;
 
   // Restore this item's persisted 在读 anchor (survives restart + syncs across
-  // machines), and stamp it recently-read. The back stack / lock stay ephemeral.
+  // machines). The back stack / lock stay ephemeral.
   if (stored?.data && itemKey) {
     const rec = await loadReading(itemKey);
     if (!sidebar.overviewActive) return;
     sidebar.overviewNav = { history: [], locked: false, readingNo: rec?.readingNo };
-    void saveReading(itemKey, {
-      readingNo: rec?.readingNo,
-      title: stored.data.title,
-    });
   }
 
   sidebar.noteMount.replaceChildren();
@@ -7793,7 +7677,9 @@ function setColumnCollapsed(
   const column = state.column as Element & { collapsed?: boolean };
   const splitter = state.splitter as Element & { hidden?: boolean };
   if (collapsed) {
-    disableTranslateMode(win);
+    // Keep translate mode running when the AI column is collapsed — it lives on
+    // the PDF Reader, independent of this panel. Collapsing the chat must not
+    // flip the PDF back to normal mode (it's torn down on window unregister).
     column.collapsed = true;
     splitter.hidden = true;
     state.column.setAttribute("collapsed", "true");
@@ -7934,21 +7820,21 @@ async function toggleTranslateMode(
 ): Promise<void> {
   const ctrl = await getOrCreateTranslateController(win);
   if (!ctrl) {
-    syncTranslateBtnState(win, btn);
+    syncTranslateButtons(win);
     flashButton(btn as HTMLButtonElement, "无PDF");
     return;
   }
   if (ctrl.isEnabled()) {
     ctrl.disable();
     translateControllers.delete(win);
-    syncTranslateBtnState(win, btn);
+    syncTranslateButtons(win);
   } else {
     try {
       await ctrl.enable();
-      syncTranslateBtnState(win, btn);
+      syncTranslateButtons(win);
     } catch (err) {
       debugZai("translate.enable.failed", { error: errorMessage(err) });
-      syncTranslateBtnState(win, btn);
+      syncTranslateButtons(win);
       flashButton(btn as HTMLButtonElement, "失败");
     }
   }
