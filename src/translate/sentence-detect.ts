@@ -14,6 +14,13 @@ export interface DetectedSentence {
   pageSentenceIndex: number;
   pageSentenceCount: number;
   paragraphContext: string;
+  // Present only on the sentenceAtPoint/sentenceAtIndex path (provisional
+  // page-local sortIndex). The translate save path rebuilds the document-wide
+  // sortIndex from these via locator.documentSortIndexForRange. Absent on the
+  // caret/locate fallback path, whose sortIndex is already document-wide.
+  rangeStart?: number;
+  rangeEnd?: number;
+  sortTop?: number;
   bundle: PdfPageContent;
 }
 
@@ -60,6 +67,9 @@ export async function detectSentenceAtPoint(input: DetectInput): Promise<Detecte
         pageSentenceIndex: located.pageSentenceIndex,
         pageSentenceCount: located.pageSentenceCount,
         paragraphContext: located.paragraphContext,
+        rangeStart: located.rangeStart,
+        rangeEnd: located.rangeEnd,
+        sortTop: located.sortTop,
         bundle,
       };
     }

@@ -454,6 +454,12 @@ export class TranslateModeController {
       pageLabel: located.pageLabel,
       rects: located.rects,
       sortIndex: located.sortIndex,
+      // locate() yields a document-wide sortIndex (no page-local range). Clear
+      // any stale range carried by `...current` so the save path keeps this
+      // sortIndex instead of rebuilding it from the previous sentence's range.
+      rangeStart: undefined,
+      rangeEnd: undefined,
+      sortTop: undefined,
       pageSentenceIndex: targetIndex,
     };
     await this.renderForCurrent();
@@ -634,6 +640,27 @@ export class TranslateModeController {
 
     overlay.setStatusLabel("● 保存中…");
     try {
+      // sentenceAtPoint/sentenceAtIndex hand back a PROVISIONAL page-local
+      // sortIndex (the fast click→select path skips preceding-page extraction).
+      // Rebuild the document-wide value here — off the click hot path — so saved
+      // annotations sort consistently with locate()-saved and legacy annotations
+      // on the same page. The caret/locate fallback path leaves rangeStart unset
+      // and its sortIndex is already document-wide, so we keep it as-is.
+      let sortIndex = current.sortIndex;
+      if (
+        current.rangeStart != null &&
+        current.rangeEnd != null &&
+        current.sortTop != null &&
+        this.locator.documentSortIndexForRange
+      ) {
+        sortIndex =
+          (await this.locator.documentSortIndexForRange(
+            current.pageIndex,
+            current.rangeStart,
+            current.rangeEnd,
+            current.sortTop,
+          )) ?? sortIndex;
+      }
       const draft: SelectionAnnotationDraft = {
         text: current.text,
         attachmentID: this.locator.attachmentID,
@@ -641,7 +668,7 @@ export class TranslateModeController {
           text: current.text,
           color: "#ffd400",
           pageLabel: current.pageLabel,
-          sortIndex: current.sortIndex,
+          sortIndex,
           position: {
             pageIndex: current.pageIndex,
             rects: current.rects,

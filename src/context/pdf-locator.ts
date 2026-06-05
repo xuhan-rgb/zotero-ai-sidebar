@@ -46,6 +46,14 @@ export interface LocatedSentence {
   pageSentenceIndex: number;
   pageSentenceCount: number;
   paragraphContext: string;
+  // Page-local range + sort top, so a document-wide sortIndex can be rebuilt
+  // deterministically via `documentSortIndexForRange`. WHY: sentenceAtPoint /
+  // sentenceAtIndex pass a page-local offset (0) for a fast click→select path
+  // (no preceding-page extraction), so their `sortIndex` is PROVISIONAL and
+  // must be rebuilt to a document-wide value before persisting an annotation.
+  rangeStart: number;
+  rangeEnd: number;
+  sortTop: number;
 }
 
 export interface PdfPageContent {
@@ -75,6 +83,16 @@ export interface PdfLocator {
     pageIndex: number,
     sentenceIndex: number,
   ): Promise<LocatedSentence | null>;
+  // Rebuild a document-wide annotation sortIndex from a page-local range. Used
+  // by the translate save path to upgrade the provisional page-local sortIndex
+  // of sentenceAtPoint/sentenceAtIndex, keeping reading-order sort consistent
+  // with locate()-saved and legacy annotations on the same page.
+  documentSortIndexForRange?(
+    pageIndex: number,
+    rangeStart: number,
+    rangeEnd: number,
+    top: number,
+  ): Promise<string | null>;
   locate(
     needle: string,
     opts?: { minConfidence?: number; pageIndex?: number; exactOnly?: boolean },
@@ -309,15 +327,33 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
     async sentenceAtPoint(pageIndex, point) {
       const page = await bundleFor(pageIndex);
       if (!page) return null;
-      return sentenceAtPointOnPage(page, point, await cumulativeOffset(pageIndex));
+      // Page-local offset (0): only the clicked page is extracted, so the
+      // click→select path no longer extracts every preceding page (which froze
+      // for seconds on later pages). The returned sortIndex is PROVISIONAL and
+      // page-local; the translate save path rebuilds the document-wide value via
+      // documentSortIndexForRange. Only translate calls sentenceAtPoint.
+      return sentenceAtPointOnPage(page, point, 0);
     },
     async sentenceAtIndex(pageIndex, sentenceIndex) {
       const page = await bundleFor(pageIndex);
       if (!page) return null;
-      return sentenceAtIndexOnPage(
-        page,
-        sentenceIndex,
-        await cumulativeOffset(pageIndex),
+      // Page-local offset (0); provisional sortIndex rebuilt at save — see
+      // sentenceAtPoint. Only translate (sentence jump) calls this.
+      return sentenceAtIndexOnPage(page, sentenceIndex, 0);
+    },
+    // Rebuild a document-wide sortIndex from a page-local range. Mirrors
+    // locatedSentenceFromSegment's sortIndex rule (including the processed-source
+    // itemIndex path), so a translate annotation saved via this sorts identically
+    // to one that locate() would have produced.
+    async documentSortIndexForRange(pageIndex, rangeStart, rangeEnd, top) {
+      const page = await bundleFor(pageIndex);
+      if (!page) return null;
+      const pageGlobalOffset =
+        page.source === "processed" ? 0 : await cumulativeOffset(pageIndex);
+      return buildSortIndex(
+        page.pageIndex,
+        sortOffsetForRange(page, rangeStart, rangeEnd, pageGlobalOffset),
+        top,
       );
     },
     // Two-stage match. WHY two stages: most model-supplied passages match
@@ -1489,6 +1525,7 @@ function locatedSentenceFromSegment(
   const paraEnd = page.anchors[segment.paragraphEndAnchor]?.endOffset ?? end;
   const text = page.pageText.slice(start, end).replace(/\s+/g, " ").trim();
   const pageSentenceIndex = segments.indexOf(segment);
+  const sortTop = sortTopForPage(page, rects);
   return {
     text: text || segment.text,
     pageIndex: page.pageIndex,
@@ -1497,7 +1534,7 @@ function locatedSentenceFromSegment(
     sortIndex: buildSortIndex(
       page.pageIndex,
       sortOffsetForRange(page, start, end, pageGlobalOffset),
-      sortTopForPage(page, rects),
+      sortTop,
     ),
     pageSentenceIndex,
     pageSentenceCount: segments.length,
@@ -1505,6 +1542,9 @@ function locatedSentenceFromSegment(
       .slice(paraStart, paraEnd)
       .replace(/\s+/g, " ")
       .trim(),
+    rangeStart: start,
+    rangeEnd: end,
+    sortTop,
   };
 }
 
