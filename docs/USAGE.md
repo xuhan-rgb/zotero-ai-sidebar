@@ -22,8 +22,9 @@ This document targets **end users** and is split in two halves:
   - [2.4 Use slash commands for arXiv or web search](#24-use-slash-commands-for-arxiv-or-web-search)
   - [2.5 Distill answers into a paper note](#25-distill-answers-into-a-paper-note)
   - [2.6 Read arXiv papers with exact equations and figures](#26-read-arxiv-papers-with-exact-equations-and-figures)
-  - [2.7 Sync chats and config across devices (WebDAV)](#27-sync-chats-and-config-across-devices-webdav)
-  - [2.8 Back up and migrate config](#28-back-up-and-migrate-config)
+  - [2.7 See the whole paper at a glance (overview map)](#27-see-the-whole-paper-at-a-glance-overview-map)
+  - [2.8 Sync chats and config across devices (WebDAV)](#28-sync-chats-and-config-across-devices-webdav)
+  - [2.9 Back up and migrate config](#29-back-up-and-migrate-config)
 - [3. Reference Manual](#3-reference-manual)
   - [3.1 Model presets](#31-model-presets)
   - [3.2 Sidebar UI map](#32-sidebar-ui-map)
@@ -38,6 +39,7 @@ This document targets **end users** and is split in two halves:
   - [3.11 Config export / import](#311-config-export--import)
   - [3.12 Chat history](#312-chat-history)
   - [3.13 arXiv LaTeX source mode](#313-arxiv-latex-source-mode)
+  - [3.14 Paper overview map & reading routes](#314-paper-overview-map--reading-routes)
 - [Troubleshooting](#troubleshooting)
 - [Related docs](#related-docs)
 
@@ -188,7 +190,28 @@ For arXiv papers, the plugin automatically downloads the LaTeX source and reads 
 
 See [§3.13](#313-arxiv-latex-source-mode) for details on what changes under the hood.
 
-### 2.7 Sync chats and config across devices (WebDAV)
+### 2.7 See the whole paper at a glance (overview map)
+
+Best for: deciding which sections are worth a close read before you sink time into the PDF, and keeping your place across sessions and machines.
+
+The overview map is the **总览** view — one of three tabs in the note column (`AI 笔记` / `阅读路线` / `总览`). It is *not* a note: it's a generated, clickable map of the paper that lives beside the Reader.
+
+1. Open the note column (toolbar **Open Note**), click the **总览** tab, then **生成总览** in the top-right. The model runs `zotero_outline_pdf` (a cheap whole-paper skeleton — no full-PDF send) then `render_paper_overview`.
+2. You get: a 2–4 sentence **核心讲述**, a **section skeleton grouped by phase** (动机与背景 / 方法 / 验证与结论) with a ≤30-char gist per section and **创新 / 效果锚点** markers, collapsible subsections, and a folded structural **flowchart**.
+3. **Click any section to jump the PDF to it.** The map uses the PDF's embedded outline for an exact scroll-to-top when present, with a text-match fallback otherwise.
+4. The sticky header tracks where you are: `↩ 在读 N` jumps back to your reading anchor, `↶ 返回 N` steps back through where you've been (and moves the PDF too), and the **🔒 lock** lets you browse other sections without moving your `在读` anchor.
+5. **`↗ 浏览器`** opens the full overview as a standalone HTML page in your system browser. The overview is also auto-saved as a child HTML attachment on the item, so it rides Zotero's own sync.
+
+**Your reading position is remembered and synced.** Each paper's `在读` anchor survives restarts and travels in `state.json` (WebDAV).
+
+> **Reading routes (`阅读路线`)** are the note-based cousin: the morphing route button (`生成路线` → `阅读路线` → `更新路线`) generates a reading guide saved into a dedicated *AI 阅读路线* child note. Regenerating overwrites the AI section but preserves your own `「我的补充笔记」`. Use the overview map to *navigate*, the route note to *keep editable prose*.
+
+**Watch out for:**
+- Section jumping relies on the PDF outline / text matching (no SyncTeX), so for sections not in the PDF's own outline the landing spot can be approximate.
+- For non-arXiv PDFs the skeleton uses heuristic heading detection; if it can't find headings it falls back to even-sized windows (the header shows `· 估算分段`).
+- The overview is generated on demand — it never sends the full PDF automatically.
+
+### 2.8 Sync chats and config across devices (WebDAV)
 
 Use case: keep chat history, prompt library, and UI settings consistent between desktop and laptop.
 
@@ -203,6 +226,7 @@ What `state.json` contains:
 - ✅ Model presets **including API keys**, plus UI settings, quick prompts, tool/MCP settings, translation settings
 - ✅ Sentence-translation cache (cached translations for already translated sentences)
 - ✅ PDF annotations (highlight / underline / note / ink), matched by PDF + annotation key, last-write-wins by modified time
+- ✅ Per-item paper overviews and reading positions (the `在读` anchor)
 - ❌ **PDF files are not uploaded** (those go through Zotero File Sync on a separate WebDAV path)
 - ❌ The **WebDAV account password** is never written into `state.json`
 
@@ -210,7 +234,7 @@ Because `state.json` carries your keys, the WebDAV endpoint is yours to protect 
 
 `★ Three-layer split` — (1) zotero.org for library metadata, (2) Zotero File Sync for PDFs over WebDAV, (3) this plugin for `state.json` over WebDAV. The three layers are decoupled; killing one does not break the others.
 
-### 2.8 Back up and migrate config
+### 2.9 Back up and migrate config
 
 If you don't want WebDAV, plain export/import works:
 
@@ -248,7 +272,7 @@ Top to bottom:
 
 ```
 ┌───────────────────────────────────────────────┐
-│  [Settings] [Translate] [Screenshot] [Debug]  │  ← toolbar
+│  [打开笔记] [译] [设置] [🎚] [调试]            │  ← toolbar
 ├───────────────────────────────────────────────┤
 │  Paper title  [LaTeX 源]                      │  ← metadata (badge on arXiv items)
 ├───────────────────────────────────────────────┤
@@ -270,9 +294,15 @@ Top to bottom:
 
 Things to know:
 
+- **Toolbar controls** (left to right):
+  - **打开笔记 (Open Note)** — opens the note column.
+  - **译 (Translate)** — toggles sentence-by-sentence translation mode (shortcut `Alt+T`).
+  - **设置 (Settings)** — opens the full Zotero preferences pane for this plugin: model presets / API keys / display / translation / sync.
+  - **🎚** — a slider-icon button; click it to open a small popup with the chat **字号 (font size)** selector.
+  - **调试 (Debug)** — a toggle. When ON, **复制MD** includes the tool context, PDF passages, and thinking; when OFF it copies only the paper intro and the conversation.
 - **`📄 原文` toggle** (on by default): pins the paper's text into every turn. Turn it off for selection-only questions; click `+ 本轮原文` for a one-time full-paper send.
 - **`LaTeX 源` badge** appears next to the title when the paper is being read from its arXiv LaTeX source. Equations come out exact. See [§3.13](#313-arxiv-latex-source-mode).
-- **Copy conversation** has two modes: **Clean** (intro + dialogue, for sharing) and **Debug** (full thinking + traces + snippets, for bug reports).
+- **Note column tabs** (via **Open Note**): `AI 笔记` / `阅读路线` / `总览` — the default note, the reading-route note, and the overview map.
 
 ### 3.3 Agent tools
 
@@ -293,6 +323,8 @@ Useful when reading the tool trace — these are the names you'll see.
 | `paper_search_arxiv` | Search arXiv (any paper, not just the current one) |
 | `paper_fetch_arxiv_fulltext` | Fetch full text of an arXiv paper by query/URL |
 | `draw_article_mindmap` | Generate a mindmap of the paper structure |
+| `zotero_outline_pdf` | Cheap whole-paper skeleton (headings, char ranges, first-line previews, figure/table anchors) without reading the full PDF — the first step for an overview |
+| `render_paper_overview` | Render the overview map (核心讲述 + phase-grouped section skeleton + flowchart) into the **总览** view; called after `zotero_outline_pdf` |
 
 **Reading arXiv source** (only visible to the model when the current paper has a cached LaTeX source — see [§3.13](#313-arxiv-latex-source-mode)):
 
@@ -355,6 +387,7 @@ Target layout: `PDF Reader | Note panel | AI chat`.
 - **Engine** — Zotero's official `<note-editor>` / `EditorInstance`. Rich text (headings, lists, links, inline code, blockquotes) behaves identically to Zotero's main note editor.
 - **Decoupled from chat** — opening, closing, or editing the note never re-renders the sidebar, resets composer drafts, or interrupts streaming.
 - **AI writes** — `zotero_append_to_note` finds the paper's child note (or creates one) and appends.
+- **Three tabs** — the note column header switches between `AI 笔记` (the default note that chat "Write to note" appends to), `阅读路线` (a dedicated *AI 阅读路线* reading-guide note; the button morphs `生成路线` → `阅读路线` → `更新路线`), and `总览` (the overview map view — see [§3.14](#314-paper-overview-map--reading-routes)). Regenerating a route overwrites its AI section but keeps your own `「我的补充笔记」`.
 
 ### 3.8 Screenshots and multimodal input
 
@@ -414,6 +447,30 @@ What changes:
 - Numbered references work — "Eq. (3)", "Figure 2", "Table 1" all map cleanly.
 
 If the paper has no arXiv source available (no arXiv ID, source withheld, download failure), the plugin silently falls back to the PDF flow.
+
+### 3.14 Paper overview map & reading routes
+
+Two related ways to get a structural read on a paper, both reached from the note column header.
+
+**总览 — the overview map** (a generated view, not a note):
+
+| Element | What it is |
+|---|---|
+| `生成总览` / `更新总览` | Top-right button. Generates (or regenerates) the map through `zotero_outline_pdf` → `render_paper_overview`. No automatic full-PDF send |
+| 核心讲述 | A 2–4 sentence summary of what the paper does and its contribution |
+| Section skeleton | Sections in document order, grouped by phase — **动机与背景 / 方法 / 验证与结论** — each with a ≤30-char gist; subsections collapse |
+| 创新 / 效果锚点 | Emphasis markers; `创新` sections call out what is *new*, `效果锚点` marks headline results / SOTA |
+| Structural flowchart | A folded problem → method → result logic diagram |
+| `↩ 在读 N` | Header control: jump back to your reading anchor |
+| `↶ 返回 N` | Step back through visited sections (moves the PDF too) |
+| 🔒 / 🔓 lock | Browse other sections without moving the `在读` anchor |
+| `↗ 浏览器` | Open the full overview as standalone HTML in the system browser |
+
+Click a section row to navigate the PDF to it — exact scroll-to-top via the PDF's embedded outline when present, text-match fallback otherwise. The map and the `在读` anchor are stored per item, auto-saved as a child HTML attachment, and synced inside `state.json`.
+
+**阅读路线 — the reading-route note** (editable prose): the morphing route button generates a reading guide saved to a dedicated *AI 阅读路线* child note. Regenerating overwrites the AI-generated region but preserves your `「我的补充笔记」` section.
+
+Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-arXiv PDFs the skeleton uses heuristic heading detection and may fall back to even-sized windows (`· 估算分段`).
 
 ---
 

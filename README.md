@@ -18,37 +18,9 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 - **Bring your own model** — Anthropic, OpenAI, or any OpenAI-compatible endpoint; all configured locally in Zotero preferences.
 - **Local-first, and you own the sync target** — nothing leaves this machine until you turn on WebDAV sync, which pushes a single `state.json` to *your own* endpoint. It carries settings, model presets (API keys included), chat history, PDF annotations, and translation cache — never to zotero.org or any third party.
 
-## What's New in v0.6.0-preview.1
-
-> Preview build, published as a GitHub **prerelease**. Stable users can stay on v0.5.4; grab the `.xpi` from the [v0.6.0-preview.1 release](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/tag/v0.6.0-preview.1) to try the new overview map.
-
-- **Whole-paper overview map (全文总览)**: a dedicated middle-column view — a core-summary narrative, a section skeleton grouped by phase (motivation / method / validation) with one-line gists and innovation / result markers, collapsible subsections, and a folded structural flowchart. Generated on demand through the model's tool loop; no automatic full-PDF send.
-- **Click-to-jump with a sticky header**: clicking a section navigates the PDF to it — using the PDF's embedded outline for an exact scroll-to-top, with a text-match fallback. The header keeps a ↶ back-stack, an ↩ jump-to-`在读` control, and a 🔒 lock to browse without moving your anchor.
-- **Reading position remembered & synced**: each paper's `在读` anchor persists across restarts and travels in `state.json`; a `🕘 最近阅读` list in the chat header jumps you back to recently-read papers across the whole library and across machines. Export the overview as standalone HTML (`↗ 浏览器`), or let it auto-save as a child HTML attachment.
-- **Internal**: `sidebar.ts` was split from ~12.9k lines into 14 focused modules (−38%) and ~790 lines of dead code removed — no behavior change versus the features above.
-
-## Latest patch: v0.5.4
-
-- **Claude gets the full tool loop**: the Anthropic provider now runs the same model-driven tool loop as OpenAI — Claude calls the local Zotero/arXiv tools, and tool-returned arXiv figures are delivered as native image blocks so vision-capable Claude models actually see them. Extended thinking and tool use replay correctly across turns.
-- **Windows screenshot capture**: the toolbar screenshot button now works on Windows (Snip & Sketch area selection) alongside Linux (`gnome-screenshot` / `flameshot` / `import`), and no longer flashes a console window over Zotero.
-- **Sturdier OpenAI relay**: relay requests now use a per-item sticky session and auto-retry on 5xx, cutting transient failures on reverse-proxy / relay setups.
-- v0.5.3 fixed Windows cache/debug paths and arXiv figure-counter numbering; v0.5.2 added AI chat + translation cache WebDAV sync; the v0.5.0 feature highlights remain below.
-
-## What's New in v0.5.0
-
-- **arXiv LaTeX source as analysis context**: for arXiv papers, the plugin downloads the e-print, cleans the TeX, and feeds the model the source instead of the PDF text layer. Equation (1) reaches the model as exact `\mathbb{E}_{\mathcal{D},\tau,\omega}[\ldots]` instead of garbled `f l θ`. The sidebar header shows a `LaTeX 源` badge when the current item is running on the arXiv source.
-- **Section-on-demand context budget**: the pinned front block is only the section index; the model fetches bodies as needed via tools like `arxiv_get_section` and `arxiv_get_bibliography`. Non-arXiv items, and every failure path, fall back to the existing PDF full-text flow.
-- **Numbered equation, figure & table lookup (arXiv)**: the model can call `arxiv_get_equation`, and `arxiv_get_figure` / `arxiv_get_table` accept numbered references — ask "explain Eq. (3)" or "what's in Table 2" and the model fetches the exact entry from the cached LaTeX source.
-- **Figures rendered inline as multimodal context**: arXiv figures pulled by tool calls appear in the chat as images and are replayed as valid multimodal input on follow-up turns, so vision models actually see them.
-- **Per-paper repaired markdown cache** (non-arXiv fallback): vertically fragmented math runs in the PDF text cache are detected, the formula is rendered and cropped from the PDF, and a vision model transcribes it back to LaTeX. The result is persisted per paper, so first-run pays the transcription cost and later turns reuse the cache.
-- **Markdown pipe tables in chat**: assistant responses render `| col | col |` tables as real tables instead of leaving the raw pipes.
-- **Composer history navigation**: press ↑ / ↓ in the empty composer to recall previous prompts, like a shell history.
-- **Paper-source pinning on by default**: full-paper context is pinned by default with a warning before disabling it; whole-paper questions no longer get narrowed to a stale PDF selection.
-- **Front-block debug file**: when the sidebar `调试` toggle is on, the exact `[Paper full text]` block sent that turn is also saved to a file under Zotero's data dir, and the Markdown export footer points at it for cross-checking what the model actually saw.
-
 ## Install
 
-1. Download the latest `zotero-ai-sidebar.xpi` from [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/latest). Current release: [`v0.5.4`](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/tag/v0.5.4).
+1. Download the latest `zotero-ai-sidebar.xpi` from [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/latest).
 2. Open Zotero 7, 8, or 9.
 3. Go to `Tools` -> `Plugins`.
 4. Click the gear icon and choose `Install Plugin From File...`.
@@ -92,7 +64,7 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 - **Whole-paper 全文总览**: a dedicated middle-column view — a core-summary narrative, a section skeleton grouped by phase (动机 / 方法 / 验证) with one-line gists and 创新 / 效果锚点 emphasis, collapsible subsections, and a folded structural flowchart. Generated on demand through the model's tool loop (`zotero_outline_pdf` → `render_paper_overview`); no automatic full-PDF send.
 - **Click-to-jump with a sticky header**: clicking a section navigates the PDF to it (using the PDF's embedded outline when present — exact, scroll-to-top — with a text-match fallback). The header keeps a ↶ back-stack, an ↩ jump-to-`在读` control, and a 🔒 lock to browse without moving your anchor.
 - **Export & save**: open the overview as a standalone HTML in the system browser (`↗ 浏览器`), and it's auto-saved as a child HTML attachment on the item so it rides Zotero's own sync.
-- **Reading position remembered & synced**: each paper's `在读` anchor persists across restarts and travels in `state.json`; a `🕘 最近阅读` list in the chat header jumps you back to recently-read papers across the whole library and across machines.
+- **Reading position remembered & synced**: each paper's `在读` anchor persists across restarts and travels in `state.json`.
 - Caveat: section jumping relies on the PDF's outline / text matching (no SyncTeX), so for sections that aren't in the PDF's own outline the landing spot can be approximate.
 
 ### PDF & research tools
@@ -119,7 +91,7 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 ### Sync & config
 
 - **Config backup & restore**: export/import model presets (API keys included), UI settings, quick prompts, tool/MCP settings, and translation settings as a single JSON file — handy for moving a setup to a new machine. The file holds your keys, so keep it private.
-- **WebDAV cloud sync**: push and pull a single `state.json` snapshot to a WebDAV endpoint (e.g. Nutstore) — model presets (API keys included), UI settings, quick prompts, tool/MCP settings, translation settings, AI chat history, sentence-translation cache, full PDF annotations (highlight / underline / note / ink), per-item paper overviews, and reading positions (the `在读` anchor + recently-read list).
+- **WebDAV cloud sync**: push and pull a single `state.json` snapshot to a WebDAV endpoint (e.g. Nutstore) — model presets (API keys included), UI settings, quick prompts, tool/MCP settings, translation settings, AI chat history, sentence-translation cache, full PDF annotations (highlight / underline / note / ink), per-item paper overviews, and reading positions (the `在读` anchor).
 - **Auto sync**: disabled by default; when enabled, startup and every 10 minutes pull from cloud first, merge local chat/cache data, then push the merged state back to WebDAV.
 - **Non-destructive chat sync**: cloud chat messages are appended when missing locally; existing local-only chat messages are preserved.
 - **You-controlled secrets**: API keys, base URLs, and model IDs live in Zotero prefs and are never hardcoded in source or sent to zotero.org / the plugin author / any third party. They *do* travel inside your own `state.json` (WebDAV sync) and config-export file — both are private artifacts you control, so treat them like any file that holds credentials. The WebDAV account password itself is never written into the snapshot.

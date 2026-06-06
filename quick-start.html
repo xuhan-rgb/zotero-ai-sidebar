@@ -842,6 +842,144 @@
     background: linear-gradient(180deg, transparent 60%, rgba(192, 103, 61, 0.2) 60%);
   }
 
+  /* Overview map mockup -------------------------------------------------- */
+  .note-tabs {
+    display: flex;
+    gap: 4px;
+    padding: 7px 8px;
+    border-bottom: 1px solid var(--zai-border);
+    background: rgba(255, 253, 248, 0.96);
+  }
+  .note-tab {
+    border: 1px solid var(--zai-border);
+    border-radius: 7px;
+    background: var(--zai-panel);
+    color: var(--zai-muted);
+    padding: 4px 10px;
+    font: 600 11px/1 var(--zai-font);
+  }
+  .note-tab.is-active {
+    background: var(--zai-accent);
+    border-color: var(--zai-accent);
+    color: #fff;
+  }
+  .ov {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+    background: #fff;
+  }
+  .ov-head {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 10px;
+    border-bottom: 1px solid var(--zai-border);
+    background: rgba(255, 253, 248, 0.96);
+  }
+  .ov-head .t { font: 700 12px/1 var(--zai-font); color: var(--zai-text); }
+  .ov-head .spacer { flex: 1; }
+  .ov-ctl {
+    border: 1px solid var(--zai-border);
+    border-radius: 7px;
+    background: var(--zai-panel);
+    color: var(--zai-muted);
+    padding: 3px 7px;
+    font: 600 10px/1 var(--zai-mono);
+  }
+  .ov-ctl.reading { color: var(--zai-blue); border-color: rgba(45, 111, 143, 0.4); }
+  .ov-ctl.gen {
+    background: var(--zai-accent);
+    border-color: var(--zai-accent);
+    color: #fff;
+    font-weight: 700;
+  }
+  .ov-body { padding: 12px 14px; overflow: hidden; }
+  .ov-narrative {
+    margin: 0 0 12px;
+    padding: 9px 11px;
+    border-left: 3px solid var(--zai-accent);
+    border-radius: 0 8px 8px 0;
+    background: var(--zai-accent-soft);
+    color: var(--zai-text);
+    font: 12px/1.5 var(--zai-font);
+  }
+  .ov-phase { margin-bottom: 11px; }
+  .ov-phase > .lbl {
+    display: inline-block;
+    margin-bottom: 6px;
+    color: var(--zai-faint);
+    font: 700 10px/1 var(--zai-mono);
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  .ov-sec {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    padding: 5px 8px;
+    border-radius: 7px;
+    border: 1px solid transparent;
+  }
+  .ov-sec .no { color: var(--zai-faint); font: 700 11px/1.4 var(--zai-mono); min-width: 22px; }
+  .ov-sec .ttl { color: var(--zai-text); font: 600 12px/1.4 var(--zai-font); }
+  .ov-sec .gist { color: var(--zai-muted); font: 11px/1.4 var(--zai-font); }
+  .ov-sec.is-reading {
+    border-color: rgba(45, 111, 143, 0.4);
+    background: var(--zai-blue-soft);
+  }
+  .ov-mark {
+    border-radius: 6px;
+    padding: 2px 6px;
+    font: 700 9px/1 var(--zai-mono);
+    white-space: nowrap;
+  }
+  .ov-mark.innov { background: var(--zai-accent-soft); color: var(--zai-accent-strong); }
+  .ov-mark.result { background: rgba(47, 125, 81, 0.14); color: var(--zai-green); }
+  .ov-flow {
+    margin-top: 10px;
+    padding: 10px 12px;
+    border: 1px dashed var(--zai-border-strong);
+    border-radius: 10px;
+    background: rgba(255, 253, 248, 0.6);
+  }
+  .ov-flow .cap { color: var(--zai-faint); font: 700 10px/1 var(--zai-mono); }
+  .ov-flow .row {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 8px;
+    flex-wrap: wrap;
+  }
+  .ov-flow .node {
+    border: 1px solid var(--zai-border-strong);
+    border-radius: 8px;
+    background: #fff;
+    padding: 5px 9px;
+    font: 600 10px/1.2 var(--zai-font);
+    color: var(--zai-text);
+  }
+  .ov-flow .node.innov { border-color: var(--zai-accent); color: var(--zai-accent-strong); }
+  .ov-flow .node.result { border-color: var(--zai-green); color: var(--zai-green); }
+  .ov-flow .arr { color: var(--zai-faint); font: 700 11px/1 var(--zai-mono); }
+  .recent-read {
+    margin: 8px 0 0;
+    padding: 8px 10px;
+    border: 1px solid var(--zai-border);
+    border-radius: 9px;
+    background: var(--zai-panel);
+  }
+  .recent-read .cap { color: var(--zai-faint); font: 700 10px/1 var(--zai-mono); }
+  .recent-read .item {
+    display: flex;
+    align-items: baseline;
+    gap: 7px;
+    margin-top: 6px;
+    font: 11px/1.4 var(--zai-font);
+    color: var(--zai-text);
+  }
+  .recent-read .item .badge { color: var(--zai-blue); font: 700 10px/1 var(--zai-mono); white-space: nowrap; }
+
   /* Insight callout ----------------------------------------------------- */
   .callout {
     display: flex;
@@ -1498,7 +1636,8 @@
       <a href="#step-3"><span class="num">03</span><span class="zh">输入问题</span><span class="en">Compose a question</span></a>
       <a href="#step-4"><span class="num">04</span><span class="zh">思考与上下文</span><span class="en">Thinking &amp; context</span></a>
       <a href="#step-5"><span class="num">05</span><span class="zh">写入笔记</span><span class="en">Write to note</span></a>
-      <a href="#step-6"><span class="num">06</span><span class="zh">PDF 译模式</span><span class="en">PDF translate</span></a>
+      <a href="#step-6"><span class="num">06</span><span class="zh">全文总览</span><span class="en">Overview map</span></a>
+      <a href="#step-7"><span class="num">07</span><span class="zh">PDF 译模式</span><span class="en">PDF translate</span></a>
     </nav>
   </section>
 
@@ -2535,12 +2674,257 @@
   </section>
 
   <!-- ================================================================== -->
-  <!-- STEP 06 · PDF sentence translation mode                            -->
+  <!-- STEP 06 · Whole-paper overview map                                 -->
   <!-- ================================================================== -->
   <section class="step" id="step-6">
     <div class="step-head">
       <div class="step-title">
         <span class="num">STEP 06</span>
+        <span class="name zh">全文总览 · 一眼看懂整篇论文</span>
+        <span class="name en">Overview map · the whole paper at a glance</span>
+      </div>
+      <div class="step-note">
+        <span class="zh">在笔记列点 <strong>总览</strong> 标签 → <strong>生成总览</strong>。得到核心讲述 + 按阶段分组的章节骨架 + 结构图;<strong>点章节即跳 PDF</strong>,阅读位置还会被记住并跨设备同步。</span>
+        <span class="en">In the note column, click the <strong>总览</strong> tab → <strong>Generate</strong>. You get a core summary, a phase-grouped section skeleton, and a flowchart; <strong>click a section to jump the PDF</strong>, and your reading spot is remembered &amp; synced.</span>
+      </div>
+    </div>
+
+    <ol class="steps-list">
+      <li class="zh">点工具栏 <strong>打开笔记</strong>,笔记列头部出现三个标签:<code>AI 笔记</code> / <code>阅读路线</code> / <code>总览</code>。切到 <strong>总览</strong>。</li>
+      <li class="zh">点右上角 <strong>生成总览</strong> —— 模型先跑 <code>zotero_outline_pdf</code>(便宜的全文骨架,<strong>不发整篇 PDF</strong>)再跑 <code>render_paper_overview</code>。</li>
+      <li class="zh">读到的内容:2–4 句 <strong>核心讲述</strong>、按 <em>动机与背景 / 方法 / 验证与结论</em> 分组的章节骨架(每节一句 ≤30 字 gist + <strong>创新 / 效果锚点</strong> 标记)、一张折叠的结构流程图。</li>
+      <li class="zh"><strong>点任意章节 → PDF 跳到那一节</strong>(有内嵌目录就精确跳顶部,否则文本匹配)。顶部 <code>↩ 在读 N</code> 跳回在读锚点,<code>↶ 返回</code> 沿走过的路回退,<code>🔒</code> 锁定后只跳 PDF、不动锚点。</li>
+      <li class="zh"><code>↗ 浏览器</code> 把完整总览作为独立 HTML 打开;总览还会自动存成子 HTML 附件。</li>
+      <li class="en">Toolbar <strong>Open Note</strong> → the note column shows three tabs: <code>AI 笔记</code> / <code>阅读路线</code> / <code>总览</code>. Switch to <strong>总览</strong>.</li>
+      <li class="en">Click <strong>Generate</strong> top-right — the model runs <code>zotero_outline_pdf</code> (a cheap skeleton, <strong>no full-PDF send</strong>) then <code>render_paper_overview</code>.</li>
+      <li class="en">You get: a 2–4 sentence <strong>core summary</strong>, a skeleton grouped by <em>motivation / method / validation</em> (a ≤30-char gist per section + <strong>innovation / result</strong> markers), and a folded structural flowchart.</li>
+      <li class="en"><strong>Click a section → the PDF jumps to it</strong> (exact via embedded outline, else text match). The header keeps <code>↩ 在读 N</code> (back to anchor), <code>↶ Back</code>, and a <code>🔒</code> lock to browse without moving your anchor.</li>
+      <li class="en"><code>↗ Browser</code> opens the full overview as standalone HTML (also auto-saved as a child attachment).</li>
+    </ol>
+
+    <div class="mockup-grid two-col">
+
+      <!-- 6A: the overview map view -->
+      <div class="mock">
+        <div class="mock-caption">
+          <span class="num">6A</span>
+          <span class="name zh">总览视图 · 核心讲述 + 章节骨架 + 结构图</span>
+          <span class="name en">Overview view · summary + skeleton + flowchart</span>
+          <span class="hint zh">笔记列「总览」标签</span>
+          <span class="hint en">Note column · <em>总览</em> tab</span>
+        </div>
+        <div class="window">
+          <div class="window-bar">
+            <div class="window-dots"><span></span><span></span><span></span></div>
+            <div class="window-title">
+              <span class="zh">Zotero · 全文总览</span>
+              <span class="en">Zotero · Overview map</span>
+            </div>
+          </div>
+          <div class="window-body">
+            <div class="ov">
+              <div class="note-tabs">
+                <span class="note-tab"><span class="zh">AI 笔记</span><span class="en">AI Note</span></span>
+                <span class="note-tab"><span class="zh">阅读路线</span><span class="en">Route</span></span>
+                <span class="note-tab is-active"><span class="zh">总览</span><span class="en">Overview</span></span>
+              </div>
+              <div class="ov-head">
+                <span class="t">📍 <span class="zh">全文总览</span><span class="en">Overview</span></span>
+                <span class="spacer"></span>
+                <span class="ov-ctl">↗ <span class="zh">浏览器</span><span class="en">Browser</span></span>
+                <span class="ov-ctl reading">↩ <span class="zh">在读</span><span class="en">Reading</span> 3</span>
+                <span class="ov-ctl">🔒</span>
+                <span class="ov-ctl gen"><span class="zh">更新总览</span><span class="en">Update</span></span>
+              </div>
+              <div class="ov-body">
+                <div class="ov-narrative">
+                  <span class="zh">π0.5 在 π0 基础上用异构数据共同训练,把开放世界泛化作为一等目标:推理时先预测语义子任务,再生成低层动作块,跨数据源迁移是泛化的关键。</span>
+                  <span class="en">π0.5 co-trains on heterogeneous data atop π0, treating open-world generalization as first-class: inference predicts semantic sub-tasks then low-level action chunks; cross-source transfer is the key to generalizing.</span>
+                </div>
+
+                <div class="ov-phase">
+                  <span class="lbl"><span class="zh">动机与背景</span><span class="en">Motivation</span></span>
+                  <div class="ov-sec">
+                    <span class="no">1</span>
+                    <span><span class="ttl"><span class="zh">引言</span><span class="en">Introduction</span></span> · <span class="gist"><span class="zh">同分布训练难以泛化到新家庭</span><span class="en">in-distribution training fails to generalize</span></span></span>
+                  </div>
+                  <div class="ov-sec">
+                    <span class="no">2</span>
+                    <span><span class="ttl"><span class="zh">相关工作</span><span class="en">Related work</span></span> · <span class="gist"><span class="zh">VLA 与模仿学习现状</span><span class="en">VLA &amp; imitation learning landscape</span></span></span>
+                  </div>
+                </div>
+
+                <div class="ov-phase">
+                  <span class="lbl"><span class="zh">方法</span><span class="en">Method</span></span>
+                  <div class="ov-sec is-reading">
+                    <span class="no">3</span>
+                    <span><span class="ttl"><span class="zh">异构共训</span><span class="en">Heterogeneous co-training</span></span> · <span class="gist"><span class="zh">移动操作 + 其他机器人 + Web 多模态联合训练</span><span class="en">mobile manip + other robots + web multimodal</span></span> <span class="ov-mark innov"><span class="zh">创新</span><span class="en">NEW</span></span></span>
+                  </div>
+                  <div class="ov-sec">
+                    <span class="no">4</span>
+                    <span><span class="ttl"><span class="zh">推理时分解</span><span class="en">Inference decomposition</span></span> · <span class="gist"><span class="zh">先预测语义子任务再出动作块</span><span class="en">predict sub-task then action chunk</span></span> <span class="ov-mark innov"><span class="zh">创新</span><span class="en">NEW</span></span></span>
+                  </div>
+                </div>
+
+                <div class="ov-phase">
+                  <span class="lbl"><span class="zh">验证与结论</span><span class="en">Validation</span></span>
+                  <div class="ov-sec">
+                    <span class="no">5</span>
+                    <span><span class="ttl"><span class="zh">实验</span><span class="en">Experiments</span></span> · <span class="gist"><span class="zh">12 个新家庭 · 新物体/布局/指令</span><span class="en">12 novel homes · objects/layouts/instructions</span></span> <span class="ov-mark result"><span class="zh">效果</span><span class="en">RESULT</span></span></span>
+                  </div>
+                  <div class="ov-sec">
+                    <span class="no">6</span>
+                    <span><span class="ttl"><span class="zh">结论</span><span class="en">Conclusion</span></span> · <span class="gist"><span class="zh">数据成本高,新家庭仍需更多 demo</span><span class="en">data cost steep; new homes need more demos</span></span></span>
+                  </div>
+                </div>
+
+                <div class="ov-flow">
+                  <span class="cap"><span class="zh">结构图纸</span><span class="en">Flowchart</span></span>
+                  <div class="row">
+                    <span class="node"><span class="zh">泛化难题</span><span class="en">Generalization gap</span></span>
+                    <span class="arr">→</span>
+                    <span class="node innov"><span class="zh">异构共训</span><span class="en">Co-training</span></span>
+                    <span class="arr">→</span>
+                    <span class="node innov"><span class="zh">推理时分解</span><span class="en">Decomposition</span></span>
+                    <span class="arr">→</span>
+                    <span class="node result"><span class="zh">12 家庭泛化</span><span class="en">12-home gen.</span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- 6B: click-to-jump + reading memory -->
+      <div class="mock">
+        <div class="mock-caption">
+          <span class="num">6B</span>
+          <span class="name zh">点章节即跳 PDF · 记住在读</span>
+          <span class="name en">Click → jump PDF · remembers 在读</span>
+          <span class="hint zh">PDF | 总览 | AI</span>
+          <span class="hint en">PDF | Overview | AI</span>
+        </div>
+        <div class="window">
+          <div class="window-bar">
+            <div class="window-dots"><span></span><span></span><span></span></div>
+            <div class="window-title">
+              <span class="zh">Zotero · 点章节跳转 + 阅读记忆</span>
+              <span class="en">Zotero · jump + reading memory</span>
+            </div>
+          </div>
+          <div class="window-body">
+            <div class="three-col">
+              <!-- PDF jumped to §3 -->
+              <div class="pdf-mock">
+                <div class="pdf-toolbar">
+                  <span class="btn">◀</span>
+                  <span class="btn">▶</span>
+                  <span class="btn">⤧</span>
+                  <span class="btn">−</span>
+                  <span class="btn">+</span>
+                  <span class="pg">7 / 18</span>
+                </div>
+                <div class="pdf-page">
+                  <h3 class="zh">3 · 异构数据共同训练</h3>
+                  <h3 class="en">3 · Heterogeneous co-training</h3>
+                  <p class="zh">我们把移动操作演示、其他机器人数据、高层语义子任务标签、语言指令以及 Web 多模态数据放进同一个训练目标。</p>
+                  <p class="en">We place mobile-manipulation demos, other-robot data, semantic sub-task labels, language, and web multimodal into a single training objective.</p>
+                  <p class="zh">这一节正是总览里点中的「在读」章节 —— PDF 已滚到顶部。</p>
+                  <p class="en">This is exactly the "在读" section clicked in the overview — the PDF scrolled to its top.</p>
+                </div>
+              </div>
+
+              <!-- Overview compact, §3 reading -->
+              <div class="ov">
+                <div class="note-tabs">
+                  <span class="note-tab"><span class="zh">AI 笔记</span><span class="en">Note</span></span>
+                  <span class="note-tab is-active"><span class="zh">总览</span><span class="en">Overview</span></span>
+                </div>
+                <div class="ov-head">
+                  <span class="t">📍 <span class="zh">总览</span><span class="en">Map</span></span>
+                  <span class="spacer"></span>
+                  <span class="ov-ctl">↶ <span class="zh">返回</span><span class="en">Back</span> 1</span>
+                  <span class="ov-ctl reading">↩ 3</span>
+                </div>
+                <div class="ov-body">
+                  <div class="ov-phase">
+                    <span class="lbl"><span class="zh">方法</span><span class="en">Method</span></span>
+                    <div class="ov-sec is-reading">
+                      <span class="no">3</span>
+                      <span><span class="ttl"><span class="zh">异构共训</span><span class="en">Co-training</span></span> <span class="ov-mark innov"><span class="zh">创新</span><span class="en">NEW</span></span></span>
+                    </div>
+                    <div class="ov-sec">
+                      <span class="no">4</span>
+                      <span><span class="ttl"><span class="zh">推理时分解</span><span class="en">Decomposition</span></span></span>
+                    </div>
+                  </div>
+                  <div class="ov-phase">
+                    <span class="lbl"><span class="zh">验证</span><span class="en">Validation</span></span>
+                    <div class="ov-sec">
+                      <span class="no">5</span>
+                      <span><span class="ttl"><span class="zh">实验</span><span class="en">Experiments</span></span> <span class="ov-mark result"><span class="zh">效果</span><span class="en">RESULT</span></span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <!-- AI sidebar -->
+              <div class="sb" style="background:none">
+                <div class="sb-itemhead">
+                  <div class="title">π0.5: VLA with Open-World Generalization</div>
+                </div>
+                <div class="messages-mock">
+                  <div class="bubble-user-mock">
+                    <span class="zh">先给我整篇的总览,我决定重点读哪几章。</span>
+                    <span class="en">Give me the whole-paper overview first; I'll pick what to read.</span>
+                  </div>
+                  <div class="bubble-assistant-mock">
+                    <div class="bubble-head-mock">
+                      <span class="bubble-avatar-mock">AI</span>
+                      <span class="bubble-role-mock">AI</span>
+                    </div>
+                    <div class="thinking-context">
+                      <div class="thinking-context-head">
+                        <span class="chev" style="transform:rotate(-45deg)"></span>
+                        <span class="zh">思考与上下文</span>
+                        <span class="en">Thinking &amp; context</span>
+                        <span class="meta zh">· 2 工具:骨架 + 渲染</span>
+                        <span class="meta en">· 2 tools: outline + render</span>
+                      </div>
+                    </div>
+                    <div class="bubble-body-mock">
+                      <p class="zh">✓ 已生成总览 —— 重点在 §3 / §4(本文创新),§5 是效果验证。点左边章节即可跳 PDF。</p>
+                      <p class="en">✓ Overview ready — focus is §3 / §4 (the contributions); §5 is the result check. Click a section to jump the PDF.</p>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="callout">
+      <div class="ico">↻</div>
+      <div class="body">
+        <strong class="zh">总览、阅读路线、AI 笔记有什么区别?</strong>
+        <strong class="en">Overview vs. reading route vs. AI note?</strong>
+        <span class="zh"> <strong>总览</strong> 是用来<em>导航</em>的生成视图(不写入笔记);<strong>阅读路线</strong> 是存进专用「AI 阅读路线」子笔记的<em>可编辑文字</em>,重新生成会保留你的「我的补充笔记」;<strong>AI 笔记</strong> 才是对话里「写入笔记」默认追加的地方。总览和在读位置都随 <code>state.json</code>(WebDAV)跨设备同步。</span>
+        <span class="en"> <strong>总览</strong> is a generated view for <em>navigating</em> (never written to a note); <strong>阅读路线</strong> is <em>editable prose</em> saved into a dedicated note (regenerating keeps your "我的补充笔记"); <strong>AI 笔记</strong> is where chat's "Write to note" appends. The overview and your 在读 position both sync across machines inside <code>state.json</code> (WebDAV).</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- ================================================================== -->
+  <!-- STEP 07 · PDF sentence translation mode                            -->
+  <!-- ================================================================== -->
+  <section class="step" id="step-7">
+    <div class="step-head">
+      <div class="step-title">
+        <span class="num">STEP 07</span>
         <span class="name zh">PDF 逐句翻译模式</span>
         <span class="name en">PDF sentence translation mode</span>
       </div>
@@ -2568,7 +2952,7 @@
       <!-- 6A: Translate settings panel -->
       <div class="mock">
         <div class="mock-caption">
-          <span class="num">6A</span>
+          <span class="num">7A</span>
           <span class="name zh">翻译设置 · 触发 / 位置 / 上下文 / 快捷键</span>
           <span class="name en">Translation settings · trigger / position / context / keys</span>
           <span class="hint zh">设置 → 翻译</span>
@@ -2641,7 +3025,7 @@
       <!-- 6B: PDF reader with translate mode active + overlay -->
       <div class="mock">
         <div class="mock-caption">
-          <span class="num">6B</span>
+          <span class="num">7B</span>
           <span class="name zh">PDF · 译模式 · 句子高亮 + 浮层</span>
           <span class="name en">PDF · translate mode · sentence + overlay</span>
           <span class="hint zh">点句即译</span>
