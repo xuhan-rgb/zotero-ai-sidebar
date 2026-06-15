@@ -27,6 +27,10 @@ interface CacheKeyInput {
   model: string;
   thinking: string;
   ctxLevel: string;
+  // Distinguishes derived outputs for the SAME sentence (e.g. "breakdown" vs the
+  // default translation). Omitted/`translate` keeps the legacy key byte-identical
+  // so existing on-disk translation cache entries still hit.
+  kind?: string;
 }
 
 interface ZoteroFileAPI {
@@ -59,15 +63,18 @@ function normalizeSentence(s: string): string {
 }
 
 export function cacheKey(input: CacheKeyInput): string {
-  const payload = [
+  const parts = [
     normalizeSentence(input.sentence),
     input.target,
     input.endpoint,
     input.model,
     input.thinking,
     input.ctxLevel,
-  ].join('|');
-  return fnv1aHex64(payload).slice(0, 16);
+  ];
+  // Append the kind only for non-default outputs so legacy translation keys
+  // (no kind / 'translate') keep their existing hash and stay cache-hot.
+  if (input.kind && input.kind !== 'translate') parts.push(input.kind);
+  return fnv1aHex64(parts.join('|')).slice(0, 16);
 }
 
 const CACHE_FILE = 'zotero-ai-sidebar-translate-cache.json';

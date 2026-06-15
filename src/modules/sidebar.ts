@@ -95,6 +95,9 @@ import {
 import { serializeSelectionAsMarkdown } from "../ui/selection-serialize";
 import { mountSelectionPopupGuard } from "../translate/overlay";
 import { TranslateModeController } from "../translate/translate-mode";
+import { AskModeController } from "../translate/ask-mode";
+import { getReadingConversations } from "../translate/reading-log";
+import { summarizeReadingConversations } from "../translate/reading-summary";
 import {
   addDraftImages,
   pastedImageFiles,
@@ -399,6 +402,7 @@ import {
   selectedTextByItem,
   states,
   translateControllers,
+  askControllers,
   windowRegisterRetries,
   windowSidebars,
   type MessagesScrollLock,
@@ -803,11 +807,21 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   translateBtn.addEventListener("click", () => {
     void toggleTranslateMode(win, translateBtn);
   });
+  const askBtn = buttonEl(doc, "沉浸");
+  askBtn.className = "zai-sidebar-ask-button";
+  askBtn.title =
+    "沉浸式阅读：单击句子高亮，旁边弹出 [✦ 问 AI] / [译] 选择（点击切换开关）";
+  syncAskBtnState(win, askBtn);
+  askBtn.addEventListener("click", () => {
+    void toggleAskMode(win, askBtn);
+  });
   // Content actions, then 设置 (opens full preferences), the 字号 menu (🎚 icon
   // → font-size popup) and the 调试 (copy-debug context) toggle.
   settings.title = "打开 AI 对话完整设置";
   bottomRow.append(openNote);
-  bottomRow.append(translateBtn);
+  // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留，去掉这行注释即可恢复）。
+  // bottomRow.append(translateBtn);
+  bottomRow.append(askBtn);
   bottomRow.append(settings);
   bottomRow.append(renderFontIconMenu(doc, mount, state));
   bottomRow.append(renderCopyDebugToggle(doc, mount, state));
@@ -5009,8 +5023,62 @@ function renderNoteFileSwitcher(
     void showOverviewWindow(sidebar);
   });
 
-  wrap.append(normal, route, overview);
+  // 「对话总结」: AI-summarize this paper's immersive-reading in-place Q&A (all
+  // the per-sentence cards) and append the digest into the AI note. Not a view
+  // switch — a one-shot write action.
+  const summary = noteFileSwitchButton(doc, "对话总结", false);
+  summary.title = "用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记";
+  summary.addEventListener("click", () => {
+    void summarizeReadingFromNoteSwitcher(sidebar, summary);
+  });
+
+  wrap.append(normal, route, overview, summary);
   return wrap;
+}
+
+async function summarizeReadingFromNoteSwitcher(
+  sidebar: WindowSidebarState,
+  button: HTMLButtonElement,
+): Promise<void> {
+  const doc = sidebar.mount.ownerDocument!;
+  const mainWin = doc.defaultView ?? null;
+  const itemID = mainWin ? safeSelectedItemID(mainWin) : null;
+  const original = button.textContent ?? "对话总结";
+  const restoreTitle =
+    "用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记";
+  if (getReadingConversations(itemID).length === 0) {
+    button.textContent = "暂无对话";
+    button.title = "本篇还没有沉浸阅读的就地问答记录";
+    doc.defaultView?.setTimeout(() => {
+      button.textContent = original;
+      button.title = restoreTitle;
+    }, 1800);
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "总结中…";
+  const ctrl = new AbortController();
+  try {
+    const result = await summarizeReadingConversations(
+      itemID,
+      zoteroPrefs(),
+      ctrl.signal,
+    );
+    if (!result.text) throw new Error("AI 未返回总结内容");
+    const md = `## 沉浸阅读对话总结（${result.count} 段）\n\n${result.text}`;
+    const written = await appendAssistantContentToItemNote(doc, itemID, md);
+    refreshVisibleNoteWindow(doc, written.noteID);
+    button.textContent = "已写入笔记";
+  } catch (err) {
+    button.textContent = "总结失败";
+    button.title = err instanceof Error ? err.message : String(err);
+  } finally {
+    doc.defaultView?.setTimeout(() => {
+      button.textContent = original;
+      button.title = restoreTitle;
+      button.disabled = false;
+    }, 2000);
+  }
 }
 
 function noteFileSwitchButton(
@@ -7490,6 +7558,7 @@ export function unregisterSidebarForWindow(win: Window) {
   if (!state) return;
 
   disableTranslateMode(win);
+  disableAskMode(win);
 
   const pane = (win as any).ZoteroPane;
   if (
@@ -7548,6 +7617,7 @@ function renderWindowSidebar(win: Window) {
   if (itemID !== previousItemID) {
     if (state.noteItemID) switchNoteForItem(state, itemID);
     void migrateTranslateModeOnReaderSwitch(win);
+    void migrateAskModeOnReaderSwitch(win);
   }
   updateToggleButton(state);
 }
@@ -7829,6 +7899,8 @@ async function toggleTranslateMode(
     translateControllers.delete(win);
     syncTranslateButtons(win);
   } else {
+    // Mutual exclusion: only one in-place mode at a time.
+    disableAskMode(win);
     try {
       await ctrl.enable();
       syncTranslateButtons(win);
@@ -7904,6 +7976,114 @@ function setTranslateButtonLabel(btn: HTMLElement, enabled: boolean): void {
     return;
   }
   btn.textContent = enabled ? "译✓" : "译";
+}
+
+// Immersive reading ("沉浸") mode. Mirrors the translate control flow but kept
+// as a separate, independent controller so the standalone "译" quick mode is
+// never touched. The two in-place modes are mutually exclusive: enabling one
+// disables the other.
+async function toggleAskMode(win: Window, btn: HTMLElement): Promise<void> {
+  const ctrl = await getOrCreateAskController(win);
+  if (!ctrl) {
+    syncAskButtons(win);
+    flashButton(btn as HTMLButtonElement, "无PDF");
+    return;
+  }
+  if (ctrl.isEnabled()) {
+    ctrl.disable();
+    askControllers.delete(win);
+    syncAskButtons(win);
+  } else {
+    // Mutual exclusion: only one in-place mode at a time.
+    disableTranslateMode(win);
+    try {
+      await ctrl.enable();
+      syncAskButtons(win);
+      // Drop keyboard focus off the toggle so a later Space (the default 选区
+      // 快捷翻译键, and the universal "click the focused button" key) can't
+      // re-trigger this button and switch immersive back off.
+      (btn as HTMLButtonElement).blur?.();
+    } catch (err) {
+      debugZai("ask.enable.failed", { error: errorMessage(err) });
+      syncAskButtons(win);
+      flashButton(btn as HTMLButtonElement, "失败");
+    }
+  }
+}
+
+async function getOrCreateAskController(
+  win: Window,
+): Promise<AskModeController | null> {
+  const reader = getActiveReader(win);
+  if (!reader) return null;
+  const existing = askControllers.get(win);
+  const prefs = zoteroPrefs();
+  const presets = loadPresets(prefs);
+  if (existing?.isForReader(reader)) {
+    existing.refreshPresets(presets);
+    return existing;
+  }
+  existing?.disable();
+  const ctrl = new AskModeController({
+    prefs,
+    presets,
+    reader,
+    hostWindow: win,
+    getItemID: () => safeSelectedItemID(win),
+  });
+  askControllers.set(win, ctrl);
+  return ctrl;
+}
+
+function syncAskBtnState(win: Window, btn: HTMLElement): void {
+  const enabled = askControllers.get(win)?.isEnabled() ?? false;
+  btn.classList.toggle("zai-toolbar-icon--active", enabled);
+  setAskButtonLabel(btn, enabled);
+}
+
+function disableAskMode(win: Window): void {
+  askControllers.get(win)?.disable();
+  askControllers.delete(win);
+  syncAskButtons(win);
+}
+
+function syncAskButtons(win: Window): void {
+  const enabled = askControllers.get(win)?.isEnabled() ?? false;
+  const buttons = Array.from(
+    win.document.querySelectorAll(".zai-sidebar-ask-button"),
+  ) as HTMLElement[];
+  for (const button of buttons) {
+    button.classList.toggle("zai-toolbar-icon--active", enabled);
+    setAskButtonLabel(button, enabled);
+  }
+}
+
+function setAskButtonLabel(btn: HTMLElement, enabled: boolean): void {
+  if (!btn.classList.contains("zai-sidebar-ask-button")) return;
+  btn.textContent = enabled ? "沉浸✓" : "沉浸";
+}
+
+async function migrateAskModeOnReaderSwitch(win: Window): Promise<void> {
+  const existing = askControllers.get(win);
+  if (!existing?.isEnabled()) return;
+  const reader = getActiveReader(win);
+  if (!reader || existing.isForReader(reader)) return;
+  existing.disable();
+  const prefs = zoteroPrefs();
+  const ctrl = new AskModeController({
+    prefs,
+    presets: loadPresets(prefs),
+    reader,
+    hostWindow: win,
+    getItemID: () => safeSelectedItemID(win),
+  });
+  askControllers.set(win, ctrl);
+  try {
+    await ctrl.enable();
+  } catch {
+    askControllers.delete(win);
+  }
+  syncAskButtons(win);
 }
 
 declare global {

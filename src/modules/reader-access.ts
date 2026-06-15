@@ -191,12 +191,25 @@ export function readerConversationItemID(reader: unknown): number | null {
 
 export function safeSelectionText(win: unknown): string {
   try {
-    return normalizeSelectedText(
-      (win as Window | undefined)?.getSelection?.()?.toString(),
-    );
+    const selection = (win as Window | undefined)?.getSelection?.();
+    if (!selection) return "";
+    // Selections inside our own in-place translate/ask card must NOT leak into
+    // the sidebar's selected-text context — the user is just copying 原文/译文.
+    if (selectionInsidePluginOverlay(selection)) return "";
+    return normalizeSelectedText(selection.toString());
   } catch {
     return "";
   }
+}
+
+function selectionInsidePluginOverlay(selection: Selection): boolean {
+  const node = selection.anchorNode ?? selection.focusNode;
+  if (!node) return false;
+  const el =
+    node.nodeType === 1
+      ? (node as Element)
+      : ((node as { parentElement?: Element | null }).parentElement ?? null);
+  return !!el?.closest?.(".zai-translate-overlay,.zai-sentence-chooser");
 }
 
 export function firstText(values: string[]): string {

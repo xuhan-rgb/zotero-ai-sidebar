@@ -50,29 +50,14 @@ export interface DetectInput {
 export async function detectSentenceAtPoint(input: DetectInput): Promise<DetectedSentence | null> {
   const { iframeWindow, clientX, clientY, locator } = input;
   const pdfPoint = pdfPointFromClientPoint(iframeWindow, clientX, clientY);
-  if (pdfPoint && locator.sentenceAtPoint) {
-    const located = await locator.sentenceAtPoint(pdfPoint.pageIndex, {
-      x: pdfPoint.x,
-      y: pdfPoint.y,
-    });
-    if (located) {
-      const bundle = await locator.getPageContent(located.pageIndex);
-      if (!bundle) return null;
-      return {
-        text: located.text,
-        pageIndex: located.pageIndex,
-        pageLabel: located.pageLabel,
-        rects: located.rects,
-        sortIndex: located.sortIndex,
-        pageSentenceIndex: located.pageSentenceIndex,
-        pageSentenceCount: located.pageSentenceCount,
-        paragraphContext: located.paragraphContext,
-        rangeStart: located.rangeStart,
-        rangeEnd: located.rangeEnd,
-        sortTop: located.sortTop,
-        bundle,
-      };
-    }
+  if (pdfPoint) {
+    const detected = await detectSentenceAtPdfPoint(
+      locator,
+      pdfPoint.pageIndex,
+      pdfPoint.x,
+      pdfPoint.y,
+    );
+    if (detected) return detected;
   }
 
   const doc = iframeWindow.document;
@@ -80,6 +65,37 @@ export async function detectSentenceAtPoint(input: DetectInput): Promise<Detecte
   if (!caret) return null;
 
   return detectSentenceAtCaret(doc, caret, locator);
+}
+
+// Detect the sentence at a PDF-space point (page + viewBox coordinates). Shared
+// by the click path (after converting client→PDF coords) and the immersive
+// 选区快捷翻译 path (which derives the point from the reader's selection model,
+// since the DOM Selection is unreliable in the Zotero reader).
+export async function detectSentenceAtPdfPoint(
+  locator: PdfLocator,
+  pageIndex: number,
+  x: number,
+  y: number,
+): Promise<DetectedSentence | null> {
+  if (!locator.sentenceAtPoint) return null;
+  const located = await locator.sentenceAtPoint(pageIndex, { x, y });
+  if (!located) return null;
+  const bundle = await locator.getPageContent(located.pageIndex);
+  if (!bundle) return null;
+  return {
+    text: located.text,
+    pageIndex: located.pageIndex,
+    pageLabel: located.pageLabel,
+    rects: located.rects,
+    sortIndex: located.sortIndex,
+    pageSentenceIndex: located.pageSentenceIndex,
+    pageSentenceCount: located.pageSentenceCount,
+    paragraphContext: located.paragraphContext,
+    rangeStart: located.rangeStart,
+    rangeEnd: located.rangeEnd,
+    sortTop: located.sortTop,
+    bundle,
+  };
 }
 
 export async function detectSentenceFromSelection(input: {

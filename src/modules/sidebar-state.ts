@@ -16,6 +16,7 @@ import type { LocalUiSettings } from "../settings/local-ui-settings";
 import type { UiSettings } from "../settings/ui-settings";
 import type { AgentPermissionMode, ModelPreset } from "../settings/types";
 import type { TranslateModeController } from "../translate/translate-mode";
+import type { AskModeController } from "../translate/ask-mode";
 import type { AssistantProgressStage } from "./assistant-progress";
 import type { DraftImage } from "./composer-images";
 import type { PasteBlock } from "./composer-paste";
@@ -30,6 +31,8 @@ export const translateControllers = new WeakMap<
   Window,
   TranslateModeController
 >();
+
+export const askControllers = new WeakMap<Window, AskModeController>();
 
 export const XHTML_NS = "http://www.w3.org/1999/xhtml";
 export const COLUMN_ID = "zai-column";

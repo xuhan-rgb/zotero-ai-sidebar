@@ -35,7 +35,10 @@ export function matchesKeybinding(
   ev: Pick<KeyboardEvent, 'key' | 'shiftKey' | 'ctrlKey' | 'altKey' | 'metaKey'>,
   kb: Keybinding,
 ): boolean {
-  return ev.key === kb.key
+  // KeyboardEvent reports Space as " "; accept the readable alias "Space" so a
+  // binding like the quick-translate key can be written/configured as "Space".
+  const evKey = ev.key === ' ' ? 'Space' : ev.key;
+  return evKey === kb.key
     && ev.shiftKey === kb.shift
     && ev.ctrlKey === kb.ctrl
     && ev.altKey === kb.alt

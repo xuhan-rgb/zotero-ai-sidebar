@@ -57,6 +57,9 @@ export class TranslateModeController {
   private lastActivation: { at: number; x: number; y: number } | null = null;
   private lastDoubleActivation: { at: number; x: number; y: number } | null = null;
   private active = false;
+  // See AskModeController: detect supersession during the createPdfLocator()
+  // await so a rapid translate↔ask toggle can't leave stale bound handlers.
+  private enableSeq = 0;
 
   constructor(private ctx: TranslateModeContext) {}
 
@@ -85,9 +88,15 @@ export class TranslateModeController {
     )
       return;
     if (this.boundWindow) this.disable();
-    if (!this.locator) {
-      this.locator = await createPdfLocator(this.ctx.reader);
+    const seq = ++this.enableSeq;
+    // Capture in a local so a concurrent enable()/disable() can't make us
+    // clobber the winner's this.locator (→ handlers bound but locator null).
+    const locator = this.locator ?? (await createPdfLocator(this.ctx.reader));
+    if (this.enableSeq !== seq) {
+      if (locator !== this.locator) locator.dispose();
+      return;
     }
+    this.locator = locator;
 
     this.boundWindow = win;
     this.active = true;
@@ -156,6 +165,7 @@ export class TranslateModeController {
   }
 
   disable(): void {
+    this.enableSeq++;
     this.active = false;
     if (this.boundWindow && this.pointerDownHandler) {
       this.boundWindow.removeEventListener("pointerdown", this.pointerDownHandler, true);

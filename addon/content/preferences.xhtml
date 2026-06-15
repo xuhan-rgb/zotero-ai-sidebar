@@ -109,7 +109,7 @@
     <html:div class="zai-pref-card">
       <html:div class="zai-pref-title">逐句翻译设置</html:div>
       <html:p class="zai-pref-help">
-        侧边栏和 PDF Reader 里只保留「译」开关；模型、思考程度、上下文和快捷键在这里统一保存。翻译设置会参与 WebDAV 云同步。
+        「译」快捷翻译与「沉浸」共用的部分：<html:strong>模型、思考程度、结果位置、翻译框大小、账号配置</html:strong> —— 这几项在这里改，两个模式都生效。带「仅译」标记的（上下文 / 触发方式 / 下一句·上一句快捷键）只作用于「译」模式；沉浸模式有自己的「结合上下句 / 单击直接出卡 / 快捷键」（在下方“沉浸阅读”卡里）。翻译设置会参与 WebDAV 云同步。
       </html:p>
       <html:div class="zai-pref-grid">
         <html:label for="zai-translate-preset">配置</html:label>
@@ -124,7 +124,7 @@
           <html:option value="high">High - 更强推理</html:option>
           <html:option value="xhigh">Extra high - 最强推理</html:option>
         </html:select>
-        <html:label for="zai-translate-context">上下文</html:label>
+        <html:label for="zai-translate-context">上下文（仅译）</html:label>
         <html:select id="zai-translate-context">
           <html:option value="none">仅本句</html:option>
           <html:option value="paragraph">本段</html:option>
@@ -140,19 +140,54 @@
           <html:option value="compact">紧凑（固定小框）</html:option>
           <html:option value="adaptive">自适应（尽量展开）</html:option>
         </html:select>
-        <html:label for="zai-translate-trigger">触发方式</html:label>
+        <html:label for="zai-translate-trigger">触发方式（仅译）</html:label>
         <html:select id="zai-translate-trigger">
           <html:option value="single">单击翻译</html:option>
           <html:option value="double">双击翻译</html:option>
         </html:select>
-        <html:label for="zai-translate-next-key">下一句快捷键</html:label>
+        <html:label for="zai-translate-next-key">下一句快捷键（仅译）</html:label>
         <html:input id="zai-translate-next-key" type="text" placeholder="例如：Enter 或 Alt+N" />
-        <html:label for="zai-translate-prev-key">上一句快捷键</html:label>
+        <html:label for="zai-translate-prev-key">上一句快捷键（仅译）</html:label>
         <html:input id="zai-translate-prev-key" type="text" placeholder="例如：Shift+Enter 或 Alt+P" />
       </html:div>
       <html:div class="zai-pref-actions">
         <html:button id="zai-translate-save" type="button">保存翻译设置</html:button>
         <html:span id="zai-translate-status" class="zai-pref-status"></html:span>
+      </html:div>
+    </html:div>
+
+    <html:div class="zai-pref-card">
+      <html:div class="zai-pref-title">沉浸阅读（问 AI）</html:div>
+      <html:p class="zai-pref-help">
+        沉浸模式下单击 PDF 句子的行为。开启＝直接弹出「翻译 + 解释」卡并可追问；关闭＝先弹「问 AI / 译」选择条由你手选。改动即时生效，无需保存。
+      </html:p>
+      <html:label class="zai-pref-checkbox-row">
+        <html:input id="zai-immersive-card-mode" type="checkbox" />
+        <html:span class="zai-pref-checkbox-label">单击直接出卡（关闭＝弹「问 AI / 译」选择条）</html:span>
+      </html:label>
+      <html:label class="zai-pref-checkbox-row">
+        <html:input id="zai-immersive-neighbor-context" type="checkbox" />
+        <html:span class="zai-pref-checkbox-label">结合上下句翻译（默认关＝最省，只发被点这一句；开启＝带上前后各一句作上下文，更准。也可在卡片上临时勾）</html:span>
+      </html:label>
+      <html:label class="zai-pref-checkbox-row">
+        <html:input id="zai-immersive-term-pairs" type="checkbox" />
+        <html:span class="zai-pref-checkbox-label">重点词对应（默认关；开启后译文多回几个原文↔中文词对，悬停时原文与译文里对应词虚线互相点亮）</html:span>
+      </html:label>
+      <html:p class="zai-pref-help">
+        默认卡＝原文 + 译（最省）：单击只翻这一句并缓存；想要解释直接在卡片底部追问。切句快捷键默认 Enter / Shift+Enter：卡片开着时翻到下一句并出新卡，没开卡时移动“在读高亮”；在追问框里打字时 Enter 仍是发送、不会切句。也可改成 ArrowDown / ArrowUp 或 j / k。
+      </html:p>
+      <html:div class="zai-pref-grid">
+        <html:label for="zai-immersive-next-key">下一句快捷键</html:label>
+        <html:input id="zai-immersive-next-key" type="text" placeholder="例如：Enter 或 ArrowDown 或 j" />
+        <html:label for="zai-immersive-prev-key">上一句快捷键</html:label>
+        <html:input id="zai-immersive-prev-key" type="text" placeholder="例如：Shift+Enter 或 ArrowUp 或 k" />
+      </html:div>
+      <html:p class="zai-pref-help">
+        用鼠标在 PDF 里选中文字后，按下面这个键即可直接翻译选中的句子（弹出同样的卡片，Enter/Shift+Enter 继续切句）；按 Esc 取消翻译并恢复选区。默认空格——只有“有选区时”才拦截，没选区时空格照常翻页。
+      </html:p>
+      <html:div class="zai-pref-grid">
+        <html:label for="zai-immersive-quick-key">选区快捷翻译键</html:label>
+        <html:input id="zai-immersive-quick-key" type="text" placeholder="例如：Space 或 t 或 Alt+Space" />
       </html:div>
     </html:div>
 

@@ -16,6 +16,14 @@ describe('keybinding', () => {
     expect(matchesKeybinding(ev, parseKeybinding('Enter')!)).toBe(false);
   });
 
+  it('matches Space via the readable alias (ev.key is " ")', () => {
+    const ev = { key: ' ', shiftKey: false, ctrlKey: false, altKey: false, metaKey: false } as KeyboardEvent;
+    expect(matchesKeybinding(ev, parseKeybinding('Space')!)).toBe(true);
+    const alt = { key: ' ', shiftKey: false, ctrlKey: false, altKey: true, metaKey: false } as KeyboardEvent;
+    expect(matchesKeybinding(alt, parseKeybinding('Alt+Space')!)).toBe(true);
+    expect(matchesKeybinding(ev, parseKeybinding('Alt+Space')!)).toBe(false);
+  });
+
   it('rejects empty/garbage', () => {
     expect(parseKeybinding('')).toBeNull();
     expect(parseKeybinding('+++')).toBeNull();

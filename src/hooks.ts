@@ -13,6 +13,23 @@ import {
   registerPreferences,
   unregisterPreferences,
 } from './modules/preferences';
+import {
+  getImmersiveClickMode,
+  setImmersiveClickMode,
+  getImmersiveNextSentenceKey,
+  setImmersiveNextSentenceKey,
+  getImmersivePrevSentenceKey,
+  setImmersivePrevSentenceKey,
+  DEFAULT_IMMERSIVE_NEXT_KEY,
+  DEFAULT_IMMERSIVE_PREV_KEY,
+  getImmersiveNeighborContext,
+  setImmersiveNeighborContext,
+  getImmersiveTermPairs,
+  setImmersiveTermPairs,
+  getImmersiveQuickTranslateKey,
+  setImmersiveQuickTranslateKey,
+  DEFAULT_IMMERSIVE_QUICK_KEY,
+} from './translate/ask-mode';
 import { getProvider } from './providers/factory';
 import type { Message } from './providers/types';
 import {
@@ -162,6 +179,78 @@ function setupPreferencesPane(win: Window): void {
 
   if (root.dataset.bound === 'true') return;
   root.dataset.bound = 'true';
+
+  const immersiveCard = byID<HTMLInputElement>(doc, 'zai-immersive-card-mode');
+  if (immersiveCard) {
+    immersiveCard.checked = getImmersiveClickMode(zoteroPrefs()) === 'card';
+    immersiveCard.addEventListener('change', () => {
+      setImmersiveClickMode(
+        zoteroPrefs(),
+        immersiveCard.checked ? 'card' : 'chooser',
+      );
+    });
+  }
+
+  const immersiveNeighbor = byID<HTMLInputElement>(
+    doc,
+    'zai-immersive-neighbor-context',
+  );
+  if (immersiveNeighbor) {
+    immersiveNeighbor.checked = getImmersiveNeighborContext(zoteroPrefs());
+    immersiveNeighbor.addEventListener('change', () => {
+      setImmersiveNeighborContext(zoteroPrefs(), immersiveNeighbor.checked);
+    });
+  }
+
+  const immersiveTerms = byID<HTMLInputElement>(
+    doc,
+    'zai-immersive-term-pairs',
+  );
+  if (immersiveTerms) {
+    immersiveTerms.checked = getImmersiveTermPairs(zoteroPrefs());
+    immersiveTerms.addEventListener('change', () => {
+      setImmersiveTermPairs(zoteroPrefs(), immersiveTerms.checked);
+    });
+  }
+
+  const immersiveNextKey = byID<HTMLInputElement>(doc, 'zai-immersive-next-key');
+  if (immersiveNextKey) {
+    immersiveNextKey.value = getImmersiveNextSentenceKey(zoteroPrefs());
+    immersiveNextKey.addEventListener('change', () => {
+      setImmersiveNextSentenceKey(
+        zoteroPrefs(),
+        immersiveNextKey.value.trim() || DEFAULT_IMMERSIVE_NEXT_KEY,
+      );
+      immersiveNextKey.value = getImmersiveNextSentenceKey(zoteroPrefs());
+    });
+  }
+
+  const immersivePrevKey = byID<HTMLInputElement>(doc, 'zai-immersive-prev-key');
+  if (immersivePrevKey) {
+    immersivePrevKey.value = getImmersivePrevSentenceKey(zoteroPrefs());
+    immersivePrevKey.addEventListener('change', () => {
+      setImmersivePrevSentenceKey(
+        zoteroPrefs(),
+        immersivePrevKey.value.trim() || DEFAULT_IMMERSIVE_PREV_KEY,
+      );
+      immersivePrevKey.value = getImmersivePrevSentenceKey(zoteroPrefs());
+    });
+  }
+
+  const immersiveQuickKey = byID<HTMLInputElement>(
+    doc,
+    'zai-immersive-quick-key',
+  );
+  if (immersiveQuickKey) {
+    immersiveQuickKey.value = getImmersiveQuickTranslateKey(zoteroPrefs());
+    immersiveQuickKey.addEventListener('change', () => {
+      setImmersiveQuickTranslateKey(
+        zoteroPrefs(),
+        immersiveQuickKey.value.trim() || DEFAULT_IMMERSIVE_QUICK_KEY,
+      );
+      immersiveQuickKey.value = getImmersiveQuickTranslateKey(zoteroPrefs());
+    });
+  }
 
   byID<HTMLButtonElement>(doc, 'zai-preset-add-openai')?.addEventListener(
     'click',
