@@ -4,7 +4,7 @@
 
 An AI research assistant that lives inside Zotero. Ask about the paper you're reading; the sidebar reads its PDF (or the arXiv LaTeX source when available), shows its work, and writes back to your notes.
 
-> 👀 **[See it live — interactive 6-step walkthrough →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)** (中/EN, product-faithful UI mockups)
+> 👀 **[Illustrated usage guide →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)** (pure-HTML, product-faithful UI: overview · model config · chat · immersive translation · notes & overview · shortcuts)
 
 📖 [Full usage guide](docs/USAGE.md) ([中文](docs/USAGE.zh-CN.md)) — quick start, workflows, reference, and troubleshooting.
 
@@ -13,7 +13,7 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 - **Ask anything about the paper you're reading** — *"summarize this"*, *"what's the core contribution"*, *"compare with X"*. The model fetches the parts of the PDF it needs and shows its work in a tool trace.
 - **See the whole paper at a glance** — generate a *全文总览* map: a phase-grouped section skeleton (motivation / method / validation) with one-line gists, innovation / result markers, and a structural flowchart. Click a section to jump to that spot in the PDF; your reading position is remembered per paper and synced across machines.
 - **arXiv papers come through clean** — equations and figures are pulled from the LaTeX source instead of broken PDF text. *"Explain Eq. (3)"* and *"walk me through Figure 2"* actually work.
-- **Translate sentence by sentence in the PDF** — click a sentence, see the translation in place, walk through the paper with `Enter` / `Shift+Enter`.
+- **Immersive PDF translation** — turn on immersive mode, click a sentence to get a translation card in place; walk the paper with `Enter` / `Shift+Enter`, and `Esc` closes the card while leaving the sentence selected.
 - **Write back into Zotero** — append answers to the paper's note, or ask the model to add color-coded highlights to the PDF (gated by per-preset permission).
 - **Bring your own model** — Anthropic, OpenAI, or any OpenAI-compatible endpoint; all configured locally in Zotero preferences.
 - **Local-first, and you own the sync target** — nothing leaves this machine until you turn on WebDAV sync, which pushes a single `state.json` to *your own* endpoint. It carries settings, model presets (API keys included), chat history, PDF annotations, and translation cache — never to zotero.org or any third party.
@@ -38,12 +38,12 @@ Open the AI Sidebar settings in Zotero and configure at least one model preset:
 - Model: any model ID supported by that endpoint
 - Max tokens / tool iterations: local safety and output controls
 
-For PDF sentence translation, configure the translation section in plugin settings:
+For immersive PDF translation, configure the "Translation / Immersive reading" sections in plugin settings:
 
-- Trigger mode: single-click or double-click
-- Overlay: compact or adaptive size, placed above or below the sentence
-- Context: translate the sentence alone, or include paragraph/page context
-- Shortcuts: `Enter` for the next sentence, `Shift+Enter` for the previous (default)
+- Model / reasoning effort / result position (above or below) / card size — shared with the immersive card
+- Neighbour context: send the previous and next sentence as context for a more accurate translation
+- Key-term linking: highlight original ↔ translated key-term pairs, cross-lit on hover
+- Shortcuts: next/prev sentence (default `Enter` / `Shift+Enter`) and a selection quick-translate key (default Space), all remappable
 
 Do not hardcode personal API keys, base URLs, or private model IDs in this repository.
 
@@ -86,7 +86,8 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 
 ### Translation
 
-- **PDF sentence translation mode**: turn on `译` mode in the PDF Reader, click a sentence to translate it in-place, and move between sentences with `Enter` / `Shift+Enter`.
+- **Immersive PDF translation**: turn on `沉浸` (immersive) in the PDF Reader toolbar, then click a sentence for an in-place card (original + translation, cheapest path). The card can switch to interleaved EN/中文 (逐句对照), key-term linking (重点词对应), neighbour context (结合上下句), and adaptive width — and you can keep asking (追问) for an explanation or examples.
+- **Stepping & quick-translate**: `Enter` / `Shift+Enter` move to the next / previous sentence; selecting (or hovering) a sentence and pressing the quick key (default Space) translates that sentence directly; `Esc` closes the card and keeps the sentence as a copyable selection. All keys are configurable in settings.
 
 ### Sync & config
 

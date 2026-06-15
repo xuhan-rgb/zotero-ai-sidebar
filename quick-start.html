@@ -1,0 +1,558 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Zotero AI Sidebar · 使用教程</title>
+<style>
+  :root{
+    --bg:#f4f5f7; --card:#ffffff; --ink:#1f2430; --muted:#6b7280; --faint:#9aa3b2;
+    --line:#e6e8ec; --blue:#3b82f6; --blue-soft:#eaf2fd; --green:#10b981;
+    --orange:#ef8b46; --orange-ink:#d2691e; --yellow:#fde68a; --sel:#b9d4f6;
+    --reader:#e9ede0; --shadow:0 10px 30px rgba(20,30,60,.12);
+    --radius:12px;
+  }
+  *{box-sizing:border-box}
+  html{scroll-behavior:smooth}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:15px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif;}
+  a{color:var(--blue);text-decoration:none}
+  .wrap{max-width:1080px;margin:0 auto;padding:32px 20px 80px}
+  header.hero{text-align:center;padding:30px 0 10px}
+  .hero h1{font-size:30px;margin:0 0 8px;letter-spacing:.3px}
+  .hero p{color:var(--muted);margin:6px auto;max-width:680px}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;margin:18px 0 6px}
+  .toc a{background:#fff;border:1px solid var(--line);border-radius:999px;padding:5px 14px;font-size:13px;color:var(--ink)}
+  .toc a:hover{border-color:var(--blue);color:var(--blue)}
+  section{margin:42px 0}
+  h2{font-size:21px;margin:0 0 4px;display:flex;align-items:center;gap:10px}
+  h2 .n{display:inline-grid;place-items:center;width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;font-size:14px}
+  .lead{color:var(--muted);margin:2px 0 18px}
+  .grid2{display:grid;grid-template-columns:minmax(300px,360px) 1fr;gap:26px;align-items:start}
+  @media (max-width:820px){.grid2{grid-template-columns:1fr}}
+
+  /* ---- generic explanation list ---- */
+  .legend{margin:0;padding:0;list-style:none;display:flex;flex-direction:column;gap:10px}
+  .legend li{display:flex;gap:10px;background:#fff;border:1px solid var(--line);border-radius:10px;padding:10px 12px}
+  .legend .k{flex:0 0 auto;font-weight:600;color:var(--ink);background:#f0f3f8;border-radius:6px;padding:1px 8px;height:fit-content;white-space:nowrap;font-size:13px}
+  .legend .d{color:var(--muted);font-size:13.5px}
+  .legend .d b{color:var(--ink);font-weight:600}
+
+  /* ====== mock: Zotero window frame ====== */
+  .win{border:1px solid var(--line);border-radius:14px;overflow:hidden;background:#fff;box-shadow:var(--shadow)}
+  .win-bar{display:flex;align-items:center;gap:7px;padding:9px 12px;background:#f2f3f5;border-bottom:1px solid var(--line)}
+  .dot{width:11px;height:11px;border-radius:50%}
+  .dot.r{background:#ff5f56}.dot.y{background:#ffbd2e}.dot.g{background:#27c93f}
+  .win-title{margin-left:8px;font-size:12px;color:var(--faint)}
+
+  /* ====== mock: sidebar ====== */
+  .sb{font-size:13px;background:#fff}
+  .sb-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid var(--line)}
+  .sb-row.top{justify-content:flex-start}
+  .sb-label{font-weight:700;font-size:14px}
+  .select{border:1px solid var(--line);border-radius:7px;padding:3px 9px;background:#fff;color:var(--ink);font-size:12.5px}
+  .btn{border:1px solid var(--line);border-radius:7px;padding:3px 9px;background:#fff;color:var(--ink);font-size:12.5px;white-space:nowrap;cursor:default}
+  .btn.ghost{border-color:transparent;background:#f2f4f7}
+  .btn.active{border-color:var(--blue);color:var(--blue);background:var(--blue-soft);font-weight:600}
+  .spacer{flex:1}
+  .toggle{width:30px;height:17px;border-radius:999px;background:#cfd6e0;position:relative}
+  .toggle::after{content:"";position:absolute;width:13px;height:13px;border-radius:50%;background:#fff;top:2px;left:2px}
+  .toggle.on{background:var(--orange)}.toggle.on::after{left:15px}
+
+  .sb-item{padding:9px 12px;border-bottom:1px solid var(--line)}
+  .sb-item .t{font-weight:700;font-size:13.5px;line-height:1.4}
+  .sb-item .m{color:var(--faint);font-size:12px;margin-top:3px;display:flex;gap:8px;align-items:center}
+  .badge{background:#e7f7ee;color:#0a8f54;border:1px solid #bce8d2;border-radius:6px;padding:0 7px;font-size:11px;font-weight:600}
+
+  .flow{padding:12px;display:flex;flex-direction:column;gap:12px;background:#fff;max-height:none}
+  .msg-user{align-self:flex-end;max-width:82%}
+  .who{display:flex;align-items:center;gap:6px;justify-content:flex-end;color:var(--faint);font-size:11px;margin-bottom:4px}
+  .who .av{width:18px;height:18px;border-radius:5px;background:linear-gradient(135deg,#7aa2f7,#b39ddb)}
+  .bubble{background:var(--blue-soft);border:1px solid #d6e6fb;border-radius:12px;padding:8px 11px}
+  .ai-av{display:flex;align-items:center;gap:6px;color:var(--faint);font-size:11px}
+  .ai-av .av{width:18px;height:18px;border-radius:5px;background:#eef1f6;display:grid;place-items:center;font-size:11px}
+  .collapse{color:var(--blue);font-size:12.5px;font-weight:600;display:flex;align-items:center;gap:6px}
+  .pill{display:inline-block;border:1px solid #f0b4b4;color:#c0392b;background:#fdeeee;border-radius:999px;padding:2px 10px;font-size:11.5px;margin:6px 0 2px}
+  .tool{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--ink);padding-left:6px}
+  .tool .gd{width:7px;height:7px;border-radius:50%;background:var(--green)}
+  .tool code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;background:#f3f5f8;border-radius:4px;padding:0 4px;font-size:11.5px}
+  .tool .desc{color:var(--muted)}
+  .think{border-left:3px solid #dfe3ea;padding:4px 0 4px 10px;color:var(--muted);font-style:italic;font-size:12.5px}
+  .answer{font-size:13px;line-height:1.7}
+  .src-label{color:var(--muted);font-size:12.5px;margin-top:6px}
+  .quote{border-left:3px solid #dfe3ea;padding:6px 10px;color:var(--muted);font-size:12.5px;background:#fafbfc}
+  .quote .raw{color:var(--faint);font-size:11px}
+
+  .composer{border-top:1px solid var(--line);padding:10px 12px;background:#fff;display:flex;flex-direction:column;gap:9px}
+  .chips{display:flex;gap:7px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);border-radius:8px;padding:4px 10px;font-size:12px;background:#fff}
+  .chip.disabled{color:var(--faint);background:#f6f7f9}
+  .chip.warn{border-color:#f0c38a;background:#fcf1e2;color:var(--orange-ink);font-weight:600}
+  .input{border:1px solid var(--line);border-radius:10px;padding:10px 11px;color:var(--faint);font-size:12.5px;min-height:38px}
+  .ctx{display:flex;align-items:center;gap:8px}
+  .send{margin-left:auto;width:30px;height:30px;border-radius:50%;background:var(--orange);color:#fff;display:grid;place-items:center;font-weight:700}
+  .footbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--faint);font-size:11.5px;border-top:1px dashed var(--line);padding-top:8px}
+  .footbar .mono{font-family:ui-monospace,monospace}
+  .footbar .model{color:var(--orange-ink);font-weight:700}
+
+  /* ====== mock: reader + immersive card ====== */
+  .reader{background:var(--reader);border-radius:10px;padding:18px;position:relative;font-family:Georgia,"Times New Roman",serif;color:#222;line-height:1.7;border:1px solid #d7dccb}
+  .reader h4{font-family:inherit;font-weight:700;margin:0 0 8px;font-size:15px}
+  .reader p{margin:0 0 6px;font-size:13.5px}
+  .hl{background:var(--yellow);border-radius:2px;padding:0 1px}
+  .selto{background:var(--sel);border-radius:2px;padding:0 1px}
+  .imm-card{margin-top:12px;background:#fff;border:1px solid #e3e6ec;border-radius:12px;box-shadow:var(--shadow);overflow:hidden;font-family:-apple-system,"PingFang SC",sans-serif}
+  .imm-meta{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px;background:#fbfcfe}
+  .imm-meta .lang{font-weight:600}
+  .imm-chip{border:1px solid var(--line);border-radius:7px;padding:2px 8px;font-size:11.5px;background:#fff}
+  .imm-chk{display:flex;align-items:center;gap:5px;font-size:11.5px;color:var(--muted)}
+  .imm-chk .box{width:13px;height:13px;border:1px solid #cbd2dc;border-radius:3px;display:inline-grid;place-items:center;font-size:10px;color:#fff}
+  .imm-chk .box.on{background:var(--blue);border-color:var(--blue)}
+  .imm-status{margin-left:auto;color:var(--faint);font-size:11.5px;display:flex;align-items:center;gap:5px}
+  .imm-status .d{width:7px;height:7px;border-radius:50%;background:var(--green)}
+  .imm-body{padding:11px 12px}
+  .imm-src{color:#374151;font-size:13px;font-family:Georgia,serif}
+  .imm-src u{text-decoration-color:var(--blue);text-underline-offset:2px;color:#2563eb}
+  .imm-zh{margin-top:10px;font-size:13.5px;color:#111}
+  .imm-zh b{color:#2563eb;font-weight:600}
+  .imm-foot{display:flex;align-items:center;gap:10px;padding:7px 10px;border-top:1px solid var(--line);color:var(--faint);font-size:11.5px}
+  .imm-foot .redo{width:22px;height:22px;border-radius:6px;border:1px solid var(--line);display:grid;place-items:center}
+  .imm-ask{margin:0 10px 10px;border:1px solid var(--line);border-radius:9px;padding:8px 10px;color:var(--faint);font-size:12px}
+
+  .steps{counter-reset:s;display:grid;gap:12px}
+  .step{background:#fff;border:1px solid var(--line);border-radius:12px;padding:14px 16px 14px 52px;position:relative}
+  .step::before{counter-increment:s;content:counter(s);position:absolute;left:14px;top:14px;width:26px;height:26px;border-radius:8px;background:var(--blue);color:#fff;display:grid;place-items:center;font-weight:700}
+  .step b{font-size:14.5px}
+  .step p{margin:4px 0 0;color:var(--muted);font-size:13.5px}
+  .kbd{font-family:ui-monospace,monospace;background:#1f2430;color:#fff;border-radius:5px;padding:1px 7px;font-size:12px}
+
+  table.keys{width:100%;border-collapse:collapse;background:#fff;border:1px solid var(--line);border-radius:12px;overflow:hidden}
+  table.keys th,table.keys td{text-align:left;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13.5px}
+  table.keys th{background:#f5f7fa;color:var(--muted);font-weight:600;font-size:12.5px}
+  table.keys tr:last-child td{border-bottom:none}
+  table.keys td:first-child{white-space:nowrap}
+  .tip{background:#fff8ec;border:1px solid #f3dcae;border-radius:10px;padding:10px 14px;color:#8a6d3b;font-size:13px;margin-top:14px}
+  .warn-box{background:#fdeeee;border:1px solid #f0b4b4;border-radius:10px;padding:10px 14px;color:#a33;font-size:13px;margin:14px 0}
+
+  /* ====== mock: model config card ====== */
+  .cfg{font-size:13px}
+  .cfg-head{display:flex;align-items:center;gap:10px;padding:12px 14px;border-bottom:1px solid var(--line)}
+  .cfg-head .gd{width:9px;height:9px;border-radius:50%;background:var(--green)}
+  .cfg-head .nm{font-weight:700;font-size:15px}
+  .cfg-head .sub{color:var(--faint);font-size:11.5px}
+  .cfg-head .sub .ph{color:var(--orange-ink)}
+  .cfg-head .acts{margin-left:auto;display:flex;gap:7px}
+  .cfg-body{padding:6px 14px 14px}
+  .frow{display:grid;grid-template-columns:120px 1fr;gap:12px;align-items:center;padding:8px 0;border-bottom:1px solid #f1f3f6}
+  .frow:last-child{border-bottom:none}
+  .frow > .lbl{color:var(--muted);font-size:13px}
+  .field{border:1px solid var(--line);border-radius:8px;padding:7px 10px;background:#fff;font-size:13px;display:flex;align-items:center;gap:8px}
+  .field.sel{background:#eef1f5;font-weight:600;justify-content:space-between}
+  .field .eye{margin-left:auto;color:var(--faint)}
+  .field .mask{letter-spacing:1px;color:#444}
+  .field .ph{color:#2563eb}
+  .mtags{display:flex;flex-wrap:wrap;gap:7px}
+  .mtag{display:inline-flex;align-items:center;gap:8px;border:1px solid var(--line);background:#f7f8fa;border-radius:8px;padding:5px 8px;font-family:ui-monospace,monospace;font-size:12px;white-space:nowrap}
+  .mtag .x{color:var(--faint)}
+  .preset-wrap{display:flex;flex-direction:column;gap:10px;align-items:flex-start;min-width:0}
+  .preset-side{align-self:stretch}
+  .preset-side .pt{color:var(--muted);font-size:12px;margin-bottom:6px}
+  .pchip{border:1px solid var(--line);border-radius:999px;padding:3px 10px;font-size:11.5px;background:#fff;margin:0 6px 6px 0;display:inline-block;color:var(--muted)}
+  .pchip.on{color:#9aa3b2;background:#f3f5f8}
+  .flags{display:flex;gap:8px;flex-wrap:wrap}
+  .flag{border-radius:999px;padding:3px 10px;font-size:11.5px;border:1px solid var(--line);background:#fff;color:var(--muted)}
+  .flag.amber{background:#fcf1e2;border-color:#f0c38a;color:var(--orange-ink)}
+  .flag.mint{background:#e7f7ee;border-color:#bce8d2;color:#0a8f54}
+
+  /* ====== mock: note column ====== */
+  .note-tabs{display:flex;align-items:center;gap:7px;padding:9px 12px;border-bottom:1px solid var(--line);background:#faf9f7;flex-wrap:wrap}
+  .btn.save{border-color:#bce8d2;color:#0a8f54;background:#e7f7ee;font-weight:600}
+  .note-toolbar{display:flex;align-items:center;gap:16px;padding:9px 14px;border-bottom:1px solid var(--line);color:var(--muted);font-size:15px}
+  .note-body{padding:18px 16px;min-height:130px;background:#fff}
+  .note-body .h1{font-size:20px;font-weight:700;color:var(--ink)}
+  .h1tag{font-size:10px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--faint);margin-right:6px;vertical-align:middle}
+  .caret{display:inline-block;width:1px;height:18px;background:#333;vertical-align:-3px;margin-right:1px}
+
+  /* ====== mock: generated reading-route note ====== */
+  .rnote{background:#fff;padding:16px 18px;font-size:13.5px;line-height:1.7}
+  .rnote .h1{font-size:19px;font-weight:700;margin:2px 0 6px}
+  .rnote .meta{color:var(--muted);font-size:12.5px;margin-bottom:10px}
+  .rnote h3{font-size:15px;margin:14px 0 4px;font-weight:700}
+  .rnote h4{font-size:13.5px;margin:10px 0 4px;color:#333;font-weight:700}
+  .rnote ul{margin:4px 0;padding-left:20px}
+  .rnote li{margin:5px 0;color:#333}
+  .tag-h{font-size:10px;border:1px solid var(--line);border-radius:4px;padding:0 4px;color:var(--faint);margin-right:6px;vertical-align:middle}
+  .basis{background:var(--yellow);border-radius:3px;padding:0 3px;font-weight:600}
+  .rq{border-left:3px solid #bcdfd0;background:#f6fbf8;padding:7px 11px;color:#374151;font-size:12.5px;margin:8px 0}
+  .rq .zh{color:#222;margin-top:3px}
+
+  /* ====== mock: overview map ====== */
+  .ov{padding:14px 16px;background:#fff}
+  .ov-head{display:flex;align-items:center;gap:10px;margin-bottom:10px;flex-wrap:wrap}
+  .ov-head .t{font-weight:700;font-size:15px}
+  .ov-head .acts{margin-left:auto;display:flex;gap:7px}
+  .ov-core{border:1px solid #f0b4b4;background:#fdeeee;border-left:3px solid #d6608a;border-radius:8px;padding:10px 12px;font-size:12.5px;line-height:1.7;color:#3a3a3a;margin-bottom:12px}
+  .ov-core .ct{color:#c0392b;font-weight:700;margin-bottom:3px}
+  .ov-group{color:var(--orange-ink);font-weight:700;font-size:13.5px;margin:12px 0 5px}
+  .ov-group .num{color:#d98a4a;margin-right:3px}
+  .ov-sec{border:1px solid var(--line);border-radius:8px;padding:8px 11px;margin:6px 0;background:#fbfbfc}
+  .ov-sec.flat{border:none;background:transparent;padding:5px 11px}
+  .ov-sec .st{font-weight:700;font-size:13px;display:flex;align-items:center;gap:7px;flex-wrap:wrap}
+  .ov-sec .st .no{color:var(--faint)}
+  .ov-sec .gist{color:var(--muted);font-size:12px;margin-top:2px}
+  .ov-b{font-size:10.5px;border-radius:5px;padding:1px 7px;font-weight:600}
+  .ov-b.read{background:#eef1f5;color:#6b7280}
+  .ov-b.new{background:#e7f7ee;color:#0a8f54}
+  .ov-b.anchor{background:#eaf2fd;color:#2563eb}
+  .ov-diagram{border-top:1px solid var(--line);margin-top:10px;padding-top:10px;color:var(--muted);font-size:12.5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .ov-diagram .hint{margin-left:auto;color:var(--faint);font-size:11px}
+
+  footer{text-align:center;color:var(--faint);font-size:12.5px;margin-top:50px}
+</style>
+</head>
+<body>
+<div class="wrap">
+
+  <header class="hero">
+    <h1>Zotero AI Sidebar · 使用教程</h1>
+    <p>Zotero 里的 AI 对话侧栏：对正在读的论文随便问、PDF 沉浸式翻译、写回笔记，全部本地驱动、模型可自配。下面的界面都是用 HTML 还原的真实插件外观。</p>
+    <nav class="toc">
+      <a href="#overview">① 界面总览</a>
+      <a href="#config">② 配置模型</a>
+      <a href="#chat">③ 对话</a>
+      <a href="#immersive">④ 沉浸式翻译</a>
+      <a href="#notes">⑤ 笔记与总览</a>
+      <a href="#steps">⑥ 三步上手</a>
+      <a href="#keys">⑦ 快捷键</a>
+    </nav>
+  </header>
+
+  <!-- ============ 1. 界面总览 ============ -->
+  <section id="overview">
+    <h2><span class="n">1</span>界面总览</h2>
+    <p class="lead">侧栏从上到下：标题栏 → 工具栏 → 论文条目 → 对话流 → 输入区。下图是还原的真实界面，右侧逐个解释。</p>
+
+    <div class="grid2">
+      <!-- faithful sidebar mock -->
+      <div class="win" aria-label="插件侧栏">
+        <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">Zotero — AI 对话侧栏</span></div>
+        <div class="sb">
+          <div class="sb-row top">
+            <span class="sb-label">AI 对话</span>
+            <span class="select">GPT (openai) ▾</span>
+            <span class="spacer"></span>
+            <span class="btn">复制MD</span><span class="btn">清空</span><span class="btn ghost">»</span>
+          </div>
+          <div class="sb-row">
+            <span class="btn">打开笔记</span>
+            <span class="btn active">沉浸 ✓</span>
+            <span class="btn">设置</span>
+            <span class="btn ghost" title="字号"><svg width="17" height="13" viewBox="0 0 17 13" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round" style="vertical-align:middle"><line x1="2.5" y1="4" x2="14.5" y2="4"/><line x1="2.5" y1="9" x2="14.5" y2="9"/><circle cx="11" cy="4" r="2.1" fill="#fff"/><circle cx="6" cy="9" r="2.1" fill="#fff"/></svg></span>
+            <span class="spacer"></span>
+            <span style="color:var(--muted)">调试</span><span class="toggle"></span>
+          </div>
+          <div class="sb-item">
+            <div class="t">Lite-Mono: A Lightweight CNN and Transformer Architectur…</div>
+            <div class="m">Item ID: 928 <span class="badge">LaTeX 源</span></div>
+          </div>
+          <div class="flow">
+            <div class="msg-user">
+              <div class="who"><span>YOU</span><span class="av"></span></div>
+              <div class="bubble">解释一下 figure5</div>
+            </div>
+            <div>
+              <div class="ai-av"><span class="av">🤖</span><span>AI</span></div>
+              <div class="collapse">▾ 思考与上下文 · 已随本轮发送 arXiv LaTeX 源码 1678 字</div>
+              <span class="pill">已随本轮发送 arXiv LaTeX 源码 1678 字</span>
+              <div class="tool"><span class="gd"></span><code>arxiv_get_figure</code><span class="desc">读取 arXiv Figure 5（含图像）</span></div>
+              <div class="tool"><span class="gd"></span><code>arxiv_get_section</code><span class="desc">读取 arXiv §4.4 Make3D…</span></div>
+              <div class="collapse" style="margin-top:8px">▾ 思考过程</div>
+              <div class="think">Preparing explanation for figure 5 in Chinese…</div>
+              <div class="answer">Figure 5 是 Lite-Mono 在 Make3D 数据集上的定性可视化结果，用来展示模型在跨数据集场景中的泛化能力和深度感知效果。</div>
+              <div class="src-label">论文原文依据：</div>
+              <div class="quote">The proposed method is evaluated on the Make3D dataset to show its generalization ability in different outdoor scenes. <span class="raw">原文</span></div>
+            </div>
+          </div>
+          <div class="composer">
+            <div class="chips">
+              <span class="chip">总结论文</span>
+              <span class="chip">✦ 全文重点</span>
+              <span class="chip disabled">解释选区</span>
+              <span class="chip warn">未读 1</span>
+            </div>
+            <div class="input">问点什么…（Enter 发送，Shift+Enter 换行）</div>
+            <div class="ctx">
+              <span class="chip">+ 联网</span>
+              <span class="chip active" style="border-color:var(--blue);color:var(--blue);background:var(--blue-soft)">📄 原文</span>
+              <span class="send">↑</span>
+            </div>
+            <div class="footbar">
+              <span class="mono">Ln 1, Col</span>
+              <span>截图</span><span>图片</span>
+              <span class="model">gpt-5.5</span>
+              <span>Low</span>
+              <span class="spacer"></span>
+              <span>YOLO</span><span class="toggle on"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- legend -->
+      <ul class="legend">
+        <li><span class="k">模型下拉</span><span class="d">切换已配置的<b>模型预设</b>（Base URL / API key / 模型 ID 在「设置」里配）。</span></li>
+        <li><span class="k">复制MD / 清空</span><span class="d">把整段对话复制为 Markdown；清空当前论文的对话线程。</span></li>
+        <li><span class="k">»</span><span class="d">折叠 / 展开侧栏。</span></li>
+        <li><span class="k">打开笔记</span><span class="d">打开<b>笔记列</b>：AI 笔记 / 阅读路线 / 总览三个标签。</span></li>
+        <li><span class="k">沉浸 ✓</span><span class="d">开 / 关 <b>PDF 沉浸式翻译</b>（点亮即开，见第 3 节）。</span></li>
+        <li><span class="k">设置 · 字号 · 调试</span><span class="d">完整设置页；中间的滑杆图标改<b>字号</b>；调试开关让复制带工具上下文与思考过程。</span></li>
+        <li><span class="k">LaTeX 源</span><span class="d">arXiv 论文徽章：公式 / 插图从 LaTeX 源取，不吃 PDF 乱码。</span></li>
+        <li><span class="k">思考与上下文</span><span class="d">可折叠：本轮自动发了哪些上下文、调用了哪些<b>本地工具</b>（带绿点的 trace）。</span></li>
+        <li><span class="k">论文原文依据</span><span class="d">回答末尾给出引用的<b>PDF 原文</b>，可溯源、可跳回。</span></li>
+        <li><span class="k">总结论文 / 全文重点</span><span class="d">一键快捷提示词；<b>解释选区</b>在 PDF 有选中文本时才可点。</span></li>
+        <li><span class="k">📄 原文 / + 联网</span><span class="d">是否把整篇论文固定进每轮上下文；是否允许联网检索。</span></li>
+        <li><span class="k">底栏</span><span class="d">截图 / 贴图、当前模型（gpt-5.5）、思考程度（Low）、<b>YOLO</b>（放开写操作权限）。</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ 2. 配置模型 ============ -->
+  <section id="config">
+    <h2><span class="n">2</span>配置模型（设置页）</h2>
+    <p class="lead">点工具栏「设置」打开完整选项页，新增一个<b>模型预设</b>。支持 OpenAI 兼容 / Anthropic 等多种 Provider，可加多个预设在顶栏下拉切换。下图为还原界面（值已做脱敏处理）。</p>
+
+    <div class="grid2">
+      <div class="win">
+        <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">设置 · 模型预设</span></div>
+        <div class="cfg">
+          <div class="cfg-head">
+            <span class="gd"></span>
+            <span class="nm">GPT</span>
+            <span class="sub">openai · gpt-5.5 +2</span>
+            <span class="acts"><span class="btn">测试</span><span class="btn">缓存测试</span><span class="btn">删除</span></span>
+          </div>
+          <div class="cfg-body">
+            <div class="frow"><span class="lbl">Provider</span><span class="field sel">OpenAI 兼容 <span>▾</span></span></div>
+            <div class="frow"><span class="lbl">名称</span><span class="field">GPT</span></div>
+            <div class="frow"><span class="lbl">API Key</span><span class="field"><span class="mask">••••••••••••••••••••••••••</span><span class="eye">👁</span></span></div>
+            <div class="frow"><span class="lbl">Base URL</span><span class="field"><span class="ph">https://&lt;你的端点&gt;/openai</span></span></div>
+            <div class="frow">
+              <span class="lbl">Models</span>
+              <div class="preset-wrap">
+                <div class="mtags">
+                  <span class="mtag">gpt-5.5 <span class="x">×</span></span>
+                  <span class="mtag">gpt-5.4 <span class="x">×</span></span>
+                  <span class="mtag">gpt-5.4-mini <span class="x">×</span></span>
+                </div>
+                <div class="preset-side">
+                  <div class="pt">OpenAI 预设模型</div>
+                  <span class="pchip on">√ gpt-5.5</span><span class="pchip on">√ gpt-5.4</span>
+                  <span class="pchip on">√ gpt-5.4-mini</span><span class="pchip">+ gpt-5.2</span>
+                  <span class="pchip">+ 添加 / 自定义</span>
+                </div>
+              </div>
+            </div>
+            <div class="frow"><span class="lbl">Max tokens</span><span class="field">8192 ⌃⌄</span></div>
+            <div class="frow"><span class="lbl">Reasoning Summary</span><span class="field sel">Concise — 简短显示思考摘要 <span>▾</span></span></div>
+            <div class="frow"><span class="lbl">标志位</span>
+              <div class="flags"><span class="flag amber">第三方/Relay</span><span class="flag mint">relay cache 自动</span><span class="flag mint">reasoning 透传</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ul class="legend">
+        <li><span class="k">Provider</span><span class="d"><b>OpenAI 兼容</b> / <b>Anthropic</b>（claude、DeepSeek-Anthropic 格式等都走这两类）。选错协议会发不出请求。</span></li>
+        <li><span class="k">名称</span><span class="d">这个预设在顶栏下拉里显示的名字，随便起（GPT / claude / deepseek…）。</span></li>
+        <li><span class="k">API Key</span><span class="d">默认打码，点 👁 临时显示。只存本地 Zotero 偏好，<b>别外传</b>。</span></li>
+        <li><span class="k">Base URL</span><span class="d">你的 API / 中转端点。<b>属于隐私，别公开分享</b>——本页用占位符代替。</span></li>
+        <li><span class="k">Models</span><span class="d">左边是已启用的模型标签；右边点预设或「+ 添加 / 自定义」加模型。</span></li>
+        <li><span class="k">Max tokens</span><span class="d">单次回复的最大输出长度。</span></li>
+        <li><span class="k">Reasoning / Vendor</span><span class="d">OpenAI 侧是思考摘要详略；Anthropic 侧是 Vendor（Claude 官方/反代、DeepSeek 格式等）。</span></li>
+        <li><span class="k">标志位</span><span class="d">第三方/Relay 端点默认带 prompt_cache_key + session_id；非 OpenAI 兼容预设不发 OpenAI 缓存参数。</span></li>
+      </ul>
+    </div>
+
+    <div class="warn-box">🔒 <b>隐私提醒</b>：API Key 和 Base URL 都是敏感信息，截图 / 分享前请打码。导出的配置 JSON 和 WebDAV 的 <span class="kbd">state.json</span> 里也含密钥，妥善保管、不要公开。</div>
+  </section>
+
+  <!-- ============ 3. 对话 ============ -->
+  <section id="chat">
+    <h2><span class="n">3</span>对正在读的论文随便问</h2>
+    <p class="lead">在输入框<b>直接用自然语言</b>问就行——比如「<b>公式1和 figure1 是什么意思</b>」「这篇的核心贡献是什么」「和 X 方法比有什么区别」（这些只是例子，问什么都可以）。模型会自己决定要不要读当前条目、PDF 文本、注释、选区或截图，过程在「思考与上下文」里显式展示。</p>
+    <div class="steps">
+      <div class="step"><b>整篇提问</b><p>“帮我总结”“核心贡献是什么”“和 X 比较”。不选任何东西时，默认带<b>整篇论文</b>上下文（📄 原文 打开时）。</p></div>
+      <div class="step"><b>聚焦某段</b><p>在 PDF 里选中一段，输入框上方出现<b>选中片段 chip</b>，提问时选区会叠加在全文之上；想<b>只看选区</b>就关掉「📄 原文」。</p></div>
+      <div class="step"><b>截图 / 贴图</b><p>底栏「截图 / 图片」把画面作为图片附件发给多模态模型——既显示在对话里，也真正发给模型。</p></div>
+      <div class=”step”><b>公式 / 图表也能直接问</b><p>带 <span class=”badge”>LaTeX 源</span> 的论文，问「公式1是什么意思」「figure1 在讲什么」会从 <b>LaTeX 源</b>精确命中（含图像），而不是 PDF 文本层乱码——同样是自然语言，不用记任何指令。</p></div>
+      <div class=”step”><b>让 AI 高亮 / 加注释</b><p>给 PDF 加高亮 / 批注是 Agent <b>已内置的写入工具</b>，直接用自然语言喊就行：「<b>把这段的重点句子高亮</b>」「给这段加条注释说明它在讲什么」。模型会自己选中对应段落、按颜色分类上高亮或加文本批注，trace 里能看到它选了哪段、上了什么色。颜色分类在设置的「PDF 注释颜色预设」里统一定义。</p></div>
+    </div>
+    <div class=”tip”>✍️ 这类「写回 PDF」都是 Agent <b>显式工具调用</b>、过程可见、且受权限控制——默认模式会先确认，开 <b>YOLO</b> 可直接执行，不会偷偷改你的 PDF。</div>
+  </section>
+
+  <!-- ============ 4. 沉浸式翻译 ============ -->
+  <section id="immersive">
+    <h2><span class="n">4</span>PDF 沉浸式翻译</h2>
+    <p class="lead">点工具栏「沉浸」开启后，点句子即在原文旁出译文卡；也可选中 / 悬停某句后按<b>快捷翻译键（默认空格）</b>直接翻这一句。</p>
+
+    <div class="grid2">
+      <div>
+        <!-- reader + immersive card -->
+        <div class="win">
+          <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">PDF Reader · 沉浸模式</span></div>
+          <div style="padding:14px;background:var(--reader)">
+            <div class="reader" style="border:none;padding:6px 4px;background:transparent">
+              <h4>3.1. Design motivation and choices</h4>
+              <p><span class="hl">Several papers demonstrated that a good encoder can extract more effective features, thus improving the final result [15, 17, 44].</span> This paper focuses on designing a lightweight encoder…</p>
+            </div>
+            <div class="imm-card">
+              <div class="imm-meta">
+                <span class="lang">EN → 简体中文</span>
+                <span class="imm-chip">逐句对照</span>
+                <span class="imm-chk"><span class="box on">✓</span>结合上下句</span>
+                <span class="imm-chk"><span class="box"></span>自适应宽度</span>
+                <span class="imm-status"><span class="d"></span>已完成 · token 77/49 缓存128</span>
+              </div>
+              <div class="imm-body">
+                <div class="imm-src">Several papers demonstrated that a good <u>encoder</u> can extract more <u>effective features</u>, thus improving the final result [15, 17, 44].</div>
+                <div class="imm-zh">多篇论文表明，好的<b>编码器</b>能提取更<b>有效的特征</b>，从而改善最终结果 [15, 17, 44]。</div>
+              </div>
+              <div class="imm-foot"><span class="redo">↻</span><span>⇧+↵ / ↵ 上/下一句 · Esc 关闭</span><span class="spacer"></span><span>✕</span></div>
+              <div class="imm-ask">追问（让 AI 解释 / 举例…）</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- selection state -->
+        <div class="win" style="margin-top:14px">
+          <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">按 Esc 后 → 退化为选中状态</span></div>
+          <div class="reader" style="border-radius:0">
+            <p><span class="selto">Several papers demonstrated that a good encoder can extract more effective features, thus improving the final result [15, 17, 44].</span> This paper focuses on designing a lightweight encoder…</p>
+          </div>
+        </div>
+      </div>
+
+      <ul class="legend">
+        <li><span class="k">原文 + 译</span><span class="d">默认卡最省 token：只给原文和译文；想要解释直接在卡底<b>追问</b>。</span></li>
+        <li><span class="k">逐句对照</span><span class="d">切换成「一行英文一行中文」的对照视图。</span></li>
+        <li><span class="k">结合上下句</span><span class="d">翻译时带上前后各一句作上下文，更准（默认开关可在设置里定）。</span></li>
+        <li><span class="k">重点词对应</span><span class="d">开启后译文里高亮原文 ↔ 中文的<b>关键词对</b>，悬停时互相点亮。</span></li>
+        <li><span class="k">自适应宽度</span><span class="d">加宽卡片，避免一两个单词就换行。</span></li>
+        <li><span class="k">↵ / ⇧+↵</span><span class="d"><span class="kbd">Enter</span> 翻到下一句、<span class="kbd">Shift+Enter</span> 上一句，连续读完整页 / 整篇。</span></li>
+        <li><span class="k">空格</span><span class="d">选中 / 悬停某句后按它直接翻这一句；没有高亮 / 选区时空格<b>照常翻页</b>。键可改。</span></li>
+        <li><span class="k">Esc</span><span class="d">关掉卡片，并把该句保留成<b>蓝色可复制选区</b>（见下方第二张图）。</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ 5. 笔记与总览 ============ -->
+  <section id="notes">
+    <h2><span class="n">5</span>笔记与总览</h2>
+    <p class="lead">点「打开笔记」展开笔记列，目标布局是 <b>PDF | 笔记 | AI 对话</b>。笔记用 Zotero 官方富文本编辑器（Enter / 列表 / 链接行为与主笔记一致，自动保存）。顶部四个模块各司其职：</p>
+
+    <div class="grid2">
+      <div class="win">
+        <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">笔记列</span></div>
+        <div class="note-tabs">
+          <span class="btn active">AI 笔记</span>
+          <span class="btn">生成路线</span>
+          <span class="btn">总览</span>
+          <span class="btn">对话总结</span>
+          <span class="spacer"></span>
+          <span style="color:var(--faint);font-size:12px">Zotero 自动保存</span>
+          <span class="btn save">保存</span>
+          <span class="btn">关闭</span>
+        </div>
+        <div class="note-toolbar"><span>⨳</span><span>Aa</span><span>A</span><span>🖊</span><span>A◇</span><span>🔗</span><span>☰</span><span>🔍</span><span class="spacer"></span><span>⋯</span></div>
+        <div class="note-body"><div class="h1"><span class="h1tag">H1</span><span class="caret"></span>AI 笔记</div></div>
+      </div>
+
+      <ul class="legend">
+        <li><span class="k">AI 笔记</span><span class="d">默认富文本笔记。把对话里的回答整段或选段「导入笔记」会插到<b>光标处</b>，导入的引用还带「查看原选区」跳回 PDF。</span></li>
+        <li><span class="k">生成路线</span><span class="d">生成<b>「AI 阅读路线」</b>笔记：按 <b>Keshav 三遍读法</b>组织——一句话定位、研究脉络、前作脉络等，每条都带原文引用 + 译文 + 「原文」跳回 PDF。生成后该按钮变成「更新路线」。</span></li>
+        <li><span class="k">总览</span><span class="d">全文<b>总览地图</b>：一段「核心讲述」+ 按<b>动机 / 方法 / 验证</b>分组的章节卡（带「在读 / 创新 / 效果锚点」标记和一句话要点），底部还有可展开的<b>结构图纸</b>；点章节 / 节点能跳到 PDF 对应位置。先用便宜的全文骨架生成，不发整篇 PDF。</span></li>
+        <li><span class="k">对话总结</span><span class="d">把本篇<b>沉浸阅读里的所有就地问答</b>用 AI 总结成一段，写进 AI 笔记，方便回顾这次精读都问了什么。</span></li>
+        <li><span class="k">保存 / 关闭</span><span class="d">Zotero 自动保存，也可手动「保存」；「关闭」收起笔记列。编辑笔记不会打断右侧对话状态。</span></li>
+      </ul>
+    </div>
+
+    <p class="lead" style="margin-top:22px">点「生成路线」后，AI 阅读路线笔记长这样（节选还原）：</p>
+    <div class="win">
+      <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">笔记列 · AI 阅读路线</span></div>
+      <div class="note-tabs">
+        <span class="btn active">AI 笔记</span><span class="btn">更新路线</span><span class="btn">总览</span><span class="btn">对话总结</span>
+        <span class="spacer"></span><span style="color:var(--faint);font-size:12px">Zotero 自动保存</span>
+      </div>
+      <div class="rnote">
+        <div class="h1"><span class="tag-h">H1</span>AI 阅读路线</div>
+        <div class="meta">生成时间：2026-06-15 · 来源：Zotero AI Sidebar · 方法：Keshav three-pass approach</div>
+        <h3><span class="tag-h">H2</span>第一遍：Context-rich 论文定位</h3>
+        <h4><span class="tag-h">H3</span>A. 一句话定位</h4>
+        <ul><li>这篇论文属于自监督单目深度估计中的轻量化模型设计工作，相对 Monodepth2、MonoViT 等 CNN / Transformer 混合架构，推进点是“在较少参数与较快推理下兼顾局部多尺度特征与全局上下文”。</li></ul>
+        <h4><span class="tag-h">H3</span>B. Context：研究脉络</h4>
+        <ul><li>上游问题：单目深度估计要从单张 RGB 图像恢复场景 3D 几何；监督学习依赖大规模稠密深度标注，因此自监督方法把它转化为视图合成 / 图像重建问题，用视频帧或双目图像提供训练信号。</li></ul>
+        <div class="rq">Many applications in the field of robotics, autonomous driving, and augmented reality rely on depth maps, which represent the 3D geometry of a scene.<div class="zh">译：机器人、自动驾驶和增强现实中的许多应用都依赖深度图，因为深度图表示场景的 3D 几何。 <a href="#">原文</a></div></div>
+        <ul>
+          <li>直接前作 / 相关脉络：
+            <ul>
+              <li><span class="basis">基础：</span>Eigen et al. — 提供了深度网络做单图深度估计的早期监督学习基础。<a href="#">原文</a></li>
+              <li><span class="basis">基础：</span>Garg et al. — 奠定了用双目图像 photometric loss 训练的自监督路线。<a href="#">原文</a></li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </div>
+
+    <p class="lead" style="margin-top:22px">点「总览」生成的全文总览地图（节选还原）：</p>
+    <div class="win">
+      <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">笔记列 · 总览</span></div>
+      <div class="note-tabs">
+        <span class="btn">AI 笔记</span><span class="btn">阅读路线</span><span class="btn active">总览</span><span class="btn">对话总结</span>
+        <span class="spacer"></span><span class="btn">更新总览</span>
+      </div>
+      <div class="ov">
+        <div class="ov-head"><span class="t">📍 全文总览</span><span class="acts"><span class="btn">↗ 浏览器</span><span class="btn">↔ 在读 2 🔒</span></span></div>
+        <div class="ov-core"><div class="ct">✦ 核心讲述</div>这篇论文面向自监督单目深度估计，核心问题是在保持轻量和高速的同时获得足够强的局部细节与全局上下文建模能力。研究脉络接在 Monodepth2、PackNet、R-MSFM、MonoViT 等工作之后，针对纯 CNN 感受野不足与 Transformer 计算量偏大的矛盾提出 Lite-Mono——用 CDC 扩大局部感受野、用 LGFI 低成本建模全局通道交互，并通过 KITTI、Make3D、复杂度与消融实验验证精度、泛化和速度优势。</div>
+        <div class="ov-group"><span class="num">①</span>动机与背景</div>
+        <div class="ov-sec flat"><div class="st"><span class="no">1</span> Introduction</div><div class="gist">提出轻量深度估计缺口</div></div>
+        <div class="ov-sec"><div class="st">▸ <span class="no">2</span> Related work <span class="ov-b read">在读</span></div><div class="gist">梳理自监督与架构脉络</div></div>
+        <div class="ov-group"><span class="num">②</span>方法</div>
+        <div class="ov-sec"><div class="st">▸ ✦ <span class="no">3</span> The proposed framework: Lite-Mono <span class="ov-b new">创新</span></div><div class="gist">搭建轻量混合框架</div></div>
+        <div class="ov-group"><span class="num">③</span>验证与结论</div>
+        <div class="ov-sec"><div class="st">▸ <span class="no">4</span> Experiments <span class="ov-b anchor">效果锚点</span></div><div class="gist">验证精度速度泛化消融</div></div>
+        <div class="ov-sec flat"><div class="st"><span class="no">5</span> Conclusions</div><div class="gist">总结轻量高效贡献</div></div>
+        <div class="ov-sec flat"><div class="st"><span class="no">6</span> Acknowledgements</div><div class="gist">列出资助与致谢</div></div>
+        <div class="ov-diagram">▸ 🖼 结构图纸 <span class="hint">点击展开 · 点节点看解释 · 滚轮缩放 / 拖动</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ 6. 三步上手 ============ -->
+  <section id="steps">
+    <h2><span class="n">6</span>三步上手</h2>
+    <div class="steps">
+      <div class="step"><b>配模型</b><p>「设置」里新增一个模型预设：填 Base URL、API key、模型 ID、最大 token 与思考程度。预设与密钥只存在本地 Zotero 偏好里。</p></div>
+      <div class="step"><b>开读 + 提问</b><p>在 Reader 打开 PDF，侧栏直接问，或点「总结论文 / 全文重点」。需要逐句精读时点「沉浸」。</p></div>
+      <div class="step"><b>写回 / 同步</b><p>把回答追加进论文笔记，或让模型给 PDF 加按颜色分类的高亮；需要换机时在设置里导出 JSON，或开 WebDAV 同步单个 <span class="kbd">state.json</span>。</p></div>
+    </div>
+    <div class="tip">💡 数据本地优先：不开同步时什么都不出本机；开了 WebDAV 才会把含预设（含 API key）、对话、批注、翻译缓存的 <b>state.json</b> 推到<b>你自己的</b>端点，不发给 zotero.org 或第三方。</div>
+  </section>
+
+  <!-- ============ 7. 快捷键 ============ -->
+  <section id="keys">
+    <h2><span class="n">7</span>快捷键速查</h2>
+    <table class="keys">
+      <tr><th>操作</th><th>默认键</th><th>说明</th></tr>
+      <tr><td>发送提问</td><td><span class="kbd">Enter</span></td><td>输入框里发送；<span class="kbd">Shift+Enter</span> 换行</td></tr>
+      <tr><td>沉浸 · 下一句</td><td><span class="kbd">Enter</span></td><td>卡片开着时翻下一句；没开卡时移动「在读高亮」</td></tr>
+      <tr><td>沉浸 · 上一句</td><td><span class="kbd">Shift+Enter</span></td><td>同上，反方向</td></tr>
+      <tr><td>沉浸 · 选区快译</td><td><span class="kbd">空格</span></td><td>翻当前在读 / 选中的句子；无高亮时照常翻页（键可改）</td></tr>
+      <tr><td>沉浸 · 关卡</td><td><span class="kbd">Esc</span></td><td>关掉译文卡，并把该句留成蓝色选区</td></tr>
+    </table>
+    <div class="tip">切句 / 选区快译的键都能在「设置 → 沉浸阅读」里改成 ArrowDown / ArrowUp、j / k 等。</div>
+  </section>
+
+  <footer>Zotero AI Sidebar · 本页为离线使用教程，界面为 HTML 还原，非真实截图。</footer>
+</div>
+</body>
+</html>

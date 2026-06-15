@@ -17,7 +17,7 @@ This document targets **end users** and is split in two halves:
 - [1. 5-Minute Quick Start](#1-5-minute-quick-start)
 - [2. Common Workflows](#2-common-workflows)
   - [2.1 Ask the AI about a section or selection](#21-ask-the-ai-about-a-section-or-selection)
-  - [2.2 Translate a PDF sentence-by-sentence (Translate mode)](#22-translate-a-pdf-sentence-by-sentence-translate-mode)
+  - [2.2 Translate a PDF immersively (Immersive mode)](#22-translate-a-pdf-immersively-immersive-mode)
   - [2.3 Let the AI add highlights / annotations to the PDF](#23-let-the-ai-add-highlights--annotations-to-the-pdf)
   - [2.4 Use slash commands for arXiv or web search](#24-use-slash-commands-for-arxiv-or-web-search)
   - [2.5 Distill answers into a paper note](#25-distill-answers-into-a-paper-note)
@@ -30,7 +30,7 @@ This document targets **end users** and is split in two halves:
   - [3.2 Sidebar UI map](#32-sidebar-ui-map)
   - [3.3 Agent tools](#33-agent-tools)
   - [3.4 Slash commands](#34-slash-commands)
-  - [3.5 PDF sentence-translation mode](#35-pdf-sentence-translation-mode)
+  - [3.5 PDF immersive translation](#35-pdf-immersive-translation)
   - [3.6 Quick prompts](#36-quick-prompts)
   - [3.7 Note-editing panel](#37-note-editing-panel)
   - [3.8 Screenshots and multimodal input](#38-screenshots-and-multimodal-input)
@@ -119,16 +119,17 @@ Two ways to scope what the AI looks at:
 - The selection chip never auto-clears — click × on the chip when you're done with it.
 - The sidebar doesn't re-render when the PDF selection changes; the chip is the only visible signal.
 
-### 2.2 Translate a PDF sentence-by-sentence (Translate mode)
+### 2.2 Translate a PDF immersively (Immersive mode)
 
 Best for: first read of a non-native-language paper, or speed-building whole-paper comprehension.
 
-1. Open the PDF in the Reader. Click **译 (Translate)** on the sidebar toolbar (or its hotkey) to enter Translate mode. Sentences in the PDF become hover-highlightable.
-2. Click any sentence (single-click by default; configurable to double-click). The translation overlays in place.
-3. **Enter** advances to the next sentence; **Shift+Enter** goes back. Walk through the whole page or paper this way.
-4. Click **译** again to exit and return the PDF to its normal scroll/select behavior.
+1. Open the PDF in the Reader. Click **沉浸 (Immersive)** on the sidebar toolbar to enter immersive mode. Hovering a sentence shows a "reading" highlight.
+2. **Click** any sentence for an in-place card (original + translation, cheapest path); or **select (or hover)** a sentence and press the **quick-translate key (default Space)** to translate just that sentence.
+3. The card can switch to **interleaved EN/中文** (逐句对照), **key-term linking** (重点词对应), **neighbour context** (结合上下句) and **adaptive width**; the footer lets you keep asking (**追问**) for an explanation or examples.
+4. **Enter** advances to the next sentence, **Shift+Enter** goes back; **Esc** closes the card and leaves that sentence as a copyable selection.
+5. Click **沉浸** again to exit and return the PDF to normal scroll/select.
 
-Tunables: see [§3.5](#35-pdf-sentence-translation-mode).
+Tunables and shortcuts: see [§3.5](#35-pdf-immersive-translation).
 
 ### 2.3 Let the AI add highlights / annotations to the PDF
 
@@ -272,7 +273,7 @@ Top to bottom:
 
 ```
 ┌───────────────────────────────────────────────┐
-│  [打开笔记] [译] [设置] [🎚] [调试]            │  ← toolbar
+│  [打开笔记] [沉浸] [设置] [🎚] [调试]          │  ← toolbar
 ├───────────────────────────────────────────────┤
 │  Paper title  [LaTeX 源]                      │  ← metadata (badge on arXiv items)
 ├───────────────────────────────────────────────┤
@@ -296,7 +297,7 @@ Things to know:
 
 - **Toolbar controls** (left to right):
   - **打开笔记 (Open Note)** — opens the note column.
-  - **译 (Translate)** — toggles sentence-by-sentence translation mode (shortcut `Alt+T`).
+  - **沉浸 (Immersive)** — toggles immersive PDF translation (click a sentence for an in-place card).
   - **设置 (Settings)** — opens the full Zotero preferences pane for this plugin: model presets / API keys / display / translation / sync.
   - **🎚** — a slider-icon button; click it to open a small popup with the chat **字号 (font size)** selector.
   - **调试 (Debug)** — a toggle. When ON, **复制MD** includes the tool context, PDF passages, and thinking; when OFF it copies only the paper intro and the conversation.
@@ -359,20 +360,21 @@ Typing `/` opens completion. The two built-in commands:
 
 By design slash commands carry **no local logic** — they inject a "user explicitly chose this" prompt fragment, and the model decides which tool calls to make. This is the Codex-style invariant: **no local keyword router decides intent**.
 
-### 3.5 PDF sentence-translation mode
+### 3.5 PDF immersive translation
 
-| Setting | Options |
+Settings live in two blocks: "Translation" (model / reasoning effort / result position / card size — shared with the immersive card; items tagged 仅译 only affect the now-hidden legacy translate mode) and "Immersive reading" (immersive-card options).
+
+| Setting (Immersive reading) | Meaning |
 |---|---|
-| Trigger | Single-click / double-click |
-| Overlay size | Compact / adaptive |
-| Overlay placement | Above / below the sentence |
-| Context | Sentence only / include paragraph / include full page |
-| Next sentence | `Enter` (default) |
-| Previous sentence | `Shift+Enter` (default) |
+| Single-click opens the card | Off → show a "问 AI / 译" chooser strip first |
+| Neighbour context | Send the previous + next sentence as context for accuracy |
+| Key-term linking | Highlight original ↔ translated key-term pairs, cross-lit on hover |
+| Next / previous keys | Default `Enter` / `Shift+Enter`, remappable |
+| Selection quick-translate key | Default Space; only intercepted when a reading highlight / selection exists, otherwise Space still scrolls |
 
-When Translate mode is active, Zotero's native selection popup is suppressed to avoid colliding with the translation overlay; it returns when you exit the mode.
+The card can also toggle interleaved EN/中文 and adaptive width; `Esc` closes it and leaves the sentence selected.
 
-Translations are cached by sentence-content hash — re-clicking the same sentence does not re-call the model.
+While immersive mode is active, Zotero's native selection popup is suppressed to avoid colliding with the card, and returns on exit. Translations are cached by sentence-content hash — translating the same sentence again does not re-call the model.
 
 ### 3.6 Quick prompts
 
@@ -489,10 +491,10 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 3. If tools were truncated, raise the preset's **Max tool iterations**.
 4. Provider rate-limited? The model may bail on the tool loop and answer cold; the trace will show the error.
 
-### "Translate mode is unresponsive / clicks do nothing"
+### "Immersive translate does nothing / the quick key won't translate"
 
-1. You must be in a Reader tab — not the main library pane.
-2. Verify the trigger (single-click / double-click) matches your habit.
+1. You must be in a Reader tab — not the main library pane — with **沉浸** toggled on in the toolbar.
+2. The quick-translate key acts on the *current* sentence: hover or select a sentence (so it highlights) before pressing the key; with no highlight, Space just scrolls.
 3. Other PDF-annotation extensions can intercept click events; disable temporarily and retry.
 
 ### "WebDAV push fails"
