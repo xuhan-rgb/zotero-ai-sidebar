@@ -425,7 +425,7 @@
 
         <!-- selection state -->
         <div class="win" style="margin-top:14px">
-          <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">按 Esc 后 → 退化为选中状态</span></div>
+          <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">按 Esc 后 → 回到「在读高亮」</span></div>
           <div class="reader" style="border-radius:0">
             <p><span class="selto">Several papers demonstrated that a good encoder can extract more effective features, thus improving the final result [15, 17, 44].</span> This paper focuses on designing a lightweight encoder…</p>
           </div>
@@ -440,7 +440,8 @@
         <li><span class="k">自适应宽度</span><span class="d">加宽卡片，避免一两个单词就换行。</span></li>
         <li><span class="k">↵ / ⇧+↵</span><span class="d"><span class="kbd">Enter</span> 翻到下一句、<span class="kbd">Shift+Enter</span> 上一句，连续读完整页 / 整篇。</span></li>
         <li><span class="k">空格</span><span class="d">选中 / 悬停某句后按它直接翻这一句；没有高亮 / 选区时空格<b>照常翻页</b>。键可改。</span></li>
-        <li><span class="k">Esc</span><span class="d">关掉卡片，并把该句保留成<b>蓝色可复制选区</b>（见下方第二张图）。</span></li>
+        <li><span class="k">/</span><span class="d">卡片开着时按它把光标移进卡底「<b>追问</b>」框（因为 Enter 已用于切句）；进框后 Enter 即发送。键可改。</span></li>
+        <li><span class="k">Esc</span><span class="d">关掉卡片，该句回到<b>「在读高亮」</b>（见下方第二张图），可继续 <span class="kbd">Enter</span> 切句。</span></li>
       </ul>
     </div>
   </section>
@@ -547,7 +548,8 @@
       <tr><td>沉浸 · 下一句</td><td><span class="kbd">Enter</span></td><td>卡片开着时翻下一句；没开卡时移动「在读高亮」</td></tr>
       <tr><td>沉浸 · 上一句</td><td><span class="kbd">Shift+Enter</span></td><td>同上，反方向</td></tr>
       <tr><td>沉浸 · 选区快译</td><td><span class="kbd">空格</span></td><td>翻当前在读 / 选中的句子；无高亮时照常翻页（键可改）</td></tr>
-      <tr><td>沉浸 · 关卡</td><td><span class="kbd">Esc</span></td><td>关掉译文卡，并把该句留成蓝色选区</td></tr>
+      <tr><td>沉浸 · 聚焦追问</td><td><span class="kbd">/</span></td><td>卡片开着时把光标移进「追问」框（键可改）</td></tr>
+      <tr><td>沉浸 · 关卡</td><td><span class="kbd">Esc</span></td><td>关掉译文卡，该句回到「在读高亮」，可继续切句</td></tr>
     </table>
     <div class="tip">切句 / 选区快译的键都能在「设置 → 沉浸阅读」里改成 ArrowDown / ArrowUp、j / k 等。</div>
   </section>

@@ -126,7 +126,7 @@ Best for: first read of a non-native-language paper, or speed-building whole-pap
 1. Open the PDF in the Reader. Click **沉浸 (Immersive)** on the sidebar toolbar to enter immersive mode. Hovering a sentence shows a "reading" highlight.
 2. **Click** any sentence for an in-place card (original + translation, cheapest path); or **select (or hover)** a sentence and press the **quick-translate key (default Space)** to translate just that sentence.
 3. The card can switch to **interleaved EN/中文** (逐句对照), **key-term linking** (重点词对应), **neighbour context** (结合上下句) and **adaptive width**; the footer lets you keep asking (**追问**) for an explanation or examples.
-4. **Enter** advances to the next sentence, **Shift+Enter** goes back; **Esc** closes the card and leaves that sentence as a copyable selection.
+4. **Enter** advances to the next sentence, **Shift+Enter** goes back; **/** jumps the cursor into the card's 追问 box (Enter is reserved for stepping); **Esc** closes the card while keeping that sentence on the reading highlight, so you can keep stepping.
 5. Click **沉浸** again to exit and return the PDF to normal scroll/select.
 
 Tunables and shortcuts: see [§3.5](#35-pdf-immersive-translation).
@@ -371,8 +371,9 @@ Settings live in two blocks: "Translation" (model / reasoning effort / result po
 | Key-term linking | Highlight original ↔ translated key-term pairs, cross-lit on hover |
 | Next / previous keys | Default `Enter` / `Shift+Enter`, remappable |
 | Selection quick-translate key | Default Space; only intercepted when a reading highlight / selection exists, otherwise Space still scrolls |
+| Focus-ask key | Default `/`; with a card open, moves the cursor into the 追问 box (Enter is reserved for stepping) |
 
-The card can also toggle interleaved EN/中文 and adaptive width; `Esc` closes it and leaves the sentence selected.
+The card can also toggle interleaved EN/中文 and adaptive width; `Esc` closes it and keeps the sentence on the reading highlight.
 
 While immersive mode is active, Zotero's native selection popup is suppressed to avoid colliding with the card, and returns on exit. Translations are cached by sentence-content hash — translating the same sentence again does not re-call the model.
 

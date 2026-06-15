@@ -1,6 +1,5 @@
 import { createPdfLocator, type PdfLocator } from "../context/pdf-locator";
 import { detectSentenceAtPoint, type DetectedSentence } from "./sentence-detect";
-import { restoreReaderTextSelectionQuiet } from "../modules/pdf-navigation";
 import {
   mountOverlay,
   mountReadingHighlight,
@@ -124,6 +123,24 @@ export function setImmersiveQuickTranslateKey(
   value: string,
 ): void {
   prefs.set(IMMERSIVE_QUICK_KEY_PREF, value);
+}
+
+// "聚焦追问键": with a card open, move focus into its 追问 input. Enter is taken
+// by sentence-stepping, so this is a separate key (default "/").
+const IMMERSIVE_FOCUS_ASK_KEY_PREF =
+  "extensions.zotero-ai-sidebar.immersiveFocusAskKey";
+export const DEFAULT_IMMERSIVE_FOCUS_ASK_KEY = "/";
+export function getImmersiveFocusAskKey(prefs: PrefsStore): string {
+  const value = prefs.get(IMMERSIVE_FOCUS_ASK_KEY_PREF);
+  return typeof value === "string" && value
+    ? value
+    : DEFAULT_IMMERSIVE_FOCUS_ASK_KEY;
+}
+export function setImmersiveFocusAskKey(
+  prefs: PrefsStore,
+  value: string,
+): void {
+  prefs.set(IMMERSIVE_FOCUS_ASK_KEY_PREF, value);
 }
 import { cleanTranslationOutput, translateSentence } from "./translator";
 import { loadTranslateSettings } from "./settings";
@@ -939,35 +956,30 @@ export class AskModeController {
         return;
       }
     }
+    // 聚焦追问键 (default "/"): with a card open, jump the cursor into its 追问
+    // input (Enter is taken by sentence-stepping). No-op while already typing.
+    if (this.overlay && !isEditableTarget(ev.target)) {
+      const focusAsk = parseKeybinding(getImmersiveFocusAskKey(this.ctx.prefs));
+      if (focusAsk && matchesKeybinding(ev, focusAsk)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
+        this.overlay.focusComposer();
+        return;
+      }
+    }
     if (ev.key === "Escape") {
       if (!this.current && !this.chooser && !this.reading) return;
       ev.preventDefault();
       ev.stopPropagation();
       ev.stopImmediatePropagation?.();
-      // Capture the card's sentence before dismiss clears it, so Esc "degrades"
-      // the translation card back to a plain PDF text selection of that sentence.
+      // Esc closes the card and returns to the immersive "在读" highlight on that
+      // sentence (the soft reading-guide mark, NOT a native text selection), so it
+      // stays marked as the sentence you're on and Enter/Shift+Enter keep stepping.
       const card = this.current;
       this.dismissOverlay();
-      this.clearReading();
-      if (card) this.selectSentenceInReader(card);
-    }
-  }
-
-  // Re-select a sentence as a native reader text selection (the blue highlight),
-  // so Esc-ing a card leaves the sentence selected for copy/继续操作. Reuses the
-  // reader's own _setSelectionRanges path via restoreReaderTextSelectionQuiet.
-  private selectSentenceInReader(sentence: DetectedSentence): void {
-    if (!this.locator) return;
-    try {
-      restoreReaderTextSelectionQuiet(this.ctx.reader, {
-        attachmentID: this.locator.attachmentID,
-        selectedText: sentence.text,
-        pageIndex: sentence.pageIndex,
-        pageLabel: sentence.pageLabel,
-        position: { pageIndex: sentence.pageIndex, rects: sentence.rects },
-      });
-    } catch {
-      /* best effort — selection restore is non-critical */
+      if (card) this.setReading(card);
+      else this.clearReading();
     }
   }
 
@@ -1124,6 +1136,9 @@ export class AskModeController {
     )} / ${displayImmersiveKey(
       getImmersiveNextSentenceKey(this.ctx.prefs),
     )} 上/下一句`;
+    const askHint = `${displayImmersiveKey(
+      getImmersiveFocusAskKey(this.ctx.prefs),
+    )} 追问`;
     // "read" and the chooser's "译" both translate; only "ask" explains.
     const isAsk = flow === "ask";
     const isRead = flow === "read";
@@ -1141,7 +1156,7 @@ export class AskModeController {
         // ↻ re-translate (ignore cache) in place — mirrors the 译 overlay but
         // without rebuilding the card.
         onRetry: isAsk ? undefined : () => void this.retranslate(true),
-        hint: `${stepHint} · Esc 关闭`,
+        hint: isRead ? `${stepHint} · ${askHint} · Esc 关闭` : `${stepHint} · Esc 关闭`,
       },
       // "read" uses the ask DOM (transcript + composer) so 追问 lives in the same
       // card; the chooser's plain "译" keeps the minimal translate variant.
