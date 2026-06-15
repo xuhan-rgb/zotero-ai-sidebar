@@ -1,5 +1,6 @@
 import { createPdfLocator, type PdfLocator } from "../context/pdf-locator";
 import { detectSentenceAtPoint, type DetectedSentence } from "./sentence-detect";
+import { restoreReaderTextSelectionQuiet } from "../modules/pdf-navigation";
 import {
   mountOverlay,
   mountReadingHighlight,
@@ -920,9 +921,9 @@ export class AskModeController {
       this.onStepKey(ev, -1);
       return;
     }
-    // 快捷翻译键 (default Space): translate the current PDF selection in place.
-    // Only consumes the key when there IS a selection — otherwise it falls
-    // through so Space keeps scrolling the page and typed keys keep working.
+    // 快捷翻译键 (default Space): translate the sentence the reading guide is on
+    // (the same one Enter steps), else an explicit selection. Only consumes the
+    // key when there's a target — otherwise Space keeps scrolling.
     const quick = parseKeybinding(getImmersiveQuickTranslateKey(this.ctx.prefs));
     if (quick && matchesKeybinding(ev, quick)) {
       if (isEditableTarget(ev.target)) return; // typing in 追问 → don't hijack
@@ -943,33 +944,62 @@ export class AskModeController {
       ev.preventDefault();
       ev.stopPropagation();
       ev.stopImmediatePropagation?.();
+      // Capture the card's sentence before dismiss clears it, so Esc "degrades"
+      // the translation card back to a plain PDF text selection of that sentence.
+      const card = this.current;
       this.dismissOverlay();
       this.clearReading();
-      // The reader keeps its own selection model (_selectionRanges), so closing
-      // the card leaves the text selection in place — "Esc 恢复选区" needs no
-      // explicit restore.
+      if (card) this.selectSentenceInReader(card);
     }
   }
 
-  // Quick-translate the CURRENT reader text selection, read live at key-press
-  // time. Returns true if it consumed the key (a real selection exists); false
-  // otherwise (so Space still scrolls). We translate the selection's exact text +
-  // rects — no coordinate snapping (snapped to the wrong sentence) and no cache
-  // (served a stale/previously-clicked sentence). A collapsed caret left by a
-  // click is NOT a selection and is ignored upstream.
+  // Re-select a sentence as a native reader text selection (the blue highlight),
+  // so Esc-ing a card leaves the sentence selected for copy/继续操作. Reuses the
+  // reader's own _setSelectionRanges path via restoreReaderTextSelectionQuiet.
+  private selectSentenceInReader(sentence: DetectedSentence): void {
+    if (!this.locator) return;
+    try {
+      restoreReaderTextSelectionQuiet(this.ctx.reader, {
+        attachmentID: this.locator.attachmentID,
+        selectedText: sentence.text,
+        pageIndex: sentence.pageIndex,
+        pageLabel: sentence.pageLabel,
+        position: { pageIndex: sentence.pageIndex, rects: sentence.rects },
+      });
+    } catch {
+      /* best effort — selection restore is non-critical */
+    }
+  }
+
+  // Quick-translate the sentence the user is currently on. Primary target is the
+  // reading-guide sentence (this.reading) — the SAME DetectedSentence the next/
+  // prev keys step, set reliably by hover/stepping; if Enter can move it, t can
+  // translate it. Falls back to an explicit PDF text selection when there's no
+  // reading mark. Returns true if it consumed the key, false to let Space scroll.
   private quickTranslateSelection(ev: KeyboardEvent): boolean {
     if (!this.locator) return false;
-    const sel = this.resolveSelectionAnnotation();
-    if (!sel) return false;
+    const reading = this.reading;
+    const sel = reading ? null : this.resolveSelectionAnnotation();
+    if (!reading && !sel) return false;
     ev.preventDefault();
     ev.stopPropagation();
     ev.stopImmediatePropagation?.();
+    if (reading) {
+      // The reading guide already holds a full DetectedSentence — translate it
+      // directly (same target Enter/Shift+Enter step from).
+      this.clearReading();
+      this.current = reading;
+      this.cardNeighborContext = getImmersiveNeighborContext(this.ctx.prefs);
+      void this.runFlow("read", reading);
+      return true;
+    }
+    const selection = sel as { pageIndex: number; text: string; rects: number[][] };
     const locator = this.locator;
     void (async () => {
       let detected: DetectedSentence | null = null;
       try {
-        const bundle = await locator.getPageContent(sel.pageIndex);
-        if (bundle) detected = buildSelectionSentence(sel, bundle);
+        const bundle = await locator.getPageContent(selection.pageIndex);
+        if (bundle) detected = buildSelectionSentence(selection, bundle);
       } catch {
         return;
       }
@@ -982,10 +1012,8 @@ export class AskModeController {
     return true;
   }
 
-  // TEMP diagnostic (Z9 selection investigation): dumps where the selection model
-  // is at quick-key time. Routed to /tmp/zai_translate_debug.log.
-  // The current selection's exact text + PDF rects + page. Requires both text and
-  // rects so the card translates/highlights exactly what was selected.
+  // The current PDF text selection's exact text + rects + page (fallback when
+  // there's no reading-guide mark). Requires both text and rects.
   private resolveSelectionAnnotation(): {
     pageIndex: number;
     text: string;
