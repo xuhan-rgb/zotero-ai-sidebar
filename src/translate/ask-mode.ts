@@ -28,6 +28,12 @@ import {
 } from "./cache";
 import { newConversationId, recordReadingConversation } from "./reading-log";
 import { matchesKeybinding, parseKeybinding } from "./keybinding";
+import {
+  findSentenceAnnotation,
+  saveSelectionAnnotation,
+  type ExistingSentenceAnnotation,
+  type SelectionAnnotationDraft,
+} from "../context/agent-tools";
 
 const IMMERSIVE_CLICK_MODE_KEY =
   "extensions.zotero-ai-sidebar.immersiveClickMode";
@@ -142,6 +148,40 @@ export function setImmersiveFocusAskKey(
 ): void {
   prefs.set(IMMERSIVE_FOCUS_ASK_KEY_PREF, value);
 }
+
+// "收起工具栏键": toggle hiding the card's meta bar + bottom button row (the 追问
+// composer stays). Independent of the hover-dim — that quiets chrome on idle;
+// this fully removes it (height collapses). Persisted; default "h".
+const IMMERSIVE_TOGGLE_KEY_PREF =
+  "extensions.zotero-ai-sidebar.immersiveToggleControlsKey";
+export const DEFAULT_IMMERSIVE_TOGGLE_KEY = "h";
+export function getImmersiveToggleControlsKey(prefs: PrefsStore): string {
+  const value = prefs.get(IMMERSIVE_TOGGLE_KEY_PREF);
+  return typeof value === "string" && value
+    ? value
+    : DEFAULT_IMMERSIVE_TOGGLE_KEY;
+}
+export function setImmersiveToggleControlsKey(
+  prefs: PrefsStore,
+  value: string,
+): void {
+  prefs.set(IMMERSIVE_TOGGLE_KEY_PREF, value);
+}
+
+// Remembered collapse state: when on, new cards start with meta + foot hidden.
+// Toggled live by the key above; also a plain pref so settings can set the
+// default. Default off (controls shown).
+const IMMERSIVE_COLLAPSE_PREF =
+  "extensions.zotero-ai-sidebar.immersiveCollapseControls";
+export function getImmersiveCollapseControls(prefs: PrefsStore): boolean {
+  return prefs.get(IMMERSIVE_COLLAPSE_PREF) === "on";
+}
+export function setImmersiveCollapseControls(
+  prefs: PrefsStore,
+  on: boolean,
+): void {
+  prefs.set(IMMERSIVE_COLLAPSE_PREF, on ? "on" : "off");
+}
 import { cleanTranslationOutput, translateSentence } from "./translator";
 import { loadTranslateSettings } from "./settings";
 import type { ModelPreset } from "../settings/types";
@@ -211,6 +251,16 @@ export class AskModeController {
   private modePopupGuard: { destroy(): void } | null = null;
   private current: DetectedSentence | null = null;
   private locator: PdfLocator | null = null;
+  // Latest plain译文 shown in the read card + whether it finished streaming, so
+  // 💾 "保存为注释" can save the displayed translation as the highlight comment.
+  // Reset per card (each renderForCurrent); set on each stream path's completion.
+  private cardTranslation = "";
+  private cardTranslationDone = false;
+  // The existing annotation overlapping the current card's sentence, if any
+  // (detected once on the initial click). When set, the card shows its saved
+  // comment instead of translating, and 💾 UPDATES this annotation by key rather
+  // than stacking a duplicate. Reset per card.
+  private cardExisting: ExistingSentenceAnnotation | null = null;
   // Conversation history for the current in-place Q&A card (ask flow only).
   // Seeded on the first answer; appended on every follow-up. Reset whenever the
   // card is dismissed or a different sentence is picked, so each "问 AI" starts
@@ -968,6 +1018,27 @@ export class AskModeController {
         return;
       }
     }
+    // 收起/展开工具栏键 (default "h"): hide/show the card's meta bar + bottom
+    // button row (the 追问 composer stays). Persisted; works even with no card
+    // open (sets the default for the next card). Skipped while typing so the key
+    // types normally in the composer.
+    if (!isEditableTarget(ev.target)) {
+      const toggle = parseKeybinding(
+        getImmersiveToggleControlsKey(this.ctx.prefs),
+      );
+      if (toggle && matchesKeybinding(ev, toggle)) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        ev.stopImmediatePropagation?.();
+        const collapsed = !getImmersiveCollapseControls(this.ctx.prefs);
+        setImmersiveCollapseControls(this.ctx.prefs, collapsed);
+        this.overlay?.el.classList.toggle(
+          "zai-translate-overlay--collapsed",
+          collapsed,
+        );
+        return;
+      }
+    }
     if (ev.key === "Escape") {
       if (!this.current && !this.chooser && !this.reading) return;
       ev.preventDefault();
@@ -1054,9 +1125,15 @@ export class AskModeController {
   //  - Otherwise → move the soft reading guide (no model call).
   private onStepKey(ev: KeyboardEvent, delta: number): void {
     if (this.chooser) return;
-    // Yield to text inputs (the 追问 composer) WITHOUT consuming, so Enter there
-    // submits the follow-up. Stepping happens when focus is on the reader / card.
-    if (isEditableTarget(ev.target)) return;
+    // Yield to the 追问 composer ONLY while the user is actually typing a question
+    // (non-empty), so Enter there submits the follow-up. An empty / just-focused
+    // composer — e.g. the mouse merely landed on / clicked the answer card — must
+    // NOT swallow Enter/Shift+Enter: sentence-stepping keeps working no matter
+    // where keyboard focus happens to have landed.
+    if (isEditableTarget(ev.target)) {
+      const field = ev.target as { value?: string };
+      if (typeof field.value === "string" && field.value.trim()) return;
+    }
     ev.preventDefault();
     ev.stopPropagation();
     ev.stopImmediatePropagation?.();
@@ -1129,6 +1206,11 @@ export class AskModeController {
 
     this.clearOverlay();
     this.abortCtrl = new AbortController();
+    // New card → forget the prior card's译文 until this one streams in, so 💾
+    // never saves a stale translation against a different sentence.
+    this.cardTranslation = "";
+    this.cardTranslationDone = false;
+    this.cardExisting = null;
 
     const model = settings.model || preset?.model || "";
     const stepHint = `${displayImmersiveKey(
@@ -1139,6 +1221,12 @@ export class AskModeController {
     const askHint = `${displayImmersiveKey(
       getImmersiveFocusAskKey(this.ctx.prefs),
     )} 追问`;
+    // Surface the collapse key in the footer hint so users discover it (follows
+    // the configured value). The hint only shows while expanded (it lives in the
+    // foot, which collapse hides), so the action is always 收起.
+    const toggleHint = `${displayImmersiveKey(
+      getImmersiveToggleControlsKey(this.ctx.prefs),
+    )} 收起`;
     // "read" and the chooser's "译" both translate; only "ask" explains.
     const isAsk = flow === "ask";
     const isRead = flow === "read";
@@ -1156,7 +1244,16 @@ export class AskModeController {
         // ↻ re-translate (ignore cache) in place — mirrors the 译 overlay but
         // without rebuilding the card.
         onRetry: isAsk ? undefined : () => void this.retranslate(true),
-        hint: isRead ? `${stepHint} · ${askHint} · Esc 关闭` : `${stepHint} · Esc 关闭`,
+        // 💾 save the read card's译文 as a Zotero highlight注释 on the sentence.
+        // Read card only; the plain ask card has no translation to save.
+        onSave: isRead
+          ? () => {
+              if (overlay) void this.saveCardAnnotation(current, overlay);
+            }
+          : undefined,
+        hint: isRead
+          ? `${stepHint} · ${askHint} · ${toggleHint} · Esc 关闭`
+          : `${stepHint} · ${toggleHint} · Esc 关闭`,
       },
       // "read" uses the ask DOM (transcript + composer) so 追问 lives in the same
       // card; the chooser's plain "译" keeps the minimal translate variant.
@@ -1200,6 +1297,10 @@ export class AskModeController {
         : undefined,
     });
     this.overlay = overlay;
+    // Start collapsed if the user toggled that on (remembered via the 收起工具栏键).
+    if (getImmersiveCollapseControls(this.ctx.prefs)) {
+      overlay.el.classList.add("zai-translate-overlay--collapsed");
+    }
     // Keep the stepped-to sentence visible when advancing past the fold via the
     // keyboard. No-op when the sentence is already fully on screen (e.g. on the
     // initial click), so it never yanks the view unexpectedly.
@@ -1218,6 +1319,23 @@ export class AskModeController {
     if (isAsk) {
       await this.streamAsk(current, overlay, settings, preset, model);
     } else {
+      // On the initial click of a read card, if this sentence already carries an
+      // annotation, show its saved comment instead of translating (keeps the
+      // immersive card as the single surface). ↻ / view toggles go through
+      // renderReadContent directly, so they always translate afresh.
+      if (isRead && !forceRefresh && this.locator?.attachmentID != null) {
+        const existing = await this.detectExistingAnnotation(current);
+        if (this.overlay !== overlay) return;
+        if (existing) {
+          this.cardExisting = existing;
+          if (existing.comment.trim()) {
+            overlay.setSourceVisible(true);
+            overlay.setExistingNote(existing.comment.trim());
+            this.markCardTranslation(overlay, existing.comment);
+            return;
+          }
+        }
+      }
       // NOTE: do NOT auto-focus the 追问 composer here — keeping focus off it lets
       // Enter / Shift+Enter step sentences. Click the composer to type a follow-up
       // (Enter there submits, because onStepKey yields to editable targets).
@@ -1230,6 +1348,25 @@ export class AskModeController {
         forceRefresh,
         isRead,
       );
+    }
+  }
+
+  // Look up an existing annotation overlapping this sentence. Best-effort: any
+  // failure (no attachment, API shape change) returns null so the card just
+  // translates normally.
+  private async detectExistingAnnotation(
+    current: DetectedSentence,
+  ): Promise<ExistingSentenceAnnotation | null> {
+    const attachmentID = this.locator?.attachmentID;
+    if (attachmentID == null) return null;
+    try {
+      return await findSentenceAnnotation(
+        attachmentID,
+        current.pageIndex,
+        current.rects as number[][],
+      );
+    } catch {
+      return null;
     }
   }
 
@@ -1410,6 +1547,112 @@ export class AskModeController {
     await this.runAskTurn(overlay, settings, preset, model);
   }
 
+  // Record the plain译文 currently shown in `overlay`'s read card so 💾 can save
+  // it. Guarded on the live overlay so a superseded stream can't stamp a stale
+  // translation. Empty text leaves 保存 disabled (done=false).
+  private markCardTranslation(overlay: OverlayHandle, text: string): void {
+    if (this.overlay !== overlay) return;
+    this.cardTranslation = (text ?? "").trim();
+    this.cardTranslationDone = this.cardTranslation.length > 0;
+  }
+
+  // 💾 Save the read card's译文 as a Zotero highlight注释 on the sentence's rects,
+  // mirroring the standalone 译 window's save: the sentence text is the highlight
+  // and the译文 is the comment. Rebuilds the document-wide sortIndex (off the
+  // click hot path) so the saved annotation sorts with the rest of the document.
+  private async saveCardAnnotation(
+    current: DetectedSentence,
+    overlay: OverlayHandle,
+  ): Promise<void> {
+    if (this.overlay !== overlay) return;
+    const comment = this.cardTranslation.trim();
+    if (!this.cardTranslationDone || !comment) {
+      overlay.setStatusLabel("● 完成后可保存");
+      return;
+    }
+    if (!this.locator?.attachmentID) {
+      overlay.setError("保存注释失败：未找到当前 PDF 附件。");
+      return;
+    }
+    const existing = this.cardExisting?.key ? this.cardExisting : null;
+    overlay.setStatusLabel(existing ? "● 更新中…" : "● 保存中…");
+    try {
+      let draft: SelectionAnnotationDraft;
+      if (existing) {
+        // Update the same annotation in place: keep its color / position /
+        // sortIndex, change only the comment (saveFromJSON upserts by key) — so
+        // re-saving a sentence never stacks a duplicate highlight.
+        draft = {
+          text: existing.text || current.text,
+          attachmentID: this.locator.attachmentID,
+          annotation: {
+            key: existing.key,
+            id: existing.key,
+            text: existing.text || current.text,
+            color: existing.color || "#ffd400",
+            pageLabel: existing.pageLabel || current.pageLabel,
+            sortIndex: existing.sortIndex || current.sortIndex,
+            position: { pageIndex: existing.pageIndex, rects: existing.rects },
+          },
+        };
+      } else {
+        // New annotation: rebuild the document-wide sortIndex off the click hot
+        // path so it sorts with the rest of the document.
+        let sortIndex = current.sortIndex;
+        if (
+          current.rangeStart != null &&
+          current.rangeEnd != null &&
+          current.sortTop != null &&
+          this.locator.documentSortIndexForRange
+        ) {
+          sortIndex =
+            (await this.locator.documentSortIndexForRange(
+              current.pageIndex,
+              current.rangeStart,
+              current.rangeEnd,
+              current.sortTop,
+            )) ?? sortIndex;
+        }
+        draft = {
+          text: current.text,
+          attachmentID: this.locator.attachmentID,
+          annotation: {
+            text: current.text,
+            color: "#ffd400",
+            pageLabel: current.pageLabel,
+            sortIndex,
+            position: { pageIndex: current.pageIndex, rects: current.rects },
+          },
+        };
+      }
+      const saved = await saveSelectionAnnotation(draft, {
+        comment,
+        color: existing?.color || "#ffd400",
+        type: existing?.type ?? "highlight",
+      });
+      // Remember the (stable) key so a later 💾 in this card updates the same
+      // annotation instead of creating a second one.
+      this.cardExisting = {
+        key: saved.key,
+        comment,
+        text: draft.text,
+        type: existing?.type ?? "highlight",
+        color: existing?.color || "#ffd400",
+        pageLabel: existing?.pageLabel || current.pageLabel,
+        sortIndex: existing?.sortIndex || current.sortIndex,
+        pageIndex: existing?.pageIndex ?? current.pageIndex,
+        rects: existing?.rects ?? (current.rects as number[][]),
+      };
+      if (this.overlay === overlay) {
+        overlay.setStatusLabel(existing ? "● 已更新" : "● 已保存");
+      }
+    } catch (err) {
+      if (this.overlay === overlay) {
+        overlay.setError(`保存注释失败：${errorMessage(err)}`);
+      }
+    }
+  }
+
   // Translation for the read card (and the chooser's "译"). Reuses the shared
   // translation cache so re-clicking / stepping back to a sentence is free, and
   // sends only the sentence unless 结合本段翻译 is on (最省 by default).
@@ -1436,7 +1679,9 @@ export class AskModeController {
     const cached = forceRefresh ? undefined : await getCachedTranslation(key);
     if (this.overlay !== overlay || this.abortCtrl !== ctrl) return;
     if (cached) {
-      overlay.setText(cleanTranslationOutput(cached.text));
+      const text = cleanTranslationOutput(cached.text);
+      overlay.setText(text);
+      this.markCardTranslation(overlay, text);
       overlay.setStatusLabel("● 已完成 · 缓存");
       return;
     }
@@ -1466,6 +1711,7 @@ export class AskModeController {
         } else if (chunk.type === "done") {
           if (buffer) {
             overlay.setDone();
+            this.markCardTranslation(overlay, buffer);
             // Translation token cost → top-right status badge.
             if (usageLabel) overlay.setStatusLabel(`● 已完成 · ${usageLabel}`);
             void setCachedTranslation(key, {
@@ -1523,6 +1769,10 @@ export class AskModeController {
     if (this.overlay !== overlay || this.abortCtrl !== ctrl) return;
     if (cached) {
       apply(cached.text);
+      this.markCardTranslation(
+        overlay,
+        parseTranslationWithPairs(cached.text).translation,
+      );
       overlay.setStatusLabel("● 已完成 · 缓存");
       return;
     }
@@ -1553,6 +1803,10 @@ export class AskModeController {
         } else if (chunk.type === "done") {
           if (buffer.trim()) {
             apply(buffer);
+            this.markCardTranslation(
+              overlay,
+              parseTranslationWithPairs(buffer).translation,
+            );
             if (usageLabel) overlay.setStatusLabel(`● 已完成 · ${usageLabel}`);
             void setCachedTranslation(key, {
               text: buffer,
@@ -1607,10 +1861,16 @@ export class AskModeController {
         wantTerms ? parseTranslationWithPairs(raw).pairs : undefined,
       );
     };
+    // 💾 saves the full译文: stitch the意群-aligned 中文 segments back together.
+    const joinTranslation = (raw: string) =>
+      parseAlignedPairs(raw)
+        .map((p) => p.zh)
+        .join("");
     const cached = forceRefresh ? undefined : await getCachedTranslation(key);
     if (this.overlay !== overlay || this.abortCtrl !== ctrl) return;
     if (cached) {
       apply(cached.text);
+      this.markCardTranslation(overlay, joinTranslation(cached.text));
       overlay.setStatusLabel("● 已完成 · 缓存");
       return;
     }
@@ -1639,6 +1899,7 @@ export class AskModeController {
         } else if (chunk.type === "done") {
           if (parseAlignedPairs(buffer).length) {
             apply(buffer);
+            this.markCardTranslation(overlay, joinTranslation(buffer));
             if (usageLabel) overlay.setStatusLabel(`● 已完成 · ${usageLabel}`);
             void setCachedTranslation(key, {
               text: buffer,

@@ -9,6 +9,10 @@ import { logTranslateDebug } from "./debug-log";
 export interface OverlayHandle {
   el: HTMLElement;
   setText(text: string): void;
+  // Render a saved Zotero annotation's comment as a distinct "📌 已有注释" note
+  // card (not a plain译文), so the user can tell at a glance this is their stored
+  // note rather than a fresh translation. Cleared on ↻ / view toggle.
+  setExistingNote(comment: string): void;
   appendText(delta: string): void;
   // Reset the translation body (collapse follow-up turns, undo term spans, clear
   // 原文 decoration) so a re-translation can stream into the SAME card without a
@@ -179,20 +183,15 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   // Option A: view/option toggles live in the top bar, between the lang label
   // and the status badge.
   if (input.lineViewToggle) {
-    const lv = input.lineViewToggle;
-    const chip = iframeDoc.createElement("button");
-    chip.type = "button";
-    chip.className = "zai-translate-overlay__chip zai-translate-overlay__chip--meta";
-    if (lv.checked) chip.classList.add("zai-translate-overlay__chip--on");
-    chip.textContent = lv.label;
-    chip.title = "切换：整段对照 ⇄ 逐句对照（一行英文一行中文）";
-    chip.addEventListener("click", (ev) => {
-      ev.stopPropagation();
-      const on = !chip.classList.contains("zai-translate-overlay__chip--on");
-      chip.classList.toggle("zai-translate-overlay__chip--on", on);
-      lv.onToggle(on);
-    });
-    meta.appendChild(chip);
+    // Checkbox (not a filled chip) so it matches 结合上下句 / 自适应宽度 and adds no
+    // heavy color block competing with the sentence for attention.
+    meta.appendChild(
+      makeMetaCheck(
+        iframeDoc,
+        input.lineViewToggle,
+        "切换：整段对照 ⇄ 逐句对照（一行英文一行中文）",
+      ),
+    );
   }
   if (input.contextToggle) {
     meta.appendChild(makeMetaCheck(iframeDoc, input.contextToggle, "结合上下句翻译（仅本卡，不改默认设置）"));
@@ -210,6 +209,13 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   meta.appendChild(status);
   el.appendChild(meta);
 
+  // 原文 + 译文 share ONE "translation block" container, so the card reads as a
+  // clean vertical stack of blocks: this translation block on top, then each
+  // follow-up question bubble + answer block below it (same visual language).
+  const mainBlock = iframeDoc.createElement("div");
+  mainBlock.className = "zai-translate-overlay__main";
+  el.appendChild(mainBlock);
+
   // 原文 row (read card): the clicked sentence, rendered locally — costs no
   // tokens and gives a stable source/译 pairing inside the card.
   let sourceRow: HTMLElement | null = null;
@@ -217,16 +223,16 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     sourceRow = iframeDoc.createElement("div");
     sourceRow.className = "zai-translate-overlay__source";
     sourceRow.textContent = input.sourceText;
-    el.appendChild(sourceRow);
+    mainBlock.appendChild(sourceRow);
   }
 
   // Primary streaming target: the translation (read card) or the first answer
-  // (ask card). Standalone, directly under 原文 — stays at the TOP of the card.
-  // The follow-up Q&A `transcript` is created separately below, after 拆解.
+  // (ask card). Sits under 原文 inside the same translation block. The follow-up
+  // Q&A `transcript` is created separately below, after 拆解.
   const body = iframeDoc.createElement("div");
   body.className = "zai-translate-overlay__body";
   if (initialText) body.textContent = initialText;
-  el.appendChild(body);
+  mainBlock.appendChild(body);
 
   // 拆解长句 chip + collapsible panel (read card). Currently 暂时取消 (not passed),
   // but the rendering is kept so it can be re-enabled later. The other toggles
@@ -259,7 +265,7 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     };
     chipsRow.appendChild(chip);
     breakdownPanel = panel;
-    el.insertBefore(chipsRow, sourceRow ?? body);
+    el.insertBefore(chipsRow, mainBlock);
     el.appendChild(breakdownPanel);
   }
 
@@ -281,7 +287,7 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   actionsRow.className = "zai-translate-overlay__actions";
   if (!isAsk) {
     actionsRow.appendChild(
-      makeBtn(iframeDoc, "💾", "保存为 Zotero 注释", actions.onSave, true),
+      makeBtn(iframeDoc, "💾", "保存为 Zotero 注释", actions.onSave),
     );
     actionsRow.appendChild(
       makeBtn(
@@ -293,16 +299,24 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     );
     actionsRow.appendChild(makeBtn(iframeDoc, "▲", "上一句", actions.onPrev));
     actionsRow.appendChild(makeBtn(iframeDoc, "▼", "下一句", actions.onNext));
-  } else if (actions.onRetry) {
-    // Read card keeps a single ↻ to force a fresh translation (ignore cache).
-    actionsRow.appendChild(
-      makeBtn(
-        iframeDoc,
-        "↻",
-        "重新翻译（忽略缓存并覆盖旧结果）",
-        actions.onRetry,
-      ),
-    );
+  } else {
+    // Read card: 💾 save the译文 as a Zotero highlight注释, plus a single ↻ to
+    // force a fresh translation (ignore cache). The plain ask card has neither.
+    if (actions.onSave) {
+      actionsRow.appendChild(
+        makeBtn(iframeDoc, "💾", "保存为 Zotero 注释", actions.onSave),
+      );
+    }
+    if (actions.onRetry) {
+      actionsRow.appendChild(
+        makeBtn(
+          iframeDoc,
+          "↻",
+          "重新翻译（忽略缓存并覆盖旧结果）",
+          actions.onRetry,
+        ),
+      );
+    }
   }
   const hintEl = iframeDoc.createElement("span");
   hintEl.className = "zai-translate-overlay__hint";
@@ -358,6 +372,22 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     composerInput = field;
   }
 
+  // Reveal the chrome (meta/foot/composer) on REAL pointer activity inside the
+  // card, not on bare CSS :hover. WHY: keyboard stepping remounts the card next
+  // to the new sentence; if it pops up under a parked cursor, :hover would fire
+  // immediately (no mouse move) and wrongly count as "the user is on the card".
+  // pointermove (not pointerenter) means a stationary cursor the card appears
+  // under does nothing; an actual move / click reveals it; leaving hides it.
+  el.addEventListener("pointermove", () => {
+    el.classList.add("zai-translate-overlay--pointer-active");
+  });
+  el.addEventListener("pointerdown", () => {
+    el.classList.add("zai-translate-overlay--pointer-active");
+  });
+  el.addEventListener("pointerleave", () => {
+    el.classList.remove("zai-translate-overlay--pointer-active");
+  });
+
   el.style.visibility = "hidden";
   (iframeDoc.body ?? pageEl).appendChild(el);
 
@@ -398,8 +428,23 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     el,
     setText(text) {
       activeBody.classList.remove("zai-translate-overlay__body--status");
+      activeBody.classList.remove("zai-translate-overlay__body--note");
       activeBody.textContent = text;
       status.textContent = metaText.doneStatus;
+      schedulePosition();
+    },
+    setExistingNote(comment) {
+      activeBody.classList.remove("zai-translate-overlay__body--status");
+      activeBody.classList.add("zai-translate-overlay__body--note");
+      activeBody.textContent = "";
+      const head = iframeDoc.createElement("div");
+      head.className = "zai-translate-overlay__note-head";
+      head.textContent = "📌 已有注释（你之前存的）";
+      const text = iframeDoc.createElement("div");
+      text.className = "zai-translate-overlay__note-text";
+      text.textContent = comment;
+      activeBody.append(head, text);
+      status.textContent = "● 已有注释";
       schedulePosition();
     },
     appendText(delta) {
@@ -853,10 +898,10 @@ export function mountSelectionPopupGuard(doc: Document): { destroy(): void } {
     }
   }
 
-  // CSS-class approach can fail if `.selection-popup` is rendered in a doc
+  // CSS-class approach can fail if a guarded popup is rendered in a doc
   // we cannot reach (cross-origin, shadow DOM, late-mount). Add a hard
-  // MutationObserver that watches every reachable doc and hides every
-  // `.selection-popup` it finds — both already-present and newly-inserted.
+  // MutationObserver that watches every reachable doc and hides every guarded
+  // reader popup it finds — both already-present and newly-inserted.
   const observers: MutationObserver[] = [];
   // Duck-type rather than `instanceof HTMLElement`: in the chrome bootstrap
   // realm, `HTMLElement` is undefined, so `instanceof` throws ReferenceError
@@ -878,11 +923,13 @@ export function mountSelectionPopupGuard(doc: Document): { destroy(): void } {
     }
   };
   const scanAndHide = (root: ParentNode) => {
-    const nodes = root.querySelectorAll?.(".selection-popup");
+    const nodes = root.querySelectorAll?.(GUARDED_POPUP_SELECTOR);
     if (!nodes) return;
     nodes.forEach((el: Element) => {
       hidePopup(el);
-      guardLog("hid existing .selection-popup", { tag: (el as HTMLElement).tagName });
+      guardLog("hid existing reader popup", {
+        cls: (el as HTMLElement).className,
+      });
     });
   };
   for (const targetDoc of docs) {
@@ -898,9 +945,11 @@ export function mountSelectionPopupGuard(doc: Document): { destroy(): void } {
           m.addedNodes.forEach((node: Node | null) => {
             if (!node || node.nodeType !== 1) return;
             const el = node as Element;
-            if (el.matches?.(".selection-popup")) {
+            if (el.matches?.(GUARDED_POPUP_SELECTOR)) {
               hidePopup(el);
-              guardLog("hid newly-inserted .selection-popup");
+              guardLog("hid newly-inserted reader popup", {
+                cls: (el as HTMLElement).className,
+              });
             }
             scanAndHide(el);
           });
@@ -1021,7 +1070,7 @@ function ensureSelectionPopupGuardStyle(doc: Document): void {
   const style = doc.createElement("style");
   style.id = SELECTION_POPUP_GUARD_STYLE_ID;
   style.textContent = `
-.${SELECTION_POPUP_GUARD_CLASS} .selection-popup {
+.${SELECTION_POPUP_GUARD_CLASS} :is(.selection-popup, .annotation-popup) {
   visibility: hidden !important;
   pointer-events: none !important;
 }
@@ -1654,6 +1703,11 @@ function pdfPageViewport(
 
 const SELECTION_POPUP_GUARD_CLASS = "zai-translate-hide-selection-popup";
 const SELECTION_POPUP_GUARD_STYLE_ID = "zai-translate-selection-popup-guard";
+// Reader popups suppressed while immersive mode is on, so its own card is the
+// single surface: `.selection-popup` (text-selection highlight bar) and
+// `.annotation-popup` (the native popup shown when clicking an existing
+// annotation — immersive shows the saved comment in its own card instead).
+const GUARDED_POPUP_SELECTOR = ".selection-popup, .annotation-popup";
 const STYLE_ID = "zai-translate-style";
 
 function ensureStyle(doc: Document): void {
@@ -1764,9 +1818,9 @@ const STYLE_TEXT = `
   margin-bottom: 4px;
 }
 .zai-translate-overlay__meta-sp { flex: 1 1 auto; min-width: 8px; }
-/* compact toggles inside the meta bar */
-.zai-translate-overlay__chip--meta { padding: 0 7px; font-size: 10px; }
-.zai-translate-overlay__check--meta { font-size: 10px; color: #3a6ea5; }
+/* compact toggles inside the meta bar — neutral gray (NOT the content's blue),
+   so the toggle labels read as chrome and never look like a translated term. */
+.zai-translate-overlay__check--meta { font-size: 10px; color: #6b7280; }
 .zai-translate-overlay__lang {
   background: #f1f3f6;
   color: #555;
@@ -1791,12 +1845,40 @@ const STYLE_TEXT = `
   font-size: 12px;
   line-height: 1.55;
   color: #2f333a;
-  background: #f5f6f8;
+  background: #fafbfc;
   border-radius: 6px;
   padding: 5px 8px;
   margin-bottom: 7px;
   max-height: 84px;
   overflow-y: auto;
+}
+/* 译文块：原文 + 译文 合成一张卡，和下面的「追问回答块」同一种视觉语言（灰底卡）。 */
+.zai-translate-overlay__main {
+  flex: 0 1 auto;
+  min-height: 0;
+  background: #f6f7f9;
+  border: 1px solid #ebedf1;
+  border-radius: 7px;
+  padding: 7px 9px;
+  margin-bottom: 7px;
+  max-height: var(--zai-overlay-body-max-height, 130px);
+  overflow-y: auto;
+}
+/* Inside the translation block, 原文 is a lighter reference header (no nested
+   panel), split from 译文 by a thin divider; 译文 fills the block as plain text. */
+.zai-translate-overlay__main .zai-translate-overlay__source {
+  background: transparent;
+  border-radius: 0;
+  padding: 0 0 5px;
+  margin: 0 0 6px;
+  border-bottom: 1px solid #e7e9ee;
+  max-height: none;
+  overflow: visible;
+}
+.zai-translate-overlay__main .zai-translate-overlay__body {
+  margin: 0;
+  max-height: none;
+  overflow-y: visible;
 }
 .zai-translate-overlay__chips {
   display: flex;
@@ -1810,14 +1892,32 @@ const STYLE_TEXT = `
   align-items: center;
   gap: 4px;
   font-size: 10.5px;
-  color: #3a6ea5;
+  color: #6b7280;
   cursor: pointer;
   -moz-user-select: none;
   user-select: none;
 }
 .zai-translate-overlay__check input {
+  /* Fully custom checkbox: the reader's Gecko ignores accent-color, so a native
+     checkbox stays bright system-blue (looks like a translated term). Draw our own
+     gray box + white check instead — guaranteed monochrome, never blue. */
+  -moz-appearance: none;
+  appearance: none;
   margin: 0;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 auto;
+  border: 1px solid #b9c0cb;
+  border-radius: 3px;
+  background: #fff;
   cursor: pointer;
+}
+.zai-translate-overlay__check input:checked {
+  background-color: #6b7280;
+  border-color: #6b7280;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 12 12'%3E%3Cpath d='M2.6 6.3 5 8.6 9.4 3.6' fill='none' stroke='white' stroke-width='1.7' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: center;
 }
 .zai-translate-overlay__chip {
   background: #fff;
@@ -1942,6 +2042,21 @@ const STYLE_TEXT = `
 }
 .zai-translate-overlay__body--status { color: #666; font-style: italic; }
 .zai-translate-overlay--error .zai-translate-overlay__body { color: #b3261e; }
+/* 已有注释：把保存过的批注内容包成一张明显的便签卡，和普通译文区分。 */
+.zai-translate-overlay__body--note {
+  background: #fdf6df;
+  border: 1px solid #f0dba0;
+  border-radius: 8px;
+  padding: 8px 10px;
+}
+.zai-translate-overlay__note-head {
+  font-size: 11px;
+  font-weight: 700;
+  color: #9a6a10;
+  letter-spacing: 0.3px;
+  margin-bottom: 5px;
+}
+.zai-translate-overlay__note-text { white-space: pre-wrap; }
 /* 逐句对照：上下堆叠——每段英文一行（可换行）+ 紧跟一行中文，下一段另起。 */
 .zai-translate-overlay__body--interleaved { white-space: normal; }
 .zai-il-en {
@@ -1990,6 +2105,14 @@ const STYLE_TEXT = `
   background: #eef0ff;
   color: #3a2f7a;
   border: 1px solid #dddef6;
+}
+/* AI 回答块：每条「追问」回答也包成一张淡灰卡，让多轮问答读成一问一答的分块，而
+   不是气泡后贴一段散文。译文在最上方主体里、不在 transcript，所以保持纯净不受影响。 */
+.zai-translate-overlay__transcript .zai-translate-overlay__body {
+  background: #f6f7f9;
+  border: 1px solid #ebedf1;
+  border-radius: 6px;
+  padding: 6px 9px;
 }
 .zai-translate-overlay__composer {
   display: flex;
@@ -2059,6 +2182,39 @@ const STYLE_TEXT = `
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+/* 视觉层级：把 chrome（顶部 meta 栏、底部按钮行、追问框）默认隐退——降透明度 +
+   灰阶——让眼睛落在中间的原文/译文；鼠标悬停卡片或焦点进入卡片时再浮现到全亮。
+   内容区（__body / __source / __transcript）不受影响，始终满对比。 */
+.zai-translate-overlay__meta,
+.zai-translate-overlay__actions,
+.zai-translate-overlay__composer {
+  opacity: 0.5;
+  filter: grayscale(0.7);
+  transition: opacity 0.18s ease, filter 0.18s ease;
+}
+.zai-translate-overlay--pointer-active .zai-translate-overlay__meta,
+.zai-translate-overlay--pointer-active .zai-translate-overlay__actions,
+.zai-translate-overlay--pointer-active .zai-translate-overlay__composer,
+.zai-translate-overlay:focus-within .zai-translate-overlay__meta,
+.zai-translate-overlay:focus-within .zai-translate-overlay__actions,
+.zai-translate-overlay:focus-within .zai-translate-overlay__composer {
+  opacity: 1;
+  filter: none;
+}
+/* 收起工具栏（快捷键，默认 h）：整段藏起 meta 栏 + 底部按钮行，高度一并收掉。追问框
+   保留，仍可直接提问。与上面的 hover 变淡是两套独立机制。 */
+.zai-translate-overlay--collapsed .zai-translate-overlay__meta,
+.zai-translate-overlay--collapsed .zai-translate-overlay__actions {
+  display: none;
+}
+/* 发送键：追问框为空（占位符可见）时压成中性灰；一旦有输入就回到 --primary 的蓝。
+   兄弟选择器，不依赖 :has()，旧版 Gecko 也可用。 */
+.zai-translate-overlay__input:placeholder-shown
+  ~ .zai-translate-overlay__btn--primary {
+  background: #e8eaef;
+  border-color: #e8eaef;
+  color: #9aa3b2;
 }
 .zai-sentence-chooser {
   box-sizing: border-box;

@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from "vitest";
 import {
   createZoteroAgentTools,
   createZoteroAgentToolSession,
+  findSentenceAnnotation,
 } from "../../src/context/agent-tools";
 import type { ContextSource } from "../../src/context/builder";
 import type { OverviewData } from "../../src/context/overview-types";
@@ -1453,5 +1454,94 @@ describe("render_paper_overview", () => {
     expect(received!.sections[0].title).toBe("Intro");
     expect(received!.flowchart!.nodes.length).toBe(1);
     expect(res.context?.planMode).toBe("overview");
+  });
+});
+
+describe("findSentenceAnnotation", () => {
+  const mockAttachmentWithAnnotations = (
+    annotations: Array<Record<string, unknown>>,
+  ) => {
+    Object.defineProperty(globalThis, "Zotero", {
+      configurable: true,
+      value: {
+        ...(globalThis as any).Zotero,
+        Items: {
+          ...(globalThis as any).Zotero.Items,
+          getAsync: async (id: number) => ({
+            id,
+            libraryID: 1,
+            getAnnotations: (_includeTrashed?: boolean) => annotations,
+          }),
+        },
+      },
+    });
+  };
+
+  const highlight = (
+    key: string,
+    pageIndex: number,
+    rects: number[][],
+    extra: Record<string, unknown> = {},
+  ) => ({
+    key,
+    annotationType: "highlight",
+    annotationComment: `comment-${key}`,
+    annotationText: `text-${key}`,
+    annotationColor: "#ffd400",
+    annotationPageLabel: String(pageIndex + 1),
+    annotationSortIndex: "00000|000000|00700",
+    annotationPosition: JSON.stringify({ pageIndex, rects }),
+    ...extra,
+  });
+
+  it("matches a full-coverage highlight on the same page", async () => {
+    mockAttachmentWithAnnotations([
+      highlight("A", 7, [[100, 700, 300, 712]]),
+    ]);
+    const found = await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]]);
+    expect(found?.key).toBe("A");
+    expect(found?.comment).toBe("comment-A");
+    expect(found?.type).toBe("highlight");
+    expect(found?.color).toBe("#ffd400");
+  });
+
+  it("returns null when the click is on a different page", async () => {
+    mockAttachmentWithAnnotations([
+      highlight("A", 7, [[100, 700, 300, 712]]),
+    ]);
+    expect(await findSentenceAnnotation(42, 8, [[100, 700, 300, 712]])).toBeNull();
+  });
+
+  it("returns null when there is no spatial overlap", async () => {
+    mockAttachmentWithAnnotations([
+      highlight("A", 7, [[100, 600, 300, 612]]),
+    ]);
+    expect(await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]])).toBeNull();
+  });
+
+  it("ignores non-highlight/underline annotations (e.g. note/text)", async () => {
+    mockAttachmentWithAnnotations([
+      highlight("N", 7, [[100, 700, 300, 712]], { annotationType: "note" }),
+    ]);
+    expect(await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]])).toBeNull();
+  });
+
+  it("picks the highlight with the largest coverage", async () => {
+    mockAttachmentWithAnnotations([
+      // ~50% coverage of the sentence box
+      highlight("HALF", 7, [[100, 700, 200, 712]]),
+      // full coverage
+      highlight("FULL", 7, [[100, 700, 300, 712]]),
+    ]);
+    const found = await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]]);
+    expect(found?.key).toBe("FULL");
+  });
+
+  it("rejects coverage below the 50% threshold", async () => {
+    mockAttachmentWithAnnotations([
+      // ~25% of the sentence box
+      highlight("SMALL", 7, [[100, 700, 150, 712]]),
+    ]);
+    expect(await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]])).toBeNull();
   });
 });

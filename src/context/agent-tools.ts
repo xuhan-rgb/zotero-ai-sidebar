@@ -101,6 +101,21 @@ export interface SelectionAnnotationDraft {
   annotation: Record<string, unknown>;
 }
 
+// An existing PDF annotation found to overlap a sentence — lets immersive mode
+// show its saved comment instead of re-translating, and 💾 UPDATE it (by key)
+// instead of stacking a duplicate highlight on the same sentence.
+export interface ExistingSentenceAnnotation {
+  key: string;
+  comment: string;
+  text: string;
+  type: "highlight" | "underline";
+  color: string;
+  pageLabel: string;
+  sortIndex: string;
+  pageIndex: number;
+  rects: number[][];
+}
+
 // Session-less convenience wrapper for tests. Production callers should
 // use `createZoteroAgentToolSession` directly so they can `dispose()` the
 // PdfLocator (otherwise the locator pins page bundles in memory).
@@ -2285,10 +2300,109 @@ function fallbackSortIndex(
   ].join("|");
 }
 
+// Find an existing highlight/underline annotation that substantially overlaps
+// the given sentence rects on the same page. Used by immersive mode to surface a
+// sentence's saved comment on click and to dedupe 💾 (update vs. new). Returns
+// the best (largest-coverage) match, or null. Read-only; never mutates.
+export async function findSentenceAnnotation(
+  attachmentID: number,
+  pageIndex: number,
+  rects: number[][],
+): Promise<ExistingSentenceAnnotation | null> {
+  const Z = getZoteroAnnotationAPI();
+  const attachment = await Z.Items.getAsync(attachmentID);
+  if (!attachment || typeof attachment.getAnnotations !== "function") {
+    return null;
+  }
+  const sentenceRects = rects.filter(
+    (r) => Array.isArray(r) && r.length >= 4,
+  );
+  if (!sentenceRects.length) return null;
+  let best: { ann: ZoteroAnnotationItem; ratio: number; rects: number[][] } | null =
+    null;
+  for (const ann of attachment.getAnnotations(false)) {
+    const type = stringValue(ann.annotationType);
+    if (type !== "highlight" && type !== "underline") continue;
+    const parsed = parseAnnotationPosition(ann.annotationPosition);
+    if (!parsed || parsed.pageIndex !== pageIndex) continue;
+    // Coverage = how much of the sentence the annotation's rects cover. ≥ 0.5
+    // catches our own full-sentence highlights (≈ 1) and substantial manual
+    // ones, without false-matching a different sentence that merely shares a
+    // bounding box.
+    const ratio = rectCoverageRatio(sentenceRects, parsed.rects);
+    if (ratio < 0.5) continue;
+    if (!best || ratio > best.ratio) {
+      best = { ann, ratio, rects: parsed.rects };
+    }
+  }
+  if (!best) return null;
+  const type = stringValue(best.ann.annotationType);
+  return {
+    key: stringValue(best.ann.key),
+    comment: stringValue(best.ann.annotationComment),
+    text: stringValue(best.ann.annotationText),
+    type: type === "underline" ? "underline" : "highlight",
+    color: stringValue(best.ann.annotationColor),
+    pageLabel: stringValue(best.ann.annotationPageLabel),
+    sortIndex: stringValue(best.ann.annotationSortIndex),
+    pageIndex,
+    rects: best.rects,
+  };
+}
+
+function parseAnnotationPosition(
+  position: unknown,
+): { pageIndex: number; rects: number[][] } | null {
+  let pos: unknown = position;
+  if (typeof pos === "string") {
+    try {
+      pos = JSON.parse(pos);
+    } catch {
+      return null;
+    }
+  }
+  if (!pos || typeof pos !== "object") return null;
+  const pageIndex = numberValue((pos as { pageIndex?: unknown }).pageIndex);
+  const rawRects = (pos as { rects?: unknown }).rects;
+  if (pageIndex == null || !Array.isArray(rawRects)) return null;
+  const rects = rawRects.filter(
+    (r): r is number[] =>
+      Array.isArray(r) &&
+      r.length >= 4 &&
+      r.slice(0, 4).every((n) => typeof n === "number" && Number.isFinite(n)),
+  );
+  return rects.length ? { pageIndex, rects } : null;
+}
+
+function rectArea(r: number[]): number {
+  return Math.abs(r[2] - r[0]) * Math.abs(r[3] - r[1]);
+}
+
+function rectIntersectionArea(a: number[], b: number[]): number {
+  const w =
+    Math.min(Math.max(a[0], a[2]), Math.max(b[0], b[2])) -
+    Math.max(Math.min(a[0], a[2]), Math.min(b[0], b[2]));
+  const h =
+    Math.min(Math.max(a[1], a[3]), Math.max(b[1], b[3])) -
+    Math.max(Math.min(a[1], a[3]), Math.min(b[1], b[3]));
+  return w > 0 && h > 0 ? w * h : 0;
+}
+
+// Fraction of the sentence's total rect area covered by the annotation's rects.
+function rectCoverageRatio(sentenceRects: number[][], annRects: number[][]): number {
+  let area = 0;
+  let inter = 0;
+  for (const s of sentenceRects) {
+    area += rectArea(s);
+    for (const a of annRects) inter += rectIntersectionArea(s, a);
+  }
+  return area > 0 ? inter / area : 0;
+}
+
 export async function saveSelectionAnnotation(
   draft: SelectionAnnotationDraft,
   patch: { comment: string; color?: string; type?: "highlight" | "underline" },
-): Promise<{ id: number }> {
+): Promise<{ id: number; key: string }> {
   const Z = getZoteroAnnotationAPI();
   const attachment = await Z.Items.getAsync(draft.attachmentID);
   if (!attachment)
@@ -2324,7 +2438,9 @@ export async function saveSelectionAnnotation(
     attachment,
     annotationJSONForZotero(json),
   );
-  return { id: item.id };
+  // `key` is stable across create/update (saveFromJSON upserts by key), so
+  // callers can remember it to update the same annotation on a later save.
+  return { id: item.id, key };
 }
 
 function annotationJSONForZotero(
@@ -2416,6 +2532,14 @@ interface ZoteroAnnotationItem {
   id: number;
   libraryID?: number;
   key?: string;
+  annotationType?: string;
+  annotationComment?: string;
+  annotationText?: string;
+  annotationColor?: string;
+  annotationPageLabel?: string;
+  annotationSortIndex?: string;
+  annotationPosition?: string | object;
+  getAnnotations?(includeTrashed?: boolean): ZoteroAnnotationItem[];
 }
 
 interface ZoteroAnnotationAPI {

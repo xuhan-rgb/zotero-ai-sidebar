@@ -32,6 +32,9 @@ import {
   getImmersiveFocusAskKey,
   setImmersiveFocusAskKey,
   DEFAULT_IMMERSIVE_FOCUS_ASK_KEY,
+  getImmersiveToggleControlsKey,
+  setImmersiveToggleControlsKey,
+  DEFAULT_IMMERSIVE_TOGGLE_KEY,
 } from './translate/ask-mode';
 import { getProvider } from './providers/factory';
 import type { Message } from './providers/types';
@@ -267,6 +270,21 @@ function setupPreferencesPane(win: Window): void {
         immersiveFocusAskKey.value.trim() || DEFAULT_IMMERSIVE_FOCUS_ASK_KEY,
       );
       immersiveFocusAskKey.value = getImmersiveFocusAskKey(zoteroPrefs());
+    });
+  }
+
+  const immersiveToggleKey = byID<HTMLInputElement>(
+    doc,
+    'zai-immersive-toggle-key',
+  );
+  if (immersiveToggleKey) {
+    immersiveToggleKey.value = getImmersiveToggleControlsKey(zoteroPrefs());
+    immersiveToggleKey.addEventListener('change', () => {
+      setImmersiveToggleControlsKey(
+        zoteroPrefs(),
+        immersiveToggleKey.value.trim() || DEFAULT_IMMERSIVE_TOGGLE_KEY,
+      );
+      immersiveToggleKey.value = getImmersiveToggleControlsKey(zoteroPrefs());
     });
   }
 
