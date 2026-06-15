@@ -1768,16 +1768,19 @@ export class AskModeController {
     const cached = forceRefresh ? undefined : await getCachedTranslation(key);
     if (this.overlay !== overlay || this.abortCtrl !== ctrl) return;
     if (cached) {
-      apply(cached.text);
-      this.markCardTranslation(
-        overlay,
-        parseTranslationWithPairs(cached.text).translation,
-      );
-      overlay.setStatusLabel("● 已完成 · 缓存");
-      return;
+      const parsedCache = parseTranslationWithPairs(cached.text);
+      // Ignore a poisoned cache entry (empty译文 from an old malformed 重点词对应
+      // response) — fall through to re-translate instead of showing a blank card.
+      if (parsedCache.translation.trim()) {
+        apply(cached.text);
+        this.markCardTranslation(overlay, parsedCache.translation);
+        overlay.setStatusLabel("● 已完成 · 缓存");
+        return;
+      }
     }
     let buffer = "";
     let usageLabel = "";
+    let needPlainFallback = false;
     const superseded = () => this.overlay !== overlay || this.abortCtrl !== ctrl;
     try {
       for await (const chunk of answerSentence({
@@ -1801,12 +1804,10 @@ export class AskModeController {
         } else if (chunk.type === "usage") {
           usageLabel = formatTokenLabel(chunk.input, chunk.output, chunk.cacheRead);
         } else if (chunk.type === "done") {
-          if (buffer.trim()) {
+          const parsed = parseTranslationWithPairs(buffer);
+          if (parsed.translation.trim()) {
             apply(buffer);
-            this.markCardTranslation(
-              overlay,
-              parseTranslationWithPairs(buffer).translation,
-            );
+            this.markCardTranslation(overlay, parsed.translation);
             if (usageLabel) overlay.setStatusLabel(`● 已完成 · ${usageLabel}`);
             void setCachedTranslation(key, {
               text: buffer,
@@ -1814,13 +1815,27 @@ export class AskModeController {
               createdAt: Date.now(),
             });
           } else {
-            overlay.setError("模型没有返回译文。");
+            // 重点词对应 returned a 词对 line but no usable译文 (the model put 词对
+            // first / only). Never cache the blank; fall back to a plain
+            // translation below so the card is never empty.
+            needPlainFallback = true;
           }
         }
       }
     } catch (err) {
       if (ctrl.signal.aborted || superseded()) return;
       if (this.overlay === overlay) overlay.setError(errorMessage(err));
+      return;
+    }
+    if (needPlainFallback && !superseded()) {
+      await this.streamCachedTranslation(
+        current,
+        overlay,
+        settings,
+        preset,
+        model,
+        true,
+      );
     }
   }
 
