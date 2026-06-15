@@ -1573,6 +1573,9 @@ function nearestClipBounds(el: HTMLElement): OverlayBounds | null {
 }
 
 function measureOverlayHeight(overlay: HTMLElement): number {
+  const win = overlay.ownerDocument?.defaultView;
+  const style = win?.getComputedStyle(overlay);
+  if (style?.display === "none") return 0;
   const rectHeight = overlay.getBoundingClientRect().height;
   return Math.max(1, rectHeight || overlay.offsetHeight || 120);
 }
@@ -1852,7 +1855,10 @@ const STYLE_TEXT = `
   max-height: 84px;
   overflow-y: auto;
 }
-/* 译文块：原文 + 译文 合成一张卡，和下面的「追问回答块」同一种视觉语言（灰底卡）。 */
+/* 译文块：原文 + 译文 合成一张卡，和下面的「追问回答块」同一种视觉语言（灰底卡）。
+   高度用独立的宽松上限——不要用 --zai-overlay-body-max-height（那是给「译文 body
+   单独」算的，没扣除上面的原文行；用它会让原文吃掉额度、把译文挤到滚动区外，收起
+   时尤其明显）。 */
 .zai-translate-overlay__main {
   flex: 0 1 auto;
   min-height: 0;
@@ -1861,7 +1867,7 @@ const STYLE_TEXT = `
   border-radius: 7px;
   padding: 7px 9px;
   margin-bottom: 7px;
-  max-height: var(--zai-overlay-body-max-height, 130px);
+  max-height: 320px;
   overflow-y: auto;
 }
 /* Inside the translation block, 原文 is a lighter reference header (no nested
