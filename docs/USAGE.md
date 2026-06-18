@@ -125,8 +125,8 @@ Best for: first read of a non-native-language paper, or speed-building whole-pap
 
 1. Open the PDF in the Reader. Click **沉浸 (Immersive)** on the sidebar toolbar to enter immersive mode. Hovering a sentence shows a "reading" highlight.
 2. **Click** any sentence for an in-place card (original + translation, cheapest path); or **select (or hover)** a sentence and press the **quick-translate key (default Space)** to translate just that sentence.
-3. The card can switch to **interleaved EN/中文** (逐句对照), **key-term linking** (重点词对应), **neighbour context** (结合上下句) and **adaptive width**; the footer lets you keep asking (**追问**) for an explanation or examples.
-4. **Enter** advances to the next sentence, **Shift+Enter** goes back; **/** jumps the cursor into the card's 追问 box (Enter is reserved for stepping); **Esc** closes the card while keeping that sentence on the reading highlight, so you can keep stepping.
+3. The card can switch to **interleaved EN/中文** (逐句对照), **key-term linking** (重点词对应), **neighbour context** (结合上下句) and **adaptive width**; the footer lets you **💾 save** the translation as a Zotero highlight annotation (if the sentence already has one, it's shown instead of re-translating) or keep asking (**追问**) for an explanation or examples.
+4. **Enter** advances to the next sentence, **Shift+Enter** goes back; **/** jumps the cursor into the card's 追问 box (Enter is reserved for stepping); **h** collapses the toolbar down to just the composer; **Esc** closes the card while keeping that sentence on the reading highlight, so you can keep stepping.
 5. Click **沉浸** again to exit and return the PDF to normal scroll/select.
 
 Tunables and shortcuts: see [§3.5](#35-pdf-immersive-translation).
@@ -351,14 +351,22 @@ Every write call shows up in the tool trace so you can audit (or undo via Zotero
 
 ### 3.4 Slash commands
 
-Typing `/` opens completion. The two built-in commands:
+Type `/` in the composer to open completion. The two built-in commands:
 
-```
-/arxiv-search <query or arXiv URL>
-/web-search <query>
-```
+| Command | Usage | What it does |
+|---|---|---|
+| `/arxiv-search` | `/arxiv-search <query or arXiv URL>` | Signals "I want to search / read arXiv." The model picks the best tool itself — general arXiv search, or the more precise arXiv-source tools when the current item has a cached LaTeX source |
+| `/web-search` | `/web-search <query>` | Signals "I want a web search." The model calls the built-in web-search tool to answer |
 
-By design slash commands carry **no local logic** — they inject a "user explicitly chose this" prompt fragment, and the model decides which tool calls to make. This is the Codex-style invariant: **no local keyword router decides intent**.
+**What they are** — slash commands are **explicit shortcuts, not switches, and they run no local logic**. They only inject "the user explicitly chose this action" into your message; the model still decides which tool to call. This is the plugin's Codex-style invariant: **no local keyword router guesses your intent**.
+
+**When to use them** — most of the time you don't need them: as long as the question is clear, the model picks the right tool on its own (e.g. with the **联网 (web)** toggle on, it searches for real-time questions by itself). Their value is **disambiguation** — when a question is off-topic or vague relative to the current paper (e.g. asking about the weather while reading a paper), the model may first hesitate over "should I, and with which tool?"; an explicit `/web-search` makes it **act directly**: fewer detours, fewer repeated calls, fewer tokens.
+
+**Caveats**
+
+- `/web-search` **does not enable web search by itself**. The real gate is the **联网 (web)** toggle at the bottom-left of the composer (or Web search mode in settings). With it off, even `/web-search` only makes the model **honestly say search isn't enabled** rather than faking it.
+- The built-in web search is a **provider-side hosted tool**; if your Base URL doesn't support it, it may not work even with the toggle on.
+- Sending a command with no argument makes the model ask you for a query first.
 
 ### 3.5 PDF immersive translation
 
@@ -372,8 +380,11 @@ Settings live in two blocks: "Translation" (model / reasoning effort / result po
 | Next / previous keys | Default `Enter` / `Shift+Enter`, remappable |
 | Selection quick-translate key | Default Space; only intercepted when a reading highlight / selection exists, otherwise Space still scrolls |
 | Focus-ask key | Default `/`; with a card open, moves the cursor into the 追问 box (Enter is reserved for stepping) |
+| Collapse toolbar key | Default `h`; folds the card's meta bar + foot button row down to just the composer |
 
 The card can also toggle interleaved EN/中文 and adaptive width; `Esc` closes it and keeps the sentence on the reading highlight.
+
+Use 💾 to save the current translation as a Zotero highlight annotation; if the sentence already has one, reopening shows that saved note instead of re-translating, and saving upserts by key (no duplicate highlights on the same sentence).
 
 While immersive mode is active, Zotero's native selection popup is suppressed to avoid colliding with the card, and returns on exit. Translations are cached by sentence-content hash — translating the same sentence again does not re-call the model.
 

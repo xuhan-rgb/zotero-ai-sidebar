@@ -43,7 +43,7 @@ For immersive PDF translation, configure the "Translation / Immersive reading" s
 - Model / reasoning effort / result position (above or below) / card size — shared with the immersive card
 - Neighbour context: send the previous and next sentence as context for a more accurate translation
 - Key-term linking: highlight original ↔ translated key-term pairs, cross-lit on hover
-- Shortcuts: next/prev sentence (default `Enter` / `Shift+Enter`) and a selection quick-translate key (default Space), all remappable
+- Shortcuts: next/prev sentence (default `Enter` / `Shift+Enter`), a selection quick-translate key (default Space), a focus-ask key (default `/`), and a collapse-toolbar key (default `h`), all remappable
 
 Do not hardcode personal API keys, base URLs, or private model IDs in this repository.
 
@@ -87,7 +87,8 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 ### Translation
 
 - **Immersive PDF translation**: turn on `沉浸` (immersive) in the PDF Reader toolbar, then click a sentence for an in-place card (original + translation, cheapest path). The card can switch to interleaved EN/中文 (逐句对照), key-term linking (重点词对应), neighbour context (结合上下句), and adaptive width — and you can keep asking (追问) for an explanation or examples.
-- **Stepping, quick-translate & ask**: `Enter` / `Shift+Enter` move to the next / previous sentence; selecting (or hovering) a sentence and pressing the quick key (default Space) translates it directly; `/` moves the cursor into the card's 追问 box (Enter is reserved for stepping); `Esc` closes the card while keeping the sentence on the reading highlight, so you can keep stepping. All keys are configurable in settings.
+- **Save & reuse translations**: save a card's translation as a Zotero highlight annotation (💾); if the sentence already carries one, the card shows that saved note instead of re-translating, and saving upserts by key so you never get duplicate highlights. While immersive mode is on, Zotero's native selection popup is suppressed so the card stays the single surface.
+- **Stepping, quick-translate & ask**: `Enter` / `Shift+Enter` move to the next / previous sentence; selecting (or hovering) a sentence and pressing the quick key (default Space) translates it directly; `/` moves the cursor into the card's 追问 box (Enter is reserved for stepping); `Esc` closes the card while keeping the sentence on the reading highlight, so you can keep stepping; a collapse-toolbar key (default `h`) folds the card's meta bar and foot row down to just the composer. All keys are configurable in settings.
 
 ### Sync & config
 

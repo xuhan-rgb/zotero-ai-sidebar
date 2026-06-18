@@ -408,7 +408,7 @@
             <div class="imm-card">
               <div class="imm-meta">
                 <span class="lang">EN → 简体中文</span>
-                <span class="imm-chip">逐句对照</span>
+                <span class="imm-chk"><span class="box"></span>逐句对照</span>
                 <span class="imm-chk"><span class="box on">✓</span>结合上下句</span>
                 <span class="imm-chk"><span class="box"></span>自适应宽度</span>
                 <span class="imm-status"><span class="d"></span>已完成 · token 77/49 缓存128</span>
@@ -417,7 +417,7 @@
                 <div class="imm-src">Several papers demonstrated that a good <u>encoder</u> can extract more <u>effective features</u>, thus improving the final result [15, 17, 44].</div>
                 <div class="imm-zh">多篇论文表明，好的<b>编码器</b>能提取更<b>有效的特征</b>，从而改善最终结果 [15, 17, 44]。</div>
               </div>
-              <div class="imm-foot"><span class="redo">↻</span><span>⇧+↵ / ↵ 上/下一句 · Esc 关闭</span><span class="spacer"></span><span>✕</span></div>
+              <div class="imm-foot"><span class="redo">💾</span><span class="redo">↻</span><span>⇧+↵ / ↵ 上/下一句 · / 追问 · h 收起 · Esc 关闭</span><span class="spacer"></span><span>✕</span></div>
               <div class="imm-ask">追问（让 AI 解释 / 举例…）</div>
             </div>
           </div>
@@ -438,9 +438,11 @@
         <li><span class="k">结合上下句</span><span class="d">翻译时带上前后各一句作上下文，更准（默认开关可在设置里定）。</span></li>
         <li><span class="k">重点词对应</span><span class="d">开启后译文里高亮原文 ↔ 中文的<b>关键词对</b>，悬停时互相点亮。</span></li>
         <li><span class="k">自适应宽度</span><span class="d">加宽卡片，避免一两个单词就换行。</span></li>
+        <li><span class="k">💾 保存 / 复用</span><span class="d">把当前译文存成 <b>Zotero 高亮批注</b>；该句已有批注时再打开会直接显示已存笔记、<b>不重译</b>，保存按 key <b>upsert</b>（同句不叠重复高亮）。</span></li>
         <li><span class="k">↵ / ⇧+↵</span><span class="d"><span class="kbd">Enter</span> 翻到下一句、<span class="kbd">Shift+Enter</span> 上一句，连续读完整页 / 整篇。</span></li>
         <li><span class="k">空格</span><span class="d">选中 / 悬停某句后按它直接翻这一句；没有高亮 / 选区时空格<b>照常翻页</b>。键可改。</span></li>
         <li><span class="k">/</span><span class="d">卡片开着时按它把光标移进卡底「<b>追问</b>」框（因为 Enter 已用于切句）；进框后 Enter 即发送。键可改。</span></li>
+        <li><span class="k">h</span><span class="d"><b>收起工具栏</b>：折叠卡片的信息栏 + 底部按钮行，只留输入框，读得更清爽；再按一次展开。键可改。</span></li>
         <li><span class="k">Esc</span><span class="d">关掉卡片，该句回到<b>「在读高亮」</b>（见下方第二张图），可继续 <span class="kbd">Enter</span> 切句。</span></li>
       </ul>
     </div>
@@ -549,6 +551,7 @@
       <tr><td>沉浸 · 上一句</td><td><span class="kbd">Shift+Enter</span></td><td>同上，反方向</td></tr>
       <tr><td>沉浸 · 选区快译</td><td><span class="kbd">空格</span></td><td>翻当前在读 / 选中的句子；无高亮时照常翻页（键可改）</td></tr>
       <tr><td>沉浸 · 聚焦追问</td><td><span class="kbd">/</span></td><td>卡片开着时把光标移进「追问」框（键可改）</td></tr>
+      <tr><td>沉浸 · 收起工具栏</td><td><span class="kbd">h</span></td><td>折叠卡片的信息栏 + 底部按钮行，只留输入框；再按展开（键可改）</td></tr>
       <tr><td>沉浸 · 关卡</td><td><span class="kbd">Esc</span></td><td>关掉译文卡，该句回到「在读高亮」，可继续切句</td></tr>
     </table>
     <div class="tip">切句 / 选区快译的键都能在「设置 → 沉浸阅读」里改成 ArrowDown / ArrowUp、j / k 等。</div>
