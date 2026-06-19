@@ -14,6 +14,65 @@ export function editableNoteHTML(editor: HTMLElement): string {
   return isEditableNoteEmpty(scratch) ? "" : String(scratch.innerHTML).trim();
 }
 
+// Remove any prior 对话总结 block so re-running replaces the digest in place
+// instead of stacking duplicates. Each "写入笔记" block is emitted by
+// assistantContentToNoteHTML as: <hr> + <h2>AI 总结 时间戳</h2> + body. We group
+// top-level nodes into <hr>-delimited segments and drop whole segments that both
+// start with an <hr> (i.e. are appended blocks, never the user's own notes) and
+// contain a "沉浸阅读对话总结" heading. Returns the input unchanged if the marker
+// is absent or it can't be parsed; never throws.
+export function stripSummarySectionHTML(html: string, doc: Document): string {
+  if (!html || !html.includes("沉浸阅读对话总结")) return html;
+  const Parser = doc.defaultView?.DOMParser;
+  if (!Parser) return html;
+  let parsed: Document;
+  try {
+    parsed = new Parser().parseFromString(html, "text/html");
+  } catch {
+    return html;
+  }
+  const body = parsed.body;
+  if (!body) return html;
+
+  const nodes: Node[] = [];
+  body.childNodes.forEach((node) => {
+    if (node) nodes.push(node);
+  });
+
+  const isHr = (node: Node) =>
+    node.nodeType === 1 && (node as Element).tagName.toLowerCase() === "hr";
+  const isSummaryHeading = (node: Node) => {
+    if (node.nodeType !== 1) return false;
+    const tag = (node as Element).tagName.toLowerCase();
+    if (tag !== "h1" && tag !== "h2") return false;
+    return ((node as Element).textContent || "")
+      .trim()
+      .startsWith("沉浸阅读对话总结");
+  };
+
+  const segments: Node[][] = [];
+  let current: Node[] = [];
+  for (const node of nodes) {
+    if (isHr(node) && current.length) {
+      segments.push(current);
+      current = [];
+    }
+    current.push(node);
+  }
+  if (current.length) segments.push(current);
+
+  let changed = false;
+  for (const segment of segments) {
+    if (isHr(segment[0]) && segment.some(isSummaryHeading)) {
+      for (const node of segment) {
+        body.removeChild(node);
+        changed = true;
+      }
+    }
+  }
+  return changed ? String(body.innerHTML) : html;
+}
+
 function isEditableNoteEmpty(element: HTMLElement): boolean {
   if (element.querySelector("table, hr, blockquote, pre, ul, ol")) return false;
   return !(element.textContent || "").replace(/\u200b/g, "").trim();

@@ -189,12 +189,9 @@ import {
   dedicatedNoteMarker,
   findReadingRouteNote,
   getZoteroItem,
-  hasDedicatedNoteMarker,
   isAiNote,
   isReadingRouteNote,
   isZoteroNote,
-  noteTitle,
-  parentItemForDedicatedLookup,
   parentItemForNotes,
   resolveReadingRouteNote,
   resolveTargetNote,
@@ -206,6 +203,7 @@ import {
   renderEditableNoteHTML,
   restoreEditableSelectionIfLost,
   saveEditableSelection,
+  stripSummarySectionHTML,
 } from "./note-html-utils";
 import { renderMarkdownInto } from "./markdown-render";
 import {
@@ -4872,38 +4870,24 @@ function renderNoteWindow(sidebar: WindowSidebarState, note: Zotero.Item) {
   sidebar.noteEditorCleanup?.();
   sidebar.noteEditorCleanup = undefined;
   sidebar.noteMount.replaceChildren();
-  const head = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
-  head.className = "zai-note-window-head";
-
-  const title = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
-  title.className = "zai-note-window-title";
-  title.textContent = noteTitle(note);
-  title.title = "拖动左侧橙色分隔线可调整笔记栏宽度";
   sidebar.overviewActive = false;
-  const switcher = renderNoteFileSwitcher(
-    doc,
-    sidebar,
-    isReadingRouteNote(note) ? "readingRoute" : "normal",
-  );
-
-  const resizeHint = doc.createElementNS(XHTML_NS, "span") as HTMLElement;
-  resizeHint.className = "zai-note-resize-hint";
-  resizeHint.textContent = "↔ 拖左侧边缘";
-  resizeHint.title =
-    "请拖动笔记栏左侧橙色分隔线调整宽度，避免拖出 Zotero PDF 信息栏";
-
-  const status = doc.createElementNS(XHTML_NS, "span") as HTMLElement;
-  status.className = "zai-note-window-status";
-  status.textContent = "自动保存";
-
-  const save = buttonEl(doc, "保存");
-  save.className = "zai-note-window-button zai-note-window-save";
-  save.disabled = true;
-  save.title = "没有未保存修改";
-
-  const close = buttonEl(doc, "关闭");
-  close.className = "zai-note-window-button";
-  head.append(title, switcher, resizeHint, status, save, close);
+  const isRoute = isReadingRouteNote(note);
+  const parts = renderNoteHead(doc, sidebar, {
+    view: isRoute ? "readingRoute" : "normal",
+    editable: true,
+    action: isRoute
+      ? {
+          label: "↻ 更新路线",
+          title: "重新生成阅读路线（覆盖 AI 生成区，保留「我的补充笔记」）",
+          onClick: (button) =>
+            void generateReadingRouteFromNoteSwitcher(sidebar, button),
+        }
+      : null,
+  });
+  const head = parts.head;
+  const status = parts.status!;
+  const save = parts.save!;
+  const close = parts.close;
 
   const body = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   body.className = "zai-note-window-body";
@@ -4967,73 +4951,226 @@ function renderNoteWindow(sidebar: WindowSidebarState, note: Zotero.Item) {
 type NoteFileKind = "normal" | "readingRoute";
 type NotePanelView = NoteFileKind | "overview";
 
-function renderNoteFileSwitcher(
+// Segmented view switcher — pure navigation between the three note-column
+// views. Clicking a segment NEVER generates anything (that footgun is gone);
+// it only switches what you're looking at. Generation lives in the contextual
+// action button / empty-state CTA instead.
+// Rewrite the AI note with any prior 对话总结 section removed, so the next
+// append replaces rather than stacks. No-op (and never throws) when there is
+// no prior section.
+async function removePriorReadingSummary(
+  itemID: number | null,
+  doc: Document,
+): Promise<void> {
+  if (itemID == null) return;
+  try {
+    const { note } = await resolveTargetNote(itemID);
+    const current = note.getNote?.() || "";
+    const stripped = stripSummarySectionHTML(current, doc);
+    if (stripped !== current) {
+      note.setNote(stripped || "<p></p>");
+      await note.saveTx();
+    }
+  } catch (err) {
+    debugZai("summary:strip-failed", { error: errorMessage(err) });
+  }
+}
+
+function buildNoteSeg(
   doc: Document,
   sidebar: WindowSidebarState,
-  activeView: NotePanelView,
+  view: NotePanelView,
 ): HTMLElement {
   const wrap = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
-  wrap.className = "zai-note-file-switcher";
-  const active = activeView;
+  wrap.className = "zai-note-seg";
   const panelState = states.get(sidebar.mount);
-  const routeExists =
-    active === "readingRoute" || hasReadingRouteNoteForSidebar(sidebar);
 
-  const normal = noteFileSwitchButton(doc, "AI 笔记", active === "normal");
-  normal.title = "普通 AI 笔记：对话里的「写入笔记」默认保存到这里";
-  normal.addEventListener("click", () => {
-    void switchNoteFile(sidebar, "normal", normal);
+  const makeSeg = (label: string, active: boolean): HTMLButtonElement => {
+    const button = buttonEl(doc, label);
+    if (active) button.classList.add("on");
+    return button;
+  };
+
+  const noteBtn = makeSeg("笔记", view === "normal");
+  noteBtn.title = "AI 笔记：对话里的「写入笔记」默认保存到这里";
+  noteBtn.addEventListener("click", () => {
+    if (view !== "normal") void switchNoteFile(sidebar, "normal", noteBtn);
   });
 
-  // Route button morphs by view state — no extra button, label/handler shift:
-  //   no route yet            → "生成路线" → generate
-  //   route exists, on AI 笔记 → "阅读路线" → switch
-  //   route exists, on route   → "更新路线" → regenerate (overwrites AI section,
-  //                              preserves 「我的补充笔记」via
-  //                              saveReadingRouteToDedicatedNote)
-  const isViewingRoute = routeExists && active === "readingRoute";
-  const routeLabel = isViewingRoute
-    ? "更新路线"
-    : routeExists
-      ? "阅读路线"
-      : "生成路线";
-  const route = noteFileSwitchButton(doc, routeLabel, false);
-  route.title = isViewingRoute
-    ? "重新生成阅读路线（覆盖 AI 生成区，保留「我的补充笔记」）"
-    : routeExists
-      ? "打开专用阅读路线笔记"
-      : "还没有阅读路线；点击后生成并打开专用阅读路线笔记";
-  route.addEventListener("click", () => {
-    if (isViewingRoute) {
-      void generateReadingRouteFromNoteSwitcher(sidebar, route);
-    } else if (routeExists) {
-      void switchNoteFile(sidebar, "readingRoute", route);
+  const routeBtn = makeSeg("路线", view === "readingRoute");
+  routeBtn.title = "阅读路线：AI 标出的精读顺序与重点";
+  routeBtn.addEventListener("click", () => {
+    if (view !== "readingRoute") void openRouteView(sidebar);
+  });
+
+  const overviewBtn = makeSeg("总览", view === "overview");
+  overviewBtn.title = "全文总览：章节骨架 + 结构图纸";
+  overviewBtn.addEventListener("click", () => {
+    if (view !== "overview") void showOverviewWindow(sidebar);
+  });
+
+  if (panelState?.sending) {
+    routeBtn.disabled = true;
+    overviewBtn.disabled = true;
+  }
+
+  wrap.append(noteBtn, routeBtn, overviewBtn);
+  return wrap;
+}
+
+// ⋯ overflow menu for low-frequency note tools. Toggles on click, closes on
+// outside-click; items close the menu when clicked unless they opt out via
+// data-zai-keep-open (the 对话总结 item keeps it open to show progress).
+function buildNoteMenu(
+  doc: Document,
+  items: HTMLButtonElement[],
+): HTMLElement {
+  const wrap = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  wrap.className = "zai-note-menu";
+
+  const trigger = buttonEl(doc, "⋯");
+  trigger.className = "zai-note-icobtn";
+  trigger.title = "更多";
+
+  const pop = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  pop.className = "zai-note-menu-pop";
+  pop.hidden = true;
+  for (const item of items) {
+    item.classList.add("zai-note-menu-item");
+    pop.append(item);
+  }
+
+  let outside: ((event: Event) => void) | undefined;
+  const closeMenu = () => {
+    pop.hidden = true;
+    trigger.classList.remove("on");
+    if (outside) {
+      doc.removeEventListener("click", outside, true);
+      outside = undefined;
+    }
+  };
+  trigger.addEventListener("click", (event) => {
+    event.stopPropagation();
+    if (pop.hidden) {
+      pop.hidden = false;
+      trigger.classList.add("on");
+      outside = (ev: Event) => {
+        if (!wrap.contains(ev.target as Node)) closeMenu();
+      };
+      doc.addEventListener("click", outside, true);
     } else {
-      void generateReadingRouteFromNoteSwitcher(sidebar, route);
+      closeMenu();
     }
   });
-  if (panelState?.sending) route.disabled = true;
-
-  // 「总览」opens a dedicated overview VIEW in this note column — NOT a note,
-  // NOT the chat. It shows the section skeleton + the mermaid-style structural
-  // flowchart, loaded from the per-item overview store.
-  const overview = noteFileSwitchButton(doc, "总览", active === "overview");
-  overview.title = "全文总览：章节骨架 + 结构图纸（独立视图，不写入笔记）";
-  overview.addEventListener("click", () => {
-    void showOverviewWindow(sidebar);
+  pop.addEventListener("click", (event) => {
+    const target = event.target as HTMLElement | null;
+    const item = target?.closest?.(".zai-note-menu-item") as HTMLElement | null;
+    if (item?.dataset.zaiKeepOpen === "1") return;
+    closeMenu();
   });
 
-  // 「对话总结」: AI-summarize this paper's immersive-reading in-place Q&A (all
-  // the per-sentence cards) and append the digest into the AI note. Not a view
-  // switch — a one-shot write action.
-  const summary = noteFileSwitchButton(doc, "对话总结", false);
-  summary.title = "用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记";
-  summary.addEventListener("click", () => {
-    void summarizeReadingFromNoteSwitcher(sidebar, summary);
-  });
-
-  wrap.append(normal, route, overview, summary);
+  wrap.append(trigger, pop);
   return wrap;
+}
+
+// 「对话总结」: AI-summarize this paper's immersive-reading in-place Q&A and
+// write the digest into the AI note. A note tool (not a view), so it lives in
+// the ⋯ menu rather than competing with the artifact-generation action.
+function buildSummaryMenuItem(
+  doc: Document,
+  sidebar: WindowSidebarState,
+): HTMLButtonElement {
+  const item = buttonEl(doc, "✎ 对话总结");
+  item.title = "用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记";
+  item.dataset.zaiKeepOpen = "1";
+  item.addEventListener("click", () => {
+    void summarizeReadingFromNoteSwitcher(sidebar, item);
+  });
+  return item;
+}
+
+interface NoteHeadParts {
+  head: HTMLElement;
+  status: HTMLElement | null;
+  save: HTMLButtonElement | null;
+  close: HTMLButtonElement;
+}
+
+// Shared note-column header for all three views. Layout:
+//   [grip] [ 笔记 · 路线 · 总览 ] …spacer… [contextual action?] [status?] [⋯] [✕]
+// Editable views (normal note / reading route) get the autosave `status` text
+// and a `save` button (relocated into the ⋯ menu); both elements stay so the
+// existing autosave + editor wiring keeps working untouched.
+function renderNoteHead(
+  doc: Document,
+  sidebar: WindowSidebarState,
+  opts: {
+    view: NotePanelView;
+    editable: boolean;
+    action?: {
+      label: string;
+      title: string;
+      disabled?: boolean;
+      onClick: (button: HTMLButtonElement) => void;
+    } | null;
+    menuExtra?: HTMLButtonElement[];
+  },
+): NoteHeadParts {
+  const head = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  head.className = "zai-note-window-head";
+
+  const seg = buildNoteSeg(doc, sidebar, opts.view);
+
+  const spacer = doc.createElementNS(XHTML_NS, "span") as HTMLElement;
+  spacer.className = "zai-note-head-spacer";
+
+  head.append(seg, spacer);
+
+  if (opts.action) {
+    const action = opts.action;
+    const act = buttonEl(doc, action.label);
+    act.className = "zai-note-act";
+    act.title = action.title;
+    if (action.disabled) act.disabled = true;
+    act.addEventListener("click", () => action.onClick(act));
+    head.append(act);
+  }
+
+  let status: HTMLElement | null = null;
+  if (opts.editable) {
+    status = doc.createElementNS(XHTML_NS, "span") as HTMLElement;
+    status.className = "zai-note-window-status";
+    status.textContent = "自动保存";
+    head.append(status);
+  }
+
+  // 对话总结 writes into the AI 笔记, so it only belongs to the 笔记 view; the
+  // route/overview views don't need it.
+  const menuItems: HTMLButtonElement[] = [];
+  if (opts.view === "normal") menuItems.push(buildSummaryMenuItem(doc, sidebar));
+  if (opts.menuExtra) menuItems.push(...opts.menuExtra);
+  if (menuItems.length) head.append(buildNoteMenu(doc, menuItems));
+
+  const close = buttonEl(doc, "✕");
+  close.className = "zai-note-icobtn";
+  close.title = "关闭";
+  head.append(close);
+
+  // Editable views keep a `save` element so the autosave wiring, Ctrl+S, and
+  // flush-before-switch can reference it — but it stays hidden: the note already
+  // autosaves (status shows 已保存) and Ctrl+S works, so a visible manual-save
+  // control is redundant clutter.
+  let save: HTMLButtonElement | null = null;
+  if (opts.editable) {
+    save = buttonEl(doc, "保存");
+    save.className = "zai-note-window-save";
+    save.hidden = true;
+    save.disabled = true;
+    save.title = "没有未保存修改";
+    head.append(save);
+  }
+
+  return { head, status, save, close };
 }
 
 async function summarizeReadingFromNoteSwitcher(
@@ -5066,9 +5203,20 @@ async function summarizeReadingFromNoteSwitcher(
     );
     if (!result.text) throw new Error("AI 未返回总结内容");
     const md = `## 沉浸阅读对话总结（${result.count} 段）\n\n${result.text}`;
+    // Multiple summaries = replace, not stack: flush any pending editor edits,
+    // then strip the prior digest section before appending the fresh one.
+    await saveVisibleNoteBeforeSwitch(sidebar);
+    await removePriorReadingSummary(itemID, doc);
     const written = await appendAssistantContentToItemNote(doc, itemID, md);
-    refreshVisibleNoteWindow(doc, written.noteID);
     button.textContent = "已写入笔记";
+    // Jump to the 笔记 view so the freshly-written summary is actually visible —
+    // the trigger lives in the ⋯ menu, which may be open over another view.
+    const targetNote = getZoteroItem(written.noteID);
+    if (isZoteroNote(targetNote)) {
+      await showNoteWindow(doc, targetNote);
+    } else {
+      refreshVisibleNoteWindow(doc, written.noteID);
+    }
   } catch (err) {
     button.textContent = "总结失败";
     button.title = err instanceof Error ? err.message : String(err);
@@ -5079,18 +5227,6 @@ async function summarizeReadingFromNoteSwitcher(
       button.disabled = false;
     }, 2000);
   }
-}
-
-function noteFileSwitchButton(
-  doc: Document,
-  label: string,
-  active: boolean,
-): HTMLButtonElement {
-  const button = buttonEl(doc, label);
-  button.className = "zai-note-window-button zai-note-file-switch";
-  if (active) button.classList.add("is-active");
-  button.disabled = active;
-  return button;
 }
 
 async function switchNoteFile(
@@ -5129,19 +5265,6 @@ async function switchNoteFile(
   }
 }
 
-function hasReadingRouteNoteForSidebar(sidebar: WindowSidebarState): boolean {
-  const itemID =
-    states.get(sidebar.mount)?.itemID ?? sidebar.noteItemID ?? null;
-  if (itemID == null) return false;
-  const item = getZoteroItem(itemID);
-  if (!item) return false;
-  const parent = parentItemForDedicatedLookup(item);
-  if (!parent) return false;
-  return childNotesForItem(parent).some((note) =>
-    hasDedicatedNoteMarker(note, "readingRoute"),
-  );
-}
-
 async function generateReadingRouteFromNoteSwitcher(
   sidebar: WindowSidebarState,
   button: HTMLButtonElement,
@@ -5173,6 +5296,67 @@ async function generateReadingRouteFromNoteSwitcher(
       button.disabled = false;
     }, 1800);
   }
+}
+
+// Navigate to the reading-route view. If a route note exists, open it; if not,
+// show an empty placeholder with a generate CTA (clicking the 路线 segment must
+// NOT silently generate — that's what the CTA is for).
+async function openRouteView(sidebar: WindowSidebarState): Promise<void> {
+  const doc = sidebar.noteMount.ownerDocument!;
+  const itemID = states.get(sidebar.mount)?.itemID ?? null;
+  try {
+    await saveVisibleNoteBeforeSwitch(sidebar);
+    const note = await findReadingRouteNote(itemID);
+    if (note) {
+      await showNoteWindow(doc, note);
+      return;
+    }
+  } catch (err) {
+    debugZai("route-view:open-failed", { error: errorMessage(err) });
+  }
+  renderRouteEmptyView(sidebar);
+}
+
+// Empty reading-route view: header (路线 active) + a centered generate CTA.
+function renderRouteEmptyView(sidebar: WindowSidebarState): void {
+  const doc = sidebar.noteMount.ownerDocument!;
+  sidebar.noteEditorCleanup?.();
+  sidebar.noteEditorCleanup = undefined;
+  sidebar.overviewActive = false;
+  sidebar.noteItemID = undefined;
+  setNoteColumnVisible(sidebar, true);
+  updateOpenNoteButton(sidebar);
+  sidebar.noteMount.replaceChildren();
+
+  const itemID = states.get(sidebar.mount)?.itemID ?? null;
+  const parts = renderNoteHead(doc, sidebar, {
+    view: "readingRoute",
+    editable: false,
+    action: null,
+  });
+  parts.close.addEventListener("click", () => {
+    sidebar.noteMount.replaceChildren();
+    setNoteColumnVisible(sidebar, false);
+    updateOpenNoteButton(sidebar);
+  });
+
+  const body = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  body.className = "zai-note-window-body";
+  const empty = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  empty.className = "zai-note-empty-cta";
+  const msg = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  msg.textContent =
+    itemID == null
+      ? "请先选择一篇带 PDF 的文献，再生成阅读路线。"
+      : "还没有阅读路线。";
+  const cta = buttonEl(doc, "✨ 生成阅读路线");
+  cta.disabled = itemID == null;
+  cta.addEventListener("click", () => {
+    void generateReadingRouteFromNoteSwitcher(sidebar, cta);
+  });
+  empty.append(msg, cta);
+  body.append(empty);
+  sidebar.noteMount.append(parts.head, body);
 }
 
 const OVERVIEW_PROMPT = [
@@ -5215,39 +5399,37 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   }
 
   sidebar.noteMount.replaceChildren();
-  const head = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
-  head.className = "zai-note-window-head";
 
-  const title = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
-  title.className = "zai-note-window-title";
-  title.textContent = "全文总览";
-  title.title = "章节骨架 + 结构图纸（独立视图，不写入笔记）";
-
-  const switcher = renderNoteFileSwitcher(doc, sidebar, "overview");
-
-  const resizeHint = doc.createElementNS(XHTML_NS, "span") as HTMLElement;
-  resizeHint.className = "zai-note-resize-hint";
-  resizeHint.textContent = "↔ 拖左侧边缘";
-
-  const regen = buttonEl(doc, stored?.data ? "更新总览" : "生成总览");
-  regen.className = "zai-note-window-button zai-note-file-switch";
-  regen.disabled = itemID == null;
-  regen.title =
-    itemID == null ? "请先选择一篇带 PDF 的文献" : "调用工具重新生成全文总览";
-  regen.addEventListener("click", () => {
-    void generateOverviewIntoPanel(sidebar, regen);
+  const overviewExtra: HTMLButtonElement[] = [];
+  if (stored?.data) {
+    const openBtn = buttonEl(doc, "🌐 在浏览器打开总览");
+    openBtn.title = "把总览导出为自包含 HTML 并在浏览器打开";
+    openBtn.addEventListener("click", () => void openOverviewInBrowser(sidebar));
+    overviewExtra.push(openBtn);
+  }
+  const parts = renderNoteHead(doc, sidebar, {
+    view: "overview",
+    editable: false,
+    action: stored?.data
+      ? {
+          label: "↻ 更新总览",
+          title:
+            itemID == null
+              ? "请先选择一篇带 PDF 的文献"
+              : "调用工具重新生成全文总览",
+          disabled: itemID == null,
+          onClick: (button) => void generateOverviewIntoPanel(sidebar, button),
+        }
+      : null,
+    menuExtra: overviewExtra,
   });
-
-  const close = buttonEl(doc, "关闭");
-  close.className = "zai-note-window-button";
-  close.addEventListener("click", () => {
+  const head = parts.head;
+  parts.close.addEventListener("click", () => {
     sidebar.overviewActive = false;
     sidebar.noteMount.replaceChildren();
     setNoteColumnVisible(sidebar, false);
     updateOpenNoteButton(sidebar);
   });
-
-  head.append(title, switcher, resizeHint, regen, close);
 
   const body = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   body.className = "zai-note-window-body zai-overview-window-body";
@@ -5274,11 +5456,18 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
     );
   } else {
     const empty = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
-    empty.className = "zai-overview-empty";
-    empty.textContent =
+    empty.className = "zai-note-empty-cta";
+    const msg = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+    msg.textContent =
       itemID == null
         ? "请先选择一篇带 PDF 的文献，再生成全文总览。"
-        : "尚未生成全文总览。点击右上角「生成总览」开始。";
+        : "还没有全文总览。";
+    const cta = buttonEl(doc, "✨ 生成全文总览");
+    cta.disabled = itemID == null;
+    cta.addEventListener("click", () => {
+      void generateOverviewIntoPanel(sidebar, cta);
+    });
+    empty.append(msg, cta);
     body.append(empty);
   }
   sidebar.noteMount.append(head, body);
