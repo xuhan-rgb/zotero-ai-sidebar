@@ -21,5 +21,8 @@ logs
 # Release artifacts
 *.xpi
 
+# Local design mockups / scratch prototypes
+design_*.html
+
 # Playwright MCP temp screenshots & snapshots
 .playwright-mcp/

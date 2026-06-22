@@ -78,6 +78,7 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 
 ### Notes
 
+- **Unified note-column navigation**: one segmented switcher (笔记 · 路线 · 总览) flips between the AI note, the reading route, and the paper overview — switching only navigates, never regenerates. A generated view shows a centered 生成 button while empty and a header `↻ 更新` once it exists, so reading route and overview behave the same way. The note view's `⋯` menu holds 对话总结, which digests the immersive-reading Q&A into the note and replaces its prior digest in place instead of stacking duplicates.
 - **In-pane note editor**: open a note column alongside the chat to edit Zotero's rich note in place, with an assistant-to-note write tool.
 - **Model-driven note writes**: the model can also call `zotero_append_to_note` on its own to append assistant output to the current item's child note, auto-creating one when none exists.
 - **Cursor-aware note imports**: select part of an assistant response, right-click `Import to note`, and the snippet is inserted at the current Zotero note cursor instead of always appending.
