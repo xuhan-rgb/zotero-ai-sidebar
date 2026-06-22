@@ -61,7 +61,8 @@ When the tag reaches GitHub, `.github/workflows/release.yml` automatically runs:
 - `npm ci`
 - `npm test`
 - `npm run build`
-- uploads only `.scaffold/build/*.xpi` to the version release
+- uploads `.scaffold/build/*.xpi` to the version release
+- publishes `update.json` / `update-beta.json` to the fixed `release` Release (auto-update)
 
 ## Manual release from GitHub UI
 
@@ -70,6 +71,6 @@ The same workflow also supports `workflow_dispatch`. Run **Release XPI** in GitH
 ## Notes
 
 - Do not commit local XPI build artifacts. `*.xpi` is ignored by `.gitignore`.
-- This simplified release flow does not publish Zotero auto-update manifests.
+- Each release also publishes `update.json` / `update-beta.json` to a fixed `release` Release (the plugin's `update_url` target) for Zotero auto-update. Do not delete that `release` Release.
 - Local provider configuration such as API keys, Base URL, and model IDs stays in Zotero prefs, not source code.
 - Release tags should start with `v`, for example `v0.1.0`.

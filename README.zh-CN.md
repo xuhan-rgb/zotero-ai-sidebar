@@ -25,7 +25,7 @@
 4. 点击齿轮图标，选择 `从文件安装插件…`。
 5. 选择刚下载的 `.xpi` 文件，按提示重启 Zotero。
 
-当前仓库只发布 `.xpi` 文件。简化后的发布流程不再发布 Zotero 自动更新清单（`update.json` / `update-beta.json`）。
+已安装的插件也会自动更新：每次发布都会把 `update.json` / `update-beta.json` 发布到固定的 `release` Release，插件的 `update_url` 会检查它，因此正式版与预览版安装都能就地收到新版本提示。
 
 ## 配置
 

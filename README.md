@@ -26,7 +26,7 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 4. Click the gear icon and choose `Install Plugin From File...`.
 5. Select the downloaded `.xpi` file and restart Zotero if prompted.
 
-This repository currently publishes only the `.xpi` file. Zotero automatic update manifests (`update.json` / `update-beta.json`) are intentionally not published in the simplified release flow.
+Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
 ## Configuration
 

@@ -1,5 +1,4 @@
 import { defineConfig } from "zotero-plugin-scaffold";
-import { unlink } from "node:fs/promises";
 import pkg from "./package.json";
 
 export default defineConfig({
@@ -21,14 +20,6 @@ export default defineConfig({
     },
     prefs: {
       prefix: pkg.config.prefsPrefix,
-    },
-    hooks: {
-      "build:makeUpdateJSON": async (ctx) => {
-        await Promise.allSettled([
-          unlink(`${ctx.dist}/update.json`),
-          unlink(`${ctx.dist}/update-beta.json`),
-        ]);
-      },
     },
     esbuildOptions: [
       {
