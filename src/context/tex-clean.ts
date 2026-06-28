@@ -387,9 +387,15 @@ const TEXT_COMMANDS: Record<string, LatexTextCommandKind> = {
   textsc: "plain",
   textrm: "plain",
   textsf: "plain",
+  // Custom revision/markup macros that just wrap real prose+math: keep the
+  // content, drop the command (don't leak `\edit{`).
+  edit: "plain",
 };
 
-const SOURCE_ONLY_COMMANDS = new Set(["label"]);
+// `\footnote{…}` is tangential source metadata; dropping the command AND its
+// content keeps the quoted sentence readable (inlining a footnote mid-sentence
+// breaks the flow). Treated like `\label` — command + braced arg removed.
+const SOURCE_ONLY_COMMANDS = new Set(["label", "footnote"]);
 
 const SOURCE_ONLY_BARE_COMMANDS = new Set(["notag", "nonumber"]);
 
@@ -463,8 +469,36 @@ function parseLatexSourceCommandAt(
       : null;
   }
 
+  // Unknown command whose sole argument is a cross-reference label
+  // (`type:name`, e.g. \fig{fig:overview}). arXiv papers define custom ref
+  // macros (\fig, \tab, \eqn, …) we can't enumerate; the label shape is the
+  // reliable signal. Render as a neutral [ref] marker, like \ref / \cref.
+  // Cite/text/url commands keep their own handling.
+  if (
+    text[i] === "{" &&
+    !CITE_COMMANDS.has(command.name) &&
+    !(command.name in TEXT_COMMANDS) &&
+    !URL_COMMANDS.has(command.name)
+  ) {
+    const arg = readBalancedBraces(text, i);
+    if (arg && isCrossReferenceLabelArg(arg.content)) {
+      return { end: arg.end, command: command.name, replacement: "[ref]" };
+    }
+  }
+
   return null;
 }
+
+// A `type:name` cross-reference label (`fig:overview`, `eq:loss`), optionally a
+// comma-separated list (\cref-style). The no-space, letters-before-colon shape
+// keeps ordinary prose (`Note: foo`), times (`12:30`), and URLs/DOIs
+// (`http://…`, `doi:10.1/x`) from matching.
+function isCrossReferenceLabelArg(content: string): boolean {
+  const label = "[A-Za-z]+:[A-Za-z0-9_.:-]+";
+  return new RegExp(`^\\s*${label}(?:\\s*,\\s*${label})*\\s*$`).test(content);
+}
+
+const URL_COMMANDS = new Set(["url", "href", "nolinkurl", "path"]);
 
 function isLikelySectionLabel(text: string, start: number): boolean {
   const before = text.slice(Math.max(0, start - 500), start);

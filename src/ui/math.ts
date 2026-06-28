@@ -101,10 +101,29 @@ export function findNextMathRegion(
   return null;
 }
 
+// True when `text` contains a DISPLAY math opener (\[ , $$ , \begin{env} , or a
+// standalone single-$ line) whose closing delimiter has not yet appeared. The
+// block-level Markdown renderer calls this while accumulating a paragraph so a
+// `>` / `#` / `-` line *inside* a multi-line display formula is kept as math
+// body instead of being misread as a blockquote / heading / list and tearing
+// the `$$ … $$` block apart. Inline openers (\( , single-$) never hold a block:
+// only an unclosed DISPLAY opener returns true.
+export function hasUnclosedDisplayMath(text: string): boolean {
+  for (let i = 0; i < text.length; i++) {
+    const opener = peekOpener(text, i);
+    if (!opener) continue;
+    const close = findClose(text, i + opener.openLen, opener.kind);
+    if (close < 0) return opener.display;
+    i = close + opener.closeLen - 1; // skip the closed region, keep scanning
+  }
+  return false;
+}
+
 type OpenerKind =
   | "displayBracket" // \[ ... \]
   | "inlineParen" // \( ... \)
   | "displayDollar" // $$ ... $$
+  | "displaySingleDollarLine" // $\n...\n$ with $ alone on its line
   | "inlineDollar" // $ ... $
   | "latexEnvironment"; // \begin{equation*} ... \end{equation*}
 
@@ -139,6 +158,14 @@ function peekOpener(
   if (text.startsWith("$$", i)) {
     return { kind: "displayDollar", openLen: 2, closeLen: 2, display: true };
   }
+  if (text[i] === "$" && isStandaloneSingleDollarLine(text, i)) {
+    return {
+      kind: "displaySingleDollarLine",
+      openLen: 1,
+      closeLen: 1,
+      display: true,
+    };
+  }
   if (text[i] === "$") {
     // Single-$ guards (Contract A) — keep prose like "earned $5 and $10"
     // out of math mode.
@@ -156,6 +183,9 @@ function findClose(text: string, from: number, kind: OpenerKind): number {
   if (kind === "displayBracket") return text.indexOf("\\]", from);
   if (kind === "inlineParen") return text.indexOf("\\)", from);
   if (kind === "displayDollar") return text.indexOf("$$", from);
+  if (kind === "displaySingleDollarLine") {
+    return findStandaloneSingleDollarLineClose(text, from);
+  }
   if (kind === "latexEnvironment") {
     const beginStart = text.lastIndexOf("\\begin{", from);
     if (beginStart < 0) return -1;
@@ -169,6 +199,49 @@ function findClose(text: string, from: number, kind: OpenerKind): number {
     if (ch === "$" && j > from && !isSpace(text[j - 1]!)) return j;
   }
   return -1;
+}
+
+function findStandaloneSingleDollarLineClose(
+  text: string,
+  from: number,
+): number {
+  for (let j = from; j < text.length; j++) {
+    if (text[j] !== "$" || text.startsWith("$$", j)) continue;
+    if (isStandaloneSingleDollarLine(text, j)) return j;
+  }
+  return -1;
+}
+
+function isStandaloneSingleDollarLine(text: string, index: number): boolean {
+  if (text[index] !== "$" || text.startsWith("$$", index)) return false;
+  const lineStart = lineStartIndex(text, index);
+  const lineEnd = lineEndIndex(text, index);
+  return (
+    hasOnlyHorizontalSpace(text, lineStart, index) &&
+    hasOnlyHorizontalSpace(text, index + 1, lineEnd)
+  );
+}
+
+function lineStartIndex(text: string, index: number): number {
+  const previousNewline = text.lastIndexOf("\n", index - 1);
+  return previousNewline < 0 ? 0 : previousNewline + 1;
+}
+
+function lineEndIndex(text: string, index: number): number {
+  const nextNewline = text.indexOf("\n", index);
+  return nextNewline < 0 ? text.length : nextNewline;
+}
+
+function hasOnlyHorizontalSpace(
+  text: string,
+  start: number,
+  end: number,
+): boolean {
+  for (let i = start; i < end; i++) {
+    const ch = text[i]!;
+    if (ch !== " " && ch !== "\t") return false;
+  }
+  return true;
 }
 
 function readSupportedLatexEnvironmentOpener(
@@ -223,6 +296,27 @@ export function normalizeLatexForKatex(latex: string): string {
     }
     out += parsed.replacement;
     cursor = parsed.end;
+  }
+  return stripInvalidInnerMathDelimiters(out);
+}
+
+// Some source-cleaned snippets arrive as display math that still contains
+// stray inline delimiters, e.g. `L = $\\mathbb{E}[...]$`. Nested `$...$`
+// inside an already-open math region is invalid KaTeX input and renders as a
+// red `.katex-error` span. Inside math mode, an unescaped `$` has no valid
+// semantic role besides being a broken delimiter, so drop it while preserving
+// explicit `\\$` literals.
+function stripInvalidInnerMathDelimiters(latex: string): string {
+  let out = "";
+  for (let i = 0; i < latex.length; i++) {
+    const ch = latex[i]!;
+    if (ch === "\\") {
+      out += ch;
+      if (i + 1 < latex.length) out += latex[++i]!;
+      continue;
+    }
+    if (ch === "$") continue;
+    out += ch;
   }
   return out;
 }

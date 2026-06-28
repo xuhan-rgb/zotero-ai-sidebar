@@ -35,12 +35,27 @@ describe("findNextMathRegion — display delimiters", () => {
     expect(region!.latex.trim()).toBe("E = mc^2");
   });
 
+  it("matches display math fenced by standalone single-$ lines", () => {
+    const text =
+      "$\n\\mathbf{b}_t = [\\mathbf{p}^{\\text{cmd}}, v_{\\text{lin}}^{\\text{cmd}}]\n$";
+    const region = findNextMathRegion(text, 0);
+    expect(region).not.toBeNull();
+    expect(region?.start).toBe(0);
+    expect(region?.end).toBe(text.length);
+    expect(region?.display).toBe(true);
+    expect(region?.latex).toContain("\\mathbf{b}_t");
+  });
+
   it("returns null for unclosed \\[ (streaming-safe)", () => {
     expect(findNextMathRegion("open: \\[ x = 1", 0)).toBeNull();
   });
 
   it("returns null for unclosed $$ (streaming-safe)", () => {
     expect(findNextMathRegion("a $$x = 1", 0)).toBeNull();
+  });
+
+  it("returns null for unclosed standalone single-$ display math", () => {
+    expect(findNextMathRegion("$\n\\mathbf{b}_t = x", 0)).toBeNull();
   });
 
   it("matches LaTeX equation environments as display math", () => {
@@ -193,5 +208,15 @@ describe("normalizeLatexForKatex", () => {
     expect(
       normalizeLatexForKatex("x &= y \\nonumber \\\\ z &= w, \\label{eq:x}"),
     ).toBe("x &= y  \\\\ z &= w, ");
+  });
+
+  it("drops stray inner dollar delimiters from an already-open math body", () => {
+    expect(
+      normalizeLatexForKatex(
+        "L^{PPO}(\\theta_\\pi) = $\\mathbb{E}_{\\pi}[\\min(rA, \\text{clip}(r,1-\\epsilon,1+\\epsilon)A)]$",
+      ),
+    ).toBe(
+      "L^{PPO}(\\theta_\\pi) = \\mathbb{E}_{\\pi}[\\min(rA, \\text{clip}(r,1-\\epsilon,1+\\epsilon)A)]",
+    );
   });
 });

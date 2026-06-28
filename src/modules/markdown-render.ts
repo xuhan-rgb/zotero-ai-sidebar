@@ -1,5 +1,6 @@
 import {
   findNextMathRegion,
+  hasUnclosedDisplayMath,
   renderMathInto,
   type MathRenderMode,
   type MathRegion,
@@ -10,6 +11,7 @@ import {
   normalizeCitations,
   normalizeLatexListEnvironments,
   normalizeLatexSourceCommands,
+  normalizeLatexTextCommands,
   type LatexTextCommandKind,
 } from "../context/tex-clean";
 import { parseMermaidMindmap, renderMindmapBlock } from "./mindmap-render";
@@ -65,8 +67,38 @@ export function renderMarkdownInto(
 
   const flushParagraph = () => {
     if (!paragraph.length) return;
+    const blockMath = extractStandaloneDisplayMathParagraph(paragraph);
+    if (blockMath) {
+      renderMathInto(target, blockMath, mathMode);
+      paragraph = [];
+      return;
+    }
+    const orphanEnvMath = extractOrphanedEnvMathParagraph(paragraph);
+    if (orphanEnvMath) {
+      renderMathInto(target, orphanEnvMath, mathMode);
+      paragraph = [];
+      return;
+    }
+    const inlineMathParagraph = extractWholeParagraphInlineMath(paragraph);
+    if (inlineMathParagraph) {
+      const p = doc.createElement("p");
+      renderMathInto(p, inlineMathParagraph.region, mathMode);
+      if (inlineMathParagraph.trailingText) {
+        p.append(doc.createTextNode(inlineMathParagraph.trailingText));
+      }
+      target.append(p);
+      paragraph = [];
+      return;
+    }
     const p = doc.createElement("p");
-    appendInlineMarkdown(p, paragraph.join(" "), mathMode);
+    // Normalize loose single-$ math lines (`$ … $,` padded with spaces just
+    // inside the dollars, which the strict inline-$ guard rejects) the same way
+    // the blockquote path does, so such a line opening or sitting inside a
+    // multi-line paragraph still typesets instead of leaking as raw LaTeX.
+    const paragraphText = paragraph
+      .map((line) => normalizeLooseSingleDollarMathLine(line))
+      .join(" ");
+    appendInlineMarkdown(p, paragraphText, mathMode);
     // Display math in source mode emits a block element. Nesting that inside
     // <p> is invalid HTML and note parsers may drop or duplicate it. Hoist
     // block children up to `target` and emit surrounding inline text as <p>'s.
@@ -192,6 +224,17 @@ export function renderMarkdownInto(
 
     if (codeLines != null) {
       codeLines.push(line);
+      continue;
+    }
+
+    // Inside an open multi-line display-math block ($$ … , \[ … , \begin{env} …,
+    // or a standalone single-$ block), every line is math body — including
+    // blank lines and lines starting with > / # / - / | that the block scanner
+    // would otherwise misread as a blockquote / heading / list / table and tear
+    // the formula apart. Mirrors how an open ``` fence swallows lines until it
+    // closes; flushParagraph then typesets the whole region.
+    if (paragraph.length && hasUnclosedDisplayMath(paragraph.join("\n"))) {
+      paragraph.push(line.trim());
       continue;
     }
 
@@ -325,10 +368,15 @@ function pipeTableCells(line: string): string[] | null {
   const cells: string[] = [];
   let current = "";
   let inCode = false;
+  let inMath = false;
   for (let i = 0; i < withoutEdge.length; i++) {
     const ch = withoutEdge[i]!;
     if (ch === "`") inCode = !inCode;
-    if (ch === "|" && !inCode && withoutEdge[i - 1] !== "\\") {
+    // A `$` toggles an inline-math span; a `|` inside `$…$` (e.g. set-builder
+    // notation `$\{x | x>0\}$`) is math content, not a column separator — same
+    // protection already given to `|` inside backtick code spans.
+    else if (ch === "$" && !inCode) inMath = !inMath;
+    if (ch === "|" && !inCode && !inMath && withoutEdge[i - 1] !== "\\") {
       cells.push(current.replace(/\\\|/g, "|"));
       current = "";
     } else {
@@ -362,6 +410,108 @@ function applyTableCellAlignment(
 
 function mathRegion(latex: string): MathRegion {
   return { start: 0, end: latex.length, latex, display: true };
+}
+
+function extractStandaloneDisplayMathParagraph(
+  paragraph: string[],
+): MathRegion | null {
+  const raw = paragraph.join("\n").trim();
+  if (!raw) return null;
+  const region = findNextMathRegion(raw, 0);
+  return region && region.start === 0 && region.end === raw.length && region.display
+    ? region
+    : null;
+}
+
+// Outer display-math environments a model writes bare (not the inner
+// aligned/gathered, which live inside `$$`). Used to detect an environment a
+// model split across a blockquote boundary.
+const DISPLAY_MATH_ENVIRONMENTS = new Set([
+  "equation",
+  "align",
+  "gather",
+  "multline",
+  "displaymath",
+]);
+
+// A line that is exactly a display-math environment delimiter
+// (`\begin{equation}` / `\end{align*}`), nothing else.
+function standaloneDisplayEnvDelimiter(
+  line: string,
+): { kind: "begin" | "end"; env: string } | null {
+  const match = line.trim().match(/^\\(begin|end)\{([a-zA-Z]+\*?)\}$/);
+  if (!match) return null;
+  const env = match[2]!;
+  return DISPLAY_MATH_ENVIRONMENTS.has(env.replace(/\*$/, ""))
+    ? { kind: match[1] as "begin" | "end", env }
+    : null;
+}
+
+// A model split `\begin{equation} … \end{equation}` across a blockquote
+// boundary, leaving an ORPHAN delimiter (begin without end, or vice versa) plus
+// a bare LaTeX body in this paragraph. Reconstruct the full environment so the
+// body typesets as display math. Returns null when delimiters are paired
+// (extractStandaloneDisplayMathParagraph handles those) or absent.
+function extractOrphanedEnvMathParagraph(
+  paragraph: string[],
+): MathRegion | null {
+  const delimiters: Array<{ kind: "begin" | "end"; env: string }> = [];
+  const bodyLines: string[] = [];
+  for (const line of paragraph) {
+    const delimiter = standaloneDisplayEnvDelimiter(line);
+    if (delimiter) delimiters.push(delimiter);
+    else bodyLines.push(line);
+  }
+  if (!delimiters.length) return null;
+  const hasBegin = delimiters.some((d) => d.kind === "begin");
+  const hasEnd = delimiters.some((d) => d.kind === "end");
+  if (hasBegin && hasEnd) return null;
+  const body = bodyLines.map((line) => line.trim()).filter(Boolean).join("\n");
+  if (!body) return null;
+  const env = delimiters[0]!.env;
+  const region = findNextMathRegion(`\\begin{${env}}\n${body}\n\\end{${env}}`, 0);
+  return region && region.display ? region : null;
+}
+
+// Strip orphan display-env delimiter lines (a `\begin{equation}` whose
+// `\end{equation}` landed on the other side of a blockquote boundary, or vice
+// versa). A complete, paired environment is left intact for findNextMathRegion.
+function stripOrphanDisplayEnvDelimiters(text: string): string {
+  const lines = text.split("\n");
+  const delimiters = lines
+    .map(standaloneDisplayEnvDelimiter)
+    .filter((d): d is { kind: "begin" | "end"; env: string } => d != null);
+  if (!delimiters.length) return text;
+  if (delimiters.some((d) => d.kind === "begin") &&
+      delimiters.some((d) => d.kind === "end")) {
+    return text;
+  }
+  return lines.filter((line) => !standaloneDisplayEnvDelimiter(line)).join("\n");
+}
+
+function extractWholeParagraphInlineMath(
+  paragraph: string[],
+): { region: MathRegion; trailingText: string } | null {
+  if (paragraph.length !== 1) return null;
+  const raw = paragraph[0]!.trim();
+  if (!raw.startsWith("$")) return null;
+
+  const match = raw.match(/^\$\s*(.*?)\s*\$(?<tail>[,.;:]*)$/);
+  if (!match) return null;
+  const body = match[1]?.trim();
+  if (!body) return null;
+  if (body.includes("\n")) return null;
+  if (/(?<!\\)\$/.test(body)) return null;
+
+  return {
+    region: {
+      start: 0,
+      end: raw.length,
+      latex: body,
+      display: false,
+    },
+    trailingText: match.groups?.tail ?? "",
+  };
 }
 
 function mathFenceToDisplayLatex(raw: string, language: string): string | null {
@@ -671,9 +821,15 @@ function appendInlineMarkdown(
       return;
     }
     if (next > cursor) {
-      parent.append(
-        doc.createTextNode(normalizePlainLatex(text.slice(cursor, next))),
+      // `next` is a non-space inline-special char (math / code / `*` / `[` /
+      // `\cite` / `\textbf`), so a `~` ending this slice is a LaTeX tie before
+      // it (e.g. "work~\cite{…}"). normalizePlainLatex only sees ties internal
+      // to the slice; convert this boundary tie here.
+      const cleaned = normalizePlainLatex(text.slice(cursor, next)).replace(
+        /(?<=\S)~$/,
+        " ",
       );
+      parent.append(doc.createTextNode(cleaned));
     }
 
     if (math && next === math.start) {
@@ -776,9 +932,20 @@ function appendInlineMarkdown(
 }
 
 function normalizePlainLatex(text: string): string {
-  return normalizeLatexSourceCommands(
-    normalizeCitations(normalizeLatexListEnvironments(text)),
+  return normalizeLatexTies(
+    normalizeLatexSourceCommands(
+      normalizeCitations(normalizeLatexListEnvironments(text)),
+    ),
   );
+}
+
+// `~` is a LaTeX non-breaking space (tie). Quoted LaTeX source leaks it as a
+// literal tilde (e.g. "Figure~1", "work~\cite{…}"). A tie is glued between two
+// non-space chars; convert only those to a space, leaving a spaced `~` (an
+// "approximately" tilde, "approx ~5") untouched. Render-only — context sent to
+// the model keeps the original `~`.
+function normalizeLatexTies(text: string): string {
+  return text.replace(/(?<=\S)~(?=\S)/g, " ");
 }
 
 function latexTextWrapperElement(
@@ -823,7 +990,17 @@ function appendInlineMarkdownWithLineBreaks(
   text: string,
   mathMode: MathRenderMode,
 ): void {
-  text = normalizeLatexListEnvironments(text);
+  // Unwrap text-wrapper commands (\edit, \textbf, …) BEFORE math extraction.
+  // The loop below pulls math regions out at the top level, which would split a
+  // math-wrapping `\edit{$…$}` and leak the bare `\edit{`. Normalizing first
+  // (math-mode-aware, so `\text{…}` inside `$…$` is untouched) keeps wrappers
+  // intact. \cite / \ref / \footnote stay for the per-run normalizePlainLatex.
+  text = stripOrphanDisplayEnvDelimiters(
+    normalizeLatexTextCommands(normalizeLatexListEnvironments(text)),
+  )
+    .split("\n")
+    .map((line) => normalizeLatexTabularRowLine(line))
+    .join("\n");
   let cursor = 0;
   while (cursor < text.length) {
     const math = findNextMathRegion(text, cursor);
@@ -851,8 +1028,117 @@ function appendInlineMarkdownTextRun(
   const lines = text.split("\n");
   lines.forEach((line, index) => {
     if (index > 0) parent.append(doc.createElement("br"));
-    if (line) appendInlineMarkdown(parent, line, mathMode);
+    const normalized = normalizeLooseSingleDollarMathLine(
+      normalizeLatexTabularRowLine(line),
+    );
+    if (normalized) appendInlineMarkdown(parent, normalized, mathMode);
   });
+}
+
+// Models sometimes emit a formula-only source line as `$ ... $,` with stray
+// padding just inside the dollar delimiters. The strict single-$ parser
+// rejects that form on purpose to avoid prose/currency collisions, so narrow
+// whole-line cases are normalized into `\(...\)` here before inline parsing.
+function normalizeLooseSingleDollarMathLine(line: string): string {
+  const match = line.trim().match(/^\$\s*(.*?)\s*\$(?<tail>[,.;:]*)$/);
+  if (!match) return line;
+
+  const body = match[1]?.trim();
+  if (!body || body.includes("\n") || /(?<!\\)\$/.test(body)) return line;
+
+  return `\\(${body}\\)${match.groups?.tail ?? ""}`;
+}
+
+// Source snippets often quote raw LaTeX table rows (`label & \(math\) \\`)
+// without the surrounding `tabular` environment. Render them as readable text
+// instead of leaking alignment markers. Keep this narrow so math alignment
+// rows (`x &= y \\`) still flow through the real math parser unchanged.
+function normalizeLatexTabularRowLine(line: string): string {
+  const trimmed = line.trim();
+  if (!trimmed) return line;
+  if (/^\\(?:hline|cline\{[^}]+\})\s*$/.test(trimmed)) return "";
+  if (!/\\\\\s*$/.test(trimmed)) return line;
+  if (!trimmed.includes("&")) return line;
+  if (/&\s*(?:=|\\leq|\\geq|\\approx|\\sim|≤|≥|≈|∼|~)/.test(trimmed)) {
+    return line;
+  }
+
+  const withoutRowBreak = trimmed.replace(/\\\\\s*$/, "").trim();
+  // Drop empty cells (a leading `&` for a blank header column, or stray
+  // doubled `&&`) rather than rejecting the whole row — otherwise common
+  // benchmark rows like `& Method & val & val \\` leak their `&` / `\\`.
+  const cells = splitLatexTabularRow(withoutRowBreak)
+    .map((cell) => cell.trim())
+    .filter((cell) => cell.length > 0);
+  if (cells.length < 2) return line;
+  return cells.length === 2
+    ? `${cells[0]}: ${cells[1]}`
+    : cells.join(" | ");
+}
+
+function splitLatexTabularRow(line: string): string[] {
+  const cells: string[] = [];
+  let current = "";
+  let braceDepth = 0;
+  let parenMathDepth = 0;
+  let bracketMathDepth = 0;
+
+  for (let i = 0; i < line.length; i++) {
+    const ch = line[i]!;
+    const next = line[i + 1];
+
+    if (ch === "\\") {
+      if (next === "(") {
+        parenMathDepth += 1;
+        current += ch + next;
+        i += 1;
+        continue;
+      }
+      if (next === ")" && parenMathDepth > 0) {
+        parenMathDepth -= 1;
+        current += ch + next;
+        i += 1;
+        continue;
+      }
+      if (next === "[") {
+        bracketMathDepth += 1;
+        current += ch + next;
+        i += 1;
+        continue;
+      }
+      if (next === "]" && bracketMathDepth > 0) {
+        bracketMathDepth -= 1;
+        current += ch + next;
+        i += 1;
+        continue;
+      }
+      current += ch;
+      if (next != null) {
+        current += next;
+        i += 1;
+      }
+      continue;
+    }
+
+    if (ch === "{") braceDepth += 1;
+    else if (ch === "}" && braceDepth > 0) braceDepth -= 1;
+
+    if (
+      ch === "&" &&
+      braceDepth === 0 &&
+      parenMathDepth === 0 &&
+      bracketMathDepth === 0
+    ) {
+      cells.push(current);
+      current = "";
+      continue;
+    }
+
+    current += ch;
+  }
+
+  cells.push(current);
+  return cells;
 }
 
 function markdownHeadingLevel(line: string): number {

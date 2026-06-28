@@ -39,6 +39,29 @@ describe("renderMarkdownInto", () => {
     expect(root.textContent).toContain("Method | PQ | mIoU");
   });
 
+  // Set-builder notation puts a literal `|` inside `$…$` in a table cell. The
+  // pipe splitter must treat that `|` as math content (like it already does for
+  // `|` inside backtick code spans), not as a column separator — otherwise the
+  // cell tears into "$\{x" (unclosed, leaked) plus dropped overflow columns.
+  it("does not split a table cell on a literal pipe inside inline math", () => {
+    const root = render(
+      [
+        "| 集合 | 定义 |",
+        "| --- | --- |",
+        "| A | $\\{x \\mid x>0\\}$ |",
+        "| B | $\\{x | x<0\\}$ |",
+      ].join("\n"),
+    );
+
+    const rows = root.querySelectorAll("tbody tr");
+    expect(rows).toHaveLength(2);
+    expect(rows[0].children).toHaveLength(2);
+    expect(rows[1].children).toHaveLength(2);
+    const cellB = rows[1].children[1] as HTMLElement;
+    expect(cellB.querySelector(".math-inline")).not.toBeNull();
+    expect(cellB.textContent).not.toContain("$");
+  });
+
   it("keeps indented list items nested under their parent item", () => {
     const root = render(
       [
@@ -111,6 +134,227 @@ describe("renderMarkdownInto", () => {
     expect(root.querySelector(".katex-error")).toBeNull();
   });
 
+  // A model sometimes splits an equation environment across a blockquote
+  // boundary: `> \begin{equation}` inside the quote, the body and
+  // `\end{equation}` outside it. The orphaned delimiters used to leak and the
+  // bare body rendered as raw LaTeX. Strip the orphan delimiters and render the
+  // body as display math.
+  it("renders an equation environment split across a blockquote boundary", () => {
+    const root = render(
+      [
+        "> Formally, the goal is to train a policy $\\hat\\pi$ as follows:",
+        "> \\begin{equation}",
+        "\\hat{\\pi} = \\arg\\min_{\\pi\\in\\Pi}\\mathbb{E}_{s\\sim d_{\\pi}}[\\ell(s,\\pi)].",
+        "\\end{equation}",
+      ].join("\n"),
+    );
+
+    expect(root.textContent).not.toContain("\\begin{equation}");
+    expect(root.textContent).not.toContain("\\end{equation}");
+    expect(root.textContent).not.toContain("\\hat{\\pi}");
+    expect(root.querySelector(".math-display")).not.toBeNull();
+    expect(root.querySelector(".katex-error")).toBeNull();
+    expect(root.querySelector("blockquote")?.textContent).toContain(
+      "Formally, the goal",
+    );
+  });
+
+  it("renders blockquoted display math delimited by standalone single-$ lines", () => {
+    const root = render(
+      [
+        "> The command $\\mathbf{b}_t$ for our low-level policy is defined as",
+        "> $",
+        "> \\mathbf{b}_t = [\\mathbf{p}^{\\text{cmd}}, \\mathbf{o}^{\\text{cmd}}, v_{\\text{lin}}^{\\text{cmd}}, \\omega_\\text{yaw}^{\\text{cmd}}]",
+        "> $",
+        "> where $\\mathbf{p}^{\\text{cmd}}\\in\\mathbb{R}^3$ and $\\mathbf{o}^{\\text{cmd}}\\in\\mathbb{R}^3$ are end-effector commands.",
+      ].join("\n"),
+    );
+
+    const quote = root.querySelector("blockquote") as HTMLElement | null;
+    const math = quote?.querySelector(".math-display") as HTMLElement | null;
+    expect(quote).not.toBeNull();
+    expect(math).not.toBeNull();
+    expect(math?.dataset.latex).toContain("\\mathbf{b}_t = [");
+    expect(quote?.textContent).not.toContain("\\mathbf{b}_t = [");
+    expect(quote?.textContent).not.toContain("\\text{cmd}");
+    expect(root.querySelector(".katex-error")).toBeNull();
+  });
+
+  it("renders standalone display-math paragraphs delimited by single-$ lines", () => {
+    const root = render(
+      [
+        "The command $\\mathbf{b}_t$ for our low-level policy is defined as",
+        "",
+        "$",
+        "\\mathbf{b}_t = [\\mathbf{p}^{\\text{cmd}}, \\mathbf{o}^{\\text{cmd}}, v_{\\text{lin}}^{\\text{cmd}}, \\omega_\\text{yaw}^{\\text{cmd}}]",
+        "$",
+        "",
+        "Our low-level goal-reaching policy mainly controls the quadruped robot.",
+      ].join("\n"),
+    );
+
+    const math = root.querySelector(".math-display") as HTMLElement | null;
+    expect(math).not.toBeNull();
+    expect(math?.dataset.latex).toContain("\\mathbf{b}_t = [");
+    expect(root.textContent).not.toContain("\\mathbf{p}^{\\text{cmd}}");
+    expect(root.querySelector(".katex-error")).toBeNull();
+  });
+
+  // A padded single-$ math line (`$ … $,` — space just inside the dollars,
+  // which the strict inline-$ guard rejects) that OPENS a multi-line paragraph
+  // (followed by a `where …` line, no blank between) used to leak as raw
+  // "$ \mathbf{o}_t = …". The blockquote path already normalizes loose single-$
+  // lines per line; the regular paragraph path must do the same.
+  it("renders a padded single-$ math line that opens a multi-line paragraph", () => {
+    const root = render(
+      [
+        "> Formally, the observation of our vision policy is",
+        "$ \\mathbf{o}_t = [\\mathbf{s}_t^{\\text{proprio}}, \\mathbf{a}_{t-1}]$,",
+        "where $\\mathbf{o}^{\\text{image}}_t$ consists of depth images.",
+      ].join("\n"),
+    );
+
+    expect(root.querySelector(".katex-error")).toBeNull();
+    expect(root.textContent).not.toContain("\\mathbf");
+    expect(root.textContent).not.toContain("$");
+    expect(
+      root.querySelectorAll(".math-inline").length,
+    ).toBeGreaterThanOrEqual(2);
+  });
+
+  it("renders whole-paragraph single-dollar math even when padded with spaces", () => {
+    const root = render(
+      [
+        "Formally, the observation of our vision policy is",
+        "",
+        "$ \\mathbf{o}_t = [\\mathbf{o}^{\\text{image}}_t, \\mathbf{s}_t^{\\text{proprio}}, \\mathbf{a}_{t-1}]$,",
+        "",
+        "where $\\mathbf{o}^{\\text{image}}_t$ consists of segmented depth images.",
+      ].join("\n"),
+    );
+
+    const math = root.querySelector(".math-inline") as HTMLElement | null;
+    expect(math).not.toBeNull();
+    expect(math?.dataset.latex).toContain("\\mathbf{o}_t = [");
+    expect(root.textContent).not.toContain("\\mathbf{s}_t^{\\text{proprio}}");
+    expect(root.textContent).toContain(",");
+    expect(root.querySelector(".katex-error")).toBeNull();
+  });
+
+  it("renders blockquoted whole-line single-dollar math even when padded with spaces", () => {
+    const root = render(
+      [
+        "> Formally, the observation of our vision policy is",
+        "> $ \\mathbf{o}_t = [\\mathbf{o}^{\\text{image}}_t, \\mathbf{s}_t^{\\text{proprio}}, \\mathbf{a}_{t-1}]$,",
+        "> where $\\mathbf{o}^{\\text{image}}_t$ consists of object segmentation masks and segmented depth images.",
+      ].join("\n"),
+    );
+
+    const quote = root.querySelector("blockquote") as HTMLElement | null;
+    const math = quote?.querySelector(".math-inline") as HTMLElement | null;
+    expect(quote).not.toBeNull();
+    expect(math).not.toBeNull();
+    expect(math?.dataset.latex).toContain("\\mathbf{o}_t = [");
+    expect(quote?.textContent).not.toContain(
+      "\\mathbf{s}_t^{\\text{proprio}}",
+    );
+    expect(quote?.textContent).toContain(
+      "consists of object segmentation masks and segmented depth images.",
+    );
+    expect(quote?.textContent).toContain(",");
+    expect(root.querySelector(".katex-error")).toBeNull();
+  });
+
+  it("renders display math even when the body contains stray inner dollar delimiters", () => {
+    const root = render(
+      [
+        "> In particular, PPO optimizes the following objective:",
+        "> $",
+        "> L^{PPO}(\\theta_\\pi) = $\\mathbb{E}_{\\pi}[\\min(rA, \\text{clip}(r,1-\\epsilon,1+\\epsilon)A)]$",
+        "> $",
+      ].join("\n"),
+    );
+
+    const math = root.querySelector(".math-display") as HTMLElement | null;
+    expect(math).not.toBeNull();
+    expect(root.querySelector(".katex-error")).toBeNull();
+    expect(math?.textContent ?? "").not.toContain("$");
+  });
+
+  it("renders raw LaTeX tabular rows as readable label-value lines", () => {
+    const root = render(
+      [
+        "> Leg joint positions & \\( \\mathbf{q}\\) \\\\",
+        "> Leg joint torques & \\( \\tau \\) \\\\",
+        "> Base linear velocity & \\( v_b \\) \\\\",
+      ].join("\n"),
+    );
+
+    const quote = root.querySelector("blockquote") as HTMLElement | null;
+    expect(quote).not.toBeNull();
+    expect(quote?.textContent).toContain("Leg joint positions:");
+    expect(quote?.textContent).toContain("Leg joint torques:");
+    expect(quote?.textContent).toContain("Base linear velocity:");
+    expect(quote?.textContent).not.toContain("&");
+    expect(quote?.textContent).not.toContain("\\\\");
+  });
+
+  // A raw tabular row whose first column is empty (`& label & val & val \\`,
+  // common when the header column is blank) used to be rejected by the
+  // any-empty-cell guard and leak its `&` / `\\`. Empty cells should be dropped,
+  // the rest rendered as a readable pipe-joined line with math intact.
+  it("normalizes a raw tabular row that has a leading empty cell", () => {
+    const root = render(
+      "> & Floating Base & $0.39 \\pm 0.07$ & $0.06 \\pm 0.02$ \\\\",
+    );
+
+    const quote = root.querySelector("blockquote") as HTMLElement | null;
+    expect(quote).not.toBeNull();
+    expect(quote?.textContent).toContain("Floating Base");
+    expect(quote?.textContent).not.toContain("&");
+    expect(quote?.textContent).not.toContain("\\\\");
+    expect(quote?.querySelector(".math-inline")).not.toBeNull();
+  });
+
+  // `\footnote{…}` is tangential source metadata; inlined mid-sentence it
+  // breaks the quote. Drop the command and its content entirely.
+  it("drops LaTeX footnote commands with their content", () => {
+    const root = render(
+      "orientation\\footnote{{We use Euler angles by default.}} command, defined",
+    );
+
+    expect(root.textContent).not.toContain("\\footnote");
+    expect(root.textContent).not.toContain("Euler angles");
+    expect(root.textContent).toContain("orientation command, defined");
+  });
+
+  // `\edit{…}` is a custom revision macro wrapping real prose/math. Unwrap it
+  // (keep the content, render inner math), like \textrm — don't leak `\edit{`.
+  it("unwraps a custom edit revision macro and renders its inner math", () => {
+    const root = render(
+      "limits \\edit{$v_{\\text{lin}}^{\\text{cmd}} \\in \\mathbb{R}$ are velocities}",
+    );
+
+    expect(root.textContent).not.toContain("\\edit");
+    expect(root.textContent).toContain("are velocities");
+    expect(root.querySelector(".math-inline")).not.toBeNull();
+  });
+
+  // The blockquote path extracts math regions at the top level, which split a
+  // math-wrapping `\edit{$…$}` and leak the bare `\edit{`. The wrapper must be
+  // unwrapped before math extraction so it survives inside blockquotes too.
+  it("unwraps a custom edit macro wrapping math inside a blockquote", () => {
+    const root = render(
+      "> limits \\edit{$v_{\\text{lin}}^{\\text{cmd}} \\in \\mathbb{R}$ are velocities} here",
+    );
+
+    const quote = root.querySelector("blockquote") as HTMLElement | null;
+    expect(quote).not.toBeNull();
+    expect(quote?.textContent).not.toContain("\\edit");
+    expect(quote?.textContent).toContain("are velocities");
+    expect(quote?.querySelector(".math-inline")).not.toBeNull();
+  });
+
   it("does not render source-only equation labels inside blockquotes", () => {
     const root = render(
       [
@@ -145,9 +389,52 @@ describe("renderMarkdownInto", () => {
   it("renders residual LaTeX references as neutral reference markers", () => {
     const root = render("Figure~\\ref{fig:home} and Eq.~\\eqref{eq:loss}");
 
-    expect(root.textContent).toBe("Figure~[ref] and Eq.~[ref]");
+    // The `~` ties render as spaces (see tie test below), not literal tildes.
+    expect(root.textContent).toBe("Figure [ref] and Eq. [ref]");
     expect(root.textContent).not.toContain("\\ref");
     expect(root.textContent).not.toContain("eq:loss");
+  });
+
+  // `~` is a LaTeX non-breaking space (tie). When the model quotes LaTeX source
+  // verbatim it leaks as a literal tilde — "Previous work~[citation]" should
+  // read "Previous work [citation]". Only ties (a `~` glued between non-space
+  // chars) convert; a spaced `~` (e.g. "approx ~5") is left alone.
+  it("renders LaTeX non-breaking-space ties as spaces", () => {
+    const root = render("Previous work~\\cite{wbc2024} has revealed that");
+
+    expect(root.textContent).toBe("Previous work [citation] has revealed that");
+    expect(root.textContent).not.toContain("~");
+  });
+
+  it("leaves a spaced tilde untouched (not a LaTeX tie)", () => {
+    const root = render("the value is approx ~5 units");
+
+    expect(root.textContent).toContain("approx ~5 units");
+  });
+
+  // arXiv papers define custom cross-reference macros (\fig, \tab, \eqn, …) we
+  // can't enumerate. When the model quotes LaTeX source verbatim, these leak as
+  // raw `\fig{fig:overview}`. The argument's `type:name` label shape is the
+  // reliable signal — treat any unknown command taking only such a label as a
+  // reference, like \ref / \cref.
+  it("renders custom cross-reference macros with label args as reference markers", () => {
+    const root = render(
+      "described in the blue part in \\fig{fig:overview}, is trained to track.",
+    );
+
+    expect(root.textContent).toContain("blue part in [ref], is trained");
+    expect(root.textContent).not.toContain("\\fig");
+    expect(root.textContent).not.toContain("fig:overview");
+  });
+
+  // The label shape is what gates this: a custom command whose sole argument is
+  // ordinary prose (not a `type:name` label) must be left untouched, not turned
+  // into [ref].
+  it("does not turn an unknown command with a non-label argument into a reference", () => {
+    const root = render("the \\squad{soccer team} won");
+
+    expect(root.textContent).not.toContain("[ref]");
+    expect(root.textContent).toContain("soccer team");
   });
 
   it("renders residual LaTeX enumerate environments without source commands", () => {
@@ -291,5 +578,37 @@ describe("renderMarkdownInto", () => {
     // Nothing surfaces as a raw `\command`: KaTeX prints unknown commands
     // verbatim, so a backslash in the rendered text means a glued command.
     expect(math?.textContent ?? "").not.toContain("\\");
+  });
+
+  // A model often line-breaks an inequality inside a multi-line `$$` block:
+  // the relation operator (`>`) lands alone at the start of a source line.
+  // The block-level scanner used to read that `>` line as a Markdown
+  // blockquote, tearing the `$$...$$` block into a leaked `$$ a` paragraph,
+  // an empty <blockquote>, and a `b $$` paragraph. A `>` inside an open
+  // display-math block is math, not a quote.
+  it("keeps a multi-line $$ block intact when a body line starts with >", () => {
+    const root = render(
+      [
+        "于是有：",
+        "",
+        "$$",
+        "r_t(\\theta)\\hat A_t",
+        ">",
+        "(1-\\epsilon)\\hat A_t",
+        "$$",
+        "",
+        "结束。",
+      ].join("\n"),
+    );
+
+    const math = root.querySelector(".math-display") as HTMLElement | null;
+    expect(math).not.toBeNull();
+    expect(math?.dataset.latex).toContain("r_t(\\theta)\\hat A_t");
+    expect(math?.dataset.latex).toContain("(1-\\epsilon)\\hat A_t");
+    // The `$$` delimiters must not leak as literal text…
+    expect(root.textContent).not.toContain("$$");
+    // …and the `>` line must not be misparsed into a stray blockquote.
+    expect(root.querySelector("blockquote")).toBeNull();
+    expect(root.querySelector(".katex-error")).toBeNull();
   });
 });
