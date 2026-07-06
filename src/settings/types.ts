@@ -202,6 +202,9 @@ export interface TranslateSettings {
   triggerMode: TranslateTriggerMode;
   prevSentenceKey: string;
   nextSentenceKey: string;
+  // Whole-paragraph translation. Sticky: a card seeds its 整段 toggle from this,
+  // and toggling 整段 on a card writes it back, so the choice persists.
+  defaultParagraph: boolean;
 }
 
 export const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
@@ -215,4 +218,5 @@ export const DEFAULT_TRANSLATE_SETTINGS: TranslateSettings = {
   triggerMode: 'single',
   prevSentenceKey: 'Shift+Enter',
   nextSentenceKey: 'Enter',
+  defaultParagraph: false,
 };

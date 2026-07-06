@@ -171,6 +171,7 @@ export async function jumpToPdfLocationOnly(
   state: PanelState,
   locator: PdfSelectionLocator,
   referenceKind?: ReadingRouteReferenceKind,
+  opts?: { emphatic?: boolean },
 ) {
   const win = mount.ownerDocument?.defaultView;
   const activeReader = getActiveReader(win);
@@ -205,7 +206,7 @@ export async function jumpToPdfLocationOnly(
     }
     for (const view of activeReaderViews(reader as any)) {
       if (view?._iframeWindow) {
-        mountRouteHighlightOverlay(mount, view, locator);
+        mountRouteHighlightOverlay(mount, view, locator, opts);
         break;
       }
     }
@@ -417,15 +418,10 @@ export async function jumpToOverviewSection(
   }
   setTempLoadMarkStatus(mount, "定位中");
   try {
-    // 1. Prefer the PDF's own embedded outline (TOC bookmarks): the reader's
-    //    native dest navigation scrolls the heading to the TOP with no transient
-    //    highlight — precise, instant, no text-layer extraction, no mis-hit.
-    if (await jumpViaPdfOutline(reader, section)) {
-      setTempLoadMarkStatus(mount, "已定位");
-      return;
-    }
-    // 2. Fall back to text-needle search over the extracted text layer. Shared
-    //    (cached) locator: extraction happens once per Reader, repeats are fast.
+    // Locate the heading's rects up front. The emphatic highlight needs pixel
+    // rects to paint, and neither the section's charStart nor the embedded PDF
+    // outline yields them — only a text-needle locate does. Shared (cached)
+    // locator: extraction happens once per Reader, repeats are fast.
     const pdfLocator = await getSharedPdfLocator(reader);
     let result: LocateResult | null = null;
     for (const needle of await sectionLocateNeedles(state.itemID, section)) {
@@ -435,20 +431,38 @@ export async function jumpToOverviewSection(
         break;
       }
     }
-    if (!result) {
+    const locator = result
+      ? pdfSelectionLocatorFromLocateResult(
+          pdfLocator.attachmentID,
+          result.matchedText || section.title,
+          result,
+        )
+      : null;
+    // Scroll: prefer the PDF's own embedded outline (TOC bookmarks) — native
+    // dest navigation, precise top-align, no mis-hit; then a synthesized top
+    // dest from the located rect; then the centered reader.navigate fallback.
+    // The emphatic, pointer-dismissed highlight is mounted on every path from
+    // the located rects (the outline path used to scroll with no highlight).
+    if (await jumpViaPdfOutline(reader, section)) {
+      if (locator) {
+        mountRouteHighlightOnReader(mount, reader, locator, { emphatic: true });
+      }
+      setTempLoadMarkStatus(mount, "已定位");
+      return;
+    }
+    if (!result || !locator) {
       setTempLoadMarkStatus(mount, "未定位到该节");
       return;
     }
     setTempLoadMarkStatus(mount, "已定位");
-    // Try the native top-aligned dest navigation (synthesized from the located
-    // page+rect); fall back to the centered reader.navigate if it isn't usable.
-    if (!(await jumpToPageTopViaDest(reader, result.pageIndex, result.rects?.[0]))) {
-      const locator = pdfSelectionLocatorFromLocateResult(
-        pdfLocator.attachmentID,
-        result.matchedText || section.title,
-        result,
-      );
-      await jumpToPdfLocationOnly(mount, state, locator);
+    if (
+      await jumpToPageTopViaDest(reader, result.pageIndex, result.rects?.[0])
+    ) {
+      mountRouteHighlightOnReader(mount, reader, locator, { emphatic: true });
+    } else {
+      await jumpToPdfLocationOnly(mount, state, locator, undefined, {
+        emphatic: true,
+      });
     }
   } catch (err) {
     setTempLoadMarkStatus(mount, "定位失败");
@@ -599,14 +613,52 @@ export function ensureRouteHighlightStyle(doc: Document): void {
   mix-blend-mode: multiply;
   z-index: 5;
 }
+.zai-route-highlight--emphatic {
+  background: rgba(255, 190, 60, 0.42);
+  border: 1.5px solid rgba(230, 145, 20, 0.95);
+  border-radius: 3px;
+  animation: zai-route-highlight-pulse 0.42s ease-in-out 3;
+}
+@keyframes zai-route-highlight-pulse {
+  0% {
+    background: rgba(255, 190, 60, 0.30);
+    box-shadow: 0 0 0 0 rgba(230, 145, 20, 0);
+  }
+  50% {
+    background: rgba(255, 170, 30, 0.65);
+    box-shadow: 0 0 7px 3px rgba(230, 145, 20, 0.6);
+  }
+  100% {
+    background: rgba(255, 190, 60, 0.42);
+    box-shadow: 0 0 0 0 rgba(230, 145, 20, 0);
+  }
+}
 `;
   (doc.head ?? doc.documentElement!).appendChild(style);
+}
+
+// Mount the route highlight on the reader's first active PDF view. Shared by the
+// outline and top-dest jump paths, which scroll natively and must paint the cue
+// themselves (jumpToPdfLocationOnly already mounts on its own centered path).
+export function mountRouteHighlightOnReader(
+  mount: HTMLElement,
+  reader: unknown,
+  locator: PdfSelectionLocator,
+  opts?: { emphatic?: boolean },
+): void {
+  for (const view of activeReaderViews(reader as any)) {
+    if (view?._iframeWindow) {
+      mountRouteHighlightOverlay(mount, view, locator, opts);
+      return;
+    }
+  }
 }
 
 export function mountRouteHighlightOverlay(
   mount: HTMLElement,
   view: any,
   locator: PdfSelectionLocator,
+  opts?: { emphatic?: boolean },
 ): void {
   destroyActiveRouteHighlight(mount);
   const rects = pdfRects(locator.position?.rects);
@@ -621,7 +673,15 @@ export function mountRouteHighlightOverlay(
   const viewport =
     iframeDoc?.defaultView?.PDFViewerApplication?.pdfViewer?._pages?.[pageIndex]
       ?.viewport;
-  if (!iframeDoc || !pageEl || !viewport) return;
+  if (!iframeDoc || !pageEl || !viewport) {
+    debugZai("route-highlight.mount.skipped", {
+      hasIframeDoc: !!iframeDoc,
+      hasPageEl: !!pageEl,
+      hasViewport: !!viewport,
+      pageIndex,
+    });
+    return;
+  }
 
   ensureRouteHighlightStyle(iframeDoc);
 
@@ -637,7 +697,9 @@ export function mountRouteHighlightOverlay(
         number,
       ];
       const div = iframeDoc.createElement("div");
-      div.className = "zai-route-highlight";
+      div.className = opts?.emphatic
+        ? "zai-route-highlight zai-route-highlight--emphatic"
+        : "zai-route-highlight";
       div.style.left = `${Math.min(vx1, vx2)}px`;
       div.style.top = `${Math.min(vy1, vy2)}px`;
       div.style.width = `${Math.max(1, Math.abs(vx2 - vx1))}px`;
@@ -650,8 +712,45 @@ export function mountRouteHighlightOverlay(
   }
 
   if (overlays.length) {
+    // For the overview/section highlight (emphatic), clear it when the pointer
+    // enters the PDF so the cue never sits on the text while the user reads.
+    // Arm that listener only after a short settle delay: the navigation scroll
+    // can fire a pointermove under a stationary cursor and would otherwise
+    // self-clear the cue the instant it appears. Reading-route reference
+    // highlights pass no opts and keep their persistent behavior.
+    const win = mount.ownerDocument?.defaultView;
+    let dismissOnPointer: ((ev: Event) => void) | null = null;
+    let armTimer: number | null = null;
+    if (opts?.emphatic && win) {
+      armTimer = win.setTimeout(() => {
+        armTimer = null;
+        dismissOnPointer = () => destroyActiveRouteHighlight(mount);
+        iframeDoc.addEventListener("pointermove", dismissOnPointer, {
+          once: true,
+          capture: true,
+        });
+      }, 300);
+    }
     activeRouteHighlights.set(mount, {
       destroy() {
+        if (armTimer != null) {
+          try {
+            win?.clearTimeout(armTimer);
+          } catch {
+            /* best effort */
+          }
+        }
+        if (dismissOnPointer) {
+          try {
+            iframeDoc.removeEventListener(
+              "pointermove",
+              dismissOnPointer,
+              true,
+            );
+          } catch {
+            /* best effort */
+          }
+        }
         for (const div of overlays) {
           try {
             div.remove();

@@ -39,6 +39,7 @@ export function normalizeTranslateSettings(value: unknown): TranslateSettings {
       ? input.prevSentenceKey : DEFAULT_TRANSLATE_SETTINGS.prevSentenceKey,
     nextSentenceKey: typeof input.nextSentenceKey === 'string' && input.nextSentenceKey
       ? input.nextSentenceKey : DEFAULT_TRANSLATE_SETTINGS.nextSentenceKey,
+    defaultParagraph: input.defaultParagraph === true,
   };
 }
 

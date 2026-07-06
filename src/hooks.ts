@@ -26,6 +26,9 @@ import {
   setImmersiveNeighborContext,
   getImmersiveTermPairs,
   setImmersiveTermPairs,
+  getImmersiveKeywordCount,
+  setImmersiveKeywordCount,
+  DEFAULT_IMMERSIVE_KEYWORD_COUNT,
   getImmersiveQuickTranslateKey,
   setImmersiveQuickTranslateKey,
   DEFAULT_IMMERSIVE_QUICK_KEY,
@@ -216,6 +219,22 @@ function setupPreferencesPane(win: Window): void {
     immersiveTerms.checked = getImmersiveTermPairs(zoteroPrefs());
     immersiveTerms.addEventListener('change', () => {
       setImmersiveTermPairs(zoteroPrefs(), immersiveTerms.checked);
+    });
+  }
+
+  const immersiveKeywordCount = byID<HTMLInputElement>(
+    doc,
+    'zai-immersive-keyword-count',
+  );
+  if (immersiveKeywordCount) {
+    immersiveKeywordCount.value = String(getImmersiveKeywordCount(zoteroPrefs()));
+    immersiveKeywordCount.addEventListener('change', () => {
+      const n = Number(immersiveKeywordCount.value);
+      setImmersiveKeywordCount(
+        zoteroPrefs(),
+        Number.isFinite(n) ? n : DEFAULT_IMMERSIVE_KEYWORD_COUNT,
+      );
+      immersiveKeywordCount.value = String(getImmersiveKeywordCount(zoteroPrefs()));
     });
   }
 

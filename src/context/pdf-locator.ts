@@ -83,6 +83,18 @@ export interface PdfLocator {
     pageIndex: number,
     sentenceIndex: number,
   ): Promise<LocatedSentence | null>;
+  // Paragraph-granular variants of sentenceAtPoint/sentenceAtIndex: the returned
+  // LocatedSentence spans a whole paragraph (text + merged rects), and its
+  // pageSentenceIndex/pageSentenceCount carry the PARAGRAPH index/count so the
+  // translate card can step paragraph-by-paragraph through the same field.
+  paragraphAtPoint?(
+    pageIndex: number,
+    point: { x: number; y: number },
+  ): Promise<LocatedSentence | null>;
+  paragraphAtIndex?(
+    pageIndex: number,
+    paragraphIndex: number,
+  ): Promise<LocatedSentence | null>;
   // Rebuild a document-wide annotation sortIndex from a page-local range. Used
   // by the translate save path to upgrade the provisional page-local sortIndex
   // of sentenceAtPoint/sentenceAtIndex, keeping reading-order sort consistent
@@ -340,6 +352,16 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
       // Page-local offset (0); provisional sortIndex rebuilt at save — see
       // sentenceAtPoint. Only translate (sentence jump) calls this.
       return sentenceAtIndexOnPage(page, sentenceIndex, 0);
+    },
+    async paragraphAtPoint(pageIndex, point) {
+      const page = await bundleFor(pageIndex);
+      if (!page) return null;
+      return paragraphAtPointOnPage(page, point, 0);
+    },
+    async paragraphAtIndex(pageIndex, paragraphIndex) {
+      const page = await bundleFor(pageIndex);
+      if (!page) return null;
+      return paragraphAtIndexOnPage(page, paragraphIndex, 0);
     },
     // Rebuild a document-wide sortIndex from a page-local range. Mirrors
     // locatedSentenceFromSegment's sortIndex rule (including the processed-source
@@ -1510,6 +1532,95 @@ function sentenceAtIndexOnPage(
     : null;
 }
 
+function paragraphAtPointOnPage(
+  page: PageBundle,
+  point: { x: number; y: number },
+  pageGlobalOffset: number,
+): LocatedSentence | null {
+  const ranges = paragraphAnchorRanges(page.anchors);
+  if (!ranges.length) return null;
+  const anchorIndex = closestAnchorIndex(page.anchors, point);
+  if (anchorIndex == null) return null;
+  let index = ranges.findIndex(
+    ([start, end]) => anchorIndex >= start && anchorIndex <= end,
+  );
+  if (index < 0) index = closestParagraphRangeIndex(ranges, anchorIndex);
+  return index >= 0
+    ? locatedParagraphFromRange(page, ranges, index, pageGlobalOffset)
+    : null;
+}
+
+function paragraphAtIndexOnPage(
+  page: PageBundle,
+  paragraphIndex: number,
+  pageGlobalOffset: number,
+): LocatedSentence | null {
+  const ranges = paragraphAnchorRanges(page.anchors);
+  return Number.isInteger(paragraphIndex)
+    ? locatedParagraphFromRange(page, ranges, paragraphIndex, pageGlobalOffset)
+    : null;
+}
+
+function closestParagraphRangeIndex(
+  ranges: Array<[number, number]>,
+  anchorIndex: number,
+): number {
+  let best = -1;
+  let bestDistance = Infinity;
+  ranges.forEach(([start, end], index) => {
+    const distance =
+      anchorIndex < start
+        ? start - anchorIndex
+        : anchorIndex > end
+          ? anchorIndex - end
+          : 0;
+    if (distance < bestDistance) {
+      best = index;
+      bestDistance = distance;
+    }
+  });
+  return best;
+}
+
+// Build a LocatedSentence that spans a whole paragraph (anchor range): merged
+// rects + full paragraph text. pageSentenceIndex/Count carry the PARAGRAPH
+// index/count so the translate card steps paragraph-by-paragraph.
+function locatedParagraphFromRange(
+  page: PageBundle,
+  ranges: Array<[number, number]>,
+  rangeIndex: number,
+  pageGlobalOffset: number,
+): LocatedSentence | null {
+  const range = ranges[rangeIndex];
+  if (!range) return null;
+  const [startAnchor, endAnchor] = range;
+  const start = page.anchors[startAnchor]?.startOffset;
+  const end = page.anchors[endAnchor]?.endOffset;
+  if (start == null || end == null || end <= start) return null;
+  const rects = rectsForRange(page.anchors, start, end);
+  if (!rects.length) return null;
+  const text = page.pageText.slice(start, end).replace(/\s+/g, " ").trim();
+  if (!text) return null;
+  const sortTop = sortTopForPage(page, rects);
+  return {
+    text,
+    pageIndex: page.pageIndex,
+    pageLabel: page.pageLabel,
+    rects,
+    sortIndex: buildSortIndex(
+      page.pageIndex,
+      sortOffsetForRange(page, start, end, pageGlobalOffset),
+      sortTop,
+    ),
+    pageSentenceIndex: rangeIndex,
+    pageSentenceCount: ranges.length,
+    paragraphContext: text,
+    rangeStart: start,
+    rangeEnd: end,
+    sortTop,
+  };
+}
+
 function locatedSentenceFromSegment(
   page: PageBundle,
   segments: SentenceSegment[],
@@ -1652,17 +1763,114 @@ function paragraphAnchorRanges(anchors: ItemAnchor[]): Array<[number, number]> {
   }
   if (!lines.length) return [];
 
+  // Typical vertical line advance (median over same-column consecutive lines),
+  // so a paragraph break can also be detected by EXTRA spacing — the cue that
+  // justified papers (no first-line indent) use. Relative to the page's own
+  // spacing, so it's robust to font size.
+  const sameColumn = (a: { rect: PdfRect }, b: { rect: PdfRect }): boolean =>
+    b.rect[0] < a.rect[2] && a.rect[0] < b.rect[2];
+  const lineCenterY = (l: { rect: PdfRect }): number =>
+    (l.rect[1] + l.rect[3]) / 2;
+  const advances: number[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    if (sameColumn(lines[i - 1]!, lines[i]!)) {
+      advances.push(
+        Math.abs(lineCenterY(lines[i - 1]!) - lineCenterY(lines[i]!)),
+      );
+    }
+  }
+  const sortedAdvances = [...advances].sort((a, b) => a - b);
+  const medianAdvance = sortedAdvances.length
+    ? sortedAdvances[sortedAdvances.length >> 1]!
+    : 0;
+
+  // A line's column left/right margin, from the DOMINANT (frequent) line edges.
+  // Body text lines all share their column's left/right margin, so those edges
+  // recur on many lines; figure tick-labels, captions and equations sit at
+  // scattered, infrequent positions and never form a margin. Using dominant
+  // edges (NOT a raw min/max over x-overlapping lines) stops a full-width caption
+  // OR a stray figure label that merely clips a column's edge from dragging the
+  // margin across the page — which was making every line in a column look
+  // "indented" (or "short") and inventing paragraph breaks.
+  const edgeBucket = (v: number): number => Math.round(v / 3) * 3;
+  const minMarginCount = Math.max(3, Math.floor(lines.length * 0.08));
+  const dominantEdges = (vals: number[]): number[] => {
+    const counts = new Map<number, number>();
+    for (const v of vals) {
+      const k = edgeBucket(v);
+      counts.set(k, (counts.get(k) ?? 0) + 1);
+    }
+    return [...counts.entries()]
+      .filter(([, c]) => c >= minMarginCount)
+      .map(([x]) => x)
+      .sort((a, b) => a - b);
+  };
+  const leftEdges = dominantEdges(lines.map((l) => l.rect[0]));
+  const rightEdges = dominantEdges(lines.map((l) => l.rect[2]));
+  // Drop first-line-indent margins: a left edge only a little (≤ INDENT_MAX) to
+  // the right of another dominant edge is an indent, not a column body margin —
+  // so an indented first line is still measured against its column's true left.
+  const INDENT_MAX = 40;
+  const bodyLeft = leftEdges.filter(
+    (m, i) => i === 0 || m - leftEdges[i - 1]! > INDENT_MAX,
+  );
+  const colLeftOf = (l: { rect: PdfRect }): number => {
+    let best = l.rect[0];
+    for (const m of bodyLeft) if (m <= l.rect[0] + 4) best = m;
+    return best;
+  };
+  const colRightOf = (l: { rect: PdfRect }): number => {
+    for (const m of rightEdges) if (m >= l.rect[2] - 4) return m;
+    return l.rect[2];
+  };
+
   const ranges: Array<[number, number]> = [];
   let startLine = 0;
   for (let i = 1; i < lines.length; i++) {
     const prev = lines[i - 1]!;
     const current = lines[i]!;
     const previousAnchor = anchors[prev.end]!;
+    // Extra vertical space between two same-column lines, after a sentence end:
+    // how justified papers (no first-line indent) separate paragraphs.
+    const bigVerticalGap =
+      medianAdvance > 0 &&
+      sameColumn(prev, current) &&
+      Math.abs(lineCenterY(prev) - lineCenterY(current)) > medianAdvance * 1.5;
+    // Ragged last line: prev ends well short of its column's right margin.
+    const colWidth = Math.max(1, colRightOf(prev) - colLeftOf(prev));
+    const shortLastLine = colRightOf(prev) - prev.rect[2] > colWidth * 0.1;
+    // 首行缩进（空两格）: current starts indented past its column's left margin
+    // (> ~0.6 line height ≈ ≥1 char), the classic paragraph-start cue. Compared
+    // to the column margin, not the previous line, so it's reliable.
+    const lineH = Math.max(1, current.rect[3] - current.rect[1]);
+    const firstLineIndent = current.rect[0] - colLeftOf(current) > lineH * 0.6;
+    // NOTE: do NOT break on `current.rect[0] > prev.rect[0]` (current indented
+    // vs the PREVIOUS line) — at a column boundary the next column's left edge
+    // is far right of the previous column's, so that fired a false break that
+    // split paragraphs spanning two columns. firstLineIndent (vs the column's
+    // own left margin) detects real indentation without that side effect.
+    //
+    // A paragraph boundary must land at a SENTENCE start: never break right
+    // before a line that begins with a lowercase letter — such a line continues
+    // the previous sentence (e.g. its tail wrapping into the next column), so a
+    // break there would strand a fragment at the next paragraph's start. This
+    // also overrides a mis-set paragraphBreakAfter flag.
+    const startsNewSentence = !/^[a-z]/.test(current.text.trim());
+    const geometryBreak = firstLineIndent || bigVerticalGap || shortLastLine;
+    // The paragraphBreakAfter flag is unreliable on real papers, so trust it
+    // ONLY where geometry can't help: a prev line that does NOT end with
+    // sentence punctuation (headings, list items, captions). When prev DOES end
+    // a sentence, ignore the flag and require a GEOMETRY cue (indent / extra
+    // spacing / short last line) — that's what distinguishes a true paragraph
+    // end from a mid-paragraph sentence end, which the flag often gets wrong (it
+    // both misses real breaks and invents false ones). And never break before a
+    // line that begins lowercase (it continues the previous sentence).
     const hasBreak =
-      previousAnchor.paragraphBreakAfter ||
-      (previousAnchor.lineBreakAfter &&
-        current.rect[0] > prev.rect[0] + 10 &&
-        lineEndsSentence(prev.text));
+      startsNewSentence &&
+      ((previousAnchor.paragraphBreakAfter && !lineEndsSentence(prev.text)) ||
+        (previousAnchor.lineBreakAfter &&
+          lineEndsSentence(prev.text) &&
+          geometryBreak));
     if (hasBreak) {
       ranges.push([lines[startLine]!.start, prev.end]);
       startLine = i;

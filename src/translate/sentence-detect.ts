@@ -1,5 +1,6 @@
 import { sentenceAt, splitSentences } from './sentence-splitter';
 import type {
+  LocatedSentence,
   LocateResult,
   PdfLocator,
   PdfPageContent,
@@ -82,6 +83,32 @@ export async function detectSentenceAtPdfPoint(
   if (!located) return null;
   const bundle = await locator.getPageContent(located.pageIndex);
   if (!bundle) return null;
+  return detectedFromLocated(located, bundle);
+}
+
+// Paragraph counterpart of detectSentenceAtPdfPoint. The translate card already
+// holds a detected sentence (with PDF rects); it derives a point from the
+// sentence's first rect and calls this to expand to the whole paragraph. The
+// returned unit reuses DetectedSentence, with pageSentenceIndex/Count carrying
+// the PARAGRAPH index/count (so step-by-paragraph reuses the same field).
+export async function detectParagraphAtPdfPoint(
+  locator: PdfLocator,
+  pageIndex: number,
+  x: number,
+  y: number,
+): Promise<DetectedSentence | null> {
+  if (!locator.paragraphAtPoint) return null;
+  const located = await locator.paragraphAtPoint(pageIndex, { x, y });
+  if (!located) return null;
+  const bundle = await locator.getPageContent(located.pageIndex);
+  if (!bundle) return null;
+  return detectedFromLocated(located, bundle);
+}
+
+function detectedFromLocated(
+  located: LocatedSentence,
+  bundle: PdfPageContent,
+): DetectedSentence {
   return {
     text: located.text,
     pageIndex: located.pageIndex,

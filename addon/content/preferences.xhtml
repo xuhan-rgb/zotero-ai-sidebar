@@ -173,6 +173,10 @@
         <html:input id="zai-immersive-term-pairs" type="checkbox" />
         <html:span class="zai-pref-checkbox-label">重点词对应（默认关；开启后译文多回几个原文↔中文词对，悬停时原文与译文里对应词虚线互相点亮）</html:span>
       </html:label>
+      <html:div class="zai-pref-grid">
+        <html:label for="zai-immersive-keyword-count">每句重点词数</html:label>
+        <html:input id="zai-immersive-keyword-count" type="number" min="1" max="6" step="1" placeholder="默认 3（按句计的中心值，每句实际 ±1 浮动；整段＝每句这么多）" />
+      </html:div>
       <html:p class="zai-pref-help">
         默认卡＝原文 + 译（最省）：单击只翻这一句并缓存；想要解释直接在卡片底部追问。切句快捷键默认 Enter / Shift+Enter：卡片开着时翻到下一句并出新卡，没开卡时移动“在读高亮”；在追问框里打字时 Enter 仍是发送、不会切句。也可改成 ArrowDown / ArrowUp 或 j / k。
       </html:p>

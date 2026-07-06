@@ -159,6 +159,13 @@ export interface AskRequest {
   // For "align": also append a 词对 line (重点词对应) so the 逐句对照 view can color
   // key terms. Ignored by other modes.
   withTerms?: boolean;
+  // True when the target is a whole paragraph (整段 mode): "align" splits per
+  // SENTENCE (one 英文句 ||| 中文 row each, not sub-sentence 意群), and the 重点词
+  // count scales up so it isn't capped at a single sentence's 2–5.
+  paragraph?: boolean;
+  // 重点词 count per sentence (configurable). For a paragraph this is per
+  // sentence, so the total scales with paragraph length. Defaults to 3.
+  keywordCount?: number;
 }
 
 export interface AskChunk {
@@ -237,6 +244,12 @@ function anthropicAskMaxTokens(
 // stores in the conversation history for follow-up turns.
 export function buildUserMessage(req: AskRequest): string {
   const sentence = req.sentence.trim();
+  // 重点词 per sentence (configurable, default 3). Given to the model as a RANGE
+  // centered on the configured value — not a hard count — so it can pick a few
+  // more or fewer per sentence as the text warrants.
+  const kw =
+    req.keywordCount && req.keywordCount >= 1 ? Math.round(req.keywordCount) : 3;
+  const kwRange = `${Math.max(1, kw - 1)}–${kw + 1}`;
   const ctx = req.contextText
     ? `\n${req.contextLabel || '同段参考'}：${trimContext(req.contextText)}`
     : '';
@@ -265,8 +278,24 @@ export function buildUserMessage(req: AskRequest): string {
     );
   }
   if (req.mode === 'align') {
+    if (req.paragraph) {
+      const termsLine = req.withTerms
+        ? `- 在所有句子行之后，另起一行附上重点词对应，格式：词对：英文词=中文词 | 英文词=中文词（每个句子挑 ${kwRange} 个关键术语/难词，合计可有多个；英文词须为段中出现的片段，中文词须在上面的译文里出现）。\n`
+        : '';
+      return (
+        '请把下面这段英文做「逐句对照」：按句子逐句切分，每个句子一行，英文与中文用 ||| 分隔：英文句 ||| 中文译文。\n' +
+        '- 一句一行，保持原文句子顺序；不要把多句合并成一行，也不要把一句拆成多行，更不要把句子再细分成意群。\n' +
+        '- 术语、缩写、公式、模型名保留原文。\n' +
+        termsLine +
+        '- 不要 Markdown、不要编号、不要额外解释，只输出这些行。\n' +
+        '示例：\n' +
+        'We tackle this problem by training our policy as a generative model. ||| 我们通过将策略训练为生成模型来解决这个问题。\n' +
+        'Modeling the action sequence as a whole reduces compounding errors. ||| 将动作序列作为整体建模可减少累积误差。\n' +
+        `\n这段话：${sentence}${ctx}`
+      );
+    }
     const termsLine = req.withTerms
-      ? '- 在所有意群行之后，另起一行附上重点词对应，格式：词对：英文词=中文词 | 英文词=中文词（挑 2–5 个关键术语/难词；英文词须为句中出现的片段，中文词须在上面的译文里出现）。\n'
+      ? `- 在所有意群行之后，另起一行附上重点词对应，格式：词对：英文词=中文词 | 英文词=中文词（挑 ${kwRange} 个关键术语/难词；英文词须为句中出现的片段，中文词须在上面的译文里出现）。\n`
       : '';
     return (
       '请把【目标句】切成几段，做「逐句对照」。每段一行，英文与中文用 ||| 分隔：英文段 ||| 中文意思。\n' +
@@ -286,12 +315,17 @@ export function buildUserMessage(req: AskRequest): string {
     );
   }
   if (req.mode === 'translatePairs') {
+    const unit = req.paragraph ? '段' : '句';
+    const target = req.paragraph ? '这段话' : '这句话';
+    const termReq = req.paragraph
+      ? `词对要求：每个句子挑 ${kwRange} 个关键实词或术语，覆盖整段每个句子的要点；英文词必须是这段话里出现的连续原文片段，中文词必须出现在你给的译文里；不确定就少给。\n`
+      : `词对要求：挑 ${kwRange} 个关键实词或术语；英文词必须是这句话里出现的连续原文片段，中文词必须出现在你给的译文里；不确定就少给或留空。\n`;
     return (
-      '请翻译下面这句英文（简体中文），并附上少量「重点词对应」。严格按这个格式输出：\n' +
+      `请翻译下面这${unit}英文（简体中文），并附上「重点词对应」。严格按这个格式输出：\n` +
       '译文：<准确、通顺的翻译；术语/缩写/公式/模型名保留原文>\n' +
       '词对：<英文词>=<中文词> | <英文词>=<中文词>\n' +
-      '词对要求：挑 2–5 个关键实词或术语；英文词必须是这句话里出现的连续原文片段，中文词必须出现在你给的译文里；不确定就少给或留空。\n' +
-      `\n这句话：${sentence}${ctx}`
+      termReq +
+      `\n${target}：${sentence}${ctx}`
     );
   }
   return (

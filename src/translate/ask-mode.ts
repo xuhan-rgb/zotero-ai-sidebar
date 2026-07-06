@@ -1,5 +1,10 @@
 import { createPdfLocator, type PdfLocator } from "../context/pdf-locator";
-import { detectSentenceAtPoint, type DetectedSentence } from "./sentence-detect";
+import {
+  detectParagraphAtPdfPoint,
+  detectSentenceAtPdfPoint,
+  detectSentenceAtPoint,
+  type DetectedSentence,
+} from "./sentence-detect";
 import {
   mountOverlay,
   mountReadingHighlight,
@@ -111,6 +116,49 @@ export function setImmersiveTermPairs(prefs: PrefsStore, on: boolean): void {
   prefs.set(IMMERSIVE_TERM_PAIRS_PREF, on ? "on" : "off");
 }
 
+// 每句重点词数: how many 重点词 the model picks PER SENTENCE (1–6). Configurable;
+// default 3, so a paragraph gets this many per sentence (total scales with it).
+const IMMERSIVE_KEYWORD_COUNT_PREF =
+  "extensions.zotero-ai-sidebar.immersiveKeywordCount";
+export const DEFAULT_IMMERSIVE_KEYWORD_COUNT = 3;
+export function getImmersiveKeywordCount(prefs: PrefsStore): number {
+  const v = Number(prefs.get(IMMERSIVE_KEYWORD_COUNT_PREF));
+  return Number.isFinite(v) && v >= 1 && v <= 6
+    ? Math.round(v)
+    : DEFAULT_IMMERSIVE_KEYWORD_COUNT;
+}
+export function setImmersiveKeywordCount(prefs: PrefsStore, n: number): void {
+  prefs.set(
+    IMMERSIVE_KEYWORD_COUNT_PREF,
+    String(Math.max(1, Math.min(6, Math.round(n)))),
+  );
+}
+
+// 隐藏英文: show only the 中文 译文 — hide the 原文 block and the 逐句对照 EN rows.
+// Persisted so the choice sticks across cards and restarts (like 整段).
+const IMMERSIVE_HIDE_ENGLISH_PREF =
+  "extensions.zotero-ai-sidebar.immersiveHideEnglish";
+export function getImmersiveHideEnglish(prefs: PrefsStore): boolean {
+  return prefs.get(IMMERSIVE_HIDE_ENGLISH_PREF) === "on";
+}
+export function setImmersiveHideEnglish(prefs: PrefsStore, on: boolean): void {
+  prefs.set(IMMERSIVE_HIDE_ENGLISH_PREF, on ? "on" : "off");
+}
+
+// 编号: prefix each sentence / 逐句对照 pair with a circled number ①②③ in 整段
+// mode. Default ON; persisted so turning it off sticks.
+const IMMERSIVE_SENTENCE_NUMBERS_PREF =
+  "extensions.zotero-ai-sidebar.immersiveSentenceNumbers";
+export function getImmersiveSentenceNumbers(prefs: PrefsStore): boolean {
+  return prefs.get(IMMERSIVE_SENTENCE_NUMBERS_PREF) !== "off";
+}
+export function setImmersiveSentenceNumbers(
+  prefs: PrefsStore,
+  on: boolean,
+): void {
+  prefs.set(IMMERSIVE_SENTENCE_NUMBERS_PREF, on ? "on" : "off");
+}
+
 // "快捷翻译键": with a PDF text selection active, this key translates the
 // selected sentence in place (same card as a click). Default Space; configurable
 // because Space is the reader's page-scroll key — we only hijack it WHEN there
@@ -183,7 +231,7 @@ export function setImmersiveCollapseControls(
   prefs.set(IMMERSIVE_COLLAPSE_PREF, on ? "on" : "off");
 }
 import { cleanTranslationOutput, translateSentence } from "./translator";
-import { loadTranslateSettings } from "./settings";
+import { loadTranslateSettings, saveTranslateSettings } from "./settings";
 import type { ModelPreset } from "../settings/types";
 import type { Message } from "../providers/types";
 import { loadPresets, type PrefsStore } from "../settings/storage";
@@ -288,6 +336,15 @@ export class AskModeController {
   private cardLineView = false;
   // 自适应宽度: widen the card to reduce orphan-word wraps. Session-scoped.
   private cardAutoWidth = false;
+  // 整段: translate the whole paragraph the clicked sentence sits in. Seeds from
+  // the persisted translate.defaultParagraph and writes it back when toggled, so
+  // the choice is sticky across cards and restarts.
+  private cardParagraph = false;
+  // 隐藏英文: show only the 中文 译文. Seeds from immersiveHideEnglish, sticky.
+  private cardHideEnglish = false;
+  // 编号: number sentences / 逐句对照 pairs ①②③ in 整段 mode. Seeds from the pref;
+  // default on, sticky.
+  private cardSentenceNumbers = true;
   private pointerDownHandler: ((ev: PointerEvent) => void) | null = null;
   private mouseDownHandler: ((ev: MouseEvent) => void) | null = null;
   private clickHandler: ((ev: MouseEvent) => void) | null = null;
@@ -467,6 +524,8 @@ export class AskModeController {
     this.cardNeighborContext = false;
     this.cardLineView = false;
     this.cardAutoWidth = false;
+    this.cardParagraph = false;
+    this.cardHideEnglish = false;
     this.clearReading();
     this.boundWindow?.document.body?.classList.remove("zai-ask-mode-on");
     this.modePopupGuard?.destroy();
@@ -572,7 +631,22 @@ export class AskModeController {
       // default so the card toggle never disagrees with the settings checkbox.
       this.clearReading();
       this.cardNeighborContext = getImmersiveNeighborContext(this.ctx.prefs);
-      void this.runFlow("read", detected);
+      this.cardHideEnglish = getImmersiveHideEnglish(this.ctx.prefs);
+      this.cardSentenceNumbers = getImmersiveSentenceNumbers(this.ctx.prefs);
+      // 整段 is sticky: seed from the persisted default and, if on, expand the
+      // clicked sentence to its whole paragraph before rendering.
+      this.cardParagraph = loadTranslateSettings(
+        this.ctx.prefs,
+      ).defaultParagraph;
+      let unit = detected;
+      if (this.cardParagraph) {
+        const para = await this.expandToParagraph(detected);
+        if (this.activationSeq !== token) return; // superseded during expand
+        if (para) unit = para;
+        else this.cardParagraph = false; // no paragraph model → stay a sentence
+      }
+      this.current = unit;
+      void this.runFlow("read", unit);
     }
   }
 
@@ -874,7 +948,9 @@ export class AskModeController {
   private async resolveImmersiveContext(
     current: DetectedSentence,
   ): Promise<{ level: string; label?: string; text?: string }> {
-    if (this.cardNeighborContext) {
+    // In 整段 mode the paragraph already carries its own intra-paragraph context,
+    // so the 结合上下句 neighbor context is redundant — skip it.
+    if (this.cardNeighborContext && !this.cardParagraph) {
       const text = await this.neighborContextText(current);
       if (text) return { level: "neighbors", label: "上下相邻句", text };
     }
@@ -921,6 +997,77 @@ export class AskModeController {
   private toggleAutoWidth(on: boolean): void {
     this.cardAutoWidth = on;
     this.overlay?.setAutoWidth(on);
+  }
+
+  // 隐藏英文 toggled: pure show/hide via a card class — no re-translation (the
+  // 中文 译文 is already rendered). Persisted so the choice sticks.
+  private toggleHideEnglish(on: boolean): void {
+    this.cardHideEnglish = on;
+    setImmersiveHideEnglish(this.ctx.prefs, on);
+    this.overlay?.el.classList.toggle("zai-translate-overlay--hide-en", on);
+    // Content shrank/grew — recompute the card's position so it stays anchored.
+    this.overlay?.reposition();
+  }
+
+  // 编号 toggled: the ①②③ prefixes are baked into the rendered text, so re-render
+  // the card with the new flag (cache hit → instant). Persisted.
+  private async toggleSentenceNumbers(on: boolean): Promise<void> {
+    this.cardSentenceNumbers = on;
+    setImmersiveSentenceNumbers(this.ctx.prefs, on);
+    if (this.current) await this.runFlow(this.lastFlow, this.current);
+  }
+
+  // 整段 toggled (chip or P): swap the card's unit between the clicked sentence
+  // and its whole paragraph. rects + text change, so this fully re-renders (not
+  // an in-place retranslate), and the choice is persisted as the sticky default.
+  private async toggleParagraph(on: boolean): Promise<void> {
+    const current = this.current;
+    if (!current || !this.locator || this.lastFlow === "ask") return;
+    const next = on
+      ? await this.expandToParagraph(current)
+      : await this.collapseToSentence(current);
+    if (!next) return; // no paragraph model available — leave the card as-is
+    this.cardParagraph = on;
+    this.persistDefaultParagraph(on);
+    this.current = next;
+    await this.runFlow(this.lastFlow, next);
+  }
+
+  // Expand a unit to the whole paragraph around it, via a point at its first
+  // rect's centre (works whether the unit came from a click or a step).
+  private async expandToParagraph(
+    from: DetectedSentence,
+  ): Promise<DetectedSentence | null> {
+    if (!this.locator) return null;
+    const r = from.rects[0];
+    if (!r) return null;
+    return detectParagraphAtPdfPoint(
+      this.locator,
+      from.pageIndex,
+      (r[0] + r[2]) / 2,
+      (r[1] + r[3]) / 2,
+    );
+  }
+
+  // Collapse a paragraph unit back to the single sentence at its start.
+  private async collapseToSentence(
+    from: DetectedSentence,
+  ): Promise<DetectedSentence | null> {
+    if (!this.locator) return null;
+    const r = from.rects[0];
+    if (!r) return null;
+    return detectSentenceAtPdfPoint(
+      this.locator,
+      from.pageIndex,
+      (r[0] + r[2]) / 2,
+      (r[1] + r[3]) / 2,
+    );
+  }
+
+  private persistDefaultParagraph(on: boolean): void {
+    const settings = loadTranslateSettings(this.ctx.prefs);
+    if (settings.defaultParagraph === on) return;
+    saveTranslateSettings(this.ctx.prefs, { ...settings, defaultParagraph: on });
   }
 
   // Re-run the translation INTO the existing card (no rebuild) — toggling
@@ -1038,6 +1185,24 @@ export class AskModeController {
         );
         return;
       }
+    }
+    // 整段切换键 (P): expand/collapse the open read card between the clicked
+    // sentence and its whole paragraph. Skipped while typing in 追问.
+    if (
+      this.overlay &&
+      this.current &&
+      this.lastFlow === "read" &&
+      !isEditableTarget(ev.target) &&
+      (ev.key === "p" || ev.key === "P") &&
+      !ev.ctrlKey &&
+      !ev.metaKey &&
+      !ev.altKey
+    ) {
+      ev.preventDefault();
+      ev.stopPropagation();
+      ev.stopImmediatePropagation?.();
+      void this.toggleParagraph(!this.cardParagraph);
+      return;
     }
     if (ev.key === "Escape") {
       if (!this.current && !this.chooser && !this.reading) return;
@@ -1168,7 +1333,16 @@ export class AskModeController {
     from: DetectedSentence,
     delta: number,
   ): Promise<DetectedSentence | null> {
-    if (!this.locator?.sentenceAtIndex) return null;
+    const locator = this.locator;
+    if (!locator) return null;
+    // 整段 mode steps paragraph-by-paragraph; otherwise sentence-by-sentence.
+    // Both use from.pageSentenceIndex/Count, which carry the active unit's
+    // index/count, so the stepping math is identical.
+    const stepAt =
+      this.cardParagraph && locator.paragraphAtIndex
+        ? locator.paragraphAtIndex.bind(locator)
+        : locator.sentenceAtIndex?.bind(locator);
+    if (!stepAt) return null;
     const pageIndex = from.bundle.pageIndex;
     const count = from.pageSentenceCount;
     let targetIndex = from.pageSentenceIndex + delta;
@@ -1177,12 +1351,12 @@ export class AskModeController {
       tries < 40 && targetIndex >= 0 && targetIndex < count;
       tries++, targetIndex += delta
     ) {
-      const located = await this.locator.sentenceAtIndex(pageIndex, targetIndex);
+      const located = await stepAt(pageIndex, targetIndex);
       if (!located) continue;
       const bundle =
         located.pageIndex === from.bundle.pageIndex
           ? from.bundle
-          : await this.locator.getPageContent(located.pageIndex);
+          : await locator.getPageContent(located.pageIndex);
       if (!bundle) continue;
       return { ...located, bundle };
     }
@@ -1217,7 +1391,7 @@ export class AskModeController {
       getImmersivePrevSentenceKey(this.ctx.prefs),
     )} / ${displayImmersiveKey(
       getImmersiveNextSentenceKey(this.ctx.prefs),
-    )} 上/下一句`;
+    )} 上/下一${this.cardParagraph ? "段" : "句"}`;
     const askHint = `${displayImmersiveKey(
       getImmersiveFocusAskKey(this.ctx.prefs),
     )} 追问`;
@@ -1236,6 +1410,9 @@ export class AskModeController {
       pageEl,
       rects: current.rects,
       pageContent: current.bundle,
+      paragraph: this.cardParagraph,
+      hideEnglish: this.cardHideEnglish,
+      sentenceNumbers: this.cardSentenceNumbers,
       position: settings.overlayPosition,
       size: settings.overlaySize,
       meta: isAsk ? ASK_OVERLAY_META : TRANSLATE_OVERLAY_META,
@@ -1269,15 +1446,26 @@ export class AskModeController {
               placeholder: isRead ? "追问（让 AI 解释 / 举例…）" : "追问…",
               onSubmit: (text) => void this.submitFollowup(text),
             },
-      // 结合上下句 quick toggle (read card only): per-session, re-translates on
-      // change, and never changes the global 结合本段翻译 default.
-      contextToggle: isRead
+      // 整段 toggle (read card only): translate the whole paragraph instead of
+      // the clicked sentence. Sticky — persists via translate.defaultParagraph.
+      paragraphToggle: isRead
         ? {
-            label: "结合上下句",
-            checked: this.cardNeighborContext,
-            onToggle: (on) => void this.toggleNeighborContext(on),
+            label: "整段",
+            checked: this.cardParagraph,
+            onToggle: (on) => void this.toggleParagraph(on),
           }
         : undefined,
+      // 结合上下句 quick toggle (read card only): per-session, re-translates on
+      // change, and never changes the global 结合本段翻译 default. Hidden in 整段
+      // mode — the paragraph already carries its own intra-paragraph context.
+      contextToggle:
+        isRead && !this.cardParagraph
+          ? {
+              label: "结合上下句",
+              checked: this.cardNeighborContext,
+              onToggle: (on) => void this.toggleNeighborContext(on),
+            }
+          : undefined,
       // 逐句对照 view toggle (read card only): block ⇄ interleaved 意群 lines.
       lineViewToggle: isRead
         ? {
@@ -1295,6 +1483,24 @@ export class AskModeController {
             onToggle: (on) => this.toggleAutoWidth(on),
           }
         : undefined,
+      // 隐藏英文 toggle (read card only): show only the 中文 译文.
+      hideEnglishToggle: isRead
+        ? {
+            label: "隐藏英文",
+            checked: this.cardHideEnglish,
+            onToggle: (on) => this.toggleHideEnglish(on),
+          }
+        : undefined,
+      // 编号 toggle: only meaningful (and only shown) in 整段 mode — numbering a
+      // single sentence makes no sense.
+      sentenceNumbersToggle:
+        isRead && this.cardParagraph
+          ? {
+              label: "编号",
+              checked: this.cardSentenceNumbers,
+              onToggle: (on) => void this.toggleSentenceNumbers(on),
+            }
+          : undefined,
     });
     this.overlay = overlay;
     // Start collapsed if the user toggled that on (remembered via the 收起工具栏键).
@@ -1755,7 +1961,7 @@ export class AskModeController {
       model,
       thinking: settings.thinking,
       ctxLevel: ctx.level,
-      kind: "pairs",
+      kind: `${this.cardParagraph ? "pairs-p" : "pairs"}-k${getImmersiveKeywordCount(this.ctx.prefs)}`,
     });
     const apply = (raw: string) => {
       const parsed = parseTranslationWithPairs(raw);
@@ -1792,6 +1998,8 @@ export class AskModeController {
         thinking: settings.thinking,
         signal: ctrl.signal,
         mode: "translatePairs",
+        paragraph: this.cardParagraph,
+        keywordCount: getImmersiveKeywordCount(this.ctx.prefs),
       })) {
         if (superseded()) return;
         if (chunk.type === "text" && chunk.text) {
@@ -1867,8 +2075,11 @@ export class AskModeController {
       ctxLevel: ctx.level,
       // Bumped on each chunking-rule change so older cached results aren't
       // reused. align4 = target-sentence only (context is reference, never
-      // translated), split into 2~5 clause-level segments.
-      kind: wantTerms ? "align4-t" : "align4",
+      // translated), split into 2~5 clause-level segments. The "-p" variant is
+      // 整段 mode: split per SENTENCE over the whole paragraph instead.
+      kind: `${wantTerms ? "align4-t" : "align4"}${
+        this.cardParagraph ? "-p" : ""
+      }${wantTerms ? `-k${getImmersiveKeywordCount(this.ctx.prefs)}` : ""}`,
     });
     const apply = (raw: string) => {
       overlay.setInterleaved(
@@ -1903,6 +2114,8 @@ export class AskModeController {
         signal: ctrl.signal,
         mode: "align",
         withTerms: wantTerms,
+        paragraph: this.cardParagraph,
+        keywordCount: getImmersiveKeywordCount(this.ctx.prefs),
       })) {
         if (superseded()) return;
         if (chunk.type === "text" && chunk.text) {

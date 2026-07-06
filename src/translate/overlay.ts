@@ -5,6 +5,7 @@ import type {
 import type { PdfPageContent, PdfRect } from "../context/pdf-locator";
 import type { BreakdownSeg } from "./asker";
 import { logTranslateDebug } from "./debug-log";
+import { splitSentences } from "./sentence-splitter";
 
 export interface OverlayHandle {
   el: HTMLElement;
@@ -57,6 +58,7 @@ export interface OverlayHandle {
   setSourceVisible(visible: boolean): void;
   // 自适应宽度 toggle: re-size + re-position the card without re-translating.
   setAutoWidth(on: boolean): void;
+  reposition(): void;
   // 重点词对应: re-render the 原文 row and 译文 with linked hover spans, lighting
   // matched 原文↔译 terms together on hover.
   decorateTerms(source: string, translation: string, pairs: TermPair[]): void;
@@ -120,6 +122,9 @@ export interface MountOverlayInput {
   composer?: OverlayComposer;
   // 原文 row rendered locally above the body (read card, 0 token).
   sourceText?: string;
+  // 整段 mode: in the block views (原文 / 译文) put each sentence on its own line
+  // for readability. Ignored by the 逐句对照 view, which already renders per-row.
+  paragraph?: boolean;
   // 拆解长句 chip: lazy. `onRequest(force)` runs the analysis; force=true ignores
   // the cache (used by ↻), force=false reuses it (a plain open won't re-request).
   breakdown?: { label: string; onRequest: (force: boolean) => void };
@@ -143,6 +148,28 @@ export interface MountOverlayInput {
     checked: boolean;
     onToggle: (on: boolean) => void;
   };
+  // 整段 toggle chip: translate the whole paragraph the clicked sentence is in.
+  paragraphToggle?: {
+    label: string;
+    checked: boolean;
+    onToggle: (on: boolean) => void;
+  };
+  // 隐藏英文: when true, hide the 原文 block and 逐句对照 EN rows (CSS only) so the
+  // card shows just the 中文 译文.
+  hideEnglish?: boolean;
+  hideEnglishToggle?: {
+    label: string;
+    checked: boolean;
+    onToggle: (on: boolean) => void;
+  };
+  // 编号: prefix each sentence (block view) / pair (逐句对照) with ①②③ in 整段
+  // mode. Defaults to on (only `false` disables it).
+  sentenceNumbers?: boolean;
+  sentenceNumbersToggle?: {
+    label: string;
+    checked: boolean;
+    onToggle: (on: boolean) => void;
+  };
 }
 
 export function mountOverlay(input: MountOverlayInput): OverlayHandle {
@@ -158,6 +185,22 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   } = input;
   const metaText = input.meta ?? TRANSLATE_OVERLAY_META;
   const isAsk = input.variant === "ask";
+  // 整段 mode: render each sentence on its own line in the block views (原文 /
+  // 译文) for readability. The splitter handles abbreviations (i.e./e.g./Fig.)
+  // and Chinese 。？！; falls back to the original text if nothing splits. The
+  // 逐句对照 view never goes through here — it already renders one row per item.
+  // Circled number ①②③… (U+2460 = ①); past ⑳ (20) fall back to "N.". Shared by
+  // the block views (breakSentences) and the 逐句对照 rows (setInterleaved).
+  const circledNumber = (n: number): string =>
+    n >= 1 && n <= 20 ? String.fromCodePoint(0x245f + n) : `${n}.`;
+  const breakSentences = (text: string): string => {
+    if (!input.paragraph) return text;
+    const parts = splitSentences(text).map((s) => s.text);
+    if (!parts.length) return text;
+    if (input.sentenceNumbers === false) return parts.join("\n");
+    // Prefix each sentence with its circled number (原文 / 译文 share the index).
+    return parts.map((s, i) => `${circledNumber(i + 1)} ${s}`).join("\n");
+  };
 
   ensureStyle(iframeDoc);
   removeStaleTranslateDom(iframeDoc);
@@ -167,6 +210,8 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   const el = iframeDoc.createElement("div");
   el.className = "zai-translate-overlay";
   if (isAsk) el.classList.add("zai-translate-overlay--ask");
+  if (input.paragraph) el.classList.add("zai-translate-overlay--paragraph");
+  if (input.hideEnglish) el.classList.add("zai-translate-overlay--hide-en");
   // Read card (has a 拆解 chip): pin 原文 + 译 visible and let the breakdown be
   // the part that flexes/scrolls, so opening 拆解 never hides the translation.
   if (input.breakdown) el.classList.add("zai-translate-overlay--read");
@@ -181,7 +226,16 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   meta.appendChild(lang);
 
   // Option A: view/option toggles live in the top bar, between the lang label
-  // and the status badge.
+  // and the status badge. 整段 goes first — it changes the translated unit.
+  if (input.paragraphToggle) {
+    meta.appendChild(
+      makeMetaCheck(
+        iframeDoc,
+        input.paragraphToggle,
+        "整段翻译：翻译点中句子所在的整段（按 P 切换）",
+      ),
+    );
+  }
   if (input.lineViewToggle) {
     // Checkbox (not a filled chip) so it matches 结合上下句 / 自适应宽度 and adds no
     // heavy color block competing with the sentence for attention.
@@ -198,6 +252,24 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   }
   if (input.autoWidthToggle) {
     meta.appendChild(makeMetaCheck(iframeDoc, input.autoWidthToggle, "自适应宽度：加宽卡片，减少一两个单词单独换行"));
+  }
+  if (input.hideEnglishToggle) {
+    meta.appendChild(
+      makeMetaCheck(
+        iframeDoc,
+        input.hideEnglishToggle,
+        "隐藏英文：只显示中文译文",
+      ),
+    );
+  }
+  if (input.sentenceNumbersToggle) {
+    meta.appendChild(
+      makeMetaCheck(
+        iframeDoc,
+        input.sentenceNumbersToggle,
+        "编号：整段时给每句标 ①②③",
+      ),
+    );
   }
 
   const metaSp = iframeDoc.createElement("span");
@@ -222,7 +294,7 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   if (input.sourceText) {
     sourceRow = iframeDoc.createElement("div");
     sourceRow.className = "zai-translate-overlay__source";
-    sourceRow.textContent = input.sourceText;
+    sourceRow.textContent = breakSentences(input.sourceText);
     mainBlock.appendChild(sourceRow);
   }
 
@@ -394,14 +466,24 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
   let destroyed = false;
   let positionFrame = 0;
   let autoWidth = !!input.autoWidth;
+  // True while the source text is scrolled out of view: the card is kept in the
+  // DOM but hidden, so it reappears in place when the text scrolls back in.
+  let hiddenForScroll = false;
   const win = iframeDoc.defaultView;
+  // Position the card, then honor the scroll-hidden state. positionOverlay always
+  // sets visibility:visible, so without this a streaming chunk or resize would pop
+  // the card back open while its source is still off-screen.
+  const place = () => {
+    positionOverlay(el, pageEl, rects, pageContent, position, size, autoWidth);
+    if (hiddenForScroll) el.style.visibility = "hidden";
+  };
   const positionNow = () => {
     if (destroyed) return;
     if (positionFrame && win) {
       win.cancelAnimationFrame(positionFrame);
       positionFrame = 0;
     }
-    positionOverlay(el, pageEl, rects, pageContent, position, size, autoWidth);
+    place();
   };
   const schedulePosition = () => {
     if (destroyed) return;
@@ -412,12 +494,60 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     if (positionFrame) return;
     positionFrame = win.requestAnimationFrame(() => {
       positionFrame = 0;
-      positionOverlay(el, pageEl, rects, pageContent, position, size, autoWidth);
+      place();
     });
   };
+  // The translated text's live viewport band. Drives show/hide: the card tracks
+  // its source sentence and is hidden while that text is scrolled out of the
+  // visible reader area. Derived from the page rect + the source PDF rects, the
+  // same anchor positionOverlay uses.
+  const sourceVisible = (): boolean => {
+    if (!rects.length) return true;
+    let pageRect: DOMRect;
+    try {
+      pageRect = pageEl.getBoundingClientRect();
+    } catch {
+      return true;
+    }
+    if (!pageRect.width && !pageRect.height) return true; // detached / unlaidout
+    const w = el.ownerDocument?.defaultView;
+    const viewportHeight = w?.innerHeight || pageRect.height || 1;
+    const clip = nearestClipBounds(pageEl);
+    const visTop = Math.max(0, clip?.top ?? 0);
+    const visBottom = Math.min(viewportHeight, clip?.bottom ?? viewportHeight);
+    let top = Infinity;
+    let bottom = -Infinity;
+    for (const r of rects) {
+      const vr = viewportRectForPdfRect(pageEl, r, pageContent);
+      top = Math.min(top, pageRect.top + vr.top);
+      bottom = Math.max(bottom, pageRect.top + vr.bottom);
+    }
+    if (!Number.isFinite(top) || !Number.isFinite(bottom)) return true;
+    // Visible iff the source band vertically overlaps the visible reader band.
+    return bottom > visTop && top < visBottom;
+  };
+  // Hide the card up front if its source starts off-screen (e.g. keyboard-
+  // stepping to a sentence not yet scrolled in); positionNow then places it
+  // hidden and the scroll-in below reveals it.
+  hiddenForScroll = !sourceVisible();
   positionNow();
-  win?.addEventListener("scroll", schedulePosition, true);
-  win?.addEventListener("resize", schedulePosition);
+  // Track the source sentence: hide the card when its text scrolls fully out of
+  // the visible reader area, and reveal it in place when the text scrolls back
+  // in. The card is only torn down on explicit close / a new selection. While
+  // the user is typing a follow-up, keep it open even if the source leaves view
+  // so the composer is never yanked away mid-edit.
+  const onViewportChange = () => {
+    if (destroyed) return;
+    if (sourceVisible()) {
+      hiddenForScroll = false;
+      schedulePosition();
+    } else if (iframeDoc.activeElement !== composerInput) {
+      hiddenForScroll = true;
+      el.style.visibility = "hidden";
+    }
+  };
+  win?.addEventListener("scroll", onViewportChange, true);
+  win?.addEventListener("resize", onViewportChange);
 
   const scrollBodyToEnd = () => {
     // Keep the latest turn visible as it streams (ask transcript can scroll).
@@ -429,7 +559,7 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     setText(text) {
       activeBody.classList.remove("zai-translate-overlay__body--status");
       activeBody.classList.remove("zai-translate-overlay__body--note");
-      activeBody.textContent = text;
+      activeBody.textContent = breakSentences(text);
       status.textContent = metaText.doneStatus;
       schedulePosition();
     },
@@ -578,7 +708,7 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     },
     setBodyStreaming(text) {
       activeBody.classList.remove("zai-translate-overlay__body--status");
-      activeBody.textContent = text;
+      activeBody.textContent = breakSentences(text);
       if (isAsk) scrollBodyToEnd();
       schedulePosition();
     },
@@ -587,21 +717,27 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
       body.classList.add("zai-translate-overlay__body--interleaved");
       body.textContent = "";
       const terms = termPairs && termPairs.length ? termPairs : null;
-      for (const pair of pairs) {
+      pairs.forEach((pair, i) => {
+        // 整段 mode: each row is a full sentence → number the pair ①②③… (unless
+        // 编号 is turned off).
+        const tag =
+          input.paragraph && input.sentenceNumbers !== false
+            ? `${circledNumber(i + 1)} `
+            : "";
         const en = iframeDoc.createElement("div");
         en.className = "zai-il-en";
         const zh = iframeDoc.createElement("div");
         zh.className = "zai-il-zh";
         if (terms) {
           // Color the matching key terms within each cell (same pair → same hue).
-          renderTermSpans(iframeDoc, en, pair.en, terms, "en");
-          renderTermSpans(iframeDoc, zh, pair.zh, terms, "zh");
+          renderTermSpans(iframeDoc, en, tag + pair.en, terms, "en");
+          renderTermSpans(iframeDoc, zh, tag + pair.zh, terms, "zh");
         } else {
-          en.textContent = pair.en;
-          zh.textContent = pair.zh;
+          en.textContent = tag + pair.en;
+          zh.textContent = tag + pair.zh;
         }
         body.append(en, zh);
-      }
+      });
       if (terms) wireTermHover(body);
       status.textContent = metaText.doneStatus;
       schedulePosition();
@@ -611,6 +747,9 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     },
     setAutoWidth(on) {
       autoWidth = on;
+      positionNow();
+    },
+    reposition() {
       positionNow();
     },
     resetForRetranslate() {
@@ -627,8 +766,21 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     },
     decorateTerms(source, translation, pairs) {
       activeBody.classList.remove("zai-translate-overlay__body--status");
-      renderTermSpans(iframeDoc, activeBody, translation, pairs, "zh");
-      if (sourceRow) renderTermSpans(iframeDoc, sourceRow, source, pairs, "en");
+      renderTermSpans(
+        iframeDoc,
+        activeBody,
+        breakSentences(translation),
+        pairs,
+        "zh",
+      );
+      if (sourceRow)
+        renderTermSpans(
+          iframeDoc,
+          sourceRow,
+          breakSentences(source),
+          pairs,
+          "en",
+        );
       wireTermHover(el);
       status.textContent = metaText.doneStatus;
       schedulePosition();
@@ -636,8 +788,8 @@ export function mountOverlay(input: MountOverlayInput): OverlayHandle {
     destroy() {
       destroyed = true;
       if (positionFrame && win) win.cancelAnimationFrame(positionFrame);
-      win?.removeEventListener("scroll", schedulePosition, true);
-      win?.removeEventListener("resize", schedulePosition);
+      win?.removeEventListener("scroll", onViewportChange, true);
+      win?.removeEventListener("resize", onViewportChange);
       el.remove();
       for (const highlight of highlights) highlight.remove();
       popupGuard.destroy();
@@ -1431,6 +1583,9 @@ function positionOverlay(
   overlay.style.right = "";
   overlay.style.bottom = "";
   const visibleHeight = Math.max(84, bounds.bottom - bounds.top);
+  // Clear any definite height from a previous positioning so naturalHeight below
+  // measures the card's TRUE content height (uncapped, up to visibleHeight).
+  overlay.style.height = "";
   overlay.style.maxHeight = `${visibleHeight}px`;
   overlay.style.setProperty(
     "--zai-overlay-body-max-height",
@@ -1456,17 +1611,24 @@ function positionOverlay(
     actualPosition = "below";
   }
 
-  const availableOnSide =
-    actualPosition === "above" ? availableAbove : availableBelow;
-  const maxHeight = Math.max(
-    84,
-    Math.min(
-      naturalHeight,
-      availableOnSide > 0 ? availableOnSide : visibleHeight,
-      visibleHeight,
-    ),
-  );
+  // Grow to the paragraph's height, but NEVER take over the whole page: cap at
+  // ~70% of the visible reader height (independent of which side of the anchor
+  // the card is on, so a top-pinned card isn't squeezed to the small space above
+  // its anchor). Within that cap the card shows everything with no scrollbar; a
+  // paragraph taller than the cap scrolls (and the definite height below makes
+  // that scroll reach the last sentence). Always leaves ≥30% of the page free.
+  const cardHeightCap = visibleHeight * 0.7;
+  const maxHeight = Math.max(84, Math.min(naturalHeight, cardHeightCap));
   overlay.style.maxHeight = `${maxHeight}px`;
+  // ALWAYS pin a definite height (= maxHeight) so flex-shrink runs: __main then
+  // shrinks to the visible leftover space and becomes the real scrollport, so
+  // its scrolled bottom (the last sentence) stays inside the root's clipped box.
+  // Crucial for the case where the content is TALLER THAN THE WHOLE SCREEN:
+  // naturalHeight is then capped to visibleHeight == maxHeight, so a `>` test
+  // would skip the height and the card would clip the bottom with NO scrollbar.
+  // When content fits, maxHeight == naturalHeight, so this just equals the
+  // content height — the card still hugs its content.
+  overlay.style.height = `${maxHeight}px`;
   fitOverlayBody(overlay, maxHeight);
 
   const overlayHeight = measureOverlayHeight(overlay);
@@ -1525,11 +1687,14 @@ function visibleOverlayBounds(
   let bottom = viewport.height - viewport.margin;
   let left = viewport.margin;
 
-  // Keep the bubble inside the current PDF page. Zotero/PDF.js draws strong
-  // separators between pages; crossing them makes the bottom controls unclickable.
-  top = Math.max(top, pageRect.top + viewport.margin);
+  // Align the bubble horizontally to the current PDF page's text column, but let
+  // it grow VERTICALLY past the page separator into the gutter / adjacent page.
+  // Confining its height to a single page is what made a card anchored near a
+  // page's bottom fold and hide its lower content. The card is fixed-positioned
+  // on iframeDoc.body at the top z-index, so spanning a separator does not make
+  // its controls unclickable; the visible-area clamp below (the reader's scroll
+  // container) is the real vertical bound.
   right = Math.min(right, pageRect.right - viewport.margin);
-  bottom = Math.min(bottom, pageRect.bottom - viewport.margin);
   left = Math.max(left, pageRect.left + viewport.margin);
 
   const clipBounds = nearestClipBounds(pageEl);
@@ -1867,11 +2032,44 @@ const STYLE_TEXT = `
   border-radius: 7px;
   padding: 7px 9px;
   margin-bottom: 7px;
-  max-height: 320px;
+  /* Fill the card's allowed height (the card itself is still capped to the space
+     on the anchor's side — i.e. the previous, non-fullscreen height), instead of
+     an arbitrary 320px sub-cap that hid the last sentence behind a needless
+     scroll. flex-shrink + the card's max-height bound it; it scrolls only when
+     the translation is taller than the card can be. */
+  max-height: none;
   overflow-y: auto;
+  /* Keep the wheel/drag inside the card — don't chain the scroll into the PDF
+     behind it (that PDF jump was what made the scrollbar feel unusable). */
+  overscroll-behavior: contain;
+  /* A clearly visible, grabbable thumb instead of the faint native overlay one. */
+  scrollbar-color: #b4b9c0 transparent;
+}
+.zai-translate-overlay__main::-webkit-scrollbar {
+  width: 10px;
+}
+.zai-translate-overlay__main::-webkit-scrollbar-thumb {
+  background: #b4b9c0;
+  border-radius: 6px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+.zai-translate-overlay__main::-webkit-scrollbar-thumb:hover {
+  background: #969ca4;
+  background-clip: padding-box;
 }
 /* Inside the translation block, 原文 is a lighter reference header (no nested
    panel), split from 译文 by a thin divider; 译文 fills the block as plain text. */
+/* 整段 mode: honor the per-sentence \n breaks in the 原文 block (the 译文 body
+   already uses pre-wrap). */
+.zai-translate-overlay--paragraph .zai-translate-overlay__source {
+  white-space: pre-wrap;
+}
+/* 隐藏英文: drop the 原文 block (block view) and the EN rows (逐句对照). */
+.zai-translate-overlay--hide-en .zai-translate-overlay__source,
+.zai-translate-overlay--hide-en .zai-il-en {
+  display: none;
+}
 .zai-translate-overlay__main .zai-translate-overlay__source {
   background: transparent;
   border-radius: 0;
