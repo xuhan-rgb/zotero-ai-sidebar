@@ -1,8 +1,7 @@
-// Orchestrates: resolve id -> fetch e-print -> extract -> select+clean
-// main.tex -> store. All failures resolve to false (caller falls back to PDF).
+// Orchestrates: fetch e-print -> extract -> select+clean main.tex -> store.
+// All failures resolve to false (caller falls back to PDF).
 
 import { DEFAULT_CONTEXT_POLICY } from "./policy";
-import { resolveArxivId, type ArxivIdFields } from "./arxiv-id";
 import { extractArchive } from "./arxiv-archive";
 import {
   findMainTex,
@@ -96,27 +95,22 @@ function writeArxivDebug(lines: string[]): void {
 }
 
 export interface EnsureArxivArgs {
-  itemKey: string;
-  fields: ArxivIdFields;
+  arxivId: string;
   onProgress?: (msg: string) => void;
 }
 
-// Returns true when a usable arXiv source cache exists for the item after
+// Returns true when a usable arXiv source cache exists for the paper after
 // this call (already cached, or freshly downloaded). Never throws.
 export async function ensureArxivSource(
   args: EnsureArxivArgs,
 ): Promise<boolean> {
   const trace: string[] = [];
-  const f = args.fields;
-  trace.push(`ensureArxivSource itemKey=${args.itemKey}`);
-  trace.push(
-    `fields: extra=${JSON.stringify((f.extra ?? "").slice(0, 160))} ` +
-      `url=${JSON.stringify(f.url ?? "")} doi=${JSON.stringify(f.doi ?? "")} ` +
-      `archiveID=${JSON.stringify(f.archiveID ?? "")}`,
-  );
+  const arxivId = args.arxivId;
+  trace.push(`arxivId=${arxivId}`);
   try {
-    if (await hasArxivSource(args.itemKey)) {
-      const meta = await readArxivMeta(args.itemKey);
+    if (!arxivId) return false;
+    if (await hasArxivSource(arxivId)) {
+      const meta = await readArxivMeta(arxivId);
       if (isFreshArxivSourceMeta(meta)) {
         trace.push(
           `already cached status=ok cleaner=${ARXIV_SOURCE_CLEANER_VERSION} -> true`,
@@ -131,10 +125,6 @@ export async function ensureArxivSource(
         `cached source stale cleaner=${meta?.cleanerVersion ?? "missing"} -> rebuild`,
       );
     }
-    const arxivId = resolveArxivId(args.fields);
-    trace.push(`resolveArxivId -> ${arxivId ?? "NULL"}`);
-    if (!arxivId) return false;
-
     args.onProgress?.("下载 arXiv 源码…");
     let bytes: Uint8Array;
     try {
@@ -177,8 +167,7 @@ export async function ensureArxivSource(
     if (!main) {
       // No LaTeX source (e.g. PDF-only submission). Record it so we do not
       // re-download every analysis.
-      await writeArxivSource(args.itemKey, [], {
-        itemKey: args.itemKey,
+      await writeArxivSource(arxivId, [], {
         arxivId,
         fetchedAt: new Date().toISOString(),
         mainTexRelPath: "",
@@ -212,7 +201,6 @@ export async function ensureArxivSource(
       ),
     );
     const meta: ArxivMeta = {
-      itemKey: args.itemKey,
       arxivId,
       fetchedAt: new Date().toISOString(),
       mainTexRelPath: "main.tex",
@@ -226,7 +214,7 @@ export async function ensureArxivSource(
       path: "main.tex",
       bytes: new TextEncoder().encode(cleaned),
     });
-    await writeArxivSource(args.itemKey, toStore, meta);
+    await writeArxivSource(arxivId, toStore, meta);
     trace.push(`stored: ok (main.tex ${cleaned.length} chars) -> true`);
     args.onProgress?.("arXiv 源码就绪");
     return true;

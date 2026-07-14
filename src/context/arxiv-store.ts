@@ -1,10 +1,9 @@
-// Per-item arXiv source cache: arxiv/<itemKey>/source/* + meta.json.
+// Shared arXiv source cache: arxiv/<encoded arXiv ID>/source/* + meta.json.
 
 import { appendLocalPath, localDirname } from "../utils/local-path";
 import type { ArchiveFile } from "./arxiv-archive";
 
 export interface ArxivMeta {
-  itemKey: string;
   arxivId: string;
   fetchedAt: string;
   mainTexRelPath: string;
@@ -80,12 +79,17 @@ function io(): IOUtilsLike {
   return (globalThis as unknown as { IOUtils: IOUtilsLike }).IOUtils;
 }
 
-export function arxivFolderPath(itemKey: string): string {
-  return appendLocalPath(dataRoot(), "zotero-ai-sidebar", "arxiv", itemKey);
+export function arxivFolderPath(arxivId: string): string {
+  return appendLocalPath(
+    dataRoot(),
+    "zotero-ai-sidebar",
+    "arxiv",
+    encodeURIComponent(arxivId),
+  );
 }
 
-function metaPath(itemKey: string): string {
-  return appendLocalPath(arxivFolderPath(itemKey), "meta.json");
+function metaPath(arxivId: string): string {
+  return appendLocalPath(arxivFolderPath(arxivId), "meta.json");
 }
 
 // Sanitize an archive-relative path so it cannot escape the source folder.
@@ -96,11 +100,11 @@ function safeRel(path: string): string | null {
 }
 
 export async function writeArxivSource(
-  itemKey: string,
+  arxivId: string,
   files: ArchiveFile[],
   meta: ArxivMeta,
 ): Promise<void> {
-  const folder = arxivFolderPath(itemKey);
+  const folder = arxivFolderPath(arxivId);
   const IO = io();
   await IO.makeDirectory(appendLocalPath(folder, "source"), {
     ignoreExisting: true,
@@ -116,19 +120,19 @@ export async function writeArxivSource(
     written.push(rel);
   }
   await IO.writeUTF8(
-    metaPath(itemKey),
+    metaPath(arxivId),
     JSON.stringify({ ...meta, files: written }, null, 2),
   );
 }
 
-export async function hasArxivSource(itemKey: string): Promise<boolean> {
+export async function hasArxivSource(arxivId: string): Promise<boolean> {
   try {
-    return await io().exists(metaPath(itemKey));
+    return await io().exists(metaPath(arxivId));
   } catch (err) {
     appendArxivDiagnostic([
       "hasArxivSource.catch",
-      `itemKey=${itemKey}`,
-      `path=${metaPath(itemKey)}`,
+      `arxivId=${arxivId}`,
+      `path=${metaPath(arxivId)}`,
       `err=${String(err)}`,
     ]);
     return false;
@@ -136,16 +140,16 @@ export async function hasArxivSource(itemKey: string): Promise<boolean> {
 }
 
 export async function readArxivMeta(
-  itemKey: string,
+  arxivId: string,
 ): Promise<ArxivMeta | null> {
   try {
-    const parsed: unknown = JSON.parse(await io().readUTF8(metaPath(itemKey)));
+    const parsed: unknown = JSON.parse(await io().readUTF8(metaPath(arxivId)));
     return parsed && typeof parsed === "object" ? (parsed as ArxivMeta) : null;
   } catch (err) {
     appendArxivDiagnostic([
       "readArxivMeta.catch",
-      `itemKey=${itemKey}`,
-      `path=${metaPath(itemKey)}`,
+      `arxivId=${arxivId}`,
+      `path=${metaPath(arxivId)}`,
       `err=${String(err)}`,
     ]);
     return null;
@@ -154,13 +158,13 @@ export async function readArxivMeta(
 
 // The cleaned main-tex content for chat context, or null if not cached / no source.
 export async function readArxivMainText(
-  itemKey: string,
+  arxivId: string,
 ): Promise<string | null> {
-  const meta = await readArxivMeta(itemKey);
+  const meta = await readArxivMeta(arxivId);
   if (!meta || meta.status !== "ok") {
     appendArxivDiagnostic([
       "readArxivMainText.no-meta",
-      `itemKey=${itemKey}`,
+      `arxivId=${arxivId}`,
       meta
         ? `status=${meta.status} cleaner=${meta.cleanerVersion} main=${meta.mainTexRelPath}`
         : "meta=null",
@@ -168,7 +172,7 @@ export async function readArxivMainText(
     return null;
   }
   const fullPath = appendLocalPath(
-    arxivFolderPath(itemKey),
+    arxivFolderPath(arxivId),
     "source",
     meta.mainTexRelPath,
   );
@@ -177,7 +181,7 @@ export async function readArxivMainText(
     if (!text) {
       appendArxivDiagnostic([
         "readArxivMainText.empty",
-        `itemKey=${itemKey}`,
+        `arxivId=${arxivId}`,
         `path=${fullPath}`,
       ]);
     }
@@ -185,7 +189,7 @@ export async function readArxivMainText(
   } catch (err) {
     appendArxivDiagnostic([
       "readArxivMainText.catch",
-      `itemKey=${itemKey}`,
+      `arxivId=${arxivId}`,
       `path=${fullPath}`,
       `err=${String(err)}`,
     ]);
@@ -199,14 +203,14 @@ export interface ArxivTextFile {
 }
 
 export async function readArxivTextFile(
-  itemKey: string,
+  arxivId: string,
   relPath: string,
 ): Promise<string | null> {
   const rel = safeRel(relPath);
   if (!rel) return null;
   try {
     return await io().readUTF8(
-      appendLocalPath(arxivFolderPath(itemKey), "source", rel),
+      appendLocalPath(arxivFolderPath(arxivId), "source", rel),
     );
   } catch {
     return null;
@@ -218,16 +222,16 @@ export async function readArxivTextFile(
 // default full-paper front block because references are often long and most
 // summary turns do not need them.
 export async function readArxivBibliographyFiles(
-  itemKey: string,
+  arxivId: string,
 ): Promise<ArxivTextFile[]> {
-  const meta = await readArxivMeta(itemKey);
+  const meta = await readArxivMeta(arxivId);
   if (!meta || meta.status !== "ok" || !meta.files?.length) return [];
   const bbl = meta.files.filter((path) => path.toLowerCase().endsWith(".bbl"));
   const bib = meta.files.filter((path) => path.toLowerCase().endsWith(".bib"));
   const candidates = bbl.length ? bbl : bib;
   const out: ArxivTextFile[] = [];
   for (const path of candidates.sort()) {
-    const text = await readArxivTextFile(itemKey, path);
+    const text = await readArxivTextFile(arxivId, path);
     if (text) out.push({ path, text });
   }
   return out;
@@ -294,10 +298,10 @@ export interface LoadedArxivFigure {
 // `meta.files` but `matchFigureFile` filters them out — the model is told
 // in the tool description to ask for the raster version when available.
 export async function readArxivFigure(
-  itemKey: string,
+  arxivId: string,
   name: string,
 ): Promise<LoadedArxivFigure | null> {
-  const meta = await readArxivMeta(itemKey);
+  const meta = await readArxivMeta(arxivId);
   if (!meta || meta.status !== "ok" || !meta.files?.length) return null;
   const matched = matchFigureFile(meta.files, name);
   if (!matched) return null;
@@ -305,7 +309,7 @@ export async function readArxivFigure(
   if (!mediaType) return null;
   try {
     const bytes = await io().read(
-      appendLocalPath(arxivFolderPath(itemKey), "source", matched),
+      appendLocalPath(arxivFolderPath(arxivId), "source", matched),
     );
     return { path: matched, bytes, mediaType };
   } catch {

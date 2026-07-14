@@ -1,4 +1,5 @@
 import { readArxivMainText } from './arxiv-store';
+import { resolveArxivIdFromZoteroItems } from './arxiv-id';
 import {
   normalizeLatexListEnvironments,
   normalizeLatexSourceCommands,
@@ -85,19 +86,21 @@ export const zoteroContextSource: ContextSource = {
     const parent = await Z.Items.getAsync(itemID);
     if (!parent) return '';
 
-    // When a cached arXiv LaTeX source exists for this item, prefer its
-    // cleaned main.tex over the garbled PDF indexer cache below.
-    const key = parent.key;
-    const arxivText = key ? await readArxivMainText(key) : null;
+    const attachmentItems = parent.isAttachment?.()
+      ? [parent]
+      : await Promise.all(parent.getAttachments().map((id) => Z.Items.getAsync(id)));
+
+    // Resolve the paper identity from Zotero metadata, then read the shared
+    // cache by arXiv id rather than by this particular Zotero item's key.
+    const arxivId = resolveArxivIdFromZoteroItems(
+      [parent, ...attachmentItems].filter((item): item is ZoteroItem => !!item),
+    );
+    const arxivText = arxivId ? await readArxivMainText(arxivId) : null;
     if (arxivText) {
       return normalizeLatexSourceCommands(
         normalizeLatexListEnvironments(arxivText),
       );
     }
-
-    const attachmentItems = parent.isAttachment?.()
-      ? [parent]
-      : await Promise.all(parent.getAttachments().map((id) => Z.Items.getAsync(id)));
 
     // WHY first-PDF-wins: papers commonly have one PDF + a few supplemental
     // PDFs; sending the first one matches user expectation. If we ever need

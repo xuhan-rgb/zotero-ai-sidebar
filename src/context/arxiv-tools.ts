@@ -43,27 +43,14 @@ import {
   type TexTable,
 } from "./tex-tables";
 import { getSharedPdfLocator, type PdfRect } from "./pdf-locator";
+import { resolveArxivIdForItemID } from "./arxiv-id";
 
-interface ZoteroItemShape {
-  key?: string;
-}
-interface ZoteroGlobalShape {
-  Items?: { get?: (id: number) => ZoteroItemShape | null };
-}
-
-// The Zotero parent-item key for the current tool session's item. Returns
-// null when no item is selected, the item does not exist, or it has no
-// key. Zotero items always carry an 8-char key, but the typing is
-// defensive — `Items.get` may not exist in odd runtimes.
-export function currentItemKey(options: ToolFactoryOptions): string | null {
-  if (options.itemID == null) return null;
-  const Z = (globalThis as unknown as { Zotero?: ZoteroGlobalShape }).Zotero;
-  const item = Z?.Items?.get?.(options.itemID);
-  return typeof item?.key === "string" ? item.key : null;
+export function currentArxivId(options: ToolFactoryOptions): string | null {
+  return resolveArxivIdForItemID(options.itemID);
 }
 
 export interface LoadedArxivSections {
-  itemKey: string;
+  arxivId: string;
   sections: TexSection[];
 }
 
@@ -73,65 +60,65 @@ export interface LoadedArxivSections {
 export async function loadArxivSections(
   options: ToolFactoryOptions,
 ): Promise<LoadedArxivSections | null> {
-  const itemKey = currentItemKey(options);
-  if (!itemKey) {
+  const arxivId = currentArxivId(options);
+  if (!arxivId) {
     appendArxivDiagnostic([
-      "loadArxivSections.no-itemKey",
+      "loadArxivSections.no-arxivId",
       `itemID=${options.itemID}`,
     ]);
     return null;
   }
-  const exists = await hasArxivSource(itemKey);
+  const exists = await hasArxivSource(arxivId);
   if (!exists) {
     appendArxivDiagnostic([
       "loadArxivSections.no-source",
-      `itemKey=${itemKey}`,
+      `arxivId=${arxivId}`,
     ]);
     return null;
   }
-  const text = await readArxivMainText(itemKey);
+  const text = await readArxivMainText(arxivId);
   if (!text) {
     appendArxivDiagnostic([
       "loadArxivSections.no-text",
-      `itemKey=${itemKey}`,
+      `arxivId=${arxivId}`,
       `text=${text === null ? "null" : `len=${text.length}`}`,
     ]);
     return null;
   }
-  return { itemKey, sections: parseSections(text) };
+  return { arxivId, sections: parseSections(text) };
 }
 
-// Section list for an item key, bypassing ToolFactoryOptions. Used by the
+// Section list for an arXiv id, bypassing ToolFactoryOptions. Used by the
 // sidebar's overview jump to derive an accurate locate needle from the LaTeX
 // body. Returns null when the item has no cached arXiv source.
-export async function loadArxivSectionsForKey(
-  itemKey: string,
+export async function loadArxivSectionsForArxivId(
+  arxivId: string,
 ): Promise<TexSection[] | null> {
-  if (!itemKey || !(await hasArxivSource(itemKey))) return null;
-  const text = await readArxivMainText(itemKey);
+  if (!arxivId || !(await hasArxivSource(arxivId))) return null;
+  const text = await readArxivMainText(arxivId);
   if (!text) return null;
   return parseSections(text);
 }
 
 export async function loadArxivBibliography(
   options: ToolFactoryOptions,
-): Promise<{ itemKey: string; files: ArxivTextFile[] } | null> {
-  const itemKey = currentItemKey(options);
-  if (!itemKey) return null;
-  if (!(await hasArxivSource(itemKey))) return null;
-  const files = await readArxivBibliographyFiles(itemKey);
-  return { itemKey, files };
+): Promise<{ arxivId: string; files: ArxivTextFile[] } | null> {
+  const arxivId = currentArxivId(options);
+  if (!arxivId) return null;
+  if (!(await hasArxivSource(arxivId))) return null;
+  const files = await readArxivBibliographyFiles(arxivId);
+  return { arxivId, files };
 }
 
 export interface LoadedArxivEquationLookup {
-  itemKey: string;
+  arxivId: string;
   equations: TexEquation[];
   equation?: TexEquation;
   section?: Pick<TexSection, "number" | "title">;
 }
 
 export interface LoadedArxivEquation {
-  itemKey: string;
+  arxivId: string;
   equation: TexEquation;
   equations: TexEquation[];
   section?: Pick<TexSection, "number" | "title">;
@@ -141,20 +128,20 @@ export async function loadArxivEquation(
   options: ToolFactoryOptions,
   query: { number?: number; label?: string },
 ): Promise<LoadedArxivEquationLookup | null> {
-  const itemKey = currentItemKey(options);
-  if (!itemKey) return null;
-  if (!(await hasArxivSource(itemKey))) return null;
-  const text = await readArxivMainText(itemKey);
+  const arxivId = currentArxivId(options);
+  if (!arxivId) return null;
+  if (!(await hasArxivSource(arxivId))) return null;
+  const text = await readArxivMainText(arxivId);
   if (!text) return null;
   const equations = parseEquations(text);
   const equation = findEquation(equations, query);
-  if (!equation) return { itemKey, equations };
+  if (!equation) return { arxivId, equations };
   const priorSections = parseSections(text).filter(
     (candidate) => candidate.start <= equation.start,
   );
   const section = priorSections[priorSections.length - 1];
   return {
-    itemKey,
+    arxivId,
     equation,
     equations,
     ...(section
@@ -207,7 +194,7 @@ export function formatArxivEquationMiss(
 }
 
 export interface LoadedArxivFigureLookup {
-  itemKey: string;
+  arxivId: string;
   figures: TexFigure[];
   figure?: TexFigure;
   image?: MessageImage;
@@ -221,21 +208,21 @@ export async function loadArxivFigureByQuery(
   options: ToolFactoryOptions,
   query: { number?: number; label?: string; name?: string },
 ): Promise<LoadedArxivFigureLookup | null> {
-  const itemKey = currentItemKey(options);
-  if (!itemKey) return null;
-  if (!(await hasArxivSource(itemKey))) return null;
-  const text = await readArxivMainText(itemKey);
+  const arxivId = currentArxivId(options);
+  if (!arxivId) return null;
+  if (!(await hasArxivSource(arxivId))) return null;
+  const text = await readArxivMainText(arxivId);
   if (!text) return null;
   const figures = parseFigures(text);
   const figure = findFigure(figures, query);
-  if (!figure) return { itemKey, figures };
+  if (!figure) return { arxivId, figures };
   const priorSections = parseSections(text).filter(
     (candidate) => candidate.start <= figure.start,
   );
   const section = priorSections[priorSections.length - 1];
-  const imageResult = await loadFigureImage(options, itemKey, figure);
+  const imageResult = await loadFigureImage(options, arxivId, figure);
   return {
-    itemKey,
+    arxivId,
     figures,
     figure,
     ...(section
@@ -285,7 +272,7 @@ export function formatArxivFigureMiss(
 }
 
 export interface LoadedArxivTableLookup {
-  itemKey: string;
+  arxivId: string;
   tables: TexTable[];
   table?: TexTable;
   section?: Pick<TexSection, "number" | "title">;
@@ -295,20 +282,20 @@ export async function loadArxivTableByQuery(
   options: ToolFactoryOptions,
   query: { number?: number; label?: string; name?: string },
 ): Promise<LoadedArxivTableLookup | null> {
-  const itemKey = currentItemKey(options);
-  if (!itemKey) return null;
-  if (!(await hasArxivSource(itemKey))) return null;
-  const text = await readArxivMainText(itemKey);
+  const arxivId = currentArxivId(options);
+  if (!arxivId) return null;
+  if (!(await hasArxivSource(arxivId))) return null;
+  const text = await readArxivMainText(arxivId);
   if (!text) return null;
   const tables = parseTables(text);
   const table = findTable(tables, query);
-  if (!table) return { itemKey, tables };
+  if (!table) return { arxivId, tables };
   const priorSections = parseSections(text).filter(
     (candidate) => candidate.start <= table.start,
   );
   const section = priorSections[priorSections.length - 1];
   return {
-    itemKey,
+    arxivId,
     tables,
     table,
     ...(section
@@ -361,7 +348,7 @@ export function formatArxivTableMiss(
 
 async function loadFigureImage(
   options: ToolFactoryOptions,
-  itemKey: string,
+  arxivId: string,
   figure: TexFigure,
 ): Promise<
   Pick<
@@ -371,14 +358,14 @@ async function loadFigureImage(
 > {
   let vectorPath: string | null = null;
   for (const graphic of figure.graphics) {
-    const path = await resolveArxivGraphicPath(itemKey, graphic);
+    const path = await resolveArxivGraphicPath(arxivId, graphic);
     if (!path) continue;
     const mediaType = mediaTypeForFigure(path);
     if (!mediaType) {
       if (!vectorPath) vectorPath = path;
       continue;
     }
-    const loaded = await readArxivFigure(itemKey, path);
+    const loaded = await readArxivFigure(arxivId, path);
     if (!loaded) continue;
     return {
       image: messageImageFromBytes(
@@ -409,10 +396,10 @@ async function loadFigureImage(
 }
 
 async function resolveArxivGraphicPath(
-  itemKey: string,
+  arxivId: string,
   graphic: string,
 ): Promise<string | null> {
-  const meta = await readArxivMeta(itemKey);
+  const meta = await readArxivMeta(arxivId);
   const files = meta?.files ?? [];
   if (!files.length) return null;
   const clean = graphic.replace(/\\/g, "/").replace(/^\.\//, "");
@@ -562,14 +549,10 @@ export async function buildArxivTocFrontBlock(
   itemID: number | null,
 ): Promise<string | null> {
   if (itemID == null) return null;
-  // Inline the key lookup — buildArxivTocFrontBlock is called from the
-  // sidebar (outside a ToolFactoryOptions context).
-  const Z = (globalThis as unknown as { Zotero?: ZoteroGlobalShape }).Zotero;
-  const item = Z?.Items?.get?.(itemID);
-  const itemKey = typeof item?.key === "string" ? item.key : null;
-  if (!itemKey) return null;
-  if (!(await hasArxivSource(itemKey))) return null;
-  const text = await readArxivMainText(itemKey);
+  const arxivId = resolveArxivIdForItemID(itemID);
+  if (!arxivId) return null;
+  if (!(await hasArxivSource(arxivId))) return null;
+  const text = await readArxivMainText(arxivId);
   if (!text) return null;
   const toc = buildToc(parseSections(text));
   return formatTocBlock(toc);
@@ -599,9 +582,9 @@ export async function loadArxivFigureAsImage(
   options: ToolFactoryOptions,
   name: string,
 ): Promise<{ image: MessageImage; path: string } | null> {
-  const itemKey = currentItemKey(options);
-  if (!itemKey) return null;
-  const figure = await readArxivFigure(itemKey, name);
+  const arxivId = currentArxivId(options);
+  if (!arxivId) return null;
+  const figure = await readArxivFigure(arxivId, name);
   if (!figure) return null;
   const dataUrl = `data:${figure.mediaType};base64,${bytesToBase64(figure.bytes)}`;
   const id = figure.path.replace(/[^A-Za-z0-9_.-]+/g, "_");

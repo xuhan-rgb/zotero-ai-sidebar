@@ -10,6 +10,7 @@ import {
   mediaTypeForFigure,
   type ArxivMeta,
 } from "../../src/context/arxiv-store";
+import { resolveArxivIdForLibraryItem } from "../../src/context/arxiv-id";
 
 let fs: Map<string, string | Uint8Array>;
 
@@ -38,7 +39,6 @@ beforeEach(() => {
 });
 
 const meta: ArxivMeta = {
-  itemKey: "ABCD1234",
   arxivId: "2504.16054",
   fetchedAt: "2026-05-23T00:00:00.000Z",
   mainTexRelPath: "main.tex",
@@ -46,9 +46,15 @@ const meta: ArxivMeta = {
 };
 
 describe("arxiv-store", () => {
-  it("builds a per-item folder path", () => {
-    expect(arxivFolderPath("ABCD1234")).toBe(
-      "/data/zotero-ai-sidebar/arxiv/ABCD1234",
+  it("builds a shared folder path from the arXiv id", () => {
+    expect(arxivFolderPath("2504.16054")).toBe(
+      "/data/zotero-ai-sidebar/arxiv/2504.16054",
+    );
+  });
+
+  it("encodes legacy arXiv ids so their slash cannot create nested folders", () => {
+    expect(arxivFolderPath("hep-th/9901001")).toBe(
+      "/data/zotero-ai-sidebar/arxiv/hep-th%2F9901001",
     );
   });
 
@@ -62,27 +68,27 @@ describe("arxiv-store", () => {
     });
 
     await writeArxivSource(
-      "ABCD1234",
+      "2504.16054",
       [{ path: "figures/robot.png", bytes: new Uint8Array([1, 2, 3]) }],
       meta,
     );
 
-    expect(arxivFolderPath("ABCD1234")).toBe(
-      "C:\\Users\\admin\\Zotero\\zotero-ai-sidebar\\arxiv\\ABCD1234",
+    expect(arxivFolderPath("2504.16054")).toBe(
+      "C:\\Users\\admin\\Zotero\\zotero-ai-sidebar\\arxiv\\2504.16054",
     );
     expect(
       fs.has(
-        "C:\\Users\\admin\\Zotero\\zotero-ai-sidebar\\arxiv\\ABCD1234\\source\\figures\\robot.png",
+        "C:\\Users\\admin\\Zotero\\zotero-ai-sidebar\\arxiv\\2504.16054\\source\\figures\\robot.png",
       ),
     ).toBe(true);
-    expect(await readArxivTextFile("ABCD1234", "figures/robot.png")).toBe(
+    expect(await readArxivTextFile("2504.16054", "figures/robot.png")).toBe(
       "\u0001\u0002\u0003",
     );
   });
 
   it("writes source files + meta and round-trips meta (with files list)", async () => {
     await writeArxivSource(
-      "ABCD1234",
+      "2504.16054",
       [
         {
           path: "main.tex",
@@ -92,21 +98,53 @@ describe("arxiv-store", () => {
       ],
       meta,
     );
-    expect(await readArxivMeta("ABCD1234")).toEqual({
+    expect(await readArxivMeta("2504.16054")).toEqual({
       ...meta,
       files: ["main.tex", "figures/robot.png"],
     });
   });
 
   it("hasArxivSource is true after a write, false otherwise", async () => {
-    expect(await hasArxivSource("NONE0000")).toBe(false);
-    await writeArxivSource("ABCD1234", [], meta);
-    expect(await hasArxivSource("ABCD1234")).toBe(true);
+    expect(await hasArxivSource("2504.99999")).toBe(false);
+    await writeArxivSource("2504.16054", [], meta);
+    expect(await hasArxivSource("2504.16054")).toBe(true);
+  });
+
+  it("reuses one source cache across Zotero items with the same arXiv id", async () => {
+    const items = new Map([
+      ["ITEM0001", zoteroItem("ITEM0001", "2504.16054")],
+      ["ITEM0002", zoteroItem("ITEM0002", "2504.16054")],
+    ]);
+    Object.defineProperty(globalThis, "Zotero", {
+      configurable: true,
+      value: {
+        DataDirectory: { dir: "/data" },
+        Profile: { dir: "/prof" },
+        Items: {
+          getByLibraryAndKey: (_libraryID: number, key: string) =>
+            items.get(key) ?? null,
+          get: () => null,
+        },
+      },
+    });
+    const first = resolveArxivIdForLibraryItem(1, "ITEM0001");
+    const second = resolveArxivIdForLibraryItem(1, "ITEM0002");
+
+    await writeArxivSource(
+      first!,
+      [{ path: "main.tex", bytes: new TextEncoder().encode("shared latex") }],
+      meta,
+    );
+
+    expect(await readArxivTextFile(second!, "main.tex")).toBe("shared latex");
+    expect([...fs.keys()].filter((path) => path.endsWith("meta.json"))).toEqual(
+      ["/data/zotero-ai-sidebar/arxiv/2504.16054/meta.json"],
+    );
   });
 
   it("returns .bbl bibliography files before falling back to .bib", async () => {
     await writeArxivSource(
-      "ABCD1234",
+      "2504.16054",
       [
         { path: "main.bbl", bytes: new TextEncoder().encode("compiled refs") },
         { path: "refs.bib", bytes: new TextEncoder().encode("bib refs") },
@@ -114,23 +152,33 @@ describe("arxiv-store", () => {
       meta,
     );
 
-    expect(await readArxivBibliographyFiles("ABCD1234")).toEqual([
+    expect(await readArxivBibliographyFiles("2504.16054")).toEqual([
       { path: "main.bbl", text: "compiled refs" },
     ]);
   });
 
   it("falls back to .bib bibliography files when no .bbl exists", async () => {
     await writeArxivSource(
-      "ABCD1234",
+      "2504.16054",
       [{ path: "refs.bib", bytes: new TextEncoder().encode("bib refs") }],
       meta,
     );
 
-    expect(await readArxivBibliographyFiles("ABCD1234")).toEqual([
+    expect(await readArxivBibliographyFiles("2504.16054")).toEqual([
       { path: "refs.bib", text: "bib refs" },
     ]);
   });
 });
+
+function zoteroItem(key: string, arxivId: string) {
+  return {
+    key,
+    libraryID: 1,
+    getField: (field: string) =>
+      field === "archiveID" ? `arXiv:${arxivId}` : "",
+    getAttachments: () => [] as number[],
+  };
+}
 
 describe("mediaTypeForFigure", () => {
   it("maps raster extensions to image/* types", () => {

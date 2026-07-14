@@ -20,7 +20,7 @@ import type {
   OverviewPhase,
 } from "./overview-types";
 import {
-  currentItemKey,
+  currentArxivId,
   loadArxivBibliography,
   formatArxivEquationMiss,
   formatArxivEquationResult,
@@ -1013,8 +1013,8 @@ async function fullTextSourceForTool(
   options: ToolFactoryOptions,
 ): Promise<NonNullable<MessageContext["fullTextSource"]>> {
   try {
-    const key = currentItemKey(options);
-    if (key && (await hasArxivSource(key))) return "arxiv";
+    const arxivId = currentArxivId(options);
+    if (arxivId && (await hasArxivSource(arxivId))) return "arxiv";
   } catch {
     // Fall back to the generic PDF label; source tagging is only debug
     // metadata and must not make the full-text tool fail.

@@ -6,7 +6,6 @@ import {
 import type { ArxivMeta } from "../../src/context/arxiv-store";
 
 const baseMeta: ArxivMeta = {
-  itemKey: "ABCD1234",
   arxivId: "2504.16054",
   fetchedAt: "2026-05-23T00:00:00.000Z",
   mainTexRelPath: "main.tex",

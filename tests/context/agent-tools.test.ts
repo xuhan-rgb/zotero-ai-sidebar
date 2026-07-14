@@ -635,12 +635,12 @@ describe("createZoteroAgentTools", () => {
         ...(globalThis as any).Zotero,
         Items: {
           ...(globalThis as any).Zotero.Items,
-          get: () => ({ key: "BIBKEY01" }),
+          get: () => arxivItem("BIBKEY01", "2504.16054"),
         },
       },
     });
     await writeArxivSource(
-      "BIBKEY01",
+      "2504.16054",
       [
         {
           path: "main.tex",
@@ -656,7 +656,6 @@ describe("createZoteroAgentTools", () => {
         },
       ],
       {
-        itemKey: "BIBKEY01",
         arxivId: "2504.16054",
         fetchedAt: "2026-05-23T00:00:00.000Z",
         mainTexRelPath: "main.tex",
@@ -705,12 +704,12 @@ describe("createZoteroAgentTools", () => {
         ...(globalThis as any).Zotero,
         Items: {
           ...(globalThis as any).Zotero.Items,
-          get: () => ({ key: "EQKEY001" }),
+          get: () => arxivItem("EQKEY001", "2604.28130"),
         },
       },
     });
     await writeArxivSource(
-      "EQKEY001",
+      "2604.28130",
       [
         {
           path: "main.tex",
@@ -733,7 +732,6 @@ describe("createZoteroAgentTools", () => {
         },
       ],
       {
-        itemKey: "EQKEY001",
         arxivId: "2604.28130",
         fetchedAt: "2026-05-23T00:00:00.000Z",
         mainTexRelPath: "main.tex",
@@ -792,12 +790,12 @@ describe("createZoteroAgentTools", () => {
         ...(globalThis as any).Zotero,
         Items: {
           ...(globalThis as any).Zotero.Items,
-          get: () => ({ key: "FIGKEY01" }),
+          get: () => arxivItem("FIGKEY01", "2303.05367"),
         },
       },
     });
     await writeArxivSource(
-      "FIGKEY01",
+      "2303.05367",
       [
         {
           path: "main.tex",
@@ -818,7 +816,6 @@ describe("createZoteroAgentTools", () => {
         },
       ],
       {
-        itemKey: "FIGKEY01",
         arxivId: "2303.05367",
         fetchedAt: "2026-05-23T00:00:00.000Z",
         mainTexRelPath: "main.tex",
@@ -868,12 +865,12 @@ describe("createZoteroAgentTools", () => {
         ...(globalThis as any).Zotero,
         Items: {
           ...(globalThis as any).Zotero.Items,
-          get: () => ({ key: "TABKEY01" }),
+          get: () => arxivItem("TABKEY01", "2303.05367"),
         },
       },
     });
     await writeArxivSource(
-      "TABKEY01",
+      "2303.05367",
       [
         {
           path: "main.tex",
@@ -894,7 +891,6 @@ describe("createZoteroAgentTools", () => {
         },
       ],
       {
-        itemKey: "TABKEY01",
         arxivId: "2303.05367",
         fetchedAt: "2026-05-23T00:00:00.000Z",
         mainTexRelPath: "main.tex",
@@ -1320,15 +1316,14 @@ describe("createZoteroAgentTools", () => {
         ...(globalThis as any).Zotero,
         Items: {
           ...(globalThis as any).Zotero.Items,
-          get: () => ({ key: "LATEXKEY1" }),
+          get: () => arxivItem("LATEXKEY1", "1912.13470"),
         },
       },
     });
     await writeArxivSource(
-      "LATEXKEY1",
+      "1912.13470",
       [{ path: "main.tex", bytes: new TextEncoder().encode(latex) }],
       {
-        itemKey: "LATEXKEY1",
         arxivId: "1912.13470",
         fetchedAt: "2026-06-06T00:00:00.000Z",
         mainTexRelPath: "main.tex",
@@ -1347,6 +1342,16 @@ describe("createZoteroAgentTools", () => {
     expect(result.summary).not.toContain("读取 PDF 全文");
   });
 });
+
+function arxivItem(key: string, arxivId: string) {
+  return {
+    key,
+    libraryID: 1,
+    getField: (field: string) =>
+      field === "archiveID" ? `arXiv:${arxivId}` : "",
+    getAttachments: () => [] as number[],
+  };
+}
 
 function sourcePolicy() {
   return {

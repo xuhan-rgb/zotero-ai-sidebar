@@ -4,7 +4,8 @@
 // the reader subsystem: depends on reader-access + pdf-geometry + leaf utils;
 // the chat-bound jumpToPdfSelection (re-syncs selection UI) stays in sidebar.ts.
 
-import { loadArxivSectionsForKey } from "../context/arxiv-tools";
+import { loadArxivSectionsForArxivId } from "../context/arxiv-tools";
+import { resolveArxivIdForItemID } from "../context/arxiv-id";
 import type { OverviewSection } from "../context/overview-types";
 import {
   createPdfLocator,
@@ -478,15 +479,17 @@ export async function jumpToOverviewSection(
 // pinpoints the section far better than a short heading title. Title-based
 // candidates remain as fallbacks for non-arXiv PDFs or when the body match
 // fails.
-// Cache parsed LaTeX sections per item key so repeated section clicks don't
+// Cache parsed LaTeX sections per arXiv id so repeated section clicks don't
 // re-read and re-parse the source each time.
 const overviewSectionCache = new Map<string, Promise<TexSection[] | null>>();
 
-export function cachedArxivSections(itemKey: string): Promise<TexSection[] | null> {
-  let pending = overviewSectionCache.get(itemKey);
+export function cachedArxivSections(
+  arxivId: string,
+): Promise<TexSection[] | null> {
+  let pending = overviewSectionCache.get(arxivId);
   if (!pending) {
-    pending = loadArxivSectionsForKey(itemKey);
-    overviewSectionCache.set(itemKey, pending);
+    pending = loadArxivSectionsForArxivId(arxivId);
+    overviewSectionCache.set(arxivId, pending);
   }
   return pending;
 }
@@ -496,10 +499,10 @@ export async function sectionLocateNeedles(
   section: OverviewSection,
 ): Promise<string[]> {
   const needles: string[] = [];
-  const itemKey = resolveItemKeyForCache(itemID);
-  if (itemKey) {
+  const arxivId = resolveArxivIdForItemID(itemID);
+  if (arxivId) {
     try {
-      const sections = await cachedArxivSections(itemKey);
+      const sections = await cachedArxivSections(arxivId);
       if (sections) {
         const sec =
           findSection(sections, section.no) ??

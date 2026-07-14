@@ -27,10 +27,8 @@ import {
 import { extractPdfRange, searchPdfPassages } from "../context/retrieval";
 import { ensureArxivSource } from "../context/arxiv-source";
 import { hasArxivSource } from "../context/arxiv-store";
-import {
-  buildArxivTocFrontBlock,
-  loadArxivSectionsForKey,
-} from "../context/arxiv-tools";
+import { buildArxivTocFrontBlock } from "../context/arxiv-tools";
+import { resolveArxivIdForItemID } from "../context/arxiv-id";
 import { toolsForPinnedFullTextTurn } from "../context/tool-filter";
 import {
   findSection,
@@ -1012,9 +1010,9 @@ function renderContextCard(doc: Document, itemID: number | null) {
   // When the active item has a cached arXiv LaTeX source, append a badge.
   // hasArxivSource is async, so render the row first and attach the badge
   // afterwards rather than blocking the synchronous header build.
-  const itemKey = itemID != null ? getZoteroItem(itemID)?.key : undefined;
-  if (typeof itemKey === "string") {
-    void hasArxivSource(itemKey).then((has) => {
+  const arxivId = resolveArxivIdForItemID(itemID);
+  if (arxivId) {
+    void hasArxivSource(arxivId).then((has) => {
       if (!has || !metaRow.isConnected) return;
       const arxivBadge = doc.createElement("span");
       arxivBadge.className = "arxiv-source-badge";
@@ -2358,8 +2356,8 @@ async function paperPinDisableWarning(itemID: number): Promise<string> {
 }
 
 async function itemHasCachedArxivSource(itemID: number): Promise<boolean> {
-  const itemKey = getZoteroItem(itemID)?.key;
-  return typeof itemKey === "string" ? await hasArxivSource(itemKey) : false;
+  const arxivId = resolveArxivIdForItemID(itemID);
+  return arxivId ? await hasArxivSource(arxivId) : false;
 }
 
 // Composer-footer model switcher (Claudian-style).
@@ -3537,35 +3535,9 @@ function configuredAnnotationColors(): Set<string> {
 // Ensures the arXiv LaTeX source is downloaded for an item (idempotent;
 // cached after first success). Returns true when a source cache is available.
 async function ensureArxivSourceForItem(itemID: number): Promise<boolean> {
-  const item = getZoteroItem(itemID);
-  if (!item || typeof item.key !== "string") return false;
-  // arXiv papers imported as a PDF often carry the arXiv URL on the PDF
-  // ATTACHMENT, not the parent item — so gather metadata from both.
-  const sources: NonNullable<ReturnType<typeof getZoteroItem>>[] = [item];
-  try {
-    for (const attID of item.getAttachments?.() ?? []) {
-      const att = getZoteroItem(attID);
-      if (att) sources.push(att);
-    }
-  } catch {
-    // attachment enumeration is best-effort
-  }
-  const pick = (field: string): string | undefined => {
-    for (const src of sources) {
-      const value = src.getField?.(field);
-      if (value) return value;
-    }
-    return undefined;
-  };
-  const ok = await ensureArxivSource({
-    itemKey: item.key,
-    fields: {
-      extra: pick("extra"),
-      url: pick("url"),
-      doi: pick("DOI"),
-      archiveID: pick("archiveID"),
-    },
-  });
+  const arxivId = resolveArxivIdForItemID(itemID);
+  if (!arxivId) return false;
+  const ok = await ensureArxivSource({ arxivId });
   if (ok) {
     // The arXiv LaTeX source supersedes any frozen PDF full text — clear the
     // stale freeze so normal context assembly uses the compact TOC, while
@@ -5474,7 +5446,7 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
 
   // Pre-warm the expensive bits a section click needs, in the background, so the
   // first jump is fast: the PDF text-layer extraction (per Reader) and the LaTeX
-  // section parse (per item). Both are cached, so this is a no-op on later opens.
+  // section parse (per arXiv paper). Both are cached, so this is a no-op on later opens.
   if (stored?.data && itemID != null) {
     const reader = getReaderForAttachmentOrItem(
       doc.defaultView,
@@ -5482,7 +5454,8 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
       null,
     );
     if (reader) void getSharedPdfLocator(reader).catch(() => undefined);
-    if (itemKey) void cachedArxivSections(itemKey).catch(() => undefined);
+    const arxivId = resolveArxivIdForItemID(itemID);
+    if (arxivId) void cachedArxivSections(arxivId).catch(() => undefined);
   }
 }
 
