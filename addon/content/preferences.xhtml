@@ -2,116 +2,311 @@
   <html:link rel="localization" href="__addonRef__-preferences.ftl" />
 </linkset>
 <groupbox
-  onload="Zotero.__addonInstance__.hooks.onPrefsEvent('load', { window })"
+  onload="(function boot(win, tries) { var inst = Zotero &amp;&amp; Zotero.__addonInstance__; if (inst &amp;&amp; inst.hooks &amp;&amp; inst.hooks.onPrefsEvent) { inst.hooks.onPrefsEvent('load', { window: win }); return; } if (tries > 0) win.setTimeout(function () { boot(win, tries - 1); }, 100); })(window, 50)"
 >
   <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
   <html:div id="zotero-ai-sidebar-tool-settings">
     <html:style>
       #zotero-ai-sidebar-tool-settings { max-width: 860px; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-card { border: 1px solid rgba(80, 70, 55, 0.18); border-radius: 10px; margin: 10px 0; padding: 12px; background: rgba(255,255,255,0.44); }
-      #zotero-ai-sidebar-tool-settings .zai-pref-title { font-weight: 700; margin-bottom: 4px; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-help { opacity: 0.78; margin: 0 0 10px; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-grid { display: grid; grid-template-columns: 140px minmax(260px, 1fr); gap: 8px 12px; align-items: center; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-checkbox-row { display: flex; align-items: center; gap: 8px; margin-top: 12px; cursor: pointer; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-checkbox-row input[type="checkbox"] { width: auto; margin: 0; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-checkbox-label { font-weight: 600; }
-      #zotero-ai-sidebar-tool-settings input[type="text"], #zotero-ai-sidebar-tool-settings input[type="password"], #zotero-ai-sidebar-tool-settings input[type="number"], #zotero-ai-sidebar-tool-settings select, #zotero-ai-sidebar-tool-settings textarea { box-sizing: border-box; width: 100%; }
-      #zotero-ai-sidebar-tool-settings textarea { min-height: 84px; max-height: 45vh; resize: vertical; overflow: auto; font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-      #zotero-ai-sidebar-tool-settings .zai-built-in-prompt textarea { min-height: 180px; }
-      #zotero-ai-sidebar-tool-settings .zai-built-in-prompt textarea:focus { min-height: 220px; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-actions { align-items: center; display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-status { flex: 1 0 100%; min-height: 20px; opacity: 0.9; padding: 6px 8px; border-radius: 7px; background: rgba(63, 132, 88, 0.10); color: #2f7046; }
-      #zotero-ai-sidebar-tool-settings .zai-pref-status:empty { display: none; }
-      #zotero-ai-sidebar-tool-settings .zai-sync-mode { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 12px; padding: 10px 12px; border: 1px solid rgba(80,70,55,0.14); border-radius: 10px; background: rgba(255,255,255,0.58); }
-      #zotero-ai-sidebar-tool-settings .zai-sync-mode-text { display: grid; gap: 2px; min-width: 0; }
-      #zotero-ai-sidebar-tool-settings .zai-sync-mode-title { font-weight: 700; }
-      #zotero-ai-sidebar-tool-settings .zai-sync-mode-desc { color: #666; font-size: 12px; line-height: 1.35; }
-      #zotero-ai-sidebar-tool-settings .zai-switch { position: relative; flex: 0 0 auto; min-width: 76px; border: 0; border-radius: 999px; padding: 3px; background: rgba(90,90,90,0.16); color: #555; font-size: 13px; font-weight: 500; line-height: 18px; text-align: right; cursor: pointer; transition: background 0.16s ease, color 0.16s ease; }
-      #zotero-ai-sidebar-tool-settings .zai-switch::before { content: ""; position: absolute; left: 3px; top: 3px; width: 28px; height: calc(100% - 6px); border-radius: 999px; background: #fff; box-shadow: 0 1px 4px rgba(0,0,0,0.16); transition: transform 0.16s ease; }
-      #zotero-ai-sidebar-tool-settings .zai-switch[data-enabled="true"] { background: rgba(63,132,88,0.88); color: #fff; text-align: left; }
-      #zotero-ai-sidebar-tool-settings .zai-switch[data-enabled="true"]::before { transform: translateX(42px); }
-      #zotero-ai-sidebar-tool-settings .zai-switch-label { position: relative; z-index: 1; display: block; padding: 2px 8px; }
-      #zotero-ai-sidebar-tool-settings .zai-list { display: grid; gap: 10px; }
-      #zotero-ai-sidebar-tool-settings .zai-subcard { border: 1px solid rgba(80, 70, 55, 0.14); border-radius: 8px; padding: 10px; background: rgba(255,255,255,0.6); }
-      #zotero-ai-sidebar-tool-settings details.zai-subcard:not([open]) { padding: 0; }
-      #zotero-ai-sidebar-tool-settings .zai-subcard-title { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; font-weight: 700; }
-      #zotero-ai-sidebar-tool-settings details.zai-subcard:not([open]) .zai-subcard-title { margin-bottom: 0; padding: 10px; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-summary { cursor: pointer; list-style: none; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-summary::-webkit-details-marker { display: none; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-summary::before { content: "▸"; flex: 0 0 auto; color: #777; }
-      #zotero-ai-sidebar-tool-settings details[open] > .zai-preset-summary::before { content: "▾"; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-summary-main { display: grid; gap: 2px; min-width: 0; flex: 1; align-items: center; grid-template-columns: auto 1fr; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-status-dot { width: 8px; height: 8px; border-radius: 50%; background: #ccc; display: inline-block; margin-right: 6px; flex-shrink: 0; grid-row: 1 / 3; }
-      #zotero-ai-sidebar-tool-settings .zai-dot-ok { background: #3c9e5f; }
-      #zotero-ai-sidebar-tool-settings .zai-dot-fail { background: #d94f4f; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-test-msg { display: block; margin: 6px 10px 8px; font-size: 12px; line-height: 1.4; border-radius: 6px; padding: 5px 8px; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-test-msg:empty { display: none; }
-      #zotero-ai-sidebar-tool-settings .zai-test-ok { background: rgba(60,158,95,0.10); color: #2f7046; }
-      #zotero-ai-sidebar-tool-settings .zai-test-fail { background: rgba(217,79,79,0.10); color: #b03030; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-summary-meta { overflow: hidden; color: #666; font-size: 12px; font-weight: 400; text-overflow: ellipsis; white-space: nowrap; }
-      #zotero-ai-sidebar-tool-settings .preset-flags-control { display: flex; flex-direction: column; gap: 4px; }
-      #zotero-ai-sidebar-tool-settings .preset-flags { display: flex; flex-wrap: wrap; gap: 6px; }
-      #zotero-ai-sidebar-tool-settings .preset-flag { display: inline-flex; align-items: center; border: 1px solid rgba(80,70,55,0.18); border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700; line-height: 1.5; background: rgba(246,246,246,0.95); color: #666; }
-      #zotero-ai-sidebar-tool-settings .preset-flag-ok { border-color: rgba(60,158,95,0.30); background: rgba(60,158,95,0.10); color: #2f7046; }
-      #zotero-ai-sidebar-tool-settings .preset-flag-warn { border-color: rgba(176,117,24,0.28); background: rgba(176,117,24,0.12); color: #8a5a12; }
-      #zotero-ai-sidebar-tool-settings .preset-flag-muted { background: rgba(90,90,90,0.08); color: #777; }
-      #zotero-ai-sidebar-tool-settings .preset-help { color: #666; font-size: 11px; line-height: 1.4; }
-      #zotero-ai-sidebar-tool-settings .zai-model-control { display: grid; grid-template-columns: minmax(240px, 1fr) 220px; gap: 10px; align-items: start; }
-      #zotero-ai-sidebar-tool-settings .zai-model-selected { display: flex; flex-wrap: wrap; gap: 6px; min-height: 36px; padding: 6px; border: 1px solid rgba(80, 70, 55, 0.18); border-radius: 7px; background: rgba(255,255,255,0.65); }
-      #zotero-ai-sidebar-tool-settings .zai-model-chip { display: inline-flex; align-items: center; max-width: 100%; border: 1px solid rgba(80, 70, 55, 0.18); border-radius: 999px; background: rgba(246,246,246,0.95); overflow: hidden; }
-      #zotero-ai-sidebar-tool-settings .zai-model-chip-input { width: 13ch; min-width: 9ch; padding: 4px 3px 4px 9px; border: 0; background: transparent; font: 12px/18px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
-      #zotero-ai-sidebar-tool-settings .zai-model-chip-remove { border: 0; border-left: 1px solid rgba(80, 70, 55, 0.12); border-radius: 0; padding: 3px 7px; background: transparent; }
-      #zotero-ai-sidebar-tool-settings .zai-model-side { display: grid; gap: 6px; }
-      #zotero-ai-sidebar-tool-settings .zai-model-side-title { color: #666; font-size: 12px; font-weight: 700; }
-      #zotero-ai-sidebar-tool-settings .zai-model-suggestions { display: flex; flex-wrap: wrap; gap: 5px; }
-      #zotero-ai-sidebar-tool-settings .zai-model-suggestions button { padding: 3px 7px; font-size: 12px; }
-      #zotero-ai-sidebar-tool-settings .zai-model-custom-row { display: flex; gap: 6px; }
-      #zotero-ai-sidebar-tool-settings .zai-model-custom-row input { min-width: 0; }
-      #zotero-ai-sidebar-tool-settings .zai-model-custom-row button { flex: 0 0 auto; }
-      #zotero-ai-sidebar-tool-settings .zai-model-hidden { display: none; }
-      @media (max-width: 760px) { #zotero-ai-sidebar-tool-settings .zai-model-control { grid-template-columns: 1fr; } }
-      #zotero-ai-sidebar-tool-settings .zai-inline { display: flex; align-items: center; gap: 8px; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 8px 0 4px; font-weight: 700; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-title { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-default-state { border: 1px solid rgba(80,70,55,0.16); border-radius: 999px; padding: 1px 7px; background: rgba(90,90,90,0.08); color: #666; font-size: 11px; font-weight: 700; white-space: nowrap; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-default-state[data-state="default"] { border-color: rgba(63,132,88,0.28); background: rgba(63,132,88,0.12); color: #2f7046; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-default-state[data-state="custom"] { border-color: rgba(176,117,24,0.26); background: rgba(176,117,24,0.12); color: #8a5a12; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-default-state[data-state="dirty"] { border-color: rgba(203,91,42,0.30); background: rgba(203,91,42,0.13); color: #a4471b; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-option { margin: 8px 0 6px; padding: 8px 10px; border: 1px solid rgba(80, 70, 55, 0.12); border-radius: 8px; background: rgba(255,255,255,0.55); }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-option-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-option-head button { flex: 0 0 auto; padding: 4px 10px; }
-      #zotero-ai-sidebar-tool-settings .zai-prompt-option .zai-pref-help { margin: 4px 0 0 24px; font-size: 12px; }
-      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-row { padding: 8px; }
-      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-row .zai-subcard-title { margin-bottom: 6px; }
-      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-fields { display: grid; grid-template-columns: minmax(160px, 1fr) 92px; gap: 8px; align-items: end; }
-      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-field { display: grid; gap: 3px; min-width: 0; }
-      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-field label { color: #666; font-size: 12px; font-weight: 600; }
-      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-field textarea { min-height: 48px; }
-      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-field textarea:focus { min-height: 96px; }
+      #zotero-ai-sidebar-tool-settings .zai-pref-card { border: 1px solid
+      rgba(80, 70, 55, 0.18); border-radius: 10px; margin: 10px 0; padding:
+      12px; background: rgba(255,255,255,0.44); }
+      #zotero-ai-sidebar-tool-settings .zai-pref-title { font-weight: 700;
+      margin-bottom: 4px; } #zotero-ai-sidebar-tool-settings .zai-pref-help {
+      opacity: 0.78; margin: 0 0 10px; } #zotero-ai-sidebar-tool-settings
+      .zai-pref-grid { display: grid; grid-template-columns: 140px minmax(260px,
+      1fr); gap: 8px 12px; align-items: center; }
+      #zotero-ai-sidebar-tool-settings .zai-pref-checkbox-row { display: flex;
+      align-items: center; gap: 8px; margin-top: 12px; cursor: pointer; }
+      #zotero-ai-sidebar-tool-settings .zai-pref-checkbox-row
+      input[type="checkbox"] { width: auto; margin: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-pref-checkbox-label { font-weight:
+      600; } #zotero-ai-sidebar-tool-settings input[type="text"],
+      #zotero-ai-sidebar-tool-settings input[type="password"],
+      #zotero-ai-sidebar-tool-settings input[type="number"],
+      #zotero-ai-sidebar-tool-settings select, #zotero-ai-sidebar-tool-settings
+      textarea { box-sizing: border-box; width: 100%; }
+      #zotero-ai-sidebar-tool-settings textarea { min-height: 84px; max-height:
+      45vh; resize: vertical; overflow: auto; font: 12px/1.5 ui-monospace,
+      SFMono-Regular, Menlo, Consolas, monospace; }
+      #zotero-ai-sidebar-tool-settings .zai-built-in-prompt textarea {
+      min-height: 180px; } #zotero-ai-sidebar-tool-settings .zai-built-in-prompt
+      textarea:focus { min-height: 220px; } #zotero-ai-sidebar-tool-settings
+      .zai-pref-actions { align-items: center; display: flex; flex-wrap: wrap;
+      gap: 8px; margin-top: 12px; } #zotero-ai-sidebar-tool-settings
+      .zai-pref-status { flex: 1 0 100%; min-height: 20px; opacity: 0.9;
+      padding: 6px 8px; border-radius: 7px; background: rgba(63, 132, 88, 0.10);
+      color: #2f7046; } #zotero-ai-sidebar-tool-settings .zai-pref-status:empty
+      { display: none; } #zotero-ai-sidebar-tool-settings .zai-pref-subtitle {
+      color: #4f5b53; font-size: 12px; font-weight: 700; }
+      #zotero-ai-sidebar-tool-settings .zai-grid-section { grid-column: 1 / -1;
+      margin-top: 4px; padding-top: 7px; border-top: 1px solid
+      rgba(80,70,55,0.12); } #zotero-ai-sidebar-tool-settings
+      .zai-grid-section:first-child { margin-top: 0; padding-top: 0; border-top:
+      0; } #zotero-ai-sidebar-tool-settings .zai-card-section { margin-top:
+      12px; padding-top: 10px; border-top: 1px solid rgba(80,70,55,0.12); }
+      #zotero-ai-sidebar-tool-settings .zai-page-section-title { display: flex;
+      align-items: center; gap: 10px; margin: 18px 2px 6px; color: #4f5b53;
+      font-size: 12px; font-weight: 700; } #zotero-ai-sidebar-tool-settings
+      .zai-page-section-title::after { content: ""; flex: 1; height: 1px;
+      background: rgba(80,70,55,0.14); } #zotero-ai-sidebar-tool-settings
+      .zai-setting-row { align-items: flex-start; }
+      #zotero-ai-sidebar-tool-settings .zai-setting-row input { margin-top: 3px;
+      } #zotero-ai-sidebar-tool-settings .zai-setting-copy { display: grid; gap:
+      2px; } #zotero-ai-sidebar-tool-settings .zai-setting-desc { color: #666;
+      font-size: 12px; font-weight: 400; line-height: 1.35; }
+      #zotero-ai-sidebar-tool-settings .zai-inline-details { margin-top: 10px;
+      padding-top: 8px; border-top: 1px solid rgba(80,70,55,0.12); }
+      #zotero-ai-sidebar-tool-settings .zai-inline-details > summary { cursor:
+      pointer; color: #315f43; font-weight: 700; }
+      #zotero-ai-sidebar-tool-settings .zai-inline-details[open] > summary {
+      margin-bottom: 8px; } #zotero-ai-sidebar-tool-settings
+      input[type="number"].zai-number-input { width: 140px; max-width: 100%;
+      justify-self: start; } #zotero-ai-sidebar-tool-settings .zai-color-guide {
+      min-height: 140px; } #zotero-ai-sidebar-tool-settings .zai-actions-end {
+      justify-content: flex-end; } #zotero-ai-sidebar-tool-settings
+      .zai-action-separated { margin-left: auto; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-mode { display: flex;
+      align-items: center; justify-content: space-between; gap: 12px;
+      margin-top: 12px; padding: 12px 0 2px; border-top: 1px solid
+      rgba(80,70,55,0.14); } #zotero-ai-sidebar-tool-settings
+      .zai-sync-mode-text { display: grid; gap: 2px; min-width: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-mode-title { font-weight: 700;
+      } #zotero-ai-sidebar-tool-settings .zai-sync-mode-desc { color: #666;
+      font-size: 12px; line-height: 1.35; } #zotero-ai-sidebar-tool-settings
+      .zai-sync-scope { margin: -2px 0 10px; } #zotero-ai-sidebar-tool-settings
+      .zai-sync-scope > summary, #zotero-ai-sidebar-tool-settings
+      .zai-sync-guide > summary { cursor: pointer; color: #315f43; font-weight:
+      700; } #zotero-ai-sidebar-tool-settings .zai-sync-scope .zai-pref-help {
+      margin: 6px 0 0; font-size: 12px; } #zotero-ai-sidebar-tool-settings
+      .zai-sync-guide { grid-column: 2; margin: -2px 0 2px; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-guide[open] > summary {
+      margin-bottom: 8px; } #zotero-ai-sidebar-tool-settings .zai-sync-guide ol
+      { margin: 8px 0 6px; padding-left: 24px; color: #555; line-height: 1.55; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-guide-note { margin: 6px 0;
+      padding: 7px 9px; border-left: 3px solid rgba(176,117,24,0.65);
+      background: rgba(176,117,24,0.08); color: #725018; font-size: 12px;
+      line-height: 1.45; } #zotero-ai-sidebar-tool-settings .zai-sync-guide a {
+      color: #2f7046; } #zotero-ai-sidebar-tool-settings #zai-sync-test {
+      background: #3f8458; border-color: #3f8458; color: #fff; font-weight: 700;
+      } #zotero-ai-sidebar-tool-settings .zai-switch { position: relative; flex:
+      0 0 auto; min-width: 76px; border: 0; border-radius: 999px; padding: 3px;
+      background: rgba(90,90,90,0.16); color: #555; font-size: 13px;
+      font-weight: 500; line-height: 18px; text-align: right; cursor: pointer;
+      transition: background 0.16s ease, color 0.16s ease; }
+      #zotero-ai-sidebar-tool-settings .zai-switch::before { content: "";
+      position: absolute; left: 3px; top: 3px; width: 28px; height: calc(100% -
+      6px); border-radius: 999px; background: #fff; box-shadow: 0 1px 4px
+      rgba(0,0,0,0.16); transition: transform 0.16s ease; }
+      #zotero-ai-sidebar-tool-settings .zai-switch[data-enabled="true"] {
+      background: rgba(63,132,88,0.88); color: #fff; text-align: left; }
+      #zotero-ai-sidebar-tool-settings .zai-switch[data-enabled="true"]::before
+      { transform: translateX(42px); } #zotero-ai-sidebar-tool-settings
+      .zai-switch-label { position: relative; z-index: 1; display: block;
+      padding: 2px 8px; } #zotero-ai-sidebar-tool-settings .zai-list { display:
+      grid; gap: 10px; } #zotero-ai-sidebar-tool-settings .zai-subcard { border:
+      1px solid rgba(80, 70, 55, 0.14); border-radius: 8px; padding: 10px;
+      background: rgba(255,255,255,0.6); } #zotero-ai-sidebar-tool-settings
+      details.zai-subcard:not([open]) { padding: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-subcard-title { display: flex;
+      align-items: center; justify-content: space-between; gap: 8px;
+      margin-bottom: 8px; font-weight: 700; } #zotero-ai-sidebar-tool-settings
+      details.zai-subcard:not([open]) .zai-subcard-title { margin-bottom: 0;
+      padding: 10px; } #zotero-ai-sidebar-tool-settings .zai-preset-summary {
+      cursor: pointer; list-style: none; } #zotero-ai-sidebar-tool-settings
+      .zai-preset-summary::-webkit-details-marker { display: none; }
+      #zotero-ai-sidebar-tool-settings .zai-preset-summary::before { content:
+      "▸"; flex: 0 0 auto; color: #777; } #zotero-ai-sidebar-tool-settings
+      details[open] > .zai-preset-summary::before { content: "▾"; }
+      #zotero-ai-sidebar-tool-settings .zai-preset-summary-main { display: grid;
+      gap: 2px; min-width: 0; flex: 1; align-items: center;
+      grid-template-columns: auto 1fr; } #zotero-ai-sidebar-tool-settings
+      .zai-preset-status-dot { width: 8px; height: 8px; border-radius: 50%;
+      background: #ccc; display: inline-block; margin-right: 6px; flex-shrink:
+      0; grid-row: 1 / 3; } #zotero-ai-sidebar-tool-settings .zai-dot-ok {
+      background: #3c9e5f; } #zotero-ai-sidebar-tool-settings .zai-dot-fail {
+      background: #d94f4f; } #zotero-ai-sidebar-tool-settings
+      .zai-preset-test-msg { display: block; margin: 6px 10px 8px; font-size:
+      12px; line-height: 1.4; border-radius: 6px; padding: 5px 8px; }
+      #zotero-ai-sidebar-tool-settings .zai-preset-test-msg:empty { display:
+      none; } #zotero-ai-sidebar-tool-settings .zai-test-ok { background:
+      rgba(60,158,95,0.10); color: #2f7046; } #zotero-ai-sidebar-tool-settings
+      .zai-test-fail { background: rgba(217,79,79,0.10); color: #b03030; }
+      #zotero-ai-sidebar-tool-settings .zai-preset-summary-meta { overflow:
+      hidden; color: #666; font-size: 12px; font-weight: 400; text-overflow:
+      ellipsis; white-space: nowrap; } #zotero-ai-sidebar-tool-settings
+      .zai-cache-test-row { display: grid; grid-template-columns: auto
+      minmax(150px, 220px) minmax(180px, 1fr) auto; gap: 8px; align-items:
+      center; margin-top: 12px; padding-top: 12px; border-top: 1px solid
+      rgba(80,70,55,0.14); } #zotero-ai-sidebar-tool-settings
+      .zai-cache-test-label { font-weight: 700; white-space: nowrap; }
+      #zotero-ai-sidebar-tool-settings .zai-cache-test-target { min-width: 0;
+      overflow: hidden; color: #666; font-size: 12px; text-overflow: ellipsis;
+      white-space: nowrap; } #zotero-ai-sidebar-tool-settings
+      .zai-cache-test-status { display: block; margin-top: 8px; }
+      #zotero-ai-sidebar-tool-settings .preset-flags-control { display: flex;
+      flex-direction: column; gap: 4px; } #zotero-ai-sidebar-tool-settings
+      .preset-flags { display: flex; flex-wrap: wrap; gap: 6px; }
+      #zotero-ai-sidebar-tool-settings .preset-flag { display: inline-flex;
+      align-items: center; border: 1px solid rgba(80,70,55,0.18); border-radius:
+      999px; padding: 2px 8px; font-size: 11px; font-weight: 700; line-height:
+      1.5; background: rgba(246,246,246,0.95); color: #666; }
+      #zotero-ai-sidebar-tool-settings .preset-flag-ok { border-color:
+      rgba(60,158,95,0.30); background: rgba(60,158,95,0.10); color: #2f7046; }
+      #zotero-ai-sidebar-tool-settings .preset-flag-warn { border-color:
+      rgba(176,117,24,0.28); background: rgba(176,117,24,0.12); color: #8a5a12;
+      } #zotero-ai-sidebar-tool-settings .preset-flag-muted { background:
+      rgba(90,90,90,0.08); color: #777; } #zotero-ai-sidebar-tool-settings
+      .preset-help { color: #666; font-size: 11px; line-height: 1.4; }
+      #zotero-ai-sidebar-tool-settings .zai-model-control { display: grid;
+      grid-template-columns: minmax(240px, 1fr) 220px; gap: 10px; align-items:
+      start; } #zotero-ai-sidebar-tool-settings .zai-model-selected { display:
+      flex; flex-wrap: wrap; gap: 6px; min-height: 36px; padding: 6px; border:
+      1px solid rgba(80, 70, 55, 0.18); border-radius: 7px; background:
+      rgba(255,255,255,0.65); } #zotero-ai-sidebar-tool-settings .zai-model-chip
+      { display: inline-flex; align-items: center; max-width: 100%; border: 1px
+      solid rgba(80, 70, 55, 0.18); border-radius: 999px; background:
+      rgba(246,246,246,0.95); overflow: hidden; transition: border-color 0.12s
+      ease, background 0.12s ease; } #zotero-ai-sidebar-tool-settings
+      .zai-model-chip[data-test-selected="true"] { border-color:
+      rgba(63,132,88,0.72); background: rgba(63,132,88,0.10); }
+      #zotero-ai-sidebar-tool-settings .zai-model-test-radio { flex: 0 0 auto;
+      width: 14px; height: 14px; margin: 0 0 0 8px; accent-color: #3f8458;
+      cursor: pointer; } #zotero-ai-sidebar-tool-settings .zai-model-chip-input
+      { width: 13ch; min-width: 9ch; padding: 4px 3px 4px 5px; border: 0;
+      background: transparent; font: 12px/18px ui-monospace, SFMono-Regular,
+      Menlo, Consolas, monospace; } #zotero-ai-sidebar-tool-settings
+      .zai-model-chip-remove { border: 0; border-left: 1px solid rgba(80, 70,
+      55, 0.12); border-radius: 0; padding: 3px 7px; background: transparent; }
+      #zotero-ai-sidebar-tool-settings .zai-model-side { display: grid; gap:
+      6px; } #zotero-ai-sidebar-tool-settings .zai-model-side-title { color:
+      #666; font-size: 12px; font-weight: 700; }
+      #zotero-ai-sidebar-tool-settings .zai-model-suggestions { display: flex;
+      flex-wrap: wrap; gap: 5px; } #zotero-ai-sidebar-tool-settings
+      .zai-model-suggestions button { padding: 3px 7px; font-size: 12px; }
+      #zotero-ai-sidebar-tool-settings .zai-model-custom-row { display: flex;
+      gap: 6px; } #zotero-ai-sidebar-tool-settings .zai-model-custom-row input {
+      min-width: 0; } #zotero-ai-sidebar-tool-settings .zai-model-custom-row
+      button { flex: 0 0 auto; } #zotero-ai-sidebar-tool-settings
+      .zai-model-hidden { display: none; } @media (max-width: 760px) {
+      #zotero-ai-sidebar-tool-settings .zai-model-control {
+      grid-template-columns: 1fr; } #zotero-ai-sidebar-tool-settings
+      .zai-cache-test-row { grid-template-columns: 1fr; } }
+      #zotero-ai-sidebar-tool-settings .zai-inline { display: flex; align-items:
+      center; gap: 8px; } #zotero-ai-sidebar-tool-settings .zai-prompt-head {
+      display: flex; align-items: center; justify-content: space-between; gap:
+      8px; margin: 8px 0 4px; font-weight: 700; }
+      #zotero-ai-sidebar-tool-settings .zai-prompt-title { display: flex;
+      align-items: center; flex-wrap: wrap; gap: 6px; min-width: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-prompt-default-state { border: 1px
+      solid rgba(80,70,55,0.16); border-radius: 999px; padding: 1px 7px;
+      background: rgba(90,90,90,0.08); color: #666; font-size: 11px;
+      font-weight: 700; white-space: nowrap; } #zotero-ai-sidebar-tool-settings
+      .zai-prompt-default-state[data-state="default"] { border-color:
+      rgba(63,132,88,0.28); background: rgba(63,132,88,0.12); color: #2f7046; }
+      #zotero-ai-sidebar-tool-settings
+      .zai-prompt-default-state[data-state="custom"] { border-color:
+      rgba(176,117,24,0.26); background: rgba(176,117,24,0.12); color: #8a5a12;
+      } #zotero-ai-sidebar-tool-settings
+      .zai-prompt-default-state[data-state="dirty"] { border-color:
+      rgba(203,91,42,0.30); background: rgba(203,91,42,0.13); color: #a4471b; }
+      #zotero-ai-sidebar-tool-settings .zai-prompt-option { margin: 8px 0 6px;
+      padding: 8px 10px; border: 1px solid rgba(80, 70, 55, 0.12);
+      border-radius: 8px; background: rgba(255,255,255,0.55); }
+      #zotero-ai-sidebar-tool-settings .zai-prompt-option-head { display: flex;
+      align-items: center; justify-content: space-between; gap: 10px; }
+      #zotero-ai-sidebar-tool-settings .zai-prompt-option-head button { flex: 0
+      0 auto; padding: 4px 10px; } #zotero-ai-sidebar-tool-settings
+      .zai-prompt-option .zai-pref-help { margin: 4px 0 0 24px; font-size: 12px;
+      } #zotero-ai-sidebar-tool-settings .zai-custom-prompt-row { padding: 8px;
+      } #zotero-ai-sidebar-tool-settings .zai-custom-prompt-row
+      .zai-subcard-title { margin-bottom: 6px; }
+      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-fields { display:
+      grid; grid-template-columns: minmax(160px, 1fr) 92px; gap: 8px;
+      align-items: end; } #zotero-ai-sidebar-tool-settings
+      .zai-custom-prompt-field { display: grid; gap: 3px; min-width: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-field label { color:
+      #666; font-size: 12px; font-weight: 600; }
+      #zotero-ai-sidebar-tool-settings .zai-custom-prompt-field textarea {
+      min-height: 48px; } #zotero-ai-sidebar-tool-settings
+      .zai-custom-prompt-field textarea:focus { min-height: 96px; }
       #zotero-ai-sidebar-tool-settings .zai-config-json { min-height: 140px; }
-      #zotero-ai-sidebar-tool-settings .zai-danger { background: rgba(170, 51, 51, 0.10); color: #a33; }
+      #zotero-ai-sidebar-tool-settings .zai-danger { background: rgba(170, 51,
+      51, 0.10); color: #a33; } #zotero-ai-sidebar-tool-settings .zai-save-bar {
+      position: sticky; z-index: 10; top: 8px; display: flex; align-items:
+      center; justify-content: space-between; gap: 16px; margin: 14px 0 4px;
+      padding: 10px 12px; border: 1px solid rgba(63,132,88,0.42); border-radius:
+      8px; background: rgba(247,251,248,0.97); box-shadow: 0 4px 18px
+      rgba(34,55,42,0.16); } #zotero-ai-sidebar-tool-settings
+      .zai-save-bar[hidden] { display: none; } #zotero-ai-sidebar-tool-settings
+      .zai-save-summary { display: grid; gap: 2px; min-width: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-save-title { font-weight: 700; }
+      #zotero-ai-sidebar-tool-settings .zai-save-sections { color: #55625a;
+      font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space:
+      nowrap; } #zotero-ai-sidebar-tool-settings .zai-save-actions { display:
+      flex; flex: 0 0 auto; gap: 8px; } #zotero-ai-sidebar-tool-settings
+      #zai-save-commit { background: #3f8458; border-color: #3f8458; color:
+      #fff; font-weight: 700; } @media (max-width: 560px) {
+      #zotero-ai-sidebar-tool-settings .zai-save-bar { align-items: stretch;
+      flex-direction: column; } #zotero-ai-sidebar-tool-settings
+      .zai-save-actions { justify-content: flex-end; } }
     </html:style>
 
-    <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">账号与模型</html:div>
-      <html:p class="zai-pref-help">
-        在 Zotero 设置里统一管理 Provider、API Key、Base URL、模型列表和推理参数。保存后侧边栏立即刷新。
-      </html:p>
-      <html:div id="zai-preset-list" class="zai-list"></html:div>
-      <html:div class="zai-pref-actions">
-        <html:button id="zai-preset-add-openai" type="button">+ OpenAI</html:button>
-        <html:button id="zai-preset-add-anthropic" type="button">+ Anthropic</html:button>
-        <html:button id="zai-preset-save" type="button">保存账号配置</html:button>
-        <html:span id="zai-preset-status" class="zai-pref-status"></html:span>
+    <html:div id="zai-save-bar" class="zai-save-bar" hidden="hidden">
+      <html:div class="zai-save-summary">
+        <html:span class="zai-save-title">有未保存的更改</html:span>
+        <html:span id="zai-save-sections" class="zai-save-sections"></html:span>
+      </html:div>
+      <html:div class="zai-save-actions">
+        <html:button id="zai-save-discard" type="button">撤销</html:button>
+        <html:button id="zai-save-commit" type="button">保存更改</html:button>
       </html:div>
     </html:div>
 
-    <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">逐句翻译设置</html:div>
+    <html:div class="zai-page-section-title">常用设置</html:div>
+    <html:div class="zai-pref-card" data-save-section="presets">
+      <html:div class="zai-pref-title">账号与模型</html:div>
       <html:p class="zai-pref-help">
-        「译」快捷翻译与「沉浸」共用的部分：<html:strong>模型、思考程度、结果位置、翻译框大小、账号配置</html:strong> —— 这几项在这里改，两个模式都生效。带「仅译」标记的（上下文 / 触发方式 / 下一句·上一句快捷键）只作用于「译」模式；沉浸模式有自己的「结合上下句 / 单击直接出卡 / 快捷键」（在下方“沉浸阅读”卡里）。翻译设置会参与 WebDAV 云同步。
+        在 Zotero 设置里统一管理 Provider、API Key、Base
+        URL、模型列表和推理参数。修改后通过顶部保存栏统一提交。
+      </html:p>
+      <html:div id="zai-preset-list" class="zai-list"></html:div>
+      <html:div class="zai-pref-actions">
+        <html:button id="zai-preset-add-openai" type="button"
+          >+ OpenAI</html:button
+        >
+        <html:button id="zai-preset-add-anthropic" type="button"
+          >+ Anthropic</html:button
+        >
+        <html:span id="zai-preset-status" class="zai-pref-status"></html:span>
+      </html:div>
+      <html:div class="zai-cache-test-row">
+        <html:span class="zai-cache-test-label">缓存测试</html:span>
+        <html:select
+          id="zai-cache-test-preset"
+          aria-label="缓存测试账号"
+        ></html:select>
+        <html:span
+          id="zai-cache-test-target"
+          class="zai-cache-test-target"
+        ></html:span>
+        <html:button id="zai-cache-test-run" type="button"
+          >开始测试</html:button
+        >
+      </html:div>
+      <html:span
+        id="zai-cache-test-status"
+        class="zai-pref-status zai-cache-test-status"
+      ></html:span>
+    </html:div>
+
+    <html:div class="zai-pref-card">
+      <html:div class="zai-pref-title">沉浸阅读</html:div>
+      <html:p class="zai-pref-help">
+        配置翻译使用的账号、模型、呈现方式和阅读交互；修改后自动保存并立即生效。
       </html:p>
       <html:div class="zai-pref-grid">
+        <html:div class="zai-pref-subtitle zai-grid-section">翻译模型</html:div>
         <html:label for="zai-translate-preset">配置</html:label>
         <html:select id="zai-translate-preset"></html:select>
         <html:label for="zai-translate-model">模型</html:label>
@@ -124,12 +319,7 @@
           <html:option value="high">High - 更强推理</html:option>
           <html:option value="xhigh">Extra high - 最强推理</html:option>
         </html:select>
-        <html:label for="zai-translate-context">上下文（仅译）</html:label>
-        <html:select id="zai-translate-context">
-          <html:option value="none">仅本句</html:option>
-          <html:option value="paragraph">本段</html:option>
-          <html:option value="page">整页</html:option>
-        </html:select>
+        <html:div class="zai-pref-subtitle zai-grid-section">翻译呈现</html:div>
         <html:label for="zai-translate-position">结果位置</html:label>
         <html:select id="zai-translate-position">
           <html:option value="above">句上方</html:option>
@@ -140,118 +330,174 @@
           <html:option value="compact">紧凑（固定小框）</html:option>
           <html:option value="adaptive">自适应（尽量展开）</html:option>
         </html:select>
-        <html:label for="zai-translate-trigger">触发方式（仅译）</html:label>
+      </html:div>
+
+      <html:div class="zai-pref-subtitle zai-card-section">阅读行为</html:div>
+      <html:label class="zai-pref-checkbox-row zai-setting-row">
+        <html:input id="zai-immersive-card-mode" type="checkbox" />
+        <html:span class="zai-setting-copy">
+          <html:span class="zai-pref-checkbox-label"
+            >单击直接打开翻译卡</html:span
+          >
+          <html:span class="zai-setting-desc"
+            >关闭时先显示操作选择条。</html:span
+          >
+        </html:span>
+      </html:label>
+      <html:label class="zai-pref-checkbox-row zai-setting-row">
+        <html:input id="zai-immersive-neighbor-context" type="checkbox" />
+        <html:span class="zai-setting-copy">
+          <html:span class="zai-pref-checkbox-label"
+            >翻译时结合上下句</html:span
+          >
+          <html:span class="zai-setting-desc"
+            >附带前后各一句作为上下文，默认关闭。</html:span
+          >
+        </html:span>
+      </html:label>
+      <html:label class="zai-pref-checkbox-row zai-setting-row">
+        <html:input id="zai-immersive-term-pairs" type="checkbox" />
+        <html:span class="zai-setting-copy">
+          <html:span class="zai-pref-checkbox-label">显示重点词对应</html:span>
+          <html:span class="zai-setting-desc"
+            >原文与译文中的对应词可悬停联动，默认关闭。</html:span
+          >
+        </html:span>
+      </html:label>
+      <html:div class="zai-pref-grid">
+        <html:label for="zai-immersive-keyword-count">每句重点词数</html:label>
+        <html:input
+          id="zai-immersive-keyword-count"
+          class="zai-number-input"
+          type="number"
+          min="1"
+          max="6"
+          step="1"
+          placeholder="默认 3"
+        />
+      </html:div>
+      <html:details class="zai-inline-details">
+        <html:summary>快捷键（5 项）</html:summary>
+        <html:div class="zai-pref-grid">
+          <html:label for="zai-immersive-next-key">下一句</html:label>
+          <html:input
+            id="zai-immersive-next-key"
+            type="text"
+            placeholder="Enter、ArrowDown 或 j"
+          />
+          <html:label for="zai-immersive-prev-key">上一句</html:label>
+          <html:input
+            id="zai-immersive-prev-key"
+            type="text"
+            placeholder="Shift+Enter、ArrowUp 或 k"
+          />
+          <html:label for="zai-immersive-quick-key">翻译选区</html:label>
+          <html:input
+            id="zai-immersive-quick-key"
+            type="text"
+            placeholder="Space、t 或 Alt+Space"
+          />
+          <html:label for="zai-immersive-focus-ask-key">聚焦追问框</html:label>
+          <html:input
+            id="zai-immersive-focus-ask-key"
+            type="text"
+            placeholder="/、i 或 Tab"
+          />
+          <html:label for="zai-immersive-toggle-key">收起工具栏</html:label>
+          <html:input
+            id="zai-immersive-toggle-key"
+            type="text"
+            placeholder="h、\ 或 Alt+h"
+          />
+        </html:div>
+      </html:details>
+
+      <html:div
+        class="zai-legacy-translate-settings"
+        hidden="hidden"
+        aria-hidden="true"
+      >
+        <html:select id="zai-translate-context">
+          <html:option value="none">仅本句</html:option>
+          <html:option value="paragraph">本段</html:option>
+          <html:option value="page">整页</html:option>
+        </html:select>
         <html:select id="zai-translate-trigger">
           <html:option value="single">单击翻译</html:option>
           <html:option value="double">双击翻译</html:option>
         </html:select>
-        <html:label for="zai-translate-next-key">下一句快捷键（仅译）</html:label>
-        <html:input id="zai-translate-next-key" type="text" placeholder="例如：Enter 或 Alt+N" />
-        <html:label for="zai-translate-prev-key">上一句快捷键（仅译）</html:label>
-        <html:input id="zai-translate-prev-key" type="text" placeholder="例如：Shift+Enter 或 Alt+P" />
+        <html:input
+          id="zai-translate-next-key"
+          type="text"
+          placeholder="例如：Enter 或 Alt+N"
+        />
+        <html:input
+          id="zai-translate-prev-key"
+          type="text"
+          placeholder="例如：Shift+Enter 或 Alt+P"
+        />
       </html:div>
       <html:div class="zai-pref-actions">
-        <html:button id="zai-translate-save" type="button">保存翻译设置</html:button>
-        <html:span id="zai-translate-status" class="zai-pref-status"></html:span>
+        <html:span
+          id="zai-translate-status"
+          class="zai-pref-status"
+        ></html:span>
       </html:div>
     </html:div>
 
-    <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">沉浸阅读（问 AI）</html:div>
+    <html:div class="zai-pref-card" data-save-section="prompts">
+      <html:div class="zai-pref-title">快捷提示词</html:div>
       <html:p class="zai-pref-help">
-        沉浸模式下单击 PDF 句子的行为。开启＝直接弹出「翻译 + 解释」卡并可追问；关闭＝先弹「问 AI / 译」选择条由你手选。改动即时生效，无需保存。
+        编辑内置提示词或新增自定义按钮；修改后通过顶部保存栏统一提交。
       </html:p>
-      <html:label class="zai-pref-checkbox-row">
-        <html:input id="zai-immersive-card-mode" type="checkbox" />
-        <html:span class="zai-pref-checkbox-label">单击直接出卡（关闭＝弹「问 AI / 译」选择条）</html:span>
-      </html:label>
-      <html:label class="zai-pref-checkbox-row">
-        <html:input id="zai-immersive-neighbor-context" type="checkbox" />
-        <html:span class="zai-pref-checkbox-label">结合上下句翻译（默认关＝最省，只发被点这一句；开启＝带上前后各一句作上下文，更准。也可在卡片上临时勾）</html:span>
-      </html:label>
-      <html:label class="zai-pref-checkbox-row">
-        <html:input id="zai-immersive-term-pairs" type="checkbox" />
-        <html:span class="zai-pref-checkbox-label">重点词对应（默认关；开启后译文多回几个原文↔中文词对，悬停时原文与译文里对应词虚线互相点亮）</html:span>
-      </html:label>
-      <html:div class="zai-pref-grid">
-        <html:label for="zai-immersive-keyword-count">每句重点词数</html:label>
-        <html:input id="zai-immersive-keyword-count" type="number" min="1" max="6" step="1" placeholder="默认 3（按句计的中心值，每句实际 ±1 浮动；整段＝每句这么多）" />
-      </html:div>
-      <html:p class="zai-pref-help">
-        默认卡＝原文 + 译（最省）：单击只翻这一句并缓存；想要解释直接在卡片底部追问。切句快捷键默认 Enter / Shift+Enter：卡片开着时翻到下一句并出新卡，没开卡时移动“在读高亮”；在追问框里打字时 Enter 仍是发送、不会切句。也可改成 ArrowDown / ArrowUp 或 j / k。
-      </html:p>
-      <html:div class="zai-pref-grid">
-        <html:label for="zai-immersive-next-key">下一句快捷键</html:label>
-        <html:input id="zai-immersive-next-key" type="text" placeholder="例如：Enter 或 ArrowDown 或 j" />
-        <html:label for="zai-immersive-prev-key">上一句快捷键</html:label>
-        <html:input id="zai-immersive-prev-key" type="text" placeholder="例如：Shift+Enter 或 ArrowUp 或 k" />
-      </html:div>
-      <html:p class="zai-pref-help">
-        用鼠标在 PDF 里选中文字后，按下面这个键即可直接翻译选中的句子（弹出同样的卡片，Enter/Shift+Enter 继续切句）；按 Esc 取消翻译并恢复选区。默认空格——只有“有选区时”才拦截，没选区时空格照常翻页。
-      </html:p>
-      <html:div class="zai-pref-grid">
-        <html:label for="zai-immersive-quick-key">选区快捷翻译键</html:label>
-        <html:input id="zai-immersive-quick-key" type="text" placeholder="例如：Space 或 t 或 Alt+Space" />
-        <html:label for="zai-immersive-focus-ask-key">聚焦追问键</html:label>
-        <html:input id="zai-immersive-focus-ask-key" type="text" placeholder="例如：/ 或 i 或 Tab" />
-        <html:label for="zai-immersive-toggle-key">收起工具栏键</html:label>
-        <html:input id="zai-immersive-toggle-key" type="text" placeholder="例如：h 或 \ 或 Alt+h" />
-      </html:div>
-      <html:p class="zai-pref-help">
-        卡片打开时，按「聚焦追问键」（默认 /）把光标移进卡底的「追问」输入框——因为 Enter 已用于切句。在输入框里打字时这个键照常输入。
-      </html:p>
-      <html:p class="zai-pref-help">
-        按「收起工具栏键」（默认 h）收起 / 展开卡片顶部栏和底部按钮行（追问框保留），状态会记住。在输入框里打字时这个键照常输入。
-      </html:p>
-    </html:div>
-
-    <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">PDF 注释颜色预设</html:div>
-      <html:p class="zai-pref-help">
-        AI 写入 PDF 注释时允许使用的颜色分类。保存后会自动接到模型（system prompt + annotate_passage 工具的 color 参数），<html:strong>用户提示词里不需要重复颜色定义</html:strong>。清空文本框可关闭分类，Reset 恢复默认。
-      </html:p>
-      <html:p class="zai-pref-help">
-        <html:strong>本文本框是颜色定义的唯一入口</html:strong>。在用户提示词或自定义按钮等其他位置写入与此处不一致的颜色规则会与系统注入冲突，模型可能不按本预设上色，结果难以稳定——如需调整颜色含义、增减颜色或关闭分类，请只在这里修改。
-      </html:p>
-      <html:textarea id="zai-tool-annotation-color-guide" placeholder="配置写入 PDF 注释时传给模型的颜色预设；保存后会追加到 Zotero tool manual 和 annotate_passage 工具 color 参数（无需在用户提示词中重复）。"></html:textarea>
+      <html:div id="zai-built-in-prompts"></html:div>
+      <html:div class="zai-pref-subtitle zai-card-section">自定义按钮</html:div>
+      <html:div id="zai-custom-prompts" class="zai-list"></html:div>
       <html:div class="zai-pref-actions">
-        <html:button id="zai-color-save" type="button">保存颜色预设</html:button>
-        <html:button id="zai-tool-reset-color-guide" type="button">Reset 颜色预设</html:button>
-        <html:span id="zai-tool-status" class="zai-pref-status"></html:span>
-      </html:div>
-    </html:div>
-
-    <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">PDF 新增文字（T 工具）</html:div>
-      <html:p class="zai-pref-help">
-        点击「🅣 新增文字」时使用的默认字号（PDF 点）。范围 8–48，对应 Zotero Reader「新增文字 / Add Text」工具的可选区间。
-      </html:p>
-      <html:div class="zai-pref-grid">
-        <html:label for="zai-tool-text-annotation-font-size">默认字号</html:label>
-        <html:input id="zai-tool-text-annotation-font-size" type="number" min="8" max="48" step="1" />
-      </html:div>
-      <html:div class="zai-pref-actions">
-        <html:button id="zai-text-annotation-font-save" type="button">保存字号</html:button>
-        <html:span id="zai-text-annotation-font-status" class="zai-pref-status"></html:span>
+        <html:button id="zai-custom-prompt-add" type="button"
+          >+ 新增按钮</html:button
+        >
+        <html:button
+          id="zai-prompt-reset"
+          class="zai-action-separated"
+          type="button"
+          >恢复全部内置默认</html:button
+        >
+        <html:span id="zai-prompt-status" class="zai-pref-status"></html:span>
       </html:div>
     </html:div>
 
     <html:div class="zai-pref-card">
       <html:div class="zai-pref-title">显示设置</html:div>
       <html:p class="zai-pref-help">
-        配置消息昵称、头像和消息按钮。头像可以填写 emoji、短文本，或图片 URL / data:image。
+        配置消息昵称、头像和消息按钮。头像可以填写 emoji、短文本，或图片 URL /
+        data:image；修改后自动保存。
       </html:p>
       <html:div class="zai-pref-grid">
+        <html:div class="zai-pref-subtitle zai-grid-section">身份显示</html:div>
         <html:label for="zai-ui-user-label">我的昵称</html:label>
         <html:input id="zai-ui-user-label" type="text" />
         <html:label for="zai-ui-user-avatar">我的头像</html:label>
-        <html:input id="zai-ui-user-avatar" type="text" placeholder="例如：🙂 或 https://.../avatar.png" />
+        <html:input
+          id="zai-ui-user-avatar"
+          type="text"
+          placeholder="例如：🙂 或 https://.../avatar.png"
+        />
         <html:label for="zai-ui-assistant-label">AI 昵称</html:label>
         <html:input id="zai-ui-assistant-label" type="text" />
         <html:label for="zai-ui-assistant-avatar">AI 头像</html:label>
-        <html:input id="zai-ui-assistant-avatar" type="text" placeholder="例如：🤖 或 data:image/png;base64,..." />
+        <html:input
+          id="zai-ui-assistant-avatar"
+          type="text"
+          placeholder="例如：🤖 或 data:image/png;base64,..."
+        />
+        <html:div class="zai-pref-subtitle zai-grid-section">消息界面</html:div>
         <html:label for="zai-ui-chat-font">聊天字体</html:label>
-        <html:input id="zai-ui-chat-font" type="text" placeholder="留空用默认；例如：LXGW WenKai, Noto Serif CJK SC, serif" />
+        <html:input
+          id="zai-ui-chat-font"
+          type="text"
+          placeholder="留空用默认；例如：LXGW WenKai, Noto Serif CJK SC, serif"
+        />
         <html:label for="zai-ui-actions-position">消息按钮位置</html:label>
         <html:select id="zai-ui-actions-position">
           <html:option value="top-right">右上角</html:option>
@@ -265,118 +511,217 @@
       </html:div>
       <html:label class="zai-pref-checkbox-row">
         <html:input id="zai-ui-composer-queue" type="checkbox" />
-        <html:span class="zai-pref-checkbox-label">回复进行中允许排队新消息</html:span>
+        <html:span class="zai-pref-checkbox-label"
+          >回复进行中允许排队新消息</html:span
+        >
       </html:label>
       <html:p class="zai-pref-help">
-        开启后可在 AI 回答时插队新消息，当前回复结束后按提交顺序逐条执行；PDF 选区以入队时为准。
+        开启后可在 AI 回答时插队新消息，当前回复结束后按提交顺序逐条执行；PDF
+        选区以入队时为准。
       </html:p>
       <html:div class="zai-pref-actions">
-        <html:button id="zai-ui-save" type="button">保存显示设置</html:button>
         <html:span id="zai-ui-status" class="zai-pref-status"></html:span>
       </html:div>
     </html:div>
 
+    <html:div class="zai-page-section-title">PDF 工具</html:div>
     <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">快捷提示词按钮</html:div>
+      <html:div class="zai-pref-subtitle">注释颜色</html:div>
       <html:p class="zai-pref-help">
-        可编辑“总结论文 / 阅读路线 / 全文重点 / 解释选区”的提示词，也可以新增自定义按钮。自定义按钮可配置 PDF 单键快捷键，例如 t 触发 translate；焦点在 PDF Reader 且不是输入框时生效。
+        设置 AI 写入 PDF
+        注释时使用的颜色规则；修改后自动保存，请勿在提示词中重复定义。
       </html:p>
-      <html:div id="zai-built-in-prompts"></html:div>
-      <html:div class="zai-pref-title" style="margin-top: 12px;">自定义按钮</html:div>
-      <html:div id="zai-custom-prompts" class="zai-list"></html:div>
+      <html:textarea
+        id="zai-tool-annotation-color-guide"
+        class="zai-color-guide"
+        placeholder="配置写入 PDF 注释时传给模型的颜色预设；修改后会自动追加到 Zotero tool manual 和 annotate_passage 工具 color 参数（无需在用户提示词中重复）。"
+      ></html:textarea>
+      <html:div class="zai-pref-actions zai-actions-end">
+        <html:button id="zai-tool-reset-color-guide" type="button"
+          >恢复默认颜色预设</html:button
+        >
+        <html:span id="zai-color-status" class="zai-pref-status"></html:span>
+      </html:div>
+
+      <html:div class="zai-pref-subtitle zai-card-section">新增文字</html:div>
+      <html:p class="zai-pref-help">
+        设置「🅣 新增文字」的默认字号，范围 8–48 PDF 点；修改后自动保存。
+      </html:p>
+      <html:div class="zai-pref-grid">
+        <html:label for="zai-tool-text-annotation-font-size"
+          >默认字号（pt）</html:label
+        >
+        <html:input
+          id="zai-tool-text-annotation-font-size"
+          class="zai-number-input"
+          type="number"
+          min="8"
+          max="48"
+          step="1"
+        />
+      </html:div>
       <html:div class="zai-pref-actions">
-        <html:button id="zai-custom-prompt-add" type="button">+ 新增按钮</html:button>
-        <html:button id="zai-prompt-save" type="button">保存提示词</html:button>
-        <html:button id="zai-prompt-reset" type="button">恢复全部内置默认</html:button>
-        <html:span id="zai-prompt-status" class="zai-pref-status"></html:span>
+        <html:span
+          id="zai-text-annotation-font-status"
+          class="zai-pref-status"
+        ></html:span>
       </html:div>
     </html:div>
 
-    <html:div class="zai-pref-card">
+    <html:div class="zai-page-section-title">扩展能力</html:div>
+    <html:div class="zai-pref-card" data-save-section="mcp">
       <html:div class="zai-pref-title">联网与 MCP</html:div>
       <html:p class="zai-pref-help">
-        聊天区只做“联网”开关；Cached/Live 和 MCP 在这里配置。内置 arXiv 论文读取不是 MCP，不需要 Server URL。
+        Web search 模式自动保存；MCP Server 修改后通过顶部保存栏提交。
       </html:p>
       <html:div class="zai-pref-grid">
         <html:label for="zai-tool-web-search">Web search 模式</html:label>
         <html:select id="zai-tool-web-search">
           <html:option value="disabled">关闭</html:option>
           <html:option value="cached">Cached - OpenAI 托管搜索</html:option>
-          <html:option value="live">Live - OpenAI 托管搜索，高上下文</html:option>
+          <html:option value="live"
+            >Live - OpenAI 托管搜索，高上下文</html:option
+          >
         </html:select>
       </html:div>
-      <html:div class="zai-pref-title" style="margin-top: 12px;">MCP Servers</html:div>
-      <html:p class="zai-pref-help">
-        MCP 配置功能正在开发中
-      </html:p>
+      <html:div class="zai-pref-subtitle zai-card-section"
+        >MCP Servers</html:div
+      >
       <html:div id="zai-mcp-list" class="zai-list"></html:div>
       <html:div class="zai-pref-actions">
         <html:button id="zai-mcp-add" type="button">+ MCP Server</html:button>
-        <html:button id="zai-tool-save" type="button">保存联网/MCP配置</html:button>
         <html:span id="zai-tool-status" class="zai-pref-status"></html:span>
       </html:div>
     </html:div>
 
-    <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">配置备份</html:div>
-      <html:p class="zai-pref-help">
-        备份/恢复账号、快捷提示词、联网/MCP 和逐句翻译配置。备份文件可能包含 API Key，请保存在可信位置。
-      </html:p>
-      <html:div class="zai-pref-actions">
-        <html:button id="zai-config-export-file" type="button">导出配置文件</html:button>
-        <html:button id="zai-config-import-file" type="button">导入配置文件</html:button>
-        <html:span id="zai-config-status" class="zai-pref-status"></html:span>
-      </html:div>
-      <html:details>
-        <html:summary class="zai-pref-title">手动备份/恢复</html:summary>
-        <html:p class="zai-pref-help">
-          用于手动复制、检查或粘贴配置 JSON。内容可能包含 API Key，请勿公开分享。
-        </html:p>
-        <html:textarea id="zai-config-json" class="zai-config-json" placeholder="点击“生成配置 JSON”后复制；需要手动恢复时，把备份 JSON 粘贴到这里再导入。"></html:textarea>
-        <html:div class="zai-pref-actions">
-          <html:button id="zai-config-generate" type="button">生成配置 JSON</html:button>
-          <html:button id="zai-config-copy" type="button">复制配置 JSON</html:button>
-          <html:button id="zai-config-import-text" type="button">从文本导入</html:button>
-          <html:button id="zai-config-clear" type="button">清空</html:button>
-        </html:div>
-      </html:details>
-    </html:div>
-
-    <html:div class="zai-pref-card">
+    <html:div class="zai-page-section-title">数据管理</html:div>
+    <html:div class="zai-pref-card" data-save-section="sync">
       <html:div class="zai-pref-title">云同步（WebDAV）</html:div>
       <html:p class="zai-pref-help">
-        把账号预设、快捷提示词、联网/MCP 设置、显示设置、逐句翻译设置、AI 对话和翻译缓存同步到 WebDAV
-        云盘（坚果云 / NextCloud / ownCloud / Synology 等）。论文 PDF 和元数据请继续使用 Zotero 自带的同步（设置 →
-        同步 → 文件同步 → WebDAV，可指向同一个 WebDAV 账号）。自动同步默认关闭；开启后会启动时和每 10 分钟自动下载合并再上传。
+        在多台设备间同步 AI Sidebar 的账号、提示词、界面设置和对话缓存。
       </html:p>
+      <html:details class="zai-sync-scope">
+        <html:summary class="zai-pref-subtitle">同步内容说明</html:summary>
+        <html:p class="zai-pref-help">
+          还包括联网/MCP 和翻译与阅读设置。论文 PDF 和元数据继续使用 Zotero
+          自带同步；自动同步默认关闭，开启后会在启动时及每 10 分钟运行。
+        </html:p>
+      </html:details>
       <html:div class="zai-pref-grid">
         <html:label for="zai-sync-url">WebDAV URL</html:label>
-        <html:input id="zai-sync-url" type="text" placeholder="例如：https://dav.jianguoyun.com/dav/" />
+        <html:input
+          id="zai-sync-url"
+          type="text"
+          value="https://dav.jianguoyun.com/dav/"
+          placeholder="例如：https://dav.jianguoyun.com/dav/"
+        />
         <html:label for="zai-sync-username">用户名</html:label>
-        <html:input id="zai-sync-username" type="text" placeholder="坚果云：你的注册邮箱" />
+        <html:input
+          id="zai-sync-username"
+          type="text"
+          placeholder="坚果云：你的注册邮箱"
+        />
         <html:label for="zai-sync-password">密码 / 应用密码</html:label>
-        <html:input id="zai-sync-password" type="password" placeholder="坚果云需在网页端「安全选项」生成应用密码" />
+        <html:input
+          id="zai-sync-password"
+          type="password"
+          placeholder="坚果云需在网页端「安全选项」生成应用密码"
+        />
+        <html:details class="zai-sync-guide">
+          <html:summary>如何获取坚果云邮箱和应用密码？</html:summary>
+          <html:ol>
+            <html:li>登录坚果云网页版，进入“账户信息 → 安全选项”。</html:li>
+            <html:li>用户名填写坚果云注册邮箱。</html:li>
+            <html:li
+              >在“第三方应用管理”中添加应用密码，名称可填写“Zotero AI
+              Sidebar”，生成后填入上方密码框。</html:li
+            >
+          </html:ol>
+          <html:p class="zai-sync-guide-note">
+            请使用新生成的应用密码，不要填写坚果云登录密码。应用密码泄露后应立即删除并重新生成。
+          </html:p>
+          <html:a
+            id="zai-sync-nutstore-help"
+            href="https://help.jianguoyun.com/?p=2064"
+            target="_blank"
+            rel="noreferrer"
+            >查看坚果云官方 WebDAV 教程</html:a
+          >
+        </html:details>
         <html:label for="zai-sync-folder">云端目录</html:label>
-        <html:input id="zai-sync-folder" type="text" placeholder="zotero-ai-sidebar" />
-      </html:div>
-      <html:div class="zai-sync-mode">
-        <html:div class="zai-sync-mode-text">
-          <html:div class="zai-sync-mode-title">自动同步</html:div>
-          <html:div class="zai-sync-mode-desc">默认关闭。开启后启动时和每 10 分钟自动下载合并，再上传到云端。</html:div>
-        </html:div>
-        <html:button id="zai-sync-auto" class="zai-switch" type="button" aria-pressed="false" data-enabled="false">
-          <html:span class="zai-switch-label">关闭</html:span>
-        </html:button>
+        <html:input
+          id="zai-sync-folder"
+          type="text"
+          value="zotero-ai-sidebar"
+          placeholder="zotero-ai-sidebar"
+        />
       </html:div>
       <html:div class="zai-pref-actions">
         <html:button id="zai-sync-test" type="button">测试连接</html:button>
         <html:button id="zai-sync-push" type="button">上传到云端</html:button>
         <html:button id="zai-sync-pull" type="button">从云端下载</html:button>
-        <html:button id="zai-sync-save" type="button">保存账号</html:button>
         <html:span id="zai-sync-status" class="zai-pref-status"></html:span>
       </html:div>
-      <html:p id="zai-sync-meta" class="zai-pref-help"></html:p>
+      <html:div class="zai-sync-mode">
+        <html:div class="zai-sync-mode-text">
+          <html:div class="zai-sync-mode-title">自动同步</html:div>
+          <html:div class="zai-sync-mode-desc"
+            >默认关闭。开启后启动时和每 10
+            分钟自动下载合并，再上传到云端。</html:div
+          >
+        </html:div>
+        <html:button
+          id="zai-sync-auto"
+          class="zai-switch"
+          type="button"
+          aria-pressed="false"
+          data-enabled="false"
+        >
+          <html:span class="zai-switch-label">关闭</html:span></html:button
+        >
+      </html:div>
+      <html:p id="zai-sync-meta" class="zai-pref-help"> </html:p>
+    </html:div>
 
+    <html:div class="zai-pref-card">
+      <html:div class="zai-pref-title">配置备份</html:div>
+      <html:p class="zai-pref-help">
+        备份/恢复账号、快捷提示词、联网/MCP 和翻译与阅读配置。备份文件可能包含
+        API Key，请保存在可信位置。
+      </html:p>
+      <html:div class="zai-pref-actions">
+        <html:button id="zai-config-export-file" type="button"
+          >导出配置文件</html:button
+        >
+        <html:button id="zai-config-import-file" type="button"
+          >导入配置文件</html:button
+        >
+        <html:span id="zai-config-status" class="zai-pref-status"></html:span>
+      </html:div>
+      <html:details class="zai-inline-details">
+        <html:summary class="zai-pref-subtitle">手动备份/恢复</html:summary>
+        <html:p class="zai-pref-help">
+          用于手动复制、检查或粘贴配置 JSON。内容可能包含 API
+          Key，请勿公开分享。
+        </html:p>
+        <html:textarea
+          id="zai-config-json"
+          class="zai-config-json"
+          placeholder="点击“生成配置 JSON”后复制；需要手动恢复时，把备份 JSON 粘贴到这里再导入。"
+        ></html:textarea>
+        <html:div class="zai-pref-actions">
+          <html:button id="zai-config-generate" type="button"
+            >生成配置 JSON</html:button
+          >
+          <html:button id="zai-config-copy" type="button"
+            >复制配置 JSON</html:button
+          >
+          <html:button id="zai-config-import-text" type="button"
+            >从文本导入</html:button
+          >
+          <html:button id="zai-config-clear" type="button">清空</html:button>
+        </html:div>
+      </html:details>
     </html:div>
   </html:div>
 </groupbox>

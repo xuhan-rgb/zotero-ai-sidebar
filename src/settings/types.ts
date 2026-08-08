@@ -96,6 +96,9 @@ export interface ModelDescriptor {
 
 export const MODEL_CATALOG: Record<'openai' | AnthropicVendor, ModelDescriptor[]> = {
   openai: [
+    { id: 'gpt-5.6-sol' },
+    { id: 'gpt-5.6-terra' },
+    { id: 'gpt-5.6-luna' },
     { id: 'gpt-5.5' },
     { id: 'gpt-5.4' },
     { id: 'gpt-5.4-mini' },

@@ -10,7 +10,14 @@ import {
 } from './modules/sidebar';
 import { testPresetPromptCache as runPresetPromptCacheTest } from './modules/preset-utils';
 import {
+  dispatchPreferenceChange,
+  formatPreferenceSaveSections,
+  hasUnsavedPresetChanges,
+  PREFERENCE_SAVE_SECTIONS,
   registerPreferences,
+  resolveTestModel,
+  setPreferenceSaveBarVisible,
+  type PreferenceSaveSection,
   unregisterPreferences,
 } from './modules/preferences';
 import {
@@ -102,6 +109,13 @@ import {
   saveTranslateSettings,
 } from './translate/settings';
 
+const preferenceWatchWindows = new WeakSet<Window>();
+const preferenceWatchTimers: Array<{ win: Window; timer: number }> = [];
+const dirtyPreferenceSections = new WeakMap<
+  Document,
+  Set<PreferenceSaveSection>
+>();
+
 // Plugin lifecycle hooks invoked by `addon/bootstrap.js`.
 //
 // INVARIANT on startup ordering (each promise gates the next safely):
@@ -126,10 +140,13 @@ async function onStartup() {
   // has its FTL locale strings and ztoolkit ready by the time the column
   // renders. `registerSidebar` then iterates getMainWindows() again to
   // mount the column DOM in each — it's idempotent (see registerSidebarForWindow).
-  await Promise.all(Zotero.getMainWindows().map((win) => onMainWindowLoad(win)));
+  await Promise.all(
+    Zotero.getMainWindows().map((win) => onMainWindowLoad(win)),
+  );
 
   registerSidebar();
   await registerPreferences();
+  for (const win of Zotero.getMainWindows()) watchPreferencesPane(win);
   syncAutoSyncTimer();
 
   addon.data.initialized = true;
@@ -138,9 +155,14 @@ async function onStartup() {
 async function onMainWindowLoad(win: _ZoteroTypes.MainWindow): Promise<void> {
   addon.data.ztoolkit = createZToolkit();
 
-  win.MozXULElement.insertFTLIfNeeded(`${addon.data.config.addonRef}-addon.ftl`);
-  win.MozXULElement.insertFTLIfNeeded(`${addon.data.config.addonRef}-mainWindow.ftl`);
+  win.MozXULElement.insertFTLIfNeeded(
+    `${addon.data.config.addonRef}-addon.ftl`,
+  );
+  win.MozXULElement.insertFTLIfNeeded(
+    `${addon.data.config.addonRef}-mainWindow.ftl`,
+  );
   registerSidebarForWindow(win);
+  watchPreferencesPane(win);
 }
 
 async function onMainWindowUnload(win: Window): Promise<void> {
@@ -150,6 +172,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 
 function onShutdown(): void {
   stopAutoSyncTimer();
+  stopPreferenceWatchers();
   unregisterPreferences();
   ztoolkit.unregisterAll();
   unregisterSidebar();
@@ -171,20 +194,46 @@ async function onPrefsEvent(type: string, data: { [key: string]: unknown }) {
   if (type !== 'load') return;
   const win = data.window as Window | undefined;
   if (!win?.document) return;
-  setupPreferencesPane(win);
+  setupPreferencesPane(win, true);
 }
 
-function setupPreferencesPane(win: Window): void {
+function watchPreferencesPane(win: Window): void {
+  if (preferenceWatchWindows.has(win)) return;
+  preferenceWatchWindows.add(win);
+  const tick = () => {
+    const root = byID<HTMLElement>(
+      win.document,
+      'zotero-ai-sidebar-tool-settings',
+    );
+    if (root && root.dataset.bound !== 'true') setupPreferencesPane(win);
+  };
+  tick();
+  preferenceWatchTimers.push({ win, timer: win.setInterval(tick, 500) });
+}
+
+function stopPreferenceWatchers(): void {
+  while (preferenceWatchTimers.length) {
+    const entry = preferenceWatchTimers.pop();
+    if (entry) entry.win.clearInterval(entry.timer);
+  }
+}
+
+function setupPreferencesPane(win: Window, forceRender = false): void {
   const doc = win.document;
   const root = byID<HTMLElement>(doc, 'zotero-ai-sidebar-tool-settings');
   if (!root) return;
 
-  renderPresetSettings(doc);
-  renderTranslateSettings(doc);
-  renderUiSettings(doc);
-  renderPromptSettings(doc);
-  renderToolSettings(doc);
-  renderSyncSettings(doc);
+  if (forceRender || root.dataset.rendered !== 'true') {
+    renderPresetSettings(doc);
+    renderTranslateSettings(doc);
+    renderUiSettings(doc);
+    renderPromptSettings(doc);
+    renderToolSettings(doc);
+    renderSyncSettings(doc);
+    dirtyPreferenceSections.set(doc, new Set());
+    renderPreferenceSaveBar(doc);
+    root.dataset.rendered = 'true';
+  }
 
   if (root.dataset.bound === 'true') return;
   root.dataset.bound = 'true';
@@ -227,18 +276,25 @@ function setupPreferencesPane(win: Window): void {
     'zai-immersive-keyword-count',
   );
   if (immersiveKeywordCount) {
-    immersiveKeywordCount.value = String(getImmersiveKeywordCount(zoteroPrefs()));
+    immersiveKeywordCount.value = String(
+      getImmersiveKeywordCount(zoteroPrefs()),
+    );
     immersiveKeywordCount.addEventListener('change', () => {
       const n = Number(immersiveKeywordCount.value);
       setImmersiveKeywordCount(
         zoteroPrefs(),
         Number.isFinite(n) ? n : DEFAULT_IMMERSIVE_KEYWORD_COUNT,
       );
-      immersiveKeywordCount.value = String(getImmersiveKeywordCount(zoteroPrefs()));
+      immersiveKeywordCount.value = String(
+        getImmersiveKeywordCount(zoteroPrefs()),
+      );
     });
   }
 
-  const immersiveNextKey = byID<HTMLInputElement>(doc, 'zai-immersive-next-key');
+  const immersiveNextKey = byID<HTMLInputElement>(
+    doc,
+    'zai-immersive-next-key',
+  );
   if (immersiveNextKey) {
     immersiveNextKey.value = getImmersiveNextSentenceKey(zoteroPrefs());
     immersiveNextKey.addEventListener('change', () => {
@@ -250,7 +306,10 @@ function setupPreferencesPane(win: Window): void {
     });
   }
 
-  const immersivePrevKey = byID<HTMLInputElement>(doc, 'zai-immersive-prev-key');
+  const immersivePrevKey = byID<HTMLInputElement>(
+    doc,
+    'zai-immersive-prev-key',
+  );
   if (immersivePrevKey) {
     immersivePrevKey.value = getImmersivePrevSentenceKey(zoteroPrefs());
     immersivePrevKey.addEventListener('change', () => {
@@ -314,8 +373,12 @@ function setupPreferencesPane(win: Window): void {
       const presets = [...readPresetControls(doc), preset];
       renderPresetRows(doc, presets);
       openPresetRow(doc, preset.id);
-      updatePresetSaveButton(doc);
-      setStatus(doc, 'zai-preset-status', '已新增 OpenAI 配置，保存后生效。');
+      updatePresetDirtyState(doc);
+      setStatus(
+        doc,
+        'zai-preset-status',
+        '已新增 OpenAI 配置，请点击顶部“保存更改”。',
+      );
     },
   );
   byID<HTMLButtonElement>(doc, 'zai-preset-add-anthropic')?.addEventListener(
@@ -325,20 +388,22 @@ function setupPreferencesPane(win: Window): void {
       const presets = [...readPresetControls(doc), preset];
       renderPresetRows(doc, presets);
       openPresetRow(doc, preset.id);
-      updatePresetSaveButton(doc);
-      setStatus(doc, 'zai-preset-status', '已新增 Anthropic 配置，保存后生效。');
+      updatePresetDirtyState(doc);
+      setStatus(
+        doc,
+        'zai-preset-status',
+        '已新增 Anthropic 配置，请点击顶部“保存更改”。',
+      );
     },
   );
-  byID<HTMLButtonElement>(doc, 'zai-preset-save')?.addEventListener('click', () => {
-    void savePresetControlsWithConnectivity(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-ui-save')?.addEventListener('click', () => {
-    saveUiSettings(zoteroPrefs(), readUiSettingsControls(doc));
-    renderUiSettings(doc);
-    refreshSidebarPreferences();
-    setStatus(doc, 'zai-ui-status', '显示设置已保存，侧边栏已刷新。');
-    flashButton(byID<HTMLButtonElement>(doc, 'zai-ui-save'), '已保存');
-  });
+  byID<HTMLSelectElement>(doc, 'zai-cache-test-preset')?.addEventListener(
+    'change',
+    () => refreshCacheTestTarget(doc),
+  );
+  byID<HTMLButtonElement>(doc, 'zai-cache-test-run')?.addEventListener(
+    'click',
+    () => void runSelectedPromptCacheTest(doc),
+  );
   byID<HTMLSelectElement>(doc, 'zai-translate-preset')?.addEventListener(
     'change',
     () => {
@@ -348,24 +413,25 @@ function setupPreferencesPane(win: Window): void {
       refreshTranslateThinkingSelect(doc);
     },
   );
-  byID<HTMLButtonElement>(doc, 'zai-translate-save')?.addEventListener(
-    'click',
-    () => {
-      saveTranslateSettingsControls(doc);
-    },
-  );
-
   byID<HTMLButtonElement>(doc, 'zai-custom-prompt-add')?.addEventListener(
     'click',
-    () => addCustomPromptRow(doc, { id: makeId('prompt'), label: '', prompt: '' }),
+    () => {
+      addCustomPromptRow(doc, { id: makeId('prompt'), label: '', prompt: '' });
+      setPreferenceSectionDirty(doc, 'prompts', true);
+    },
   );
-  byID<HTMLButtonElement>(doc, 'zai-prompt-save')?.addEventListener('click', () => {
-    savePromptControls(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-prompt-reset')?.addEventListener('click', () => {
-    populateBuiltInPromptControls(doc, DEFAULT_QUICK_PROMPT_SETTINGS);
-    savePromptControls(doc, '已恢复当前插件内置默认提示词并立即生效。');
-  });
+  byID<HTMLButtonElement>(doc, 'zai-prompt-reset')?.addEventListener(
+    'click',
+    () => {
+      populateBuiltInPromptControls(doc, DEFAULT_QUICK_PROMPT_SETTINGS);
+      refreshPreferenceDirtySection(doc, 'prompts');
+      setStatus(
+        doc,
+        'zai-prompt-status',
+        '已填入全部内置默认提示词，保存更改后生效。',
+      );
+    },
+  );
 
   byID<HTMLButtonElement>(doc, 'zai-mcp-add')?.addEventListener('click', () => {
     addMcpRow(doc, {
@@ -376,89 +442,286 @@ function setupPreferencesPane(win: Window): void {
       allowedTools: [],
       requireApproval: 'never',
     });
+    refreshPreferenceDirtySection(doc, 'mcp');
   });
-  byID<HTMLButtonElement>(doc, 'zai-tool-save')?.addEventListener('click', () => {
-    const settings = readToolSettingsControls(doc);
-    saveToolSettings(zoteroPrefs(), settings);
-    renderToolSettings(doc);
-    refreshSidebarPreferences();
-    setStatus(doc, 'zai-tool-status', '联网/MCP配置已保存，下一次请求立即使用。');
-  });
-  byID<HTMLButtonElement>(doc, 'zai-color-save')?.addEventListener('click', () => {
-    const settings = readToolSettingsControls(doc);
-    saveToolSettings(zoteroPrefs(), settings);
-    renderToolSettings(doc);
-    refreshSidebarPreferences();
-    setStatus(doc, 'zai-tool-status', 'PDF 注释颜色预设已保存，下一次请求立即使用。');
-    flashButton(byID<HTMLButtonElement>(doc, 'zai-color-save'), '已保存');
-  });
-  byID<HTMLButtonElement>(doc, 'zai-tool-reset-color-guide')?.addEventListener('click', () => {
-    const settings = readToolSettingsControls(doc);
-    saveToolSettings(zoteroPrefs(), {
-      ...settings,
-      annotationColorGuide: DEFAULT_TOOL_SETTINGS.annotationColorGuide,
-    });
-    renderToolSettings(doc);
-    refreshSidebarPreferences();
-    setStatus(doc, 'zai-tool-status', 'PDF 注释颜色预设已恢复默认并立即生效。');
-    flashButton(byID<HTMLButtonElement>(doc, 'zai-tool-reset-color-guide'), '已重置');
-  });
-  byID<HTMLButtonElement>(doc, 'zai-text-annotation-font-save')?.addEventListener('click', () => {
-    const settings = readToolSettingsControls(doc);
-    saveToolSettings(zoteroPrefs(), settings);
-    renderToolSettings(doc);
-    refreshSidebarPreferences();
-    setStatus(
-      doc,
-      'zai-text-annotation-font-status',
-      `「新增文字」默认字号已保存为 ${settings.textAnnotationFontSize}。`,
+  byID<HTMLButtonElement>(doc, 'zai-tool-reset-color-guide')?.addEventListener(
+    'click',
+    () => {
+      const colorGuide = byID<HTMLTextAreaElement>(
+        doc,
+        'zai-tool-annotation-color-guide',
+      );
+      if (colorGuide) {
+        colorGuide.value = DEFAULT_TOOL_SETTINGS.annotationColorGuide;
+        colorGuide.scrollTop = 0;
+      }
+      saveAnnotationColorGuideControl(
+        doc,
+        'PDF 注释颜色预设已恢复默认并自动保存。',
+      );
+      flashButton(
+        byID<HTMLButtonElement>(doc, 'zai-tool-reset-color-guide'),
+        '已重置',
+      );
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-config-export-file')?.addEventListener(
+    'click',
+    () => {
+      void exportConfigBackupFile(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-config-import-file')?.addEventListener(
+    'click',
+    () => {
+      void importConfigBackupFile(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-config-generate')?.addEventListener(
+    'click',
+    () => {
+      generateConfigBackupJson(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-config-copy')?.addEventListener(
+    'click',
+    () => {
+      void copyConfigBackupJson(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-config-import-text')?.addEventListener(
+    'click',
+    () => {
+      importConfigBackupFromText(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-config-clear')?.addEventListener(
+    'click',
+    () => {
+      const area = byID<HTMLTextAreaElement>(doc, 'zai-config-json');
+      if (area) area.value = '';
+      setStatus(doc, 'zai-config-status', '手动备份文本已清空。');
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-sync-test')?.addEventListener(
+    'click',
+    () => {
+      void runSyncTest(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-sync-push')?.addEventListener(
+    'click',
+    () => {
+      void runSyncPush(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-sync-pull')?.addEventListener(
+    'click',
+    () => {
+      void runSyncPull(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, 'zai-sync-auto')?.addEventListener(
+    'click',
+    () => {
+      void toggleAutoSync(doc);
+    },
+  );
+  bindAutoSaveControls(
+    doc,
+    '#zai-translate-preset, #zai-translate-model, #zai-translate-thinking, #zai-translate-context, #zai-translate-position, #zai-translate-size, #zai-translate-trigger, #zai-translate-next-key, #zai-translate-prev-key',
+    () => saveTranslateSettingsControls(doc),
+  );
+  bindAutoSaveControls(
+    doc,
+    '#zai-ui-user-label, #zai-ui-user-avatar, #zai-ui-assistant-label, #zai-ui-assistant-avatar, #zai-ui-chat-font, #zai-ui-actions-position, #zai-ui-actions-layout, #zai-ui-composer-queue',
+    () => saveUiSettingsControls(doc),
+  );
+  bindAutoSaveControls(doc, '#zai-tool-web-search', () =>
+    saveWebSearchControl(doc),
+  );
+  bindAutoSaveControls(doc, '#zai-tool-annotation-color-guide', () =>
+    saveAnnotationColorGuideControl(doc),
+  );
+  bindAutoSaveControls(doc, '#zai-tool-text-annotation-font-size', () =>
+    saveTextAnnotationFontSizeControl(doc),
+  );
+  bindCompoundDirtyTracking(doc, root);
+  byID<HTMLButtonElement>(doc, 'zai-save-commit')?.addEventListener(
+    'click',
+    () => void savePreferenceChanges(doc),
+  );
+  byID<HTMLButtonElement>(doc, 'zai-save-discard')?.addEventListener(
+    'click',
+    () => discardPreferenceChanges(doc),
+  );
+}
+
+function bindAutoSaveControls(
+  doc: Document,
+  selector: string,
+  save: () => void,
+): void {
+  const controls = Array.from(doc.querySelectorAll(selector)) as HTMLElement[];
+  for (const control of controls) {
+    control.addEventListener('change', save);
+  }
+}
+
+function bindCompoundDirtyTracking(doc: Document, root: HTMLElement): void {
+  const refresh = (event: Event) => {
+    const target = event.target as Element | null;
+    const container = target?.closest('[data-save-section]') as HTMLElement | null;
+    const section = container?.dataset.saveSection;
+    if (!isPreferenceSaveSection(section)) return;
+    refreshPreferenceDirtySection(doc, section);
+  };
+  root.addEventListener('input', refresh);
+  root.addEventListener('change', refresh);
+}
+
+function isPreferenceSaveSection(
+  value: string | undefined,
+): value is PreferenceSaveSection {
+  return PREFERENCE_SAVE_SECTIONS.includes(value as PreferenceSaveSection);
+}
+
+function preferenceDirtySections(doc: Document): Set<PreferenceSaveSection> {
+  let sections = dirtyPreferenceSections.get(doc);
+  if (!sections) {
+    sections = new Set();
+    dirtyPreferenceSections.set(doc, sections);
+  }
+  return sections;
+}
+
+function setPreferenceSectionDirty(
+  doc: Document,
+  section: PreferenceSaveSection,
+  dirty: boolean,
+): void {
+  const sections = preferenceDirtySections(doc);
+  if (dirty) sections.add(section);
+  else sections.delete(section);
+  renderPreferenceSaveBar(doc);
+}
+
+function renderPreferenceSaveBar(doc: Document): void {
+  const bar = byID<HTMLElement>(doc, 'zai-save-bar');
+  const label = byID<HTMLElement>(doc, 'zai-save-sections');
+  if (!bar || !label) return;
+  const sections = preferenceDirtySections(doc);
+  setPreferenceSaveBarVisible(bar, sections.size > 0);
+  label.textContent = formatPreferenceSaveSections(sections);
+}
+
+function refreshPreferenceDirtySection(
+  doc: Document,
+  section: PreferenceSaveSection,
+): void {
+  let changed = false;
+  if (section === 'presets') {
+    changed = hasUnsavedPresetChanges(
+      readPresetControls(doc),
+      loadPresets(zoteroPrefs()),
     );
-    flashButton(byID<HTMLButtonElement>(doc, 'zai-text-annotation-font-save'), '已保存');
-  });
-  byID<HTMLButtonElement>(doc, 'zai-config-export-file')?.addEventListener('click', () => {
-    void exportConfigBackupFile(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-config-import-file')?.addEventListener('click', () => {
-    void importConfigBackupFile(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-config-generate')?.addEventListener('click', () => {
-    generateConfigBackupJson(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-config-copy')?.addEventListener('click', () => {
-    void copyConfigBackupJson(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-config-import-text')?.addEventListener('click', () => {
-    importConfigBackupFromText(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-config-clear')?.addEventListener('click', () => {
-    const area = byID<HTMLTextAreaElement>(doc, 'zai-config-json');
-    if (area) area.value = '';
-    setStatus(doc, 'zai-config-status', '手动备份文本已清空。');
-  });
-  byID<HTMLButtonElement>(doc, 'zai-sync-save')?.addEventListener('click', () => {
-    const account = readSyncAccountControls(doc);
-    saveSyncAccount(zoteroPrefs(), account);
+  } else if (section === 'prompts') {
+    const current = readPromptControls(doc);
+    changed =
+      typeof current === 'string' ||
+      JSON.stringify(normalizeQuickPromptSettings(current)) !==
+        JSON.stringify(loadQuickPromptSettings(zoteroPrefs()));
+  } else if (section === 'mcp') {
+    const saved = loadToolSettings(zoteroPrefs());
+    const current = normalizeToolSettings({
+      ...saved,
+      mcpServers: readToolSettingsControls(doc).mcpServers,
+    });
+    changed =
+      JSON.stringify(current.mcpServers) !== JSON.stringify(saved.mcpServers);
+  } else {
+    changed =
+      syncAccountControlsSignature(readSyncAccountControls(doc)) !==
+      syncAccountControlsSignature(loadSyncAccount(zoteroPrefs()));
+  }
+  setPreferenceSectionDirty(doc, section, changed);
+}
+
+function refreshAllPreferenceDirtySections(doc: Document): void {
+  for (const section of PREFERENCE_SAVE_SECTIONS) {
+    refreshPreferenceDirtySection(doc, section);
+  }
+}
+
+async function savePreferenceChanges(doc: Document): Promise<void> {
+  const commit = byID<HTMLButtonElement>(doc, 'zai-save-commit');
+  const discard = byID<HTMLButtonElement>(doc, 'zai-save-discard');
+  const sections = new Set(preferenceDirtySections(doc));
+  commit?.setAttribute('disabled', 'true');
+  discard?.setAttribute('disabled', 'true');
+  if (commit) commit.textContent = '保存中...';
+  try {
+    for (const section of PREFERENCE_SAVE_SECTIONS) {
+      if (!sections.has(section)) continue;
+      if (section === 'presets') {
+        await savePresetControlsWithConnectivity(doc);
+      } else if (section === 'prompts') {
+        savePromptControls(doc);
+      } else if (section === 'mcp') {
+        saveMcpControls(doc);
+      } else {
+        saveSyncAccountControls(doc);
+      }
+    }
+    refreshAllPreferenceDirtySections(doc);
+  } finally {
+    commit?.removeAttribute('disabled');
+    discard?.removeAttribute('disabled');
+    if (commit) commit.textContent = '保存更改';
+  }
+}
+
+function discardPreferenceChanges(doc: Document): void {
+  const sections = new Set(preferenceDirtySections(doc));
+  if (sections.has('presets')) {
+    renderPresetSettings(doc);
+    renderTranslateSettings(doc);
+    setStatus(doc, 'zai-preset-status', '已撤销账号与模型的未保存更改。');
+  }
+  if (sections.has('prompts')) {
+    renderPromptSettings(doc);
+    setStatus(doc, 'zai-prompt-status', '已撤销提示词的未保存更改。');
+  }
+  if (sections.has('mcp')) {
+    renderToolSettings(doc);
+    setStatus(doc, 'zai-tool-status', '已撤销 MCP Server 的未保存更改。');
+  }
+  if (sections.has('sync')) {
     renderSyncSettings(doc);
-    setStatus(doc, 'zai-sync-status', 'WebDAV 账号已保存。');
-    flashButton(byID<HTMLButtonElement>(doc, 'zai-sync-save'), '已保存');
-  });
-  byID<HTMLButtonElement>(doc, 'zai-sync-test')?.addEventListener('click', () => {
-    void runSyncTest(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-sync-push')?.addEventListener('click', () => {
-    void runSyncPush(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-sync-pull')?.addEventListener('click', () => {
-    void runSyncPull(doc);
-  });
-  byID<HTMLButtonElement>(doc, 'zai-sync-auto')?.addEventListener('click', () => {
-    void toggleAutoSync(doc);
+    setStatus(doc, 'zai-sync-status', '已撤销 WebDAV 账号的未保存更改。');
+  }
+  dirtyPreferenceSections.set(doc, new Set());
+  renderPreferenceSaveBar(doc);
+}
+
+function syncAccountControlsSignature(account: SyncAccount): string {
+  return JSON.stringify({
+    webdavUrl: account.webdavUrl.trim(),
+    username: account.username.trim(),
+    password: account.password.trim(),
+    remoteFolder: account.remoteFolder.trim().replace(/^\/+|\/+$/g, ''),
   });
 }
 
+function saveSyncAccountControls(doc: Document): void {
+  saveSyncAccount(zoteroPrefs(), readSyncAccountControls(doc));
+  renderSyncSettings(doc);
+  setStatus(doc, 'zai-sync-status', 'WebDAV 账号已保存。');
+}
+
 async function runSyncTest(doc: Document): Promise<void> {
-  // Reading from controls (not prefs) lets the user test without first
-  // clicking "Save account" — common path for first-time setup.
+  // Test the staged credentials directly; a successful connection also
+  // commits them so a second explicit save is unnecessary.
   const account = readSyncAccountControls(doc);
   setStatus(doc, 'zai-sync-status', '正在测试 WebDAV 连接…');
   const result = await testSyncConnection(account);
@@ -466,6 +729,7 @@ async function runSyncTest(doc: Document): Promise<void> {
   if (result.ok) {
     saveSyncAccount(zoteroPrefs(), account);
     renderSyncSettings(doc);
+    refreshPreferenceDirtySection(doc, 'sync');
     flashButton(byID<HTMLButtonElement>(doc, 'zai-sync-test'), '已连接');
   }
 }
@@ -473,6 +737,7 @@ async function runSyncTest(doc: Document): Promise<void> {
 async function runSyncPush(doc: Document): Promise<void> {
   const account = readSyncAccountControls(doc);
   saveSyncAccount(zoteroPrefs(), account);
+  refreshPreferenceDirtySection(doc, 'sync');
   setStatus(doc, 'zai-sync-status', '正在打包并上传到云端…');
   const result = await pushToCloud(zoteroPrefs(), account);
   setStatus(doc, 'zai-sync-status', result.message, !result.ok);
@@ -484,14 +749,16 @@ async function runSyncPush(doc: Document): Promise<void> {
 
 async function runSyncPull(doc: Document): Promise<void> {
   const account = readSyncAccountControls(doc);
-  saveSyncAccount(zoteroPrefs(), account);
-  const ok = doc.defaultView?.confirm(
-    '从云端下载会应用账号、显示、提示词、联网/MCP、翻译配置、AI 对话和翻译缓存。继续？',
-  ) ?? true;
+  const ok =
+    doc.defaultView?.confirm(
+      '从云端下载会应用账号、显示、提示词、联网/MCP、翻译配置、AI 对话和翻译缓存。继续？',
+    ) ?? true;
   if (!ok) {
     setStatus(doc, 'zai-sync-status', '已取消下载。');
     return;
   }
+  saveSyncAccount(zoteroPrefs(), account);
+  refreshPreferenceDirtySection(doc, 'sync');
   setStatus(doc, 'zai-sync-status', '正在从云端下载并应用配置…');
   const result = await pullFromCloud(zoteroPrefs(), account);
   setStatus(doc, 'zai-sync-status', result.message, !result.ok);
@@ -502,6 +769,7 @@ async function runSyncPull(doc: Document): Promise<void> {
     renderPromptSettings(doc);
     renderToolSettings(doc);
     renderSyncSettings(doc);
+    refreshAllPreferenceDirtySections(doc);
     refreshSidebarPreferences();
     flashButton(byID<HTMLButtonElement>(doc, 'zai-sync-pull'), '已下载');
   }
@@ -512,13 +780,13 @@ let autoSyncTimer: ReturnType<typeof setInterval> | null = null;
 let autoSyncInFlight = false;
 
 async function toggleAutoSync(doc: Document): Promise<void> {
-  const current = readSyncAccountControls(doc);
+  const current = loadSyncAccount(zoteroPrefs());
   const next = {
     ...current,
     autoSyncEnabled: !current.autoSyncEnabled,
   };
   saveSyncAccount(zoteroPrefs(), next);
-  renderSyncSettings(doc);
+  renderSyncAccountState(doc, next);
   syncAutoSyncTimer(false);
   if (!next.autoSyncEnabled) {
     setStatus(doc, 'zai-sync-status', '自动同步已关闭。');
@@ -558,16 +826,29 @@ async function runAutoSync(doc?: Document): Promise<void> {
     if (doc) setStatus(doc, 'zai-sync-status', '正在自动同步：从云端下载合并…');
     const pull = await pullFromCloud(zoteroPrefs(), account);
     if (!pull.ok && !pull.message.includes('云端尚未找到')) {
-      if (doc) setStatus(doc, 'zai-sync-status', `自动同步失败：${pull.message}`, true);
+      if (doc)
+        setStatus(
+          doc,
+          'zai-sync-status',
+          `自动同步失败：${pull.message}`,
+          true,
+        );
       return;
     }
 
     account = loadSyncAccount(zoteroPrefs());
     if (!account.autoSyncEnabled) return;
-    if (doc) setStatus(doc, 'zai-sync-status', '正在自动同步：上传合并后的状态…');
+    if (doc)
+      setStatus(doc, 'zai-sync-status', '正在自动同步：上传合并后的状态…');
     const push = await pushToCloud(zoteroPrefs(), account);
     if (!push.ok) {
-      if (doc) setStatus(doc, 'zai-sync-status', `自动同步失败：${push.message}`, true);
+      if (doc)
+        setStatus(
+          doc,
+          'zai-sync-status',
+          `自动同步失败：${push.message}`,
+          true,
+        );
       return;
     }
 
@@ -577,12 +858,14 @@ async function runAutoSync(doc?: Document): Promise<void> {
     });
     refreshSidebarPreferences();
     if (doc) {
-      renderPresetSettings(doc);
+      const dirty = preferenceDirtySections(doc);
+      if (!dirty.has('presets')) renderPresetSettings(doc);
       renderTranslateSettings(doc);
       renderUiSettings(doc);
-      renderPromptSettings(doc);
-      renderToolSettings(doc);
-      renderSyncSettings(doc);
+      if (!dirty.has('prompts')) renderPromptSettings(doc);
+      if (!dirty.has('mcp')) renderToolSettings(doc);
+      if (!dirty.has('sync')) renderSyncSettings(doc);
+      refreshAllPreferenceDirtySections(doc);
       setStatus(doc, 'zai-sync-status', `自动同步完成。${push.message}`);
     }
   } finally {
@@ -640,9 +923,17 @@ async function exportConfigBackupFile(doc: Document): Promise<void> {
     }
     await Zotero.File.putContentsAsync(path, configBackupJson());
     setStatus(doc, 'zai-config-status', `配置备份已保存：${path}`);
-    flashButton(byID<HTMLButtonElement>(doc, 'zai-config-export-file'), '已导出');
+    flashButton(
+      byID<HTMLButtonElement>(doc, 'zai-config-export-file'),
+      '已导出',
+    );
   } catch (err) {
-    setStatus(doc, 'zai-config-status', fileErrorMessage('导出失败', err), true);
+    setStatus(
+      doc,
+      'zai-config-status',
+      fileErrorMessage('导出失败', err),
+      true,
+    );
   }
 }
 
@@ -658,7 +949,12 @@ async function importConfigBackupFile(doc: Document): Promise<void> {
     const raw = contents;
     importConfigBackupRaw(doc, raw, '配置文件', 'zai-config-import-file');
   } catch (err) {
-    setStatus(doc, 'zai-config-status', fileErrorMessage('导入失败', err), true);
+    setStatus(
+      doc,
+      'zai-config-status',
+      fileErrorMessage('导入失败', err),
+      true,
+    );
   }
 }
 
@@ -682,7 +978,11 @@ async function copyConfigBackupJson(doc: Document): Promise<void> {
   if (!area) return;
   if (!area.value.trim()) generateConfigBackupJson(doc);
   await writeTextToClipboard(doc, area.value);
-  setStatus(doc, 'zai-config-status', '配置 JSON 已复制。内容可能包含 API Key。');
+  setStatus(
+    doc,
+    'zai-config-status',
+    '配置 JSON 已复制。内容可能包含 API Key。',
+  );
   flashButton(byID<HTMLButtonElement>(doc, 'zai-config-copy'), '已复制');
 }
 
@@ -707,9 +1007,10 @@ function importConfigBackupRaw(
     setStatus(doc, 'zai-config-status', parsed, true);
     return;
   }
-  const ok = doc.defaultView?.confirm(
-    `导入会覆盖当前已保存的 ${parsed.sections.join('、')} 配置，确定继续？`,
-  ) ?? true;
+  const ok =
+    doc.defaultView?.confirm(
+      `导入会覆盖当前已保存的 ${parsed.sections.join('、')} 配置，确定继续？`,
+    ) ?? true;
   if (!ok) return;
 
   if (parsed.presets) savePresets(zoteroPrefs(), parsed.presets);
@@ -722,11 +1023,12 @@ function importConfigBackupRaw(
     saveTranslateSettings(zoteroPrefs(), parsed.translateSettings);
   }
 
-  renderPresetSettings(doc);
-  renderTranslateSettings(doc);
-  renderUiSettings(doc);
-  renderPromptSettings(doc);
-  renderToolSettings(doc);
+  if (parsed.presets) renderPresetSettings(doc);
+  if (parsed.presets || parsed.translateSettings) renderTranslateSettings(doc);
+  if (parsed.uiSettings) renderUiSettings(doc);
+  if (parsed.quickPrompts) renderPromptSettings(doc);
+  if (parsed.toolSettings) renderToolSettings(doc);
+  refreshAllPreferenceDirtySections(doc);
   refreshSidebarPreferences();
   setStatus(
     doc,
@@ -767,7 +1069,10 @@ async function pickConfigBackupFile(
   });
   if (result === nsFilePicker.returnCancel) return null;
   if (mode === 'save') {
-    if (result !== nsFilePicker.returnOK && result !== nsFilePicker.returnReplace) {
+    if (
+      result !== nsFilePicker.returnOK &&
+      result !== nsFilePicker.returnReplace
+    ) {
       return null;
     }
   } else if (result !== nsFilePicker.returnOK) {
@@ -776,7 +1081,10 @@ async function pickConfigBackupFile(
   return picker.file?.path ?? null;
 }
 
-async function writeTextToClipboard(doc: Document, text: string): Promise<void> {
+async function writeTextToClipboard(
+  doc: Document,
+  text: string,
+): Promise<void> {
   const clipboard = doc.defaultView?.navigator.clipboard;
   if (clipboard?.writeText) {
     await clipboard.writeText(text);
@@ -821,12 +1129,14 @@ function parseConfigBackup(raw: string): ParsedConfigBackup | string {
     sections.push('显示');
   }
   if (hasOwn(parsed, 'quickPrompts')) {
-    if (!isRecord(parsed.quickPrompts)) return '配置里的 quickPrompts 必须是对象。';
+    if (!isRecord(parsed.quickPrompts))
+      return '配置里的 quickPrompts 必须是对象。';
     result.quickPrompts = normalizeQuickPromptSettings(parsed.quickPrompts);
     sections.push('提示词');
   }
   if (hasOwn(parsed, 'toolSettings')) {
-    if (!isRecord(parsed.toolSettings)) return '配置里的 toolSettings 必须是对象。';
+    if (!isRecord(parsed.toolSettings))
+      return '配置里的 toolSettings 必须是对象。';
     result.toolSettings = normalizeToolSettings(parsed.toolSettings);
     sections.push('联网/MCP');
   }
@@ -834,7 +1144,9 @@ function parseConfigBackup(raw: string): ParsedConfigBackup | string {
     if (!isRecord(parsed.translateSettings)) {
       return '配置里的 translateSettings 必须是对象。';
     }
-    result.translateSettings = normalizeTranslateSettings(parsed.translateSettings);
+    result.translateSettings = normalizeTranslateSettings(
+      parsed.translateSettings,
+    );
     sections.push('翻译');
   }
   if (sections.length === 0) {
@@ -845,7 +1157,7 @@ function parseConfigBackup(raw: string): ParsedConfigBackup | string {
 
 function renderPresetSettings(doc: Document): void {
   renderPresetRows(doc, loadPresets(zoteroPrefs()));
-  updatePresetSaveButton(doc);
+  updatePresetDirtyState(doc);
   setStatus(doc, 'zai-preset-status', '已加载账号配置。');
 }
 
@@ -862,16 +1174,20 @@ const TRANSLATE_THINKING_OPTIONS: Array<[TranslateThinking, string]> = [
 // → max — meaning the Low/Medium UI options would all behave identically
 // to High on DeepSeek. We collapse to a smaller, honest list so users
 // don't pick "Low" expecting a lighter model and silently get "High".
-const TRANSLATE_THINKING_OPTIONS_DEEPSEEK: Array<[TranslateThinking, string]> = [
-  ['off', '关闭 - 不思考'],
-  ['high', 'High - 标准思考（DeepSeek 默认）'],
-  ['xhigh', 'Max - 强思考（复杂任务）'],
-];
+const TRANSLATE_THINKING_OPTIONS_DEEPSEEK: Array<[TranslateThinking, string]> =
+  [
+    ['off', '关闭 - 不思考'],
+    ['high', 'High - 标准思考（DeepSeek 默认）'],
+    ['xhigh', 'Max - 强思考（复杂任务）'],
+  ];
 
 function translateThinkingOptionsForPreset(
   preset: ModelPreset | null,
 ): Array<[TranslateThinking, string]> {
-  if (preset?.provider === 'anthropic' && preset.extras?.vendor === 'deepseek') {
+  if (
+    preset?.provider === 'anthropic' &&
+    preset.extras?.vendor === 'deepseek'
+  ) {
     return TRANSLATE_THINKING_OPTIONS_DEEPSEEK;
   }
   return TRANSLATE_THINKING_OPTIONS;
@@ -883,7 +1199,10 @@ function collapseThinkingForPreset(
   preset: ModelPreset | null,
   level: TranslateThinking,
 ): TranslateThinking {
-  if (preset?.provider === 'anthropic' && preset.extras?.vendor === 'deepseek') {
+  if (
+    preset?.provider === 'anthropic' &&
+    preset.extras?.vendor === 'deepseek'
+  ) {
     if (level === 'low' || level === 'medium') return 'high';
   }
   return level;
@@ -923,7 +1242,9 @@ function renderTranslateSettings(doc: Document): void {
     } else {
       presetSelect.disabled = false;
       for (const item of presets) {
-        presetSelect.append(option(doc, item.id, item.label || item.model || 'GPT'));
+        presetSelect.append(
+          option(doc, item.id, item.label || item.model || 'GPT'),
+        );
       }
       presetSelect.value = preset?.id ?? presets[0]?.id ?? '';
     }
@@ -965,7 +1286,7 @@ function renderTranslateSettings(doc: Document): void {
     doc,
     'zai-translate-status',
     presets.length
-      ? '已加载逐句翻译设置。'
+      ? '已加载沉浸阅读模型设置。'
       : '请先在“账号与模型”里保存一个账号配置。',
     presets.length === 0,
   );
@@ -979,7 +1300,8 @@ function refreshTranslateThinkingSelect(doc: Document): void {
   const thinkingSelect = byID<HTMLSelectElement>(doc, 'zai-translate-thinking');
   if (!thinkingSelect) return;
   const presets = translatePresets();
-  const presetId = byID<HTMLSelectElement>(doc, 'zai-translate-preset')?.value ?? '';
+  const presetId =
+    byID<HTMLSelectElement>(doc, 'zai-translate-preset')?.value ?? '';
   const preset = translatePresetForSettings(presets, presetId);
   const current = thinkingSelect.value as TranslateThinking;
   populateSelectOptions(
@@ -990,17 +1312,18 @@ function refreshTranslateThinkingSelect(doc: Document): void {
   );
 }
 
-function refreshTranslateModelSelect(doc: Document, desiredModel?: string): string {
+function refreshTranslateModelSelect(
+  doc: Document,
+  desiredModel?: string,
+): string {
   const modelSelect = byID<HTMLSelectElement>(doc, 'zai-translate-model');
   if (!modelSelect) return '';
   const presets = translatePresets();
-  const presetId = byID<HTMLSelectElement>(doc, 'zai-translate-preset')?.value ?? '';
+  const presetId =
+    byID<HTMLSelectElement>(doc, 'zai-translate-preset')?.value ?? '';
   const preset = translatePresetForSettings(presets, presetId);
   const models = translateModelsForPreset(preset);
-  const active = validTranslateModel(
-    preset,
-    desiredModel ?? modelSelect.value,
-  );
+  const active = validTranslateModel(preset, desiredModel ?? modelSelect.value);
   modelSelect.replaceChildren();
   if (models.length === 0) {
     modelSelect.append(option(doc, '', '无可用模型'));
@@ -1017,16 +1340,15 @@ function refreshTranslateModelSelect(doc: Document, desiredModel?: string): stri
 function saveTranslateSettingsControls(doc: Document): void {
   const settings = readTranslateSettingsControls(doc);
   saveTranslateSettings(zoteroPrefs(), settings);
-  renderTranslateSettings(doc);
   refreshSidebarPreferences();
-  setStatus(doc, 'zai-translate-status', '逐句翻译设置已保存；下一次翻译立即使用。');
-  flashButton(byID<HTMLButtonElement>(doc, 'zai-translate-save'), '已保存');
+  setStatus(doc, 'zai-translate-status', '已自动保存；下一次翻译立即使用。');
 }
 
 function readTranslateSettingsControls(doc: Document): TranslateSettings {
   const existing = loadTranslateSettings(zoteroPrefs());
   const presets = translatePresets();
-  const presetId = byID<HTMLSelectElement>(doc, 'zai-translate-preset')?.value ?? '';
+  const presetId =
+    byID<HTMLSelectElement>(doc, 'zai-translate-preset')?.value ?? '';
   const preset = translatePresetForSettings(presets, presetId);
   return normalizeTranslateSettings({
     ...existing,
@@ -1124,7 +1446,11 @@ function renderUiSettings(doc: Document): void {
   setInputValue(doc, 'zai-ui-user-label', settings.userProfile.label);
   setInputValue(doc, 'zai-ui-user-avatar', settings.userProfile.avatar);
   setInputValue(doc, 'zai-ui-assistant-label', settings.assistantProfile.label);
-  setInputValue(doc, 'zai-ui-assistant-avatar', settings.assistantProfile.avatar);
+  setInputValue(
+    doc,
+    'zai-ui-assistant-avatar',
+    settings.assistantProfile.avatar,
+  );
   setInputValue(doc, 'zai-ui-chat-font', settings.chatFontFamily);
   const position = byID<HTMLSelectElement>(doc, 'zai-ui-actions-position');
   if (position) position.value = settings.messageActionsPosition;
@@ -1155,6 +1481,12 @@ function readUiSettingsControls(doc: Document): UiSettings {
   });
 }
 
+function saveUiSettingsControls(doc: Document): void {
+  saveUiSettings(zoteroPrefs(), readUiSettingsControls(doc));
+  refreshSidebarPreferences();
+  setStatus(doc, 'zai-ui-status', '显示设置已自动保存，侧边栏已刷新。');
+}
+
 function setInputValue(doc: Document, id: string, value: string): void {
   const inputNode = byID<HTMLInputElement>(doc, id);
   if (inputNode) inputNode.value = value;
@@ -1181,10 +1513,17 @@ function renderSyncSettings(doc: Document): void {
   setInputValue(doc, 'zai-sync-username', account.username);
   setInputValue(doc, 'zai-sync-password', account.password);
   setInputValue(doc, 'zai-sync-folder', account.remoteFolder);
+  renderSyncAccountState(doc, account);
+}
+
+function renderSyncAccountState(doc: Document, account: SyncAccount): void {
   const auto = byID<HTMLButtonElement>(doc, 'zai-sync-auto');
   if (auto) {
     auto.dataset.enabled = account.autoSyncEnabled ? 'true' : 'false';
-    auto.setAttribute('aria-pressed', account.autoSyncEnabled ? 'true' : 'false');
+    auto.setAttribute(
+      'aria-pressed',
+      account.autoSyncEnabled ? 'true' : 'false',
+    );
     const label = auto.querySelector<HTMLElement>('.zai-switch-label');
     if (label) label.textContent = account.autoSyncEnabled ? '开启' : '关闭';
     else auto.textContent = account.autoSyncEnabled ? '开启' : '关闭';
@@ -1200,22 +1539,31 @@ function readSyncAccountControls(doc: Document): SyncAccount {
   const existing = loadSyncAccount(zoteroPrefs());
   return {
     ...existing,
-    webdavUrl: byID<HTMLInputElement>(doc, 'zai-sync-url')?.value ?? existing.webdavUrl,
+    webdavUrl:
+      byID<HTMLInputElement>(doc, 'zai-sync-url')?.value ?? existing.webdavUrl,
     username:
-      byID<HTMLInputElement>(doc, 'zai-sync-username')?.value ?? existing.username,
+      byID<HTMLInputElement>(doc, 'zai-sync-username')?.value ??
+      existing.username,
     password:
-      byID<HTMLInputElement>(doc, 'zai-sync-password')?.value ?? existing.password,
+      byID<HTMLInputElement>(doc, 'zai-sync-password')?.value ??
+      existing.password,
     remoteFolder:
-      byID<HTMLInputElement>(doc, 'zai-sync-folder')?.value ?? existing.remoteFolder,
+      byID<HTMLInputElement>(doc, 'zai-sync-folder')?.value ??
+      existing.remoteFolder,
   };
 }
 
 function formatSyncMeta(account: SyncAccount): string {
   const parts: string[] = [];
-  parts.push(account.lastPushAt ? `上次上传：${account.lastPushAt}` : '上次上传：未上传');
-  parts.push(account.lastPullAt ? `上次下载：${account.lastPullAt}` : '上次下载：未下载');
+  parts.push(
+    account.lastPushAt ? `上次上传：${account.lastPushAt}` : '上次上传：未上传',
+  );
+  parts.push(
+    account.lastPullAt ? `上次下载：${account.lastPullAt}` : '上次下载：未下载',
+  );
   parts.push(account.autoSyncEnabled ? '自动同步：开' : '自动同步：关');
-  if (account.lastAutoSyncAt) parts.push(`上次自动同步：${account.lastAutoSyncAt}`);
+  if (account.lastAutoSyncAt)
+    parts.push(`上次自动同步：${account.lastAutoSyncAt}`);
   return parts.join(' · ');
 }
 
@@ -1224,12 +1572,21 @@ function renderPresetRows(doc: Document, presets: ModelPreset[]): void {
   if (!list) return;
   list.replaceChildren();
   if (presets.length === 0) {
-    list.append(el(doc, 'div', 'zai-pref-help', '还没有模型配置。点击 + OpenAI 或 + Anthropic 新增。'));
+    list.append(
+      el(
+        doc,
+        'div',
+        'zai-pref-help',
+        '还没有模型配置。点击 + OpenAI 或 + Anthropic 新增。',
+      ),
+    );
+    refreshCacheTestControls(doc, presets);
     return;
   }
   for (const preset of presets) list.append(presetRow(doc, preset));
+  refreshCacheTestControls(doc, presets);
   attachPresetDirtyListeners(doc);
-  updatePresetSaveButton(doc);
+  updatePresetDirtyState(doc);
 }
 
 function openPresetRow(doc: Document, id: string): void {
@@ -1237,6 +1594,19 @@ function openPresetRow(doc: Document, id: string): void {
     `.zai-preset-row[data-id="${cssEscape(id)}"]`,
   ) as HTMLDetailsElement | null;
   if (row) row.open = true;
+}
+
+function applyPresetStatusDot(
+  statusDot: HTMLElement,
+  status?: 'ok' | 'failed',
+): void {
+  statusDot.className = `zai-preset-status-dot${status === 'ok' ? ' zai-dot-ok' : status === 'failed' ? ' zai-dot-fail' : ''}`;
+  statusDot.title =
+    status === 'ok'
+      ? '连接测试通过'
+      : status === 'failed'
+        ? '连接测试失败'
+        : '未测试';
 }
 
 function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
@@ -1248,10 +1618,8 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   title.className = 'zai-subcard-title zai-preset-summary';
   const main = el(doc, 'span', 'zai-preset-summary-main');
   const statusDot = el(doc, 'span', 'zai-preset-status-dot');
-  const applyDot = (status?: 'ok' | 'failed') => {
-    statusDot.className = `zai-preset-status-dot${status === 'ok' ? ' zai-dot-ok' : status === 'failed' ? ' zai-dot-fail' : ''}`;
-    statusDot.title = status === 'ok' ? '连接测试通过' : status === 'failed' ? '连接测试失败' : '未测试';
-  };
+  const applyDot = (status?: 'ok' | 'failed') =>
+    applyPresetStatusDot(statusDot, status);
   applyDot(preset.extras?.testStatus);
   main.append(
     statusDot,
@@ -1263,6 +1631,7 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   const flagControl = presetFlagsControl(doc, preset);
   const flagLabel = el(doc, 'label', '', '标志位');
   const testBtn = button(doc, '测试');
+  testBtn.title = '使用下方 Models 中勾选的模型测试连接。';
   testBtn.addEventListener('click', async (event) => {
     event.preventDefault();
     event.stopPropagation();
@@ -1271,9 +1640,13 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
     testMsg.textContent = '';
     testMsg.className = 'zai-preset-test-msg';
     const rawPreset = readPresetFromCard(card);
+    const testPreset = withPresetTestModel(
+      rawPreset,
+      selectedTestModelFromCard(card),
+    );
     try {
-      const result = await testPresetConnectivity(rawPreset);
-      const saved = { ...result.preset, extras: { ...result.preset.extras, testStatus: 'ok' as const } };
+      const result = await testPresetConnectivity(testPreset);
+      const saved = mergePresetTestResult(rawPreset, result.preset, 'ok');
       updatePresetInStorage(saved);
       applyDot('ok');
       testBtn.textContent = '✓ 通过';
@@ -1281,7 +1654,7 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
       testMsg.className = 'zai-preset-test-msg zai-test-ok';
     } catch (err) {
       const msg = err instanceof Error ? err.message : String(err);
-      const failed = { ...rawPreset, extras: { ...rawPreset.extras, testStatus: 'failed' as const } };
+      const failed = mergePresetTestResult(rawPreset, testPreset, 'failed');
       updatePresetInStorage(failed);
       applyDot('failed');
       testBtn.textContent = '✗ 失败';
@@ -1289,71 +1662,36 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
       testMsg.className = 'zai-preset-test-msg zai-test-fail';
     } finally {
       testBtn.disabled = false;
-      setTimeout(() => { testBtn.textContent = '测试'; }, 3000);
+      updatePresetDirtyState(doc);
+      setTimeout(() => {
+        testBtn.textContent = '测试';
+      }, 3000);
     }
   });
   title.append(testBtn);
-  const cacheTestBtn = button(doc, '缓存测试');
-  cacheTestBtn.title =
-    '连续发送同一内容测试 prompt cache；当前 Zotero 选中条目有 PDF 时优先使用该 PDF，否则使用内置长文本。';
-  cacheTestBtn.disabled = preset.provider !== 'openai';
-  cacheTestBtn.addEventListener('click', async (event) => {
-    event.preventDefault();
-    event.stopPropagation();
-    const rawPreset = readPresetFromCard(card);
-    if (rawPreset.provider !== 'openai') {
-      testMsg.textContent = '缓存测试仅支持 OpenAI 兼容预设。';
-      testMsg.className = 'zai-preset-test-msg zai-test-fail';
-      return;
-    }
-    cacheTestBtn.disabled = true;
-    cacheTestBtn.textContent = '测缓存中...';
-    testMsg.textContent = '正在测试 prompt cache（连续发送两次同一内容）...';
-    testMsg.className = 'zai-preset-test-msg';
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 120_000);
-    try {
-      const testText = await promptCacheTestTextForPreferences();
-      const result = await runPresetPromptCacheTest(rawPreset, controller.signal, {
-        promptCacheKey: buildPromptCacheTestKey(rawPreset, testText.itemID),
-        pinnedFullText: testText.text,
-        sourceLabel: testText.label,
-      });
-      const saved = { ...result.preset, extras: { ...result.preset.extras, testStatus: 'ok' as const } };
-      updatePresetInStorage(saved);
-      refreshPresetFlags(flagControl, saved);
-      applyDot('ok');
-      testMsg.textContent = result.message;
-      testMsg.className = 'zai-preset-test-msg zai-test-ok';
-    } catch (err) {
-      testMsg.textContent = sanitizedTestError(err, [rawPreset]);
-      testMsg.className = 'zai-preset-test-msg zai-test-fail';
-    } finally {
-      clearTimeout(timeout);
-      cacheTestBtn.disabled = false;
-      cacheTestBtn.textContent = '缓存测试';
-    }
-  });
-  title.append(cacheTestBtn);
   const remove = button(doc, '删除');
   remove.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
     card.remove();
-    // Mark form dirty so 保存账号配置 lights up.
-    updatePresetSaveButton(doc);
+    updatePresetDirtyState(doc);
     setStatus(
       doc,
       'zai-preset-status',
-      `已移除 ${preset.label || preset.provider} 卡片，保存后生效。`,
+      `已移除 ${preset.label || preset.provider} 卡片，请点击顶部“保存更改”。`,
     );
+    refreshCacheTestControls(doc, readPresetControls(doc));
   });
   title.append(remove);
 
-  const provider = select(doc, [
-    ['openai', 'OpenAI 兼容'],
-    ['anthropic', 'Anthropic'],
-  ], preset.provider);
+  const provider = select(
+    doc,
+    [
+      ['openai', 'OpenAI 兼容'],
+      ['anthropic', 'Anthropic'],
+    ],
+    preset.provider,
+  );
   provider.dataset.field = 'provider';
   const label = input(doc, preset.label);
   label.dataset.field = 'label';
@@ -1362,16 +1700,24 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   const baseUrl = input(doc, preset.baseUrl);
   baseUrl.dataset.field = 'baseUrl';
   const initialVendor: AnthropicVendor =
-    preset.extras?.vendor ?? detectAnthropicVendor(preset.baseUrl, preset.model);
+    preset.extras?.vendor ??
+    detectAnthropicVendor(preset.baseUrl, preset.model);
   const initialKey = preset.provider === 'anthropic' ? initialVendor : 'openai';
   const modelList = createModelListControl(
     doc,
     (preset.models?.length ? preset.models : [preset.model]).filter(Boolean),
     initialKey,
+    preset.model,
+    preset.id,
   );
   const maxTokens = input(doc, String(preset.maxTokens || 8192), 'number');
   maxTokens.dataset.field = 'maxTokens';
-  const reasoningSummary = select(doc, REASONING_SUMMARY_OPTIONS, preset.extras?.reasoningSummary ?? DEFAULT_REASONING_SUMMARY);
+  maxTokens.classList.add('zai-number-input');
+  const reasoningSummary = select(
+    doc,
+    REASONING_SUMMARY_OPTIONS,
+    preset.extras?.reasoningSummary ?? DEFAULT_REASONING_SUMMARY,
+  );
   reasoningSummary.dataset.field = 'reasoningSummary';
   const vendor = select<AnthropicVendor>(
     doc,
@@ -1392,7 +1738,6 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   const syncProvider = () => {
     const isOpenAI = provider.value === 'openai';
     reasoningSummary.disabled = !isOpenAI;
-    cacheTestBtn.disabled = !isOpenAI;
     const showHide = (lbl: HTMLElement, ctrl: HTMLElement, show: boolean) => {
       lbl.style.display = show ? '' : 'none';
       ctrl.style.display = show ? '' : 'none';
@@ -1402,20 +1747,22 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   };
   provider.addEventListener('change', () => {
     const kind = provider.value as ProviderKind;
-    if (!label.value.trim()) label.value = kind === 'anthropic' ? 'Claude' : 'GPT';
+    if (!label.value.trim())
+      label.value = kind === 'anthropic' ? 'Claude' : 'GPT';
     if (!baseUrl.value.trim()) baseUrl.value = DEFAULT_BASE_URLS[kind];
-    const key = kind === 'anthropic' ? (vendor.value as AnthropicVendor) : 'openai';
+    const key =
+      kind === 'anthropic' ? (vendor.value as AnthropicVendor) : 'openai';
     modelList.setSuggestionKey(key);
     if (modelList.models().length === 0 && DEFAULT_MODELS[kind]) {
       modelList.setModels([DEFAULT_MODELS[kind]]);
     }
     syncProvider();
-    updatePresetSaveButton(doc);
+    updatePresetDirtyState(doc);
   });
   vendor.addEventListener('change', () => {
     if (provider.value !== 'anthropic') return;
     modelList.setSuggestionKey(vendor.value as AnthropicVendor);
-    updatePresetSaveButton(doc);
+    updatePresetDirtyState(doc);
   });
   syncProvider();
   card.append(
@@ -1433,20 +1780,170 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
     ]),
     testMsg,
   );
-  const refreshFlagsFromControls = () => refreshPresetFlags(flagControl, readPresetFromCard(card));
-  for (const control of [provider, baseUrl, reasoningSummary, modelList.element]) {
+  const refreshFlagsFromControls = () =>
+    refreshPresetFlags(flagControl, readPresetFromCard(card));
+  for (const control of [
+    provider,
+    baseUrl,
+    reasoningSummary,
+    modelList.element,
+  ]) {
     control.addEventListener('input', refreshFlagsFromControls);
     control.addEventListener('change', refreshFlagsFromControls);
   }
+  const refreshCacheTarget = (event: Event) => {
+    const target = event.target as Element | null;
+    const cachePreset = byID<HTMLSelectElement>(doc, 'zai-cache-test-preset');
+    if (
+      target?.classList.contains('zai-model-test-radio') &&
+      provider.value === 'openai' &&
+      cachePreset
+    ) {
+      cachePreset.value = card.dataset.id ?? '';
+    }
+    refreshCacheTestTarget(doc);
+  };
+  modelList.element.addEventListener('input', refreshCacheTarget);
+  modelList.element.addEventListener('change', refreshCacheTarget);
+  provider.addEventListener('change', () =>
+    refreshCacheTestControls(doc, readPresetControls(doc)),
+  );
   return card;
+}
+
+function withPresetTestModel(preset: ModelPreset, model: string): ModelPreset {
+  const selected = model.trim();
+  if (!selected || selected === preset.model) return preset;
+  return { ...preset, model: selected };
+}
+
+function mergePresetTestResult(
+  rawPreset: ModelPreset,
+  testedPreset: ModelPreset,
+  status: 'ok' | 'failed',
+): ModelPreset {
+  return {
+    ...rawPreset,
+    extras: {
+      ...rawPreset.extras,
+      ...testedPreset.extras,
+      testStatus: status,
+    },
+  };
+}
+
+function selectedTestModelFromCard(card: HTMLElement): string {
+  const selected = card.querySelector<HTMLInputElement>(
+    '.zai-model-test-radio:checked',
+  );
+  const model = selected
+    ?.closest('.zai-model-chip')
+    ?.querySelector<HTMLInputElement>('.zai-model-chip-input')
+    ?.value.trim();
+  if (model) return model;
+  return splitList(controlValue(card, 'models'))[0] ?? '';
+}
+
+function refreshCacheTestControls(doc: Document, presets: ModelPreset[]): void {
+  const account = byID<HTMLSelectElement>(doc, 'zai-cache-test-preset');
+  if (!account) return;
+  const previous = account.value;
+  const supported = presets.filter((preset) => preset.provider === 'openai');
+  account.replaceChildren();
+  for (const preset of supported) {
+    account.append(
+      option(doc, preset.id, preset.label || preset.model || 'OpenAI'),
+    );
+  }
+  account.value = supported.some((preset) => preset.id === previous)
+    ? previous
+    : (supported[0]?.id ?? '');
+  account.disabled = supported.length === 0;
+  refreshCacheTestTarget(doc);
+}
+
+function selectedCacheTestCard(doc: Document): HTMLElement | null {
+  const id = byID<HTMLSelectElement>(doc, 'zai-cache-test-preset')?.value;
+  if (!id) return null;
+  return doc.querySelector<HTMLElement>(
+    `.zai-preset-row[data-id="${cssEscape(id)}"]`,
+  );
+}
+
+function refreshCacheTestTarget(doc: Document): void {
+  const target = byID<HTMLElement>(doc, 'zai-cache-test-target');
+  const run = byID<HTMLButtonElement>(doc, 'zai-cache-test-run');
+  if (!target || !run) return;
+  const card = selectedCacheTestCard(doc);
+  const model = card ? selectedTestModelFromCard(card) : '';
+  target.textContent = card
+    ? `测试模型：${model || '未选择'}`
+    : '没有可用的 OpenAI 配置';
+  run.disabled = !card || !model;
+  run.title =
+    card && model
+      ? '连续发送两次相同内容，检查 prompt cache 命中情况。'
+      : '请先配置 OpenAI 账号和模型。';
+}
+
+async function runSelectedPromptCacheTest(doc: Document): Promise<void> {
+  const run = byID<HTMLButtonElement>(doc, 'zai-cache-test-run');
+  const card = selectedCacheTestCard(doc);
+  if (!run || !card) return;
+  const rawPreset = readPresetFromCard(card);
+  const testPreset = withPresetTestModel(
+    rawPreset,
+    selectedTestModelFromCard(card),
+  );
+  run.disabled = true;
+  run.textContent = '测试中...';
+  setStatus(
+    doc,
+    'zai-cache-test-status',
+    `正在测试 ${rawPreset.label} / ${testPreset.model} 的 prompt cache...`,
+  );
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 120_000);
+  try {
+    const testText = await promptCacheTestTextForPreferences();
+    const result = await runPresetPromptCacheTest(
+      testPreset,
+      controller.signal,
+      {
+        promptCacheKey: buildPromptCacheTestKey(testPreset, testText.itemID),
+        pinnedFullText: testText.text,
+        sourceLabel: testText.label,
+      },
+    );
+    const saved = mergePresetTestResult(rawPreset, result.preset, 'ok');
+    updatePresetInStorage(saved);
+    const flags = card.querySelector<HTMLElement>('.preset-flags-control');
+    if (flags) refreshPresetFlags(flags, saved);
+    const statusDot = card.querySelector<HTMLElement>('.zai-preset-status-dot');
+    if (statusDot) applyPresetStatusDot(statusDot, 'ok');
+    setStatus(doc, 'zai-cache-test-status', result.message);
+  } catch (err) {
+    setStatus(
+      doc,
+      'zai-cache-test-status',
+      sanitizedTestError(err, [testPreset]),
+      true,
+    );
+  } finally {
+    clearTimeout(timeout);
+    run.textContent = '开始测试';
+    refreshCacheTestTarget(doc);
+    updatePresetDirtyState(doc);
+  }
 }
 
 function readPresetFromCard(card: HTMLElement): ModelPreset {
   const doc = card.ownerDocument;
   if (!doc) throw new Error('card has no ownerDocument');
-  return readPresetControls(doc).find(
-    (p) => p.id === card.dataset.id,
-  ) ?? readPresetControls(doc)[0];
+  return (
+    readPresetControls(doc).find((p) => p.id === card.dataset.id) ??
+    readPresetControls(doc)[0]
+  );
 }
 
 function updatePresetInStorage(preset: ModelPreset): void {
@@ -1462,7 +1959,8 @@ function presetSummary(preset: ModelPreset): string {
     modelCount > 1
       ? `${preset.model || preset.models?.[0]} +${modelCount - 1}`
       : preset.model || '未填写模型';
-  const base = preset.baseUrl || DEFAULT_BASE_URLS[preset.provider] || '默认 Base URL';
+  const base =
+    preset.baseUrl || DEFAULT_BASE_URLS[preset.provider] || '默认 Base URL';
   return `${preset.provider} · ${modelText} · ${base}`;
 }
 
@@ -1484,7 +1982,9 @@ function refreshPresetFlags(control: HTMLElement, preset: ModelPreset): void {
   const hint = control.querySelector('.preset-help');
   const doc = control.ownerDocument;
   if (flags && doc) {
-    flags.replaceChildren(...presetFlagBadges(preset).map((flag) => presetFlagBadge(doc, flag)));
+    flags.replaceChildren(
+      ...presetFlagBadges(preset).map((flag) => presetFlagBadge(doc, flag)),
+    );
   }
   if (hint) hint.textContent = presetFlagHint(preset);
 }
@@ -1501,7 +2001,8 @@ function presetFlagBadges(preset: ModelPreset): PresetFlagBadge[] {
   }
   const official = isOfficialOpenAIEndpointForPreset(preset);
   const relayCache = shouldSendRelayPromptCacheForPreset(preset);
-  const sendsReasoning = official || preset.extras?.omitResponsesReasoningForCache !== true;
+  const sendsReasoning =
+    official || preset.extras?.omitResponsesReasoningForCache !== true;
   return [
     official
       ? {
@@ -1511,7 +2012,8 @@ function presetFlagBadges(preset: ModelPreset): PresetFlagBadge[] {
         }
       : {
           text: '第三方/Relay',
-          title: '非 api.openai.com endpoint：按 OpenAI-compatible 第三方/自建 relay 处理',
+          title:
+            '非 api.openai.com endpoint：按 OpenAI-compatible 第三方/自建 relay 处理',
           tone: 'warn',
         },
     official
@@ -1519,13 +2021,15 @@ function presetFlagBadges(preset: ModelPreset): PresetFlagBadge[] {
           text: supportsExtendedPromptCacheForPreset(preset.model)
             ? 'cache_key + 24h'
             : 'cache_key',
-          title: '官方 endpoint 自动发送 prompt_cache_key；支持模型会加 24h retention',
+          title:
+            '官方 endpoint 自动发送 prompt_cache_key；支持模型会加 24h retention',
           tone: 'ok',
         }
       : relayCache
         ? {
             text: 'relay cache 自动',
-            title: '默认发送 prompt_cache_key + session_id；缓存测试不兼容时会自动关闭',
+            title:
+              '默认发送 prompt_cache_key + session_id；缓存测试不兼容时会自动关闭',
             tone: 'ok',
           }
         : {
@@ -1548,20 +2052,26 @@ function presetFlagBadges(preset: ModelPreset): PresetFlagBadge[] {
 }
 
 function presetFlagBadge(doc: Document, flag: PresetFlagBadge): HTMLElement {
-  const badge = el(doc, 'span', `preset-flag preset-flag-${flag.tone}`, flag.text);
+  const badge = el(
+    doc,
+    'span',
+    `preset-flag preset-flag-${flag.tone}`,
+    flag.text,
+  );
   badge.title = flag.title;
   return badge;
 }
 
 function presetFlagHint(preset: ModelPreset): string {
-  if (preset.provider !== 'openai') return '非 OpenAI 兼容预设，不发送 OpenAI prompt cache 参数。';
+  if (preset.provider !== 'openai')
+    return '非 OpenAI 兼容预设，不发送 OpenAI prompt cache 参数。';
   if (isOfficialOpenAIEndpointForPreset(preset)) {
     return '官方 endpoint：自动发送官方 prompt_cache_key。';
   }
   if (shouldSendRelayPromptCacheForPreset(preset)) {
     return '第三方/Relay endpoint：默认发送 prompt_cache_key + session_id；缓存测试报错且关闭后可连接时会自动关闭。';
   }
-  return '第三方/Relay endpoint：relay cache 已禁用；可点“缓存测试”重新验证。';
+  return '第三方/Relay endpoint：relay cache 已禁用；可在下方重新运行缓存测试。';
 }
 
 function shouldSendRelayPromptCacheForPreset(preset: ModelPreset): boolean {
@@ -1576,7 +2086,10 @@ function supportsExtendedPromptCacheForPreset(model: string): boolean {
   return /^(gpt-5|gpt-4\.1)(?:[.-]|$)/i.test(model.trim());
 }
 
-function buildPromptCacheTestKey(preset: ModelPreset, itemID: number | null): string {
+function buildPromptCacheTestKey(
+  preset: ModelPreset,
+  itemID: number | null,
+): string {
   // Mirror sidebar.ts buildPromptCacheKey: use the portable Zotero itemKey
   // (e.g. "FQRVCCJN") rather than the local itemID so the test request lands
   // on the same relay sticky-session bucket as the production chat would.
@@ -1640,14 +2153,17 @@ function selectedPreferenceItemID(): number | null {
     getMainWindow?: () => Window | null;
     getMainWindows?: () => Window[];
   };
-  const win = ZoteroLike.getMainWindow?.() ?? ZoteroLike.getMainWindows?.()[0] ?? null;
-  const pane = (win as { ZoteroPane?: { getSelectedItems?: () => unknown[] } } | null)
-    ?.ZoteroPane;
+  const win =
+    ZoteroLike.getMainWindow?.() ?? ZoteroLike.getMainWindows?.()[0] ?? null;
+  const pane = (
+    win as { ZoteroPane?: { getSelectedItems?: () => unknown[] } } | null
+  )?.ZoteroPane;
   const item = pane?.getSelectedItems?.()[0] as
     | { id?: number; parentID?: number; isAttachment?: () => boolean }
     | undefined;
   if (!item) return null;
-  if (item.isAttachment?.() && typeof item.parentID === 'number') return item.parentID;
+  if (item.isAttachment?.() && typeof item.parentID === 'number')
+    return item.parentID;
   return typeof item.id === 'number' ? item.id : null;
 }
 
@@ -1669,6 +2185,8 @@ function createModelListControl(
   doc: Document,
   initialModels: string[],
   initialKey: ModelSuggestionKey,
+  initialTestModel: string,
+  testGroupName: string,
 ): ModelListControl {
   const wrap = el(doc, 'div', 'zai-model-control');
   const selected = el(doc, 'div', 'zai-model-selected');
@@ -1678,36 +2196,80 @@ function createModelListControl(
   hidden.className = 'zai-model-hidden';
 
   let suggestionKey: ModelSuggestionKey = initialKey;
+  let selectedTestModel = initialTestModel.trim();
   const currentModels = () => {
     const values: string[] = [];
-    selected.querySelectorAll('.zai-model-chip-input').forEach((node: Element) => {
-      const value = (node as HTMLInputElement).value.trim();
-      if (value) values.push(value);
-    });
+    selected
+      .querySelectorAll('.zai-model-chip-input')
+      .forEach((node: Element) => {
+        const value = (node as HTMLInputElement).value.trim();
+        if (value) values.push(value);
+      });
     return values;
+  };
+
+  const refreshTestSelection = () => {
+    selectedTestModel = resolveTestModel(currentModels(), selectedTestModel);
+    let matched = false;
+    selected.querySelectorAll('.zai-model-chip').forEach((node: Element) => {
+      const chip = node as HTMLElement;
+      const model = chip.querySelector<HTMLInputElement>(
+        '.zai-model-chip-input',
+      );
+      const radio = chip.querySelector<HTMLInputElement>(
+        '.zai-model-test-radio',
+      );
+      const isSelected = Boolean(
+        !matched && model && model.value.trim() === selectedTestModel,
+      );
+      if (isSelected) matched = true;
+      if (radio) {
+        radio.checked = isSelected;
+        radio.setAttribute(
+          'aria-label',
+          `选择 ${model?.value.trim() || '此模型'} 作为测试模型`,
+        );
+      }
+      chip.dataset.testSelected = String(isSelected);
+    });
   };
 
   const sync = () => {
     const models = dedupe(currentModels());
     hidden.value = models.join('\n');
+    refreshTestSelection();
     refreshSuggestions();
-    updatePresetSaveButton(doc);
+    updatePresetDirtyState(doc);
+    dispatchPreferenceChange(doc, wrap);
   };
 
   const addChip = (value: string) => {
     const chip = el(doc, 'span', 'zai-model-chip');
+    const testRadio = input(doc, '', 'radio');
+    testRadio.className = 'zai-model-test-radio';
+    testRadio.name = `zai-test-model-${testGroupName}`;
+    testRadio.title = '选择为测试模型';
     const model = input(doc, value);
     model.className = 'zai-model-chip-input';
     model.placeholder = '自定义模型 ID';
-    model.addEventListener('input', sync);
+    testRadio.addEventListener('change', () => {
+      if (!testRadio.checked) return;
+      selectedTestModel = model.value.trim();
+      refreshTestSelection();
+    });
+    model.addEventListener('input', () => {
+      if (testRadio.checked) selectedTestModel = model.value.trim();
+      sync();
+    });
     const remove = button(doc, '×');
     remove.className = 'zai-model-chip-remove';
     remove.title = '删除此模型';
     remove.addEventListener('click', () => {
+      if (testRadio.checked) selectedTestModel = '';
       chip.remove();
       sync();
     });
-    chip.append(model, remove);
+    chip.append(testRadio, model, remove);
     selected.append(chip);
   };
 
@@ -1744,11 +2306,16 @@ function createModelListControl(
 
     const list = MODEL_SUGGESTIONS[suggestionKey] ?? [];
     if (list.length > 0) {
-      side.append(el(doc, 'div', 'zai-model-side-title', suggestionTitle(suggestionKey)));
+      side.append(
+        el(doc, 'div', 'zai-model-side-title', suggestionTitle(suggestionKey)),
+      );
       const selectedModels = new Set(currentModels());
       const suggestions = el(doc, 'div', 'zai-model-suggestions');
       for (const model of list) {
-        const pick = button(doc, selectedModels.has(model) ? `✓ ${model}` : `+ ${model}`);
+        const pick = button(
+          doc,
+          selectedModels.has(model) ? `✓ ${model}` : `+ ${model}`,
+        );
         pick.disabled = selectedModels.has(model);
         pick.addEventListener('click', () => addModel(model));
         suggestions.append(pick);
@@ -1787,28 +2354,41 @@ function suggestionTitle(key: ModelSuggestionKey): string {
 }
 
 function readPresetControls(doc: Document): ModelPreset[] {
-  const previous = new Map(loadPresets(zoteroPrefs()).map((preset) => [preset.id, preset]));
+  const previous = new Map(
+    loadPresets(zoteroPrefs()).map((preset) => [preset.id, preset]),
+  );
   return Array.from(doc.querySelectorAll('.zai-preset-row')).map((row) => {
     const card = row as HTMLElement;
-    const provider = controlValue(card, 'provider') === 'anthropic' ? 'anthropic' : 'openai';
+    const provider =
+      controlValue(card, 'provider') === 'anthropic' ? 'anthropic' : 'openai';
     const models = splitList(controlValue(card, 'models'));
     const fallbackModel = DEFAULT_MODELS[provider];
     const model = models[0] || fallbackModel;
     const prior = previous.get(card.dataset.id ?? '');
-    const extras = provider === 'openai'
-      ? {
-          ...(prior?.extras ?? {}),
-          reasoningEffort: reasoningEffortValue(prior?.extras?.reasoningEffort),
-          reasoningSummary: reasoningSummaryValue(controlValue(card, 'reasoningSummary')),
-        }
-      : {
-          ...(prior?.extras ?? {}),
-          vendor: vendorValue(controlValue(card, 'vendor'), prior?.extras?.vendor),
-        };
+    const extras =
+      provider === 'openai'
+        ? {
+            ...(prior?.extras ?? {}),
+            reasoningEffort: reasoningEffortValue(
+              prior?.extras?.reasoningEffort,
+            ),
+            reasoningSummary: reasoningSummaryValue(
+              controlValue(card, 'reasoningSummary'),
+            ),
+          }
+        : {
+            ...(prior?.extras ?? {}),
+            vendor: vendorValue(
+              controlValue(card, 'vendor'),
+              prior?.extras?.vendor,
+            ),
+          };
     return {
       id: card.dataset.id || makeId('preset'),
       provider,
-      label: controlValue(card, 'label') || (provider === 'anthropic' ? 'Claude' : 'GPT'),
+      label:
+        controlValue(card, 'label') ||
+        (provider === 'anthropic' ? 'Claude' : 'GPT'),
       apiKey: controlValue(card, 'apiKey'),
       baseUrl: controlValue(card, 'baseUrl') || DEFAULT_BASE_URLS[provider],
       model,
@@ -1827,79 +2407,65 @@ function vendorValue(
   return fallback ?? 'compat';
 }
 
-async function savePresetControlsWithConnectivity(doc: Document): Promise<void> {
-  const save = byID<HTMLButtonElement>(doc, 'zai-preset-save');
-  const previous = loadPresets(zoteroPrefs());
+async function savePresetControlsWithConnectivity(
+  doc: Document,
+): Promise<boolean> {
   const rawPresets = readPresetControls(doc).filter(
-    (preset) => preset.apiKey || preset.baseUrl || preset.model || preset.models?.length,
+    (preset) =>
+      preset.apiKey || preset.baseUrl || preset.model || preset.models?.length,
   );
   for (const preset of rawPresets) {
     if (!preset.apiKey.trim()) {
-      setStatus(doc, 'zai-preset-status', `${preset.label} API Key 为空，未保存。`, true);
-      return;
+      setStatus(
+        doc,
+        'zai-preset-status',
+        `${preset.label} API Key 为空，未保存。`,
+        true,
+      );
+      return false;
     }
     if (!preset.model.trim()) {
-      setStatus(doc, 'zai-preset-status', `${preset.label} Model 为空，未保存。`, true);
-      return;
+      setStatus(
+        doc,
+        'zai-preset-status',
+        `${preset.label} Model 为空，未保存。`,
+        true,
+      );
+      return false;
     }
   }
-  save?.setAttribute('disabled', 'true');
   try {
     savePresets(zoteroPrefs(), rawPresets);
     renderPresetRows(doc, loadPresets(zoteroPrefs()));
     renderTranslateSettings(doc);
-    updatePresetSaveButton(doc);
     refreshSidebarPreferences();
     setStatus(doc, 'zai-preset-status', '账号配置已保存，侧边栏已刷新。');
+    return true;
   } catch (err) {
-    setStatus(doc, 'zai-preset-status', sanitizedTestError(err, rawPresets), true);
-  } finally {
-    save?.removeAttribute('disabled');
+    setStatus(
+      doc,
+      'zai-preset-status',
+      sanitizedTestError(err, rawPresets),
+      true,
+    );
+    return false;
   }
 }
 
 function attachPresetDirtyListeners(doc: Document): void {
   const controls = Array.from(
     doc.querySelectorAll(
-      '.zai-preset-row input, .zai-preset-row textarea, .zai-preset-row select',
+      '.zai-preset-row input:not(.zai-model-test-radio), .zai-preset-row textarea, .zai-preset-row select',
     ),
   ) as Array<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>;
   for (const control of controls) {
-    control.addEventListener('input', () => updatePresetSaveButton(doc));
-    control.addEventListener('change', () => updatePresetSaveButton(doc));
+    control.addEventListener('input', () => updatePresetDirtyState(doc));
+    control.addEventListener('change', () => updatePresetDirtyState(doc));
   }
 }
 
-function updatePresetSaveButton(doc: Document): void {
-  const save = byID<HTMLButtonElement>(doc, 'zai-preset-save');
-  if (!save) return;
-  const current = readPresetControls(doc).filter(
-    (preset) => preset.apiKey || preset.baseUrl || preset.model || preset.models?.length,
-  );
-  const saved = loadPresets(zoteroPrefs());
-  const changed = presetListSignature(current) !== presetListSignature(saved);
-  const hasNew = current.some(
-    (preset) => !saved.some((existing) => existing.id === preset.id),
-  );
-  save.disabled = !changed;
-  save.textContent = '保存账号配置';
-  save.title = changed ? '' : '账号配置没有新增或未保存改动';
-}
-
-function presetListSignature(presets: ModelPreset[]): string {
-  return JSON.stringify(
-    presets.map((preset) => ({
-      id: preset.id,
-      provider: preset.provider,
-      label: preset.label,
-      apiKey: preset.apiKey,
-      baseUrl: preset.baseUrl,
-      model: preset.model,
-      models: preset.models ?? [],
-      maxTokens: preset.maxTokens,
-      extras: preset.extras ?? {},
-    })),
-  );
+function updatePresetDirtyState(doc: Document): void {
+  refreshPreferenceDirtySection(doc, 'presets');
 }
 
 function presetConnectivitySignature(preset: ModelPreset): string {
@@ -1929,7 +2495,10 @@ async function testPresetConnectivity(
     for await (const chunk of getProvider(preset).stream(
       messages,
       'Connectivity test. Reply with OK only.',
-      { ...preset, maxTokens: Math.min(Math.max(preset.maxTokens || 256, 256), 512) },
+      {
+        ...preset,
+        maxTokens: Math.min(Math.max(preset.maxTokens || 256, 256), 512),
+      },
       controller.signal,
     )) {
       if (chunk.type === 'error') throw new Error(chunk.message);
@@ -1954,12 +2523,18 @@ async function testOpenAIConnectivity(
   const withMaxTokens = await requestOpenAIConnectivity(preset, signal, true);
   if (withMaxTokens.ok) {
     return {
-      preset: withOpenAIChatCompletions(withOmitMaxOutputTokens(preset, false), false),
+      preset: withOpenAIChatCompletions(
+        withOmitMaxOutputTokens(preset, false),
+        false,
+      ),
       message: `连接成功：${preset.provider} / ${preset.model}（支持 Max tokens）`,
     };
   }
   // 404 = endpoint doesn't exist; reasoning error = param unsupported → both mean Chat Completions only
-  if (withMaxTokens.status === 404 || isReasoningUnsupported(withMaxTokens.body)) {
+  if (
+    withMaxTokens.status === 404 ||
+    isReasoningUnsupported(withMaxTokens.body)
+  ) {
     const chatResult = await requestChatCompletionsConnectivity(preset, signal);
     if (!chatResult.ok) throw new Error(openAITestErrorMessage(chatResult));
     return {
@@ -1972,10 +2547,18 @@ async function testOpenAIConnectivity(
   if (!isUnsupportedMaxOutputTokens(withMaxTokens.body)) {
     throw new Error(openAITestErrorMessage(withMaxTokens));
   }
-  const withoutMaxTokens = await requestOpenAIConnectivity(preset, signal, false);
-  if (!withoutMaxTokens.ok) throw new Error(openAITestErrorMessage(withoutMaxTokens));
+  const withoutMaxTokens = await requestOpenAIConnectivity(
+    preset,
+    signal,
+    false,
+  );
+  if (!withoutMaxTokens.ok)
+    throw new Error(openAITestErrorMessage(withoutMaxTokens));
   return {
-    preset: withOpenAIChatCompletions(withOmitMaxOutputTokens(preset, true), false),
+    preset: withOpenAIChatCompletions(
+      withOmitMaxOutputTokens(preset, true),
+      false,
+    ),
     message:
       `连接成功：${preset.provider} / ${preset.model}` +
       '（服务不支持 Max tokens，已保存为不发送）',
@@ -2021,9 +2604,7 @@ function openAIResponsesUrl(baseUrl: string): string {
   return `${root.replace(/\/+$/, '')}/responses`;
 }
 
-function openAIResponsesReasoningBodyParam(
-  preset: ModelPreset,
-): {
+function openAIResponsesReasoningBodyParam(preset: ModelPreset): {
   reasoning?: {
     effort: ReasoningEffort;
     summary?: Exclude<ReasoningSummary, 'none'>;
@@ -2063,11 +2644,16 @@ function isUnsupportedMaxOutputTokens(body: string): boolean {
 }
 
 function isReasoningUnsupported(body: string): boolean {
-  return /unsupported_parameter|unsupported parameter/i.test(body) &&
-    /reasoning/i.test(body);
+  return (
+    /unsupported_parameter|unsupported parameter/i.test(body) &&
+    /reasoning/i.test(body)
+  );
 }
 
-function withOpenAIChatCompletions(preset: ModelPreset, use: boolean): ModelPreset {
+function withOpenAIChatCompletions(
+  preset: ModelPreset,
+  use: boolean,
+): ModelPreset {
   const extras = { ...preset.extras };
   if (use) extras.openaiUseChatCompletions = true;
   else delete extras.openaiUseChatCompletions;
@@ -2078,7 +2664,10 @@ async function requestChatCompletionsConnectivity(
   preset: ModelPreset,
   signal: AbortSignal,
 ): Promise<OpenAITestResult> {
-  const base = (preset.baseUrl.trim() || 'https://api.openai.com/v1').replace(/\/+$/, '');
+  const base = (preset.baseUrl.trim() || 'https://api.openai.com/v1').replace(
+    /\/+$/,
+    '',
+  );
   const response = await fetch(`${base}/chat/completions`, {
     method: 'POST',
     headers: {
@@ -2121,7 +2710,8 @@ function sanitizedTestError(err: unknown, presets: ModelPreset[]): string {
   for (const preset of presets) {
     if (preset.apiKey) message = message.split(preset.apiKey).join('[API_KEY]');
   }
-  if (message.toLowerCase().includes('abort')) return '连接超时或已取消，未保存。';
+  if (message.toLowerCase().includes('abort'))
+    return '连接超时或已取消，未保存。';
   return `连接失败：${message}。未保存。`;
 }
 
@@ -2130,7 +2720,8 @@ function renderPromptSettings(doc: Document): void {
   populateBuiltInPromptControls(doc, settings);
   const custom = byID<HTMLElement>(doc, 'zai-custom-prompts');
   custom?.replaceChildren();
-  for (const buttonConfig of settings.customButtons) addCustomPromptRow(doc, buttonConfig);
+  for (const buttonConfig of settings.customButtons)
+    addCustomPromptRow(doc, buttonConfig);
   setStatus(doc, 'zai-prompt-status', '已加载提示词配置。');
 }
 
@@ -2141,10 +2732,34 @@ function populateBuiltInPromptControls(
   const wrap = byID<HTMLElement>(doc, 'zai-built-in-prompts');
   if (!wrap) return;
   wrap.replaceChildren(
-    builtInPromptControl(doc, 'summary', '总结论文', settings.builtIns.summary, DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.summary),
-    builtInPromptControl(doc, 'readingRoute', '阅读路线', settings.builtIns.readingRoute, DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.readingRoute),
-    builtInPromptControl(doc, 'fullTextHighlight', '全文重点', settings.builtIns.fullTextHighlight, DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.fullTextHighlight),
-    builtInPromptControl(doc, 'explainSelection', '解释选区', settings.builtIns.explainSelection, DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.explainSelection),
+    builtInPromptControl(
+      doc,
+      'summary',
+      '总结论文',
+      settings.builtIns.summary,
+      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.summary,
+    ),
+    builtInPromptControl(
+      doc,
+      'readingRoute',
+      '阅读路线',
+      settings.builtIns.readingRoute,
+      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.readingRoute,
+    ),
+    builtInPromptControl(
+      doc,
+      'fullTextHighlight',
+      '全文重点',
+      settings.builtIns.fullTextHighlight,
+      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.fullTextHighlight,
+    ),
+    builtInPromptControl(
+      doc,
+      'explainSelection',
+      '解释选区',
+      settings.builtIns.explainSelection,
+      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.explainSelection,
+    ),
     selectionQuestionAnnotationControl(
       doc,
       settings.selectionQuestionAnnotationEnabled,
@@ -2176,13 +2791,8 @@ function selectionQuestionAnnotationControl(
         : '普通选区提问后不再自动生成建议注释，已直接保存。',
     );
   });
-  const save = button(doc, '保存提示词/按钮');
-  save.addEventListener('click', () => savePromptControls(doc));
   const head = el(doc, 'div', 'zai-prompt-option-head');
-  head.append(
-    labelWrap(doc, checkbox, '普通选区提问后生成建议注释'),
-    save,
-  );
+  head.append(labelWrap(doc, checkbox, '普通选区提问后生成建议注释'));
   wrap.append(
     head,
     el(
@@ -2209,7 +2819,8 @@ function builtInPromptControl(
   title.append(el(doc, 'span', '', label), state);
   head.append(title);
   const reset = button(doc, '恢复内置默认');
-  reset.title = '把当前编辑框恢复为这个插件版本内置的默认提示词；需要点击“保存提示词”才会生效。';
+  reset.title =
+    '把当前编辑框恢复为这个插件版本内置的默认提示词；保存更改后生效。';
   const area = textarea(doc, value);
   area.dataset.prompt = field;
   area.dataset.savedValue = value;
@@ -2219,10 +2830,11 @@ function builtInPromptControl(
   reset.addEventListener('click', () => {
     area.value = defaultValue;
     updateState();
+    refreshPreferenceDirtySection(doc, 'prompts');
     setStatus(
       doc,
       'zai-prompt-status',
-      `${label} 已填入当前插件内置默认；点击“保存提示词”后才会更新本地生效。`,
+      `${label} 已填入当前插件内置默认；保存更改后生效。`,
     );
   });
   area.addEventListener('input', updateState);
@@ -2240,7 +2852,11 @@ function updatePromptDefaultState(
   const savedValue = area.dataset.savedValue ?? '';
   const current = area.value;
   const nextState =
-    current !== savedValue ? 'dirty' : current === defaultValue ? 'default' : 'custom';
+    current !== savedValue
+      ? 'dirty'
+      : current === defaultValue
+        ? 'default'
+        : 'custom';
   const label =
     nextState === 'dirty'
       ? '编辑未保存'
@@ -2249,7 +2865,7 @@ function updatePromptDefaultState(
         : '本地已自定义';
   const title =
     nextState === 'dirty'
-      ? '当前编辑框内容还没有保存；点击“保存提示词”后才会成为本地提示词。'
+      ? '当前编辑框内容还没有保存；通过顶部保存栏提交后生效。'
       : nextState === 'default'
         ? '已保存的本地提示词与当前插件内置默认一致。'
         : '已保存的本地提示词不同于当前插件内置默认；点击“恢复内置默认”可改回。';
@@ -2269,7 +2885,10 @@ function addCustomPromptRow(
   const title = el(doc, 'div', 'zai-subcard-title');
   title.append(el(doc, 'span', '', '自定义提示'));
   const remove = button(doc, '删除');
-  remove.addEventListener('click', () => card.remove());
+  remove.addEventListener('click', () => {
+    card.remove();
+    refreshPreferenceDirtySection(doc, 'prompts');
+  });
   title.append(remove);
   const label = input(doc, config.label);
   label.dataset.field = 'label';
@@ -2314,11 +2933,11 @@ function compactPromptField(
   return wrap;
 }
 
-function savePromptControls(doc: Document, okMessage = '提示词已保存，侧边栏按钮立即刷新。'): void {
+function savePromptControls(doc: Document): boolean {
   const result = readPromptControls(doc);
   if (typeof result === 'string') {
     setStatus(doc, 'zai-prompt-status', result, true);
-    return;
+    return false;
   }
   saveQuickPromptSettings(zoteroPrefs(), result);
   renderPromptSettings(doc);
@@ -2326,9 +2945,9 @@ function savePromptControls(doc: Document, okMessage = '提示词已保存，侧
   setStatus(
     doc,
     'zai-prompt-status',
-    `${okMessage} 当前自定义按钮：${customPromptLabels(result)}`,
+    `提示词已保存，侧边栏按钮立即刷新。当前自定义按钮：${customPromptLabels(result)}`,
   );
-  flashButton(byID<HTMLButtonElement>(doc, 'zai-prompt-save'), '已保存');
+  return true;
 }
 
 function readPromptControls(doc: Document): QuickPromptSettings | string {
@@ -2343,15 +2962,16 @@ function readPromptControls(doc: Document): QuickPromptSettings | string {
     byID<HTMLInputElement>(doc, 'zai-selection-question-annotation-enabled')
       ?.checked === true;
   const customButtons = [];
-  for (const node of Array.from(doc.querySelectorAll('.zai-custom-prompt-row'))) {
+  for (const node of Array.from(
+    doc.querySelectorAll('.zai-custom-prompt-row'),
+  )) {
     const row = node as HTMLElement;
     const label = controlValue(row, 'label');
     const shortcut = controlValue(row, 'shortcut');
     const prompt = controlValue(row, 'prompt');
     if (!label && !shortcut && !prompt) continue;
     if (!prompt) return '自定义提示必须填写提示词。';
-    if (!label && !shortcut)
-      return '自定义提示至少填写按钮名称或 PDF 快捷键。';
+    if (!label && !shortcut) return '自定义提示至少填写按钮名称或 PDF 快捷键。';
     customButtons.push({
       id: row.dataset.id || makeId('prompt'),
       label,
@@ -2374,8 +2994,9 @@ function readPromptControls(doc: Document): QuickPromptSettings | string {
 function customPromptLabels(settings: QuickPromptSettings): string {
   return settings.customButtons.length
     ? settings.customButtons
-        .map((button) =>
-          button.label || `快捷键 ${button.shortcut?.toUpperCase()}`,
+        .map(
+          (button) =>
+            button.label || `快捷键 ${button.shortcut?.toUpperCase()}`,
         )
         .join('、')
     : '无';
@@ -2389,8 +3010,14 @@ function renderToolSettings(doc: Document): void {
     doc,
     'zai-tool-annotation-color-guide',
   );
-  if (colorGuide) colorGuide.value = settings.annotationColorGuide;
-  const fontSize = byID<HTMLInputElement>(doc, 'zai-tool-text-annotation-font-size');
+  if (colorGuide) {
+    colorGuide.value = settings.annotationColorGuide;
+    colorGuide.scrollTop = 0;
+  }
+  const fontSize = byID<HTMLInputElement>(
+    doc,
+    'zai-tool-text-annotation-font-size',
+  );
   if (fontSize) fontSize.value = String(settings.textAnnotationFontSize);
   const list = byID<HTMLElement>(doc, 'zai-mcp-list');
   list?.replaceChildren();
@@ -2408,9 +3035,15 @@ function addMcpRow(doc: Document, server: McpServerSettings): void {
   enabled.type = 'checkbox';
   enabled.checked = server.enabled;
   enabled.dataset.field = 'enabled';
-  title.append(el(doc, 'span', '', 'MCP Server'), labelWrap(doc, enabled, '启用'));
+  title.append(
+    el(doc, 'span', '', 'MCP Server'),
+    labelWrap(doc, enabled, '启用'),
+  );
   const remove = button(doc, '删除');
-  remove.addEventListener('click', () => card.remove());
+  remove.addEventListener('click', () => {
+    card.remove();
+    refreshPreferenceDirtySection(doc, 'mcp');
+  });
   title.append(remove);
   const serverLabel = input(doc, server.serverLabel);
   serverLabel.dataset.field = 'serverLabel';
@@ -2419,10 +3052,14 @@ function addMcpRow(doc: Document, server: McpServerSettings): void {
   const allowedTools = input(doc, server.allowedTools.join(', '));
   allowedTools.dataset.field = 'allowedTools';
   allowedTools.placeholder = '留空表示不限制工具；或填写 search, read_pdf';
-  const approval = select(doc, [
-    ['never', 'Never - 不需要审批'],
-    ['always', 'Always - 请求审批'],
-  ], server.requireApproval);
+  const approval = select(
+    doc,
+    [
+      ['never', 'Never - 不需要审批'],
+      ['always', 'Always - 请求审批'],
+    ],
+    server.requireApproval,
+  );
   approval.dataset.field = 'requireApproval';
   card.append(
     title,
@@ -2459,23 +3096,101 @@ function readToolSettingsControls(doc: Document): ToolSettings {
     ...existing,
     webSearchMode: webSearchModeValue(webSearch?.value ?? 'disabled'),
     annotationColorGuide:
-      byID<HTMLTextAreaElement>(doc, 'zai-tool-annotation-color-guide')?.value ??
-      existing.annotationColorGuide,
+      byID<HTMLTextAreaElement>(doc, 'zai-tool-annotation-color-guide')
+        ?.value ?? existing.annotationColorGuide,
     textAnnotationFontSize: Number(
-      byID<HTMLInputElement>(doc, 'zai-tool-text-annotation-font-size')?.value ??
-        existing.textAnnotationFontSize,
+      byID<HTMLInputElement>(doc, 'zai-tool-text-annotation-font-size')
+        ?.value ?? existing.textAnnotationFontSize,
     ),
     mcpServers,
   };
 }
 
+function saveWebSearchControl(doc: Document): void {
+  const existing = loadToolSettings(zoteroPrefs());
+  const webSearch = byID<HTMLSelectElement>(doc, 'zai-tool-web-search');
+  saveToolSettings(zoteroPrefs(), {
+    ...existing,
+    webSearchMode: webSearchModeValue(webSearch?.value ?? 'disabled'),
+  });
+  refreshSidebarPreferences();
+  setStatus(doc, 'zai-tool-status', 'Web search 模式已自动保存。');
+}
+
+function saveAnnotationColorGuideControl(
+  doc: Document,
+  message = 'PDF 注释颜色预设已自动保存，下一次请求立即使用。',
+): void {
+  const existing = loadToolSettings(zoteroPrefs());
+  const value =
+    byID<HTMLTextAreaElement>(doc, 'zai-tool-annotation-color-guide')?.value ??
+    existing.annotationColorGuide;
+  saveToolSettings(zoteroPrefs(), {
+    ...existing,
+    annotationColorGuide: value,
+  });
+  const saved = loadToolSettings(zoteroPrefs());
+  const control = byID<HTMLTextAreaElement>(
+    doc,
+    'zai-tool-annotation-color-guide',
+  );
+  if (control) control.value = saved.annotationColorGuide;
+  refreshSidebarPreferences();
+  setStatus(doc, 'zai-color-status', message);
+}
+
+function saveTextAnnotationFontSizeControl(doc: Document): void {
+  const existing = loadToolSettings(zoteroPrefs());
+  const value = Number(
+    byID<HTMLInputElement>(doc, 'zai-tool-text-annotation-font-size')?.value ??
+      existing.textAnnotationFontSize,
+  );
+  saveToolSettings(zoteroPrefs(), {
+    ...existing,
+    textAnnotationFontSize: value,
+  });
+  const saved = loadToolSettings(zoteroPrefs());
+  const control = byID<HTMLInputElement>(
+    doc,
+    'zai-tool-text-annotation-font-size',
+  );
+  if (control) control.value = String(saved.textAnnotationFontSize);
+  refreshSidebarPreferences();
+  setStatus(
+    doc,
+    'zai-text-annotation-font-status',
+    `已自动保存为 ${saved.textAnnotationFontSize}。`,
+  );
+}
+
+function saveMcpControls(doc: Document): void {
+  const existing = loadToolSettings(zoteroPrefs());
+  saveToolSettings(zoteroPrefs(), {
+    ...existing,
+    mcpServers: readToolSettingsControls(doc).mcpServers,
+  });
+  renderToolSettings(doc);
+  refreshSidebarPreferences();
+  setStatus(
+    doc,
+    'zai-tool-status',
+    'MCP Server 配置已保存，下一次请求立即使用。',
+  );
+}
+
 function promptText(doc: Document, key: string): string {
-  const area = doc.querySelector(`textarea[data-prompt="${key}"]`) as HTMLTextAreaElement | null;
+  const area = doc.querySelector(
+    `textarea[data-prompt="${key}"]`,
+  ) as HTMLTextAreaElement | null;
   return area?.value.trim() ?? '';
 }
 
 function controlValue(root: ParentNode, field: string): string {
-  const control = root.querySelector(`[data-field="${field}"]`) as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement | null;
+  const control = root.querySelector(`[data-field="${field}"]`) as
+    | HTMLInputElement
+    | HTMLTextAreaElement
+    | HTMLSelectElement
+    | null;
   return control?.value.trim() ?? '';
 }
 
@@ -2491,7 +3206,9 @@ function setRowVisible(control: HTMLElement, visible: boolean): void {
 }
 
 function checkboxValue(root: ParentNode, field: string): boolean {
-  const control = root.querySelector(`[data-field="${field}"]`) as HTMLInputElement | null;
+  const control = root.querySelector(
+    `[data-field="${field}"]`,
+  ) as HTMLInputElement | null;
   return !!control?.checked;
 }
 
@@ -2504,7 +3221,8 @@ function approvalValue(value: string): McpApprovalMode {
 }
 
 function reasoningEffortValue(value: unknown): ReasoningEffort {
-  return typeof value === 'string' && ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(value)
+  return typeof value === 'string' &&
+    ['none', 'minimal', 'low', 'medium', 'high', 'xhigh'].includes(value)
     ? (value as ReasoningEffort)
     : DEFAULT_REASONING_EFFORT;
 }
@@ -2550,26 +3268,37 @@ function makePreset(provider: ProviderKind): ModelPreset {
     model,
     models: model ? [model] : [],
     maxTokens: 8192,
-    extras: provider === 'openai'
-      ? {
-          reasoningEffort: DEFAULT_REASONING_EFFORT,
-          reasoningSummary: DEFAULT_REASONING_SUMMARY,
-          agentPermissionMode: 'default',
-        }
-      : { agentPermissionMode: 'default' },
+    extras:
+      provider === 'openai'
+        ? {
+            reasoningEffort: DEFAULT_REASONING_EFFORT,
+            reasoningSummary: DEFAULT_REASONING_SUMMARY,
+            agentPermissionMode: 'default',
+          }
+        : { agentPermissionMode: 'default' },
   };
 }
 
-function grid(doc: Document, rows: Array<[string | HTMLElement, HTMLElement]>): HTMLElement {
+function grid(
+  doc: Document,
+  rows: Array<[string | HTMLElement, HTMLElement]>,
+): HTMLElement {
   const wrap = el(doc, 'div', 'zai-pref-grid');
   for (const [labelSpec, control] of rows) {
-    const labelEl = typeof labelSpec === 'string' ? el(doc, 'label', '', labelSpec) : labelSpec;
+    const labelEl =
+      typeof labelSpec === 'string'
+        ? el(doc, 'label', '', labelSpec)
+        : labelSpec;
     wrap.append(labelEl, control);
   }
   return wrap;
 }
 
-function labelWrap(doc: Document, control: HTMLElement, text: string): HTMLElement {
+function labelWrap(
+  doc: Document,
+  control: HTMLElement,
+  text: string,
+): HTMLElement {
   const label = el(doc, 'label', 'zai-inline');
   label.append(control, doc.createTextNode(text));
   return label;
@@ -2604,7 +3333,11 @@ function select<T extends string>(
   return node;
 }
 
-function option(doc: Document, value: string, label: string): HTMLOptionElement {
+function option(
+  doc: Document,
+  value: string,
+  label: string,
+): HTMLOptionElement {
   const node = doc.createElement('option');
   node.value = value;
   node.textContent = label;
