@@ -43,7 +43,8 @@ export const NOTE_ROOT_ID = "zai-note-root";
 export const ROOT_ID = "zai-root";
 export const TOGGLE_BUTTON_ID = "zai-toggle-button";
 export const FLOATING_TOGGLE_ID = "zai-floating-toggle";
-export const READER_LAYOUT_PREF_KEY = "extensions.zotero-ai-sidebar.readerLayout";
+export const READER_LAYOUT_PREF_KEY =
+  "extensions.zotero-ai-sidebar.readerLayout";
 export const contextPolicy = DEFAULT_CONTEXT_POLICY;
 export const DEFAULT_AI_COLUMN_WIDTH = 380;
 export const DEFAULT_NOTE_COLUMN_WIDTH = 560;
@@ -91,6 +92,9 @@ export interface WindowSidebarState {
   noteMount: HTMLElement;
   noteItemID?: number;
   overviewActive?: boolean;
+  fullTranslationActive?: boolean;
+  fullTranslationLayout?: "parallel" | "interleaved";
+  fullTranslationAbort?: AbortController;
   // Reading navigation for the overview map (在读 anchor / browse cursor / back
   // stack / lock). Session-scoped: survives view switches, resets on restart.
   overviewNav?: OverviewNavState;

@@ -4,7 +4,9 @@ import {
   findMainTex,
   inlineInputs,
   expandMacros,
+  buildCitationLabels,
   normalizeCitations,
+  normalizeLatexCommonCommands,
   normalizeLatexListEnvironments,
   normalizeLatexSourceCommands,
   normalizeLatexTextCommands,
@@ -97,6 +99,22 @@ describe("expandMacros", () => {
     const text = "\\newcommand{\\red}[1]{\\textcolor{red}{#1}}\n\\red{X}";
     expect(expandMacros(text)).toContain("\\red{X}");
   });
+
+  it("keeps paragraph headings while removing a layout redefinition", () => {
+    const text = String.raw`\makeatletter
+\renewcommand{\paragraph}{
+  \@startsection{paragraph}{4}
+  {\z@}{0.05ex \@plus .05ex \@minus .05ex}{-1em}
+  {\normalfont\normalsize\bfseries}
+}
+\paragraph{Multi-Task POMDP.} Body text.`;
+
+    const out = expandMacros(text);
+
+    expect(out).toContain(String.raw`\paragraph{Multi-Task POMDP.} Body text.`);
+    expect(out).not.toContain(String.raw`\renewcommand{\paragraph}`);
+    expect(out).not.toContain(String.raw`\@startsection{paragraph}`);
+  });
 });
 
 describe("normalizeCitations", () => {
@@ -111,6 +129,45 @@ describe("normalizeCitations", () => {
   it("handles optional citation notes without exposing bibliography keys", () => {
     expect(normalizeCitations("see \\citep[Sec.~2][p.~4]{a,b}")).toBe(
       "see [citation]",
+    );
+  });
+
+  it("renders citation numbers from compiled bibliography order", () => {
+    const labels = buildCitationLabels([
+      {
+        path: "paper.bbl",
+        text: String.raw`\begin{thebibliography}{9}
+\bibitem{lenz2015deep} Lenz.
+\bibitem{redmon2015real} Redmon.
+\end{thebibliography}`,
+      },
+    ]);
+
+    expect(
+      normalizeCitations(
+        String.raw`Lenz~\cite{lenz2015deep,redmon2015real}`,
+        labels,
+      ),
+    ).toBe("Lenz~[1, 2]");
+  });
+});
+
+describe("normalizeLatexCommonCommands", () => {
+  it("converts common prose macros and nonbreaking spaces before translation", () => {
+    expect(
+      normalizeLatexCommonCommands(
+        String.raw`Lenz~\etal proposed it, \ie it works; $x~y$ stays math.`,
+      ),
+    ).toBe("Lenz et al. proposed it, i.e. it works; $x~y$ stays math.");
+  });
+
+  it("converts prose line-break commands without changing display math", () => {
+    expect(
+      normalizeLatexCommonCommands(
+        String.raw`A title\\ on one line and $\begin{matrix}a\\b\end{matrix}$.`,
+      ),
+    ).toBe(
+      String.raw`A title on one line and $\begin{matrix}a\\b\end{matrix}$.`,
     );
   });
 });
@@ -143,6 +200,20 @@ describe("normalizeLatexTextCommands", () => {
       "$\\textbf{x}$ and *x*",
     );
   });
+
+  it("unwraps LaTeX font-size commands while preserving their text", () => {
+    expect(
+      normalizeLatexTextCommands(
+        String.raw`\scriptsize{small} \footnotesize{\textbf{label}}`,
+      ),
+    ).toBe("small **label**");
+  });
+
+  it("keeps wrapper whitespace outside Markdown emphasis markers", () => {
+    expect(normalizeLatexTextCommands(String.raw`\textbf{ label }`)).toBe(
+      " **label** ",
+    );
+  });
 });
 
 describe("normalizeLatexSourceCommands", () => {
@@ -166,6 +237,36 @@ describe("normalizeLatexSourceCommands", () => {
         "Figure~\\ref{fig:home} and Eq.~\\eqref{eq:loss}",
       ),
     ).toBe("Figure~[ref] and Eq.~[ref]");
+  });
+
+  it("renders resolved cross-reference numbers before translation", () => {
+    const references = new Map([
+      ["fig:home", "2"],
+      ["eq:loss", "3"],
+      ["sec:method", "4.1"],
+    ]);
+
+    expect(
+      normalizeLatexSourceCommands(
+        "Figure~\\ref{fig:home}, Eq.~\\eqref{eq:loss}, and \\autoref{sec:method}",
+        { referenceLabels: references },
+      ),
+    ).toBe("Figure~2, Eq.~(3), and Section 4.1");
+  });
+
+  it("uses label prefixes for typed automatic references", () => {
+    const references = new Map([
+      ["fig:home", "2"],
+      ["tab:results", "5"],
+      ["eq:loss", "3"],
+    ]);
+
+    expect(
+      normalizeLatexSourceCommands(
+        "\\autoref{fig:home}, \\autoref{tab:results}, \\autoref{eq:loss}",
+        { referenceLabels: references },
+      ),
+    ).toBe("Figure 2, Table 5, Equation 3");
   });
 
   it("can preserve section labels for arXiv section lookup", () => {

@@ -154,6 +154,15 @@ describe("findNextMathRegion — single-$ contract A (with guards)", () => {
     expect(findNextMathRegion("got $5 and $10", 0)).toBeNull();
   });
 
+  it("matches a math command between numeric bounds", () => {
+    expect(findNextMathRegion("0.5$\\sim$1.5m", 0)).toEqual({
+      start: 3,
+      end: 9,
+      latex: "\\sim",
+      display: false,
+    });
+  });
+
   it("rejects '$ x $' (space-padded delimiters)", () => {
     expect(findNextMathRegion("a $ x $ b", 0)).toBeNull();
   });

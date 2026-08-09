@@ -159,6 +159,24 @@ describe("renderMarkdownInto", () => {
     );
   });
 
+  it("renders split blockquote equation when a blank precedes the end delimiter", () => {
+    const root = render(
+      [
+        "> Formally, the goal is to train a student policy $\\hat{\\pi}$ minimizing the action distance:",
+        "> \\begin{equation}",
+        "\\hat{\\pi} = \\arg\\min_{\\pi\\in\\Pi}\\mathbb{E}_{s\\sim d_{\\pi}}[\\ell(s,\\pi)].",
+        "",
+        "\\end{equation}",
+      ].join("\n"),
+    );
+
+    expect(root.textContent).not.toContain("\\begin{equation}");
+    expect(root.textContent).not.toContain("\\end{equation}");
+    expect(root.textContent).not.toContain("\\hat{\\pi}");
+    expect(root.querySelectorAll(".math-display")).toHaveLength(1);
+    expect(root.querySelector(".katex-error")).toBeNull();
+  });
+
   it("renders blockquoted display math delimited by standalone single-$ lines", () => {
     const root = render(
       [

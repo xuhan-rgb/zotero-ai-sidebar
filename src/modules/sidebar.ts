@@ -40,6 +40,7 @@ import {
   normalizeLatexSourceCommands,
 } from "../context/tex-clean";
 import { zoteroContextSource } from "../context/zotero-source";
+import { checkLatexSourceAvailability } from "./latex-source-availability";
 import { getProvider } from "../providers/factory";
 import type {
   AssistantAnnotationDraft,
@@ -55,12 +56,17 @@ import {
   setPaperPinned,
 } from "../settings/paper-cache";
 import { loadQuickPromptSettings } from "../settings/quick-prompts";
+import {
+  createFullTranslationState,
+  saveFullTranslationState,
+} from "../settings/full-translation-store";
 import { loadPresets, zoteroPrefs } from "../settings/storage";
 import {
   DEFAULT_LOCAL_UI_SETTINGS,
   loadLocalUiSettings,
   normalizeLocalUiSettings,
   saveLocalUiSettings,
+  type FullTranslationReadingSettings,
   type LocalUiSettings,
 } from "../settings/local-ui-settings";
 import {
@@ -97,6 +103,16 @@ import { AskModeController } from "../translate/ask-mode";
 import { getReadingConversations } from "../translate/reading-log";
 import { summarizeReadingConversations } from "../translate/reading-summary";
 import {
+  createFullDocumentTranslator,
+  type FullDocumentTranslator,
+} from "../translate/full-document-provider";
+import { runFullDocumentTranslation } from "../translate/full-document-runner";
+import { loadFullTranslationAssetPreviews } from "../translate/full-document-assets";
+import {
+  loadFullTranslationSession,
+  type FullTranslationSession,
+} from "../translate/full-document-session";
+import {
   addDraftImages,
   pastedImageFiles,
   renderDraftImages,
@@ -114,6 +130,15 @@ import {
   findLastAssistantIndex,
   findPreviousUserIndex,
 } from "./chat-message-index";
+import {
+  renderFullTranslationView,
+  updateFullTranslationAssetPreview,
+} from "./full-translation-view";
+import {
+  mountFullTranslationHost,
+  unmountFullTranslationHost,
+  type FullTranslationHost,
+} from "./full-translation-host";
 import {
   formatConversationMarkdown,
   messageToClipboard,
@@ -411,10 +436,7 @@ import {
 import { appendLocalPath } from "../utils/local-path";
 import { loadOverview, saveOverview } from "../context/overview-store";
 import { loadReading, saveReading } from "../context/reading-store";
-import type {
-  OverviewData,
-  OverviewSection,
-} from "../context/overview-types";
+import type { OverviewData, OverviewSection } from "../context/overview-types";
 import { clonePlainRecord, finiteNumber } from "./plain-utils";
 import {
   agentPermissionMode,
@@ -462,6 +484,25 @@ import {
 } from "./note-editor-restore";
 
 let registered = false;
+
+const fullTranslationSessions = new WeakMap<
+  WindowSidebarState,
+  FullTranslationSession
+>();
+const fullTranslationHosts = new WeakMap<
+  WindowSidebarState,
+  FullTranslationHost
+>();
+const fullTranslationRequests = new WeakMap<WindowSidebarState, symbol>();
+const fullTranslationNoteVisibility = new WeakMap<
+  WindowSidebarState,
+  boolean
+>();
+
+interface PreparedFullTranslationRun {
+  controller: AbortController;
+  translator: FullDocumentTranslator;
+}
 
 let readerSelectionHandler: ((event: unknown) => void) | null = null;
 // Entry point per Zotero item selection.
@@ -1007,18 +1048,40 @@ function renderContextCard(doc: Document, itemID: number | null) {
   const card = el(doc, "div", "ctx-card");
   const metaRow = el(doc, "div", "ctx-meta", `Item ID: ${itemID ?? "none"}`);
   card.append(el(doc, "div", "ctx-title", title), metaRow);
-  // When the active item has a cached arXiv LaTeX source, append a badge.
-  // hasArxivSource is async, so render the row first and attach the badge
-  // afterwards rather than blocking the synchronous header build.
   const arxivId = resolveArxivIdForItemID(itemID);
   if (arxivId) {
-    void hasArxivSource(arxivId).then((has) => {
-      if (!has || !metaRow.isConnected) return;
-      const arxivBadge = doc.createElement("span");
-      arxivBadge.className = "arxiv-source-badge";
+    const arxivBadge = doc.createElement("span");
+    arxivBadge.className = "arxiv-source-badge";
+    arxivBadge.textContent = "正在检查 LaTeX…";
+    metaRow.append(arxivBadge);
+    void checkLatexSourceAvailability(arxivId).then((availability) => {
+      const sidebar = findSidebarStateByDocument(doc);
+      const currentItemID = sidebar
+        ? (states.get(sidebar.mount)?.itemID ?? null)
+        : null;
+      if (!metaRow.isConnected || currentItemID !== itemID) return;
+      if (availability === "no-source") {
+        arxivBadge.textContent = "无 LaTeX 源";
+        arxivBadge.title = "当前 arXiv 条目没有可用的 LaTeX 源码";
+        return;
+      }
+      if (availability === "error") {
+        arxivBadge.textContent = "LaTeX 检查失败";
+        arxivBadge.title = "无法检查 arXiv LaTeX 源码，请稍后重试";
+        return;
+      }
       arxivBadge.textContent = "LaTeX 源";
       arxivBadge.title = "正在使用 arXiv LaTeX 源码分析（公式精确）";
-      metaRow.append(arxivBadge);
+      const translateButton = doc.createElement("button");
+      translateButton.type = "button";
+      translateButton.className = "arxiv-full-translation-button";
+      translateButton.textContent = "全文翻译";
+      translateButton.title = "用 LaTeX 重建原文与中文译文并进行结构对照";
+      translateButton.addEventListener("click", () => {
+        const sidebar = findSidebarStateByDocument(doc);
+        if (sidebar) void showFullTranslation(sidebar);
+      });
+      metaRow.append(translateButton);
     });
   }
   return card;
@@ -4923,7 +4986,7 @@ function renderNoteWindow(sidebar: WindowSidebarState, note: Zotero.Item) {
 type NoteFileKind = "normal" | "readingRoute";
 type NotePanelView = NoteFileKind | "overview";
 
-// Segmented view switcher — pure navigation between the three note-column
+// Segmented view switcher — pure navigation between the note-column
 // views. Clicking a segment NEVER generates anything (that footgun is gone);
 // it only switches what you're looking at. Generation lives in the contextual
 // action button / empty-state CTA instead.
@@ -4993,10 +5056,7 @@ function buildNoteSeg(
 // ⋯ overflow menu for low-frequency note tools. Toggles on click, closes on
 // outside-click; items close the menu when clicked unless they opt out via
 // data-zai-keep-open (the 对话总结 item keeps it open to show progress).
-function buildNoteMenu(
-  doc: Document,
-  items: HTMLButtonElement[],
-): HTMLElement {
+function buildNoteMenu(doc: Document, items: HTMLButtonElement[]): HTMLElement {
   const wrap = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   wrap.className = "zai-note-menu";
 
@@ -5068,8 +5128,8 @@ interface NoteHeadParts {
   close: HTMLButtonElement;
 }
 
-// Shared note-column header for all three views. Layout:
-//   [grip] [ 笔记 · 路线 · 总览 ] …spacer… [contextual action?] [status?] [⋯] [✕]
+// Shared note-column header. Layout:
+//   [grip] [ 笔记 · 路线 · 总览 ] …spacer… [action?] [status?] [⋯] [✕]
 // Editable views (normal note / reading route) get the autosave `status` text
 // and a `save` button (relocated into the ⋯ menu); both elements stay so the
 // existing autosave + editor wiring keeps working untouched.
@@ -5119,7 +5179,8 @@ function renderNoteHead(
   // 对话总结 writes into the AI 笔记, so it only belongs to the 笔记 view; the
   // route/overview views don't need it.
   const menuItems: HTMLButtonElement[] = [];
-  if (opts.view === "normal") menuItems.push(buildSummaryMenuItem(doc, sidebar));
+  if (opts.view === "normal")
+    menuItems.push(buildSummaryMenuItem(doc, sidebar));
   if (opts.menuExtra) menuItems.push(...opts.menuExtra);
   if (menuItems.length) head.append(buildNoteMenu(doc, menuItems));
 
@@ -5153,8 +5214,7 @@ async function summarizeReadingFromNoteSwitcher(
   const mainWin = doc.defaultView ?? null;
   const itemID = mainWin ? safeSelectedItemID(mainWin) : null;
   const original = button.textContent ?? "对话总结";
-  const restoreTitle =
-    "用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记";
+  const restoreTitle = "用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记";
   if (getReadingConversations(itemID).length === 0) {
     button.textContent = "暂无对话";
     button.title = "本篇还没有沉浸阅读的就地问答记录";
@@ -5367,7 +5427,11 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   if (stored?.data && itemKey) {
     const rec = await loadReading(itemKey);
     if (!sidebar.overviewActive) return;
-    sidebar.overviewNav = { history: [], locked: false, readingNo: rec?.readingNo };
+    sidebar.overviewNav = {
+      history: [],
+      locked: false,
+      readingNo: rec?.readingNo,
+    };
   }
 
   sidebar.noteMount.replaceChildren();
@@ -5376,7 +5440,10 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   if (stored?.data) {
     const openBtn = buttonEl(doc, "🌐 在浏览器打开总览");
     openBtn.title = "把总览导出为自包含 HTML 并在浏览器打开";
-    openBtn.addEventListener("click", () => void openOverviewInBrowser(sidebar));
+    openBtn.addEventListener(
+      "click",
+      () => void openOverviewInBrowser(sidebar),
+    );
     overviewExtra.push(openBtn);
   }
   const parts = renderNoteHead(doc, sidebar, {
@@ -5448,15 +5515,362 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   // first jump is fast: the PDF text-layer extraction (per Reader) and the LaTeX
   // section parse (per arXiv paper). Both are cached, so this is a no-op on later opens.
   if (stored?.data && itemID != null) {
-    const reader = getReaderForAttachmentOrItem(
-      doc.defaultView,
-      itemID,
-      null,
-    );
+    const reader = getReaderForAttachmentOrItem(doc.defaultView, itemID, null);
     if (reader) void getSharedPdfLocator(reader).catch(() => undefined);
     const arxivId = resolveArxivIdForItemID(itemID);
     if (arxivId) void cachedArxivSections(arxivId).catch(() => undefined);
   }
+}
+
+async function showFullTranslation(sidebar: WindowSidebarState): Promise<void> {
+  const panelState = states.get(sidebar.mount);
+  const itemID = panelState?.itemID ?? null;
+  const arxivId = resolveArxivIdForItemID(itemID);
+  const tabID = activeReaderTabID(sidebar);
+  if (!arxivId || !tabID) {
+    closeFullTranslation(sidebar);
+    return;
+  }
+
+  const request = Symbol(arxivId);
+  fullTranslationRequests.set(sidebar, request);
+  await saveVisibleNoteBeforeSwitch(sidebar);
+  if (fullTranslationRequests.get(sidebar) !== request) return;
+  if (!sidebar.fullTranslationActive) {
+    fullTranslationNoteVisibility.set(sidebar, noteColumnIsVisible(sidebar));
+  }
+  sidebar.fullTranslationActive = true;
+  setNoteColumnVisible(sidebar, false);
+  if (!ensureFullTranslationHost(sidebar, tabID)) {
+    closeFullTranslation(sidebar);
+    return;
+  }
+
+  const previous = fullTranslationSessions.get(sidebar);
+  if (previous?.document.arxivId === arxivId) {
+    renderFullTranslationPanel(sidebar);
+    await loadFullTranslationAssets(sidebar, previous, request);
+    return;
+  }
+  if (previous && previous.document.arxivId !== arxivId) {
+    sidebar.fullTranslationAbort?.abort();
+    sidebar.fullTranslationAbort = undefined;
+    fullTranslationSessions.delete(sidebar);
+  }
+
+  renderFullTranslationNotice(sidebar, "正在读取 LaTeX 全文…");
+
+  try {
+    const session = await loadFullTranslationSession(arxivId);
+    if (!isCurrentFullTranslation(sidebar, arxivId, request)) return;
+    if (!session) {
+      renderFullTranslationNotice(
+        sidebar,
+        "当前条目没有可用的 LaTeX 正文，无法进行全文翻译。",
+        true,
+      );
+      return;
+    }
+    fullTranslationSessions.set(sidebar, session);
+    renderFullTranslationPanel(sidebar);
+    await loadFullTranslationAssets(sidebar, session, request);
+  } catch (error) {
+    if (!isCurrentFullTranslation(sidebar, arxivId, request)) return;
+    renderFullTranslationNotice(sidebar, errorMessage(error), true);
+  }
+}
+
+function activeReaderTabID(sidebar: WindowSidebarState): string | null {
+  const win = sidebar.mount.ownerDocument?.defaultView;
+  const tabID = (win as any)?.Zotero_Tabs?.selectedID;
+  return typeof tabID === "string" && getActiveReader(win) ? tabID : null;
+}
+
+function ensureFullTranslationHost(
+  sidebar: WindowSidebarState,
+  tabID = activeReaderTabID(sidebar),
+): FullTranslationHost | null {
+  if (!tabID) return null;
+  const previous = fullTranslationHosts.get(sidebar);
+  if (previous?.container.id === tabID && previous.root.isConnected) {
+    return previous;
+  }
+  if (previous) unmountFullTranslationHost(previous);
+  const host = mountFullTranslationHost(sidebar.mount.ownerDocument!, tabID);
+  if (host) fullTranslationHosts.set(sidebar, host);
+  else fullTranslationHosts.delete(sidebar);
+  return host;
+}
+
+async function loadFullTranslationAssets(
+  sidebar: WindowSidebarState,
+  session: FullTranslationSession,
+  request: symbol,
+): Promise<void> {
+  const doc = sidebar.mount.ownerDocument!;
+  try {
+    session.assets = await loadFullTranslationAssetPreviews(
+      session.document,
+      doc,
+      (path, preview) => {
+        if (
+          !isCurrentFullTranslation(
+            sidebar,
+            session.document.arxivId,
+            request,
+          ) ||
+          fullTranslationSessions.get(sidebar) !== session
+        ) {
+          return;
+        }
+        session.assets[path] = preview;
+        const host = fullTranslationHosts.get(sidebar);
+        if (host?.root.isConnected) {
+          updateFullTranslationAssetPreview(host.root, path, preview);
+        }
+      },
+    );
+  } catch (error) {
+    debugZai("full-translation:assets-failed", {
+      arxivId: session.document.arxivId,
+      error: errorMessage(error),
+    });
+  }
+  if (
+    !isCurrentFullTranslation(sidebar, session.document.arxivId, request) ||
+    fullTranslationSessions.get(sidebar) !== session
+  ) {
+    return;
+  }
+  renderFullTranslationPanel(sidebar);
+}
+
+function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
+  if (!sidebar.fullTranslationActive) return;
+  const session = fullTranslationSessions.get(sidebar);
+  if (!session) return;
+  const host = ensureFullTranslationHost(sidebar);
+  if (!host) return;
+  const doc = host.root.ownerDocument!;
+  const scrollTop =
+    host.root.querySelector<HTMLElement>(".zai-ft-content")?.scrollTop ?? 0;
+  const panelState = states.get(sidebar.mount);
+  const readingSettings =
+    panelState?.localUiSettings.fullTranslationReading ??
+    DEFAULT_LOCAL_UI_SETTINGS.fullTranslationReading;
+  host.root.replaceChildren(
+    renderFullTranslationView(doc, {
+      document: session.document,
+      state: session.state,
+      layout: readingSettings.layout,
+      running: !!sidebar.fullTranslationAbort,
+      preparing: session.preparing,
+      runError: session.runError,
+      assets: session.assets,
+      readingSettings,
+      onLayoutChange: (next) => {
+        updateFullTranslationReadingSettings(sidebar, {
+          ...readingSettings,
+          layout: next,
+        });
+      },
+      onReadingSettingsChange: (next) =>
+        updateFullTranslationReadingSettings(sidebar, next),
+      onRun: () => void startFullTranslation(sidebar),
+      onRetranslate: () => void restartFullTranslation(sidebar),
+      onTranslateBlock: (blockId) =>
+        void startFullTranslation(sidebar, undefined, blockId),
+      onCancel: () => sidebar.fullTranslationAbort?.abort(),
+      onExit: () => closeFullTranslation(sidebar),
+    }),
+  );
+  const content = host.root.querySelector<HTMLElement>(".zai-ft-content");
+  if (content) content.scrollTop = scrollTop;
+}
+
+function updateFullTranslationReadingSettings(
+  sidebar: WindowSidebarState,
+  readingSettings: FullTranslationReadingSettings,
+): void {
+  const state = states.get(sidebar.mount);
+  if (!state) return;
+  state.localUiSettings = normalizeLocalUiSettings({
+    ...state.localUiSettings,
+    fullTranslationReading: readingSettings,
+  });
+  saveLocalUiSettings(zoteroPrefs(), state.localUiSettings);
+  renderFullTranslationPanel(sidebar);
+}
+
+async function restartFullTranslation(
+  sidebar: WindowSidebarState,
+): Promise<void> {
+  const session = fullTranslationSessions.get(sidebar);
+  if (!session || sidebar.fullTranslationAbort) return;
+
+  let prepared: PreparedFullTranslationRun;
+  try {
+    const controller = new AbortController();
+    prepared = {
+      controller,
+      translator: createFullDocumentTranslator(
+        zoteroPrefs(),
+        controller.signal,
+      ),
+    };
+  } catch (error) {
+    session.runError = errorMessage(error);
+    renderFullTranslationPanel(sidebar);
+    return;
+  }
+
+  const previousState = session.state;
+  session.runError = undefined;
+  session.preparing = true;
+  session.state = createFullTranslationState(
+    session.document,
+    prepared.translator.preset.id,
+    prepared.translator.model,
+  );
+  renderFullTranslationPanel(sidebar);
+  try {
+    await saveFullTranslationState(session.state);
+  } catch (error) {
+    session.state = previousState;
+    session.preparing = false;
+    session.runError = errorMessage(error);
+    if (fullTranslationSessions.get(sidebar) === session) {
+      renderFullTranslationPanel(sidebar);
+    }
+    return;
+  }
+  if (
+    fullTranslationSessions.get(sidebar) !== session ||
+    !isCurrentFullTranslation(sidebar, session.document.arxivId)
+  ) {
+    session.preparing = false;
+    return;
+  }
+  session.preparing = false;
+  await startFullTranslation(sidebar, prepared);
+}
+
+function renderFullTranslationNotice(
+  sidebar: WindowSidebarState,
+  message: string,
+  error = false,
+): void {
+  if (!sidebar.fullTranslationActive) return;
+  const host = ensureFullTranslationHost(sidebar);
+  if (!host) return;
+  const doc = host.root.ownerDocument!;
+  const body = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  body.className = "zai-ft-notice-frame";
+  const notice = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
+  notice.className = `zai-ft-notice${error ? " is-error" : ""}`;
+  notice.textContent = message;
+  const exit = buttonEl(doc, "返回 PDF");
+  exit.className = "zai-ft-exit";
+  exit.addEventListener("click", () => closeFullTranslation(sidebar));
+  body.append(notice, exit);
+  host.root.replaceChildren(body);
+}
+
+async function startFullTranslation(
+  sidebar: WindowSidebarState,
+  prepared?: PreparedFullTranslationRun,
+  targetBlockId?: string,
+): Promise<void> {
+  const session = fullTranslationSessions.get(sidebar);
+  if (!session || sidebar.fullTranslationAbort || session.preparing) return;
+  const controller = prepared?.controller ?? new AbortController();
+  sidebar.fullTranslationAbort = controller;
+  session.runError = undefined;
+  let fatalError = "";
+
+  try {
+    const translator =
+      prepared?.translator ??
+      createFullDocumentTranslator(zoteroPrefs(), controller.signal);
+    session.state = {
+      ...session.state,
+      presetId: translator.preset.id,
+      model: translator.model,
+    };
+    await saveFullTranslationState(session.state);
+    renderFullTranslationPanel(sidebar);
+    session.state = await runFullDocumentTranslation({
+      document: session.document,
+      state: session.state,
+      signal: controller.signal,
+      targetBlockId,
+      translate: translator.translate,
+      onState: async (state) => {
+        session.state = state;
+        await saveFullTranslationState(state);
+        if (fullTranslationSessions.get(sidebar) === session) {
+          renderFullTranslationPanel(sidebar);
+        }
+      },
+    });
+    await saveFullTranslationState(session.state);
+  } catch (error) {
+    fatalError = errorMessage(error);
+    debugZai("full-translation:run-failed", {
+      arxivId: session.document.arxivId,
+      error: fatalError,
+    });
+  } finally {
+    if (sidebar.fullTranslationAbort === controller) {
+      sidebar.fullTranslationAbort = undefined;
+    }
+    if (
+      fullTranslationSessions.get(sidebar) === session &&
+      isCurrentFullTranslation(sidebar, session.document.arxivId)
+    ) {
+      session.runError = fatalError || undefined;
+      renderFullTranslationPanel(sidebar);
+    }
+  }
+}
+
+function closeFullTranslation(sidebar: WindowSidebarState): void {
+  sidebar.fullTranslationActive = false;
+  fullTranslationRequests.delete(sidebar);
+  const host = fullTranslationHosts.get(sidebar);
+  if (host) unmountFullTranslationHost(host);
+  fullTranslationHosts.delete(sidebar);
+  const hadNoteSnapshot = fullTranslationNoteVisibility.has(sidebar);
+  const restoreNote = fullTranslationNoteVisibility.get(sidebar) === true;
+  fullTranslationNoteVisibility.delete(sidebar);
+  if (hadNoteSnapshot) setNoteColumnVisible(sidebar, restoreNote);
+  updateOpenNoteButton(sidebar);
+}
+
+function isCurrentFullTranslation(
+  sidebar: WindowSidebarState,
+  arxivId: string,
+  request?: symbol,
+): boolean {
+  const itemID = states.get(sidebar.mount)?.itemID ?? null;
+  return (
+    sidebar.fullTranslationActive === true &&
+    (request == null || fullTranslationRequests.get(sidebar) === request) &&
+    resolveArxivIdForItemID(itemID) === arxivId
+  );
+}
+
+function noteColumnIsVisible(sidebar: WindowSidebarState): boolean {
+  const column = sidebar.noteColumn as Element & {
+    hidden?: boolean;
+    collapsed?: boolean;
+  };
+  return !(
+    column.hidden ||
+    column.collapsed ||
+    column.getAttribute("hidden") === "true" ||
+    column.getAttribute("collapsed") === "true"
+  );
 }
 
 // Trigger overview generation from the panel. The model calls
@@ -7719,6 +8133,10 @@ export function unregisterSidebarForWindow(win: Window) {
   const state = windowSidebars.get(win);
   if (!state) return;
 
+  state.fullTranslationAbort?.abort();
+  state.fullTranslationAbort = undefined;
+  closeFullTranslation(state);
+  fullTranslationSessions.delete(state);
   disableTranslateMode(win);
   disableAskMode(win);
 
@@ -7777,7 +8195,11 @@ function renderWindowSidebar(win: Window) {
   const previousItemID = panelState?.itemID ?? null;
   renderMount(state.mount, itemID);
   if (itemID !== previousItemID) {
-    if (state.noteItemID) switchNoteForItem(state, itemID);
+    if (state.fullTranslationActive) {
+      void showFullTranslation(state);
+    } else if (state.noteItemID) {
+      switchNoteForItem(state, itemID);
+    }
     void migrateTranslateModeOnReaderSwitch(win);
     void migrateAskModeOnReaderSwitch(win);
   }

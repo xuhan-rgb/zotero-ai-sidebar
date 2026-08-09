@@ -6,6 +6,9 @@ export interface TexFile {
   text: string;
 }
 
+export type CitationLabels = ReadonlyMap<string, number>;
+export type ReferenceLabels = ReadonlyMap<string, string>;
+
 // Drop %-to-end-of-line comments; a backslash escapes the next char, so
 // `\%` is a literal percent and not a comment start.
 function stripLineComment(line: string): string {
@@ -49,10 +52,12 @@ export function findMainTex(files: TexFile[]): TexFile | null {
 // supported definitions are zero-arg `\newcommand`, `\renewcommand`,
 // `\providecommand`, `\DeclareRobustCommand`, and `\def`; parameterized
 // macros are left untouched. Definition spans are protected from rewriting
-// so the preamble remains readable for debugging.
+// so the preamble remains readable for debugging; paragraph layout overrides
+// are dropped so they cannot replace real `\paragraph{Title}` headings.
 export function expandMacros(text: string): string {
-  const defs = collectZeroArgMacroDefinitions(text);
-  if (defs.size === 0) return text;
+  const source = removeParagraphRedefinitions(text);
+  const defs = collectZeroArgMacroDefinitions(source);
+  if (defs.size === 0) return source;
 
   const protectedSpans = Array.from(defs.values())
     .map((def) => ({ start: def.start, end: def.end }))
@@ -62,28 +67,61 @@ export function expandMacros(text: string): string {
   let cursor = 0;
   for (const span of protectedSpans) {
     if (span.start > cursor) {
-      out += expandMacroSegment(text.slice(cursor, span.start), defs);
+      out += expandMacroSegment(source.slice(cursor, span.start), defs);
     }
-    out += text.slice(span.start, span.end);
+    out += source.slice(span.start, span.end);
     cursor = span.end;
   }
-  if (cursor < text.length) {
-    out += expandMacroSegment(text.slice(cursor), defs);
+  if (cursor < source.length) {
+    out += expandMacroSegment(source.slice(cursor), defs);
   }
   return out;
 }
 
-// Convert LaTeX citation commands into a stable, human-readable placeholder.
-// WHY: `\cite{foo}` is source syntax, not PDF-visible prose; if we send it to
-// the model, it tends to quote raw bibliography keys. We do not hard-code
-// paper-specific keys or try to reconstruct bibliography numbering here — that
-// would require compiling/parsing the bibliography style. A neutral marker is
-// better than leaking source-only control sequences into evidence quotes.
-export function normalizeCitations(text: string): string {
+function removeParagraphRedefinitions(text: string): string {
+  let out = "";
+  let cursor = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== "\\") continue;
+    const parsed = parseMacroDefinitionAt(text, i);
+    if (!parsed || parsed.name !== "paragraph") continue;
+    out += text.slice(cursor, parsed.start);
+    cursor = parsed.end;
+    i = parsed.end - 1;
+  }
+  return cursor === 0 ? text : out + text.slice(cursor);
+}
+
+// Recover numeric citation labels from the compiled bibliography order. A
+// paper can carry duplicate or unrelated .bbl files, so numbering restarts for
+// each file and the first occurrence of a key wins.
+export function buildCitationLabels(files: TexFile[]): Map<string, number> {
+  const labels = new Map<string, number>();
+  for (const file of files) {
+    if (!file.path.toLowerCase().endsWith(".bbl")) continue;
+    let number = 0;
+    for (let i = 0; i < file.text.length; i++) {
+      const item = parseBibitemAt(file.text, i);
+      if (!item) continue;
+      number += 1;
+      if (!labels.has(item.key)) labels.set(item.key, number);
+      i = item.end - 1;
+    }
+  }
+  return labels;
+}
+
+// Convert LaTeX citation commands into their compiled numeric labels when a
+// .bbl is available, otherwise keep the existing neutral marker. Bibliography
+// keys never reach the model in either case.
+export function normalizeCitations(
+  text: string,
+  labels?: CitationLabels,
+): string {
   let out = "";
   let cursor = 0;
   while (cursor < text.length) {
-    const parsed = findNextCitationCommand(text, cursor);
+    const parsed = findNextCitationCommand(text, cursor, labels);
     if (!parsed) return out + text.slice(cursor);
     out += text.slice(cursor, parsed.start);
     out += parsed.replacement;
@@ -95,18 +133,64 @@ export function normalizeCitations(text: string): string {
 export function findNextCitationCommand(
   text: string,
   cursor: number,
+  labels?: CitationLabels,
 ): { start: number; end: number; replacement: string } | null {
   for (let i = cursor; i < text.length; i++) {
-    const parsed = parseCitationCommandAt(text, i);
+    const parsed = parseCitationCommandAt(text, i, labels);
     if (parsed) return { start: i, ...parsed };
   }
   return null;
 }
 
+// Normalize source conveniences that represent visible prose. Restrict the
+// replacements to text mode so mathematical spacing such as `$x~y$` survives.
+export function normalizeLatexCommonCommands(text: string): string {
+  const replacements: Record<string, string> = {
+    etal: "et al.",
+    ie: "i.e.",
+    eg: "e.g.",
+    etc: "etc.",
+  };
+  let out = "";
+  let cursor = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === "~") {
+      if (isProbablyInMathMode(text, i)) continue;
+      out += text.slice(cursor, i) + " ";
+      cursor = i + 1;
+      continue;
+    }
+    if (text[i] !== "\\") continue;
+    if (text[i + 1] === "\\") {
+      if (
+        isProbablyInMathMode(text, i) ||
+        isInsideLatexRowEnvironment(text, i)
+      ) {
+        continue;
+      }
+      const hasAdjacentWhitespace =
+        /\s/.test(text[i - 1] ?? "") || /\s/.test(text[i + 2] ?? "");
+      out += text.slice(cursor, i) + (hasAdjacentWhitespace ? "" : " ");
+      cursor = i + 2;
+      i += 1;
+      continue;
+    }
+    const command = readCommandName(text, i);
+    if (!command) continue;
+    const replacement = replacements[command.name];
+    if (replacement == null) continue;
+    if (isProbablyInMathMode(text, i)) continue;
+    out += text.slice(cursor, i) + replacement;
+    cursor = command.end;
+    i = command.end - 1;
+  }
+  return out + text.slice(cursor);
+}
+
 // Remove or neutralize LaTeX commands that exist for source compilation, not
 // for visible paper text. `\label{...}`, `\notag`, and `\nonumber` should not
-// be shown to the model or rendered in chat; cross-references are kept as a
-// neutral marker because reconstructing the compiled number requires TeX.
+// be shown to the model or rendered in chat. Cross-references use numbers
+// indexed before labels are removed, with a neutral marker as the fallback.
 export function normalizeLatexSourceCommands(
   text: string,
   options: {
@@ -114,12 +198,17 @@ export function normalizeLatexSourceCommands(
     preserveEquationLabels?: boolean;
     preserveFigureLabels?: boolean;
     preserveTableLabels?: boolean;
+    referenceLabels?: ReferenceLabels;
   } = {},
 ): string {
   let out = "";
   let cursor = 0;
   while (cursor < text.length) {
-    const parsed = findNextLatexSourceCommand(text, cursor);
+    const parsed = findNextLatexSourceCommand(
+      text,
+      cursor,
+      options.referenceLabels,
+    );
     if (!parsed) return out + text.slice(cursor);
     out += text.slice(cursor, parsed.start);
     out += shouldPreserveLatexLabel(text, parsed, options)
@@ -133,9 +222,10 @@ export function normalizeLatexSourceCommands(
 export function findNextLatexSourceCommand(
   text: string,
   cursor: number,
+  referenceLabels?: ReferenceLabels,
 ): { start: number; end: number; command: string; replacement: string } | null {
   for (let i = cursor; i < text.length; i++) {
-    const parsed = parseLatexSourceCommandAt(text, i);
+    const parsed = parseLatexSourceCommandAt(text, i, referenceLabels);
     if (parsed) return { start: i, ...parsed };
   }
   return null;
@@ -387,6 +477,16 @@ const TEXT_COMMANDS: Record<string, LatexTextCommandKind> = {
   textsc: "plain",
   textrm: "plain",
   textsf: "plain",
+  tiny: "plain",
+  scriptsize: "plain",
+  footnotesize: "plain",
+  small: "plain",
+  normalsize: "plain",
+  large: "plain",
+  Large: "plain",
+  LARGE: "plain",
+  huge: "plain",
+  Huge: "plain",
   // Custom revision/markup macros that just wrap real prose+math: keep the
   // content, drop the command (don't leak `\edit{`).
   edit: "plain",
@@ -416,6 +516,7 @@ const LIST_ENVIRONMENTS = new Set(["enumerate", "itemize"]);
 function parseCitationCommandAt(
   text: string,
   start: number,
+  labels?: CitationLabels,
 ): { end: number; replacement: string } | null {
   const command = readCommandName(text, start);
   if (!command || !CITE_COMMANDS.has(command.name)) return null;
@@ -430,12 +531,40 @@ function parseCitationCommandAt(
   if (text[i] !== "{") return null;
   const keys = readBalancedBraces(text, i);
   if (!keys) return null;
-  return { end: keys.end, replacement: "[citation]" };
+  const numbers = keys.content
+    .split(",")
+    .map((key) => labels?.get(key.trim()))
+    .filter((number): number is number => number != null);
+  const keyCount = keys.content.split(",").filter((key) => key.trim()).length;
+  const replacement =
+    labels && keyCount > 0 && numbers.length === keyCount
+      ? `[${numbers.join(", ")}]`
+      : "[citation]";
+  return { end: keys.end, replacement };
+}
+
+function parseBibitemAt(
+  text: string,
+  start: number,
+): { key: string; end: number } | null {
+  const command = readCommandName(text, start);
+  if (!command || command.name !== "bibitem") return null;
+  let i = skipSpaces(text, command.end);
+  if (text[i] === "[") {
+    const optional = readBalancedDelimiters(text, i, "[", "]");
+    if (!optional) return null;
+    i = skipSpaces(text, optional.end);
+  }
+  if (text[i] !== "{") return null;
+  const key = readBalancedBraces(text, i);
+  if (!key || !key.content.trim()) return null;
+  return { key: key.content.trim(), end: key.end };
 }
 
 function parseLatexSourceCommandAt(
   text: string,
   start: number,
+  referenceLabels?: ReferenceLabels,
 ): { end: number; command: string; replacement: string } | null {
   const command = readCommandName(text, start);
   if (!command) return null;
@@ -465,7 +594,15 @@ function parseLatexSourceCommandAt(
     if (text[i] !== "{") return null;
     const arg = readBalancedBraces(text, i);
     return arg
-      ? { end: arg.end, command: command.name, replacement: "[ref]" }
+      ? {
+          end: arg.end,
+          command: command.name,
+          replacement: resolvedReference(
+            command.name,
+            arg.content,
+            referenceLabels,
+          ),
+        }
       : null;
   }
 
@@ -487,6 +624,32 @@ function parseLatexSourceCommandAt(
   }
 
   return null;
+}
+
+function resolvedReference(
+  command: string,
+  label: string,
+  referenceLabels?: ReferenceLabels,
+): string {
+  const trimmed = label.trim();
+  const number = referenceLabels?.get(trimmed);
+  if (!number) return "[ref]";
+  if (command === "ref") return number;
+  if (command === "eqref") return `(${number})`;
+  if (command !== "autoref") return "[ref]";
+
+  const prefix = trimmed.split(":", 1)[0]?.toLowerCase();
+  const type =
+    prefix === "sec" || prefix === "section" || prefix === "subsec"
+      ? "Section"
+      : prefix === "fig" || prefix === "figure"
+        ? "Figure"
+        : prefix === "tab" || prefix === "table"
+          ? "Table"
+          : prefix === "eq" || prefix === "equation"
+            ? "Equation"
+            : "";
+  return type ? `${type} ${number}` : number;
 }
 
 // A `type:name` cross-reference label (`fig:overview`, `eq:loss`), optionally a
@@ -698,7 +861,7 @@ function readLatexItemAt(
   text: string,
   start: number,
 ): { label?: string; end: number } {
-  let i = skipSpaces(text, start + "\\item".length);
+  const i = skipSpaces(text, start + "\\item".length);
   if (text[i] !== "[") return { end: i };
   const label = readBalancedDelimiters(text, i, "[", "]");
   if (!label) return { end: i };
@@ -746,11 +909,19 @@ function parseLatexTextCommandAt(
 
 function latexTextCommandToMarkdown(command: LatexTextCommand): string {
   const content = normalizeLatexTextCommands(command.content);
-  if (command.kind === "emphasis") return `*${content}*`;
-  if (command.kind === "strong") return `**${content}**`;
+  if (command.kind === "emphasis") return wrapMarkdownContent(content, "*");
+  if (command.kind === "strong") return wrapMarkdownContent(content, "**");
   if (command.kind === "code")
-    return content.includes("`") ? content : `\`${content}\``;
+    return content.includes("`") ? content : wrapMarkdownContent(content, "`");
   return content;
+}
+
+function wrapMarkdownContent(content: string, marker: string): string {
+  if (!content.trim()) return content;
+  const leading = content.match(/^\s*/)?.[0] ?? "";
+  const trailing = content.match(/\s*$/)?.[0] ?? "";
+  const end = content.length - trailing.length;
+  return `${leading}${marker}${content.slice(leading.length, end)}${marker}${trailing}`;
 }
 
 function readMacroNameArgument(
@@ -876,6 +1047,47 @@ function isProbablyInMathMode(text: string, index: number): boolean {
     }
   }
   return math;
+}
+
+const LATEX_ROW_ENVIRONMENTS = new Set([
+  "tabular",
+  "tabular*",
+  "tabularx",
+  "longtable",
+  "array",
+  "matrix",
+  "pmatrix",
+  "bmatrix",
+  "Bmatrix",
+  "vmatrix",
+  "Vmatrix",
+  "align",
+  "align*",
+  "alignat",
+  "alignat*",
+  "aligned",
+  "alignedat",
+  "gather",
+  "gather*",
+  "split",
+  "cases",
+  "multline",
+  "multline*",
+]);
+
+function isInsideLatexRowEnvironment(text: string, index: number): boolean {
+  const stack: string[] = [];
+  const boundary = /\\(begin|end)\{([^}]+)\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = boundary.exec(text)) !== null && match.index < index) {
+    if (match[1] === "begin") {
+      stack.push(match[2]);
+      continue;
+    }
+    const matching = stack.lastIndexOf(match[2]);
+    if (matching >= 0) stack.splice(matching, 1);
+  }
+  return stack.some((environment) => LATEX_ROW_ENVIRONMENTS.has(environment));
 }
 
 // Recursively replace \input{f} / \include{f} with the referenced file's

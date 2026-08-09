@@ -7,6 +7,8 @@ import {
   readArxivTextFile,
   readArxivBibliographyFiles,
   matchFigureFile,
+  matchSourceAssetFile,
+  mediaTypeForSourceAsset,
   mediaTypeForFigure,
   type ArxivMeta,
 } from "../../src/context/arxiv-store";
@@ -231,5 +233,29 @@ describe("matchFigureFile", () => {
   });
   it("returns null when there are no supported raster files", () => {
     expect(matchFigureFile(["only.pdf", "more.eps"], "anything")).toBeNull();
+  });
+});
+
+describe("full-translation source assets", () => {
+  const files = [
+    "figures/system.png",
+    "figures/diagram.pdf",
+    "figures/vector.svg",
+  ];
+
+  it("resolves extensionless LaTeX paths including vector figures", () => {
+    expect(matchSourceAssetFile(files, "figures/diagram")).toBe(
+      "figures/diagram.pdf",
+    );
+    expect(matchSourceAssetFile(files, "vector")).toBe("figures/vector.svg");
+  });
+
+  it("reports display and conversion media types", () => {
+    expect(mediaTypeForSourceAsset("system.png")).toBe("image/png");
+    expect(mediaTypeForSourceAsset("diagram.pdf")).toBe("application/pdf");
+    expect(mediaTypeForSourceAsset("vector.svg")).toBe("image/svg+xml");
+    expect(mediaTypeForSourceAsset("legacy.eps")).toBe(
+      "application/postscript",
+    );
   });
 });

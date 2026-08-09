@@ -18,8 +18,7 @@ export interface TexTable {
 const TABLE_ENV_RE =
   /\\begin\{(table\*?)\}(?:\[[^\]]*\])?([\s\S]*?)\\end\{\1\}/g;
 const LABEL_RE = /\\label\{([^}]+)\}/g;
-const TABULAR_RE =
-  /\\begin\{(tabular\*?|tabularx|longtable)\}[\s\S]*?\\end\{\1\}/;
+const TABULAR_ENV_RE = /\\(begin|end)\{(tabular\*?|tabularx|longtable)\}/g;
 
 interface CaptionCommand {
   start: number;
@@ -65,7 +64,7 @@ export function parseTables(text: string): TexTable[] {
             : body.length);
       const tex = text.slice(chunkStart, chunkEnd).trim();
       const label = labelsIn(tex)[0];
-      const tabularTex = tex.match(TABULAR_RE)?.[0];
+      const tabularTex = findOuterTabular(tex);
       tables.push({
         number: nextNumber++,
         env,
@@ -82,6 +81,28 @@ export function parseTables(text: string): TexTable[] {
   }
 
   return tables;
+}
+
+function findOuterTabular(text: string): string | undefined {
+  const stack: string[] = [];
+  let outerStart = -1;
+  TABULAR_ENV_RE.lastIndex = 0;
+
+  let match: RegExpExecArray | null;
+  while ((match = TABULAR_ENV_RE.exec(text)) !== null) {
+    const [, action, env] = match;
+    if (action === "begin") {
+      if (stack.length === 0) outerStart = match.index;
+      stack.push(env);
+      continue;
+    }
+    if (stack.at(-1) !== env) continue;
+    stack.pop();
+    if (stack.length === 0 && outerStart >= 0) {
+      return text.slice(outerStart, TABULAR_ENV_RE.lastIndex);
+    }
+  }
+  return undefined;
 }
 
 export function annotateNumberedTables(text: string): string {
@@ -257,7 +278,16 @@ function skipSpaces(text: string, cursor: number): number {
 }
 
 function stripLatexMarkup(text: string): string {
-  return text
+  const math: string[] = [];
+  const protectedText = text.replace(
+    /\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$[^$\n]+\$/g,
+    (source) => {
+      const token = `ZAITABLEMATHTOKEN${math.length}X`;
+      math.push(source);
+      return token;
+    },
+  );
+  const stripped = protectedText
     .replace(/\\&/g, "&")
     .replace(/~/g, " ")
     .replace(/\*\*/g, "")
@@ -267,6 +297,11 @@ function stripLatexMarkup(text: string): string {
     .replace(/[{}]/g, "")
     .replace(/\s+/g, " ")
     .trim();
+  return math.reduce(
+    (caption, source, index) =>
+      caption.replace(`ZAITABLEMATHTOKEN${index}X`, source),
+    stripped,
+  );
 }
 
 function contextBefore(text: string, start: number): string {

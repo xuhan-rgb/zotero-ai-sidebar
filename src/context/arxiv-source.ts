@@ -8,7 +8,9 @@ import {
   inlineInputs,
   stripTexComments,
   expandMacros,
+  buildCitationLabels,
   normalizeCitations,
+  normalizeLatexCommonCommands,
   normalizeLatexListEnvironments,
   normalizeLatexSourceCommands,
   normalizeLatexTextCommands,
@@ -20,12 +22,13 @@ import {
   readArxivMeta,
   type ArxivMeta,
 } from "./arxiv-store";
-import { annotateNumberedEquations } from "./tex-equations";
-import { annotateNumberedFigures } from "./tex-figures";
-import { annotateNumberedTables } from "./tex-tables";
+import { annotateNumberedEquations, parseEquations } from "./tex-equations";
+import { annotateNumberedFigures, parseFigures } from "./tex-figures";
+import { parseSections } from "./tex-sections";
+import { annotateNumberedTables, parseTables } from "./tex-tables";
 import { appendLocalPath } from "../utils/local-path";
 
-export const ARXIV_SOURCE_CLEANER_VERSION = 11;
+export const ARXIV_SOURCE_CLEANER_VERSION = 14;
 
 export function isFreshArxivSourceMeta(meta: ArxivMeta | null): boolean {
   return (
@@ -177,29 +180,44 @@ export async function ensureArxivSource(
       return false;
     }
 
-    const cleaned = annotateNumberedTables(
-      annotateNumberedFigures(
-        annotateNumberedEquations(
-          normalizeLatexSourceCommands(
-            normalizeCitations(
-              normalizeLatexTextCommands(
-                normalizeLatexListEnvironments(
-                  stripTexComments(
-                    expandMacros(inlineInputs(main.text, texFiles)),
-                  ),
-                ),
-              ),
-            ),
-            {
-              preserveSectionLabels: true,
-              preserveEquationLabels: true,
-              preserveFigureLabels: true,
-              preserveTableLabels: true,
-            },
-          ),
-        ),
-      ),
+    const inlined = inlineInputs(main.text, texFiles);
+    const expanded = expandMacros(inlined);
+    const uncommented = stripTexComments(expanded);
+
+    const citationLabels = buildCitationLabels(texFiles);
+    const referenceLabels = new Map<string, string>();
+    for (const item of [
+      ...parseSections(uncommented),
+      ...parseEquations(uncommented),
+      ...parseFigures(uncommented),
+      ...parseTables(uncommented),
+    ]) {
+      if (item.label) referenceLabels.set(item.label, String(item.number));
+    }
+
+    const listsNormalized = normalizeLatexListEnvironments(uncommented);
+    const textNormalized = normalizeLatexTextCommands(listsNormalized);
+    const citationsNormalized = normalizeCitations(
+      textNormalized,
+      citationLabels,
     );
+    const commonCommandsNormalized =
+      normalizeLatexCommonCommands(citationsNormalized);
+    const sourceCommandsNormalized = normalizeLatexSourceCommands(
+      commonCommandsNormalized,
+      {
+        preserveSectionLabels: true,
+        preserveEquationLabels: true,
+        preserveFigureLabels: true,
+        preserveTableLabels: true,
+        referenceLabels,
+      },
+    );
+    const equationsAnnotated = annotateNumberedEquations(
+      sourceCommandsNormalized,
+    );
+    const figuresAnnotated = annotateNumberedFigures(equationsAnnotated);
+    const cleaned = annotateNumberedTables(figuresAnnotated);
     const meta: ArxivMeta = {
       arxivId,
       fetchedAt: new Date().toISOString(),

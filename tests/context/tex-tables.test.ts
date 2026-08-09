@@ -37,6 +37,21 @@ describe("parseTables", () => {
     expect(findTable(tables, { name: "semantic" })?.number).toBe(1);
   });
 
+  it("keeps the complete outer tabular when cells contain nested tabulars", () => {
+    const text = String.raw`\begin{table}
+\begin{tabular}{cc}
+\footnotesize{\begin{tabular}[c]{c}Grasps\\ / scene\end{tabular}} & Score \\
+Ours & 98\% \\
+\end{tabular}
+\caption{Nested header.}
+\end{table}`;
+
+    const [table] = parseTables(text);
+
+    expect(table.tabularTex).toContain("Ours & 98\\%");
+    expect(table.tabularTex?.match(/\\end\{tabular\}/g)).toHaveLength(2);
+  });
+
   it("counts multiple captions in one table environment as separate tables", () => {
     const text = [
       "\\begin{table*}",
@@ -75,6 +90,17 @@ describe("parseTables", () => {
     expect(out).toContain("[Table (1) caption=Ablation.]");
     expect(out.indexOf("[Table (1)")).toBeLessThan(
       out.indexOf("\\begin{table}"),
+    );
+  });
+
+  it("preserves grouping braces inside caption math", () => {
+    const [table] = parseTables(String.raw`\begin{table}
+\caption{Velocity $\dot{\mathbf{q}}$ and distance $\mathbf{d}_{\text{obj}}$.}
+\begin{tabular}{c}Value\end{tabular}
+\end{table}`);
+
+    expect(plainTableCaption(table)).toBe(
+      String.raw`Velocity $\dot{\mathbf{q}}$ and distance $\mathbf{d}_{\text{obj}}$.`,
     );
   });
 });

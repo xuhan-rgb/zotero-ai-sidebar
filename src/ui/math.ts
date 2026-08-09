@@ -93,7 +93,9 @@ export function findNextMathRegion(
       end: close + opener.closeLen,
       latex:
         opener.kind === "latexEnvironment" && opener.env
-          ? normalizeLatexForKatex(latexEnvironmentToKatex(opener.env, rawLatex))
+          ? normalizeLatexForKatex(
+              latexEnvironmentToKatex(opener.env, rawLatex),
+            )
           : normalizeLatexForKatex(rawLatex),
       display: opener.display,
     };
@@ -169,14 +171,30 @@ function peekOpener(
   if (text[i] === "$") {
     // Single-$ guards (Contract A) — keep prose like "earned $5 and $10"
     // out of math mode.
-    //   - char before $ must not be a digit (rejects "earned $5")
+    //   - after a digit, require a strong math signal such as `\\sim`
     //   - char after  $ must not be whitespace, end-of-string, or another $
-    if (i > 0 && isDigit(text[i - 1]!)) return null;
+    if (
+      i > 0 &&
+      isDigit(text[i - 1]!) &&
+      !singleDollarBodyHasStrongMathSignal(text, i + 1)
+    ) {
+      return null;
+    }
     const next = text[i + 1];
     if (!next || isSpace(next) || next === "$") return null;
     return { kind: "inlineDollar", openLen: 1, closeLen: 1, display: false };
   }
   return null;
+}
+
+function singleDollarBodyHasStrongMathSignal(
+  text: string,
+  bodyStart: number,
+): boolean {
+  const close = findClose(text, bodyStart, "inlineDollar");
+  if (close < 0) return false;
+  const body = text.slice(bodyStart, close);
+  return /\\[A-Za-z]+|[_^{}=<>±×÷]/.test(body);
 }
 
 function findClose(text: string, from: number, kind: OpenerKind): number {

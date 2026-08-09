@@ -316,3 +316,91 @@ export async function readArxivFigure(
     return null;
   }
 }
+
+export function mediaTypeForSourceAsset(path: string): string | null {
+  return (
+    mediaTypeForFigure(path) ??
+    (path.toLowerCase().endsWith(".svg")
+      ? "image/svg+xml"
+      : path.toLowerCase().endsWith(".pdf")
+        ? "application/pdf"
+        : path.toLowerCase().endsWith(".eps")
+          ? "application/postscript"
+          : null)
+  );
+}
+
+export function matchSourceAssetFile(
+  files: string[],
+  name: string,
+): string | null {
+  const supported = files.filter(
+    (path) => mediaTypeForSourceAsset(path) !== null,
+  );
+  const requested = safeRel(name.trim());
+  if (!requested || !supported.length) return null;
+  const basename = (path: string) => path.slice(path.lastIndexOf("/") + 1);
+  const exact = supported.find(
+    (path) => path.toLowerCase() === requested.toLowerCase(),
+  );
+  if (exact) return exact;
+  const byBasename = supported.find(
+    (path) =>
+      basename(path).toLowerCase() === basename(requested).toLowerCase(),
+  );
+  if (byBasename) return byBasename;
+
+  const requestedStem = requested.replace(/\.[^./]+$/, "").toLowerCase();
+  const basenameStem = basename(requestedStem);
+  const candidates = supported.filter((path) => {
+    const pathStem = path.replace(/\.[^./]+$/, "").toLowerCase();
+    return pathStem === requestedStem || basename(pathStem) === basenameStem;
+  });
+  const extensionOrder = [
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".webp",
+    ".gif",
+    ".svg",
+    ".pdf",
+    ".eps",
+  ];
+  return (
+    candidates.sort(
+      (a, b) =>
+        extensionOrder.findIndex((extension) =>
+          a.toLowerCase().endsWith(extension),
+        ) -
+        extensionOrder.findIndex((extension) =>
+          b.toLowerCase().endsWith(extension),
+        ),
+    )[0] ?? null
+  );
+}
+
+export interface LoadedArxivSourceAsset {
+  path: string;
+  bytes: Uint8Array;
+  mediaType: string;
+}
+
+export async function readArxivSourceAsset(
+  arxivId: string,
+  name: string,
+): Promise<LoadedArxivSourceAsset | null> {
+  const meta = await readArxivMeta(arxivId);
+  if (!meta || meta.status !== "ok" || !meta.files?.length) return null;
+  const matched = matchSourceAssetFile(meta.files, name);
+  if (!matched) return null;
+  const mediaType = mediaTypeForSourceAsset(matched);
+  if (!mediaType) return null;
+  try {
+    const bytes = await io().read(
+      appendLocalPath(arxivFolderPath(arxivId), "source", matched),
+    );
+    return { path: matched, bytes, mediaType };
+  } catch {
+    return null;
+  }
+}

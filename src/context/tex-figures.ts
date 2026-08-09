@@ -16,7 +16,9 @@ export interface TexFigure {
 }
 
 const FIGURE_ENV_RE =
-  /\\begin\{(figure\*?)\}(?:\[[^\]]*\])?([\s\S]*?)\\end\{\1\}/g;
+  /\\begin\{(figure\*?|wrapfigure|floatingfigure|center)\}(?:\[[^\]]*\])?([\s\S]*?)\\end\{\1\}/g;
+const FIGURE_TYPE_SETUP_RE =
+  /\\captionsetup(?:\s*\[[^\]]*\])?\s*\{[^{}]*\btype\s*=\s*figure\b[^{}]*\}/;
 const INCLUDE_GRAPHICS_RE = /\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g;
 const LABEL_RE = /\\label\{([^}]+)\}/;
 const FIGURE_COUNTER_RE =
@@ -33,23 +35,28 @@ export function parseFigures(text: string): TexFigure[] {
     const [, env, body] = match;
     const start = match.index;
     const end = start + match[0].length;
+    if (env === "center" && !FIGURE_TYPE_SETUP_RE.test(body)) continue;
     nextNumber = applyFigureCounterUpdates(
       text.slice(cursor, start),
       nextNumber,
     );
-    const captionInfo = readCommandArgumentInfo(body, "caption");
+    const captions = captionCommandsIn(body);
+    const captionInfo = captions.find((caption) => caption.kind === "caption");
     nextNumber = applyFigureCounterUpdates(
       body.slice(0, captionInfo?.start ?? body.length),
       nextNumber,
     );
     const label = body.match(LABEL_RE)?.[1];
-    const caption = captionInfo?.content ?? null;
+    const caption = captions
+      .map((item) => compactSnippet(item.content))
+      .filter(Boolean)
+      .join(" ");
     const graphics = graphicsIn(body);
     figures.push({
       number: nextNumber++,
       env,
       ...(label ? { label } : {}),
-      ...(caption ? { caption: compactSnippet(caption) } : {}),
+      ...(caption ? { caption } : {}),
       graphics,
       tex: match[0],
       start,
@@ -150,31 +157,42 @@ function graphicsIn(text: string): string[] {
   return graphics;
 }
 
-function readCommandArgumentInfo(
-  text: string,
-  command: string,
-): { content: string; start: number; end: number } | null {
-  const needle = `\\${command}`;
-  let index = text.indexOf(needle);
-  while (index >= 0) {
-    let cursor = index + needle.length;
-    cursor = skipSpaces(text, cursor);
-    if (text[cursor] === "[") {
-      const optional = readBalanced(text, cursor, "[", "]");
-      if (!optional) return null;
-      cursor = skipSpaces(text, optional.end);
-    }
-    if (text[cursor] === "{") {
-      const arg = readBalanced(text, cursor, "{", "}");
-      return arg ? { content: arg.content, start: index, end: arg.end } : null;
-    }
-    index = text.indexOf(needle, index + needle.length);
-  }
-  return null;
+interface FigureCaptionCommand {
+  kind: "caption" | "subcaption";
+  content: string;
+  start: number;
+  end: number;
 }
 
-function readCommandArgument(text: string, command: string): string | null {
-  return readCommandArgumentInfo(text, command)?.content ?? null;
+function captionCommandsIn(text: string): FigureCaptionCommand[] {
+  const captions: FigureCaptionCommand[] = [];
+  const commandRe = /\\(subcaption|captionof|caption)\b/g;
+  let match: RegExpExecArray | null;
+  while ((match = commandRe.exec(text)) !== null) {
+    let cursor = match.index + match[0].length;
+    if (text[cursor] === "*") cursor += 1;
+    cursor = skipSpaces(text, cursor);
+    if (match[1] === "captionof") {
+      const type = readBalanced(text, cursor, "{", "}");
+      if (!type || type.content.trim() !== "figure") continue;
+      cursor = skipSpaces(text, type.end);
+    }
+    if (text[cursor] === "[") {
+      const optional = readBalanced(text, cursor, "[", "]");
+      if (!optional) continue;
+      cursor = skipSpaces(text, optional.end);
+    }
+    const argument = readBalanced(text, cursor, "{", "}");
+    if (!argument) continue;
+    captions.push({
+      kind: match[1] === "subcaption" ? "subcaption" : "caption",
+      content: argument.content,
+      start: match.index,
+      end: argument.end,
+    });
+    commandRe.lastIndex = argument.end;
+  }
+  return captions;
 }
 
 function readBalanced(

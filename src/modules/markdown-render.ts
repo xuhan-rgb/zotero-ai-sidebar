@@ -239,6 +239,17 @@ export function renderMarkdownInto(
     }
 
     if (!line.trim()) {
+      let nextNonBlank = i + 1;
+      while (nextNonBlank < lines.length && !lines[nextNonBlank]!.trim()) {
+        nextNonBlank++;
+      }
+      const nextDelimiter = standaloneDisplayEnvDelimiter(
+        lines[nextNonBlank] ?? "",
+      );
+      if (paragraph.length && nextDelimiter?.kind === "end") {
+        paragraph.push("");
+        continue;
+      }
       flushParagraph();
       flushList();
       flushBlockquote();

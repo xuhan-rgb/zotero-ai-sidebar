@@ -6,7 +6,10 @@ import { savePresets } from '../../src/settings/storage';
 import { saveQuickPromptSettings } from '../../src/settings/quick-prompts';
 import { saveToolSettings } from '../../src/settings/tool-settings';
 import { saveUiSettings } from '../../src/settings/ui-settings';
-import { saveLocalUiSettings } from '../../src/settings/local-ui-settings';
+import {
+  DEFAULT_LOCAL_UI_SETTINGS,
+  saveLocalUiSettings,
+} from '../../src/settings/local-ui-settings';
 import {
   applySyncSnapshot,
   buildSyncSnapshot,
@@ -135,7 +138,10 @@ describe('sync snapshot round trip', () => {
         requireApproval: 'never',
       },
     });
-    saveLocalUiSettings(prefs, { chatFontSizePx: 18 });
+    saveLocalUiSettings(prefs, {
+      ...DEFAULT_LOCAL_UI_SETTINGS,
+      chatFontSizePx: 18,
+    });
     await saveChatMessages(42, [
       {
         role: 'user',

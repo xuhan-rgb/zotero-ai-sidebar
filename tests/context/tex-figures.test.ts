@@ -38,6 +38,73 @@ describe("parseFigures", () => {
     expect(findFigure(figures, { name: "occupancy" })?.number).toBe(1);
   });
 
+  it("indexes a wrapped figure and keeps nested subcaptions in source order", () => {
+    const text = String.raw`\begin{wrapfigure}{r}{.33\textwidth}
+  \centering
+  \begin{minipage}{\linewidth}
+    \includegraphics[width=0.9\linewidth]{figs/baseline.jpg}
+    \subcaption{Static-height.}
+    \par\vfill
+    \includegraphics[width=0.9\linewidth]{figs/vbc.jpg}
+    \subcaption{VBC.}
+  \end{minipage}
+  \caption{Illustration of comparing VBC to static-height methods.}
+\end{wrapfigure}`;
+
+    const figures = parseFigures(text);
+
+    expect(figures).toHaveLength(1);
+    expect(figures[0]).toMatchObject({
+      env: "wrapfigure",
+      graphics: ["figs/baseline.jpg", "figs/vbc.jpg"],
+    });
+    expect(plainFigureCaption(figures[0])).toBe(
+      "Static-height. VBC. Illustration of comparing VBC to static-height methods.",
+    );
+  });
+
+  it("indexes floating figures whose visible text uses captionof", () => {
+    const text = String.raw`\begin{floatingfigure}[r]{0.5\textwidth}
+  \centering
+  \includegraphics[width=0.5\linewidth]{figs/height_in_sim.pdf}
+  \captionof{figure}{Success rates at different heights in simulation.}
+\end{floatingfigure}`;
+
+    const figures = parseFigures(text);
+
+    expect(figures).toHaveLength(1);
+    expect(figures[0]).toMatchObject({
+      env: "floatingfigure",
+      graphics: ["figs/height_in_sim.pdf"],
+    });
+    expect(plainFigureCaption(figures[0])).toBe(
+      "Success rates at different heights in simulation.",
+    );
+  });
+
+  it("indexes only center environments explicitly typed as figures", () => {
+    const text = String.raw`\begin{center}
+  Ordinary centered prose.
+\end{center}
+\begin{center}
+  \centering
+  \captionsetup{type=figure}
+  \includegraphics[width=.94\textwidth]{figs/teaser.pdf}
+  \caption{Real-robot input visualization and grasping trajectory.}
+\end{center}`;
+
+    const figures = parseFigures(text);
+
+    expect(figures).toHaveLength(1);
+    expect(figures[0]).toMatchObject({
+      env: "center",
+      graphics: ["figs/teaser.pdf"],
+    });
+    expect(plainFigureCaption(figures[0])).toBe(
+      "Real-robot input visualization and grasping trajectory.",
+    );
+  });
+
   it("adds visible figure-number markers before figure environments", () => {
     const text = [
       "\\begin{figure}",

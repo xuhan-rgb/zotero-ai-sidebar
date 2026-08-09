@@ -1,0 +1,1015 @@
+import { renderMarkdownInto } from "./markdown-render";
+import type {
+  FullTranslationBlockState,
+  FullTranslationBlockStatus,
+  FullTranslationState,
+  FullTranslationUsage,
+  FullTranslationUsageEvent,
+} from "../settings/full-translation-store";
+import {
+  DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+  normalizeFullTranslationReadingSettings,
+  type FullTranslationLanguageMode,
+  type FullTranslationReadingSettings,
+} from "../settings/local-ui-settings";
+import type {
+  FullTranslationBlock,
+  FullTranslationDocument,
+} from "../translate/full-document";
+import type { FullTranslationAssetPreviews } from "../translate/full-document-assets";
+import type { FullTranslationAssetPreview } from "../translate/full-document-assets";
+import { isTranslationPlaceholderReply } from "../translate/translator";
+import { decorateSentenceBoundaries } from "./full-translation-sentence-markers";
+
+export type FullTranslationLayout = "parallel" | "interleaved";
+
+export interface FullTranslationViewOptions {
+  document: FullTranslationDocument;
+  state: FullTranslationState;
+  layout: FullTranslationLayout;
+  running: boolean;
+  preparing?: boolean;
+  runError?: string;
+  assets: FullTranslationAssetPreviews;
+  readingSettings?: FullTranslationReadingSettings;
+  onLayoutChange(layout: FullTranslationLayout): void;
+  onRun(): void;
+  onRetranslate(): void;
+  onTranslateBlock?(blockId: string): void;
+  onReadingSettingsChange?(settings: FullTranslationReadingSettings): void;
+  onCancel(): void;
+  onExit(): void;
+}
+
+export function renderFullTranslationView(
+  doc: Document,
+  options: FullTranslationViewOptions,
+): HTMLElement {
+  const root = doc.createElement("div");
+  const reading = readingSettings(options);
+  root.className = [
+    "zai-full-translation",
+    `is-${options.layout}`,
+    reading.languageMode === "bilingual"
+      ? "is-bilingual"
+      : reading.languageMode === "translation"
+        ? "is-translation-only"
+        : "is-source-only",
+  ].join(" ");
+  root.append(renderToolbar(doc, options));
+  if (options.runError) {
+    const error = doc.createElement("div");
+    error.className = "zai-ft-run-error";
+    error.textContent = `翻译中断：${options.runError}`;
+    root.append(error);
+  }
+
+  const content = doc.createElement("div");
+  content.className = "zai-ft-content";
+  for (const block of options.document.blocks) {
+    content.append(renderBlockPair(doc, block, options));
+  }
+  const reader = doc.createElement("div");
+  reader.className = "zai-ft-reader";
+  reader.append(renderOutline(doc, options, content), content);
+  root.append(reader);
+  root.addEventListener("click", (event) => {
+    const target = event.target as Node | null;
+    if (!target) return;
+    for (const popover of root.querySelectorAll<HTMLDetailsElement>(
+      ".zai-ft-toolbar-popover[open]",
+    )) {
+      if (!popover.contains(target)) popover.open = false;
+    }
+  });
+  return root;
+}
+
+function renderToolbar(
+  doc: Document,
+  options: FullTranslationViewOptions,
+): HTMLElement {
+  const toolbar = doc.createElement("div");
+  toolbar.className = "zai-ft-toolbar";
+
+  const progress = translationProgress(options.document, options.state);
+  const summary = doc.createElement("div");
+  summary.className = "zai-ft-progress";
+  summary.textContent = `${progress.done}/${progress.total} 已翻译`;
+  const model = doc.createElement("span");
+  model.className = "zai-ft-model";
+  model.textContent = options.state.model;
+  model.title = `翻译模型：${options.state.model}`;
+  summary.append(model);
+  summary.append(renderUsageHistory(doc, options.document, options.state));
+
+  const viewControls = renderViewControls(doc, options);
+
+  const action = doc.createElement("button");
+  action.className = "zai-ft-run";
+  action.type = "button";
+  if (options.running) {
+    action.textContent = "停止";
+    action.addEventListener("click", options.onCancel);
+  } else if (options.preparing) {
+    action.textContent = "准备重译…";
+    action.disabled = true;
+  } else if (translationComplete(progress)) {
+    action.textContent = "重新翻译";
+    action.addEventListener("click", () => {
+      const warning =
+        "确认重新翻译全文？\n\n" +
+        "这会清除现有译文和当前 Token 统计，并重新产生 API 调用费用。";
+      if (doc.defaultView?.confirm(warning)) options.onRetranslate();
+    });
+  } else {
+    action.textContent = runLabel(progress);
+    action.disabled = progress.pending === 0 && progress.errors === 0;
+    action.addEventListener("click", options.onRun);
+  }
+
+  const exit = doc.createElement("button");
+  exit.className = "zai-ft-exit";
+  exit.type = "button";
+  exit.textContent = "返回 PDF";
+  exit.addEventListener("click", options.onExit);
+
+  toolbar.append(summary, viewControls, action, exit);
+  return toolbar;
+}
+
+function renderUsageHistory(
+  doc: Document,
+  document: FullTranslationDocument,
+  state: FullTranslationState,
+): HTMLDetailsElement {
+  const details = doc.createElement("details");
+  details.className = "zai-ft-usage-history zai-ft-toolbar-popover";
+
+  const usageSummary = tokenUsageSummary(state.usage);
+  const summary = doc.createElement("summary");
+  summary.className = "zai-ft-token-usage";
+  summary.textContent = usageSummary.label;
+  summary.title = usageSummary.title;
+  details.append(summary);
+
+  const panel = doc.createElement("div");
+  panel.className = "zai-ft-usage-panel";
+  const title = doc.createElement("div");
+  title.className = "zai-ft-usage-panel-title";
+  title.textContent = "逐次翻译统计";
+  panel.append(title, renderUsageTotal(doc, state.usage));
+
+  const events = [...(state.usageEvents ?? [])]
+    .map((event, index) => ({ event, index }))
+    .sort(
+      (left, right) =>
+        eventTime(right.event) - eventTime(left.event) ||
+        right.index - left.index,
+    );
+  for (const { event, index } of events) {
+    panel.append(renderUsageEvent(doc, document, details, event, index + 1));
+  }
+
+  const legacyMessage = usageHistoryGapMessage(state, events.length);
+  if (legacyMessage) {
+    const legacy = doc.createElement("div");
+    legacy.className = "zai-ft-usage-legacy";
+    legacy.textContent = legacyMessage;
+    panel.append(legacy);
+  } else if (!events.length) {
+    const empty = doc.createElement("div");
+    empty.className = "zai-ft-usage-empty";
+    empty.textContent = "尚无逐段翻译记录";
+    panel.append(empty);
+  }
+
+  details.append(panel);
+  return details;
+}
+
+function renderUsageTotal(
+  doc: Document,
+  usage: FullTranslationUsage | undefined,
+): HTMLElement {
+  const total = doc.createElement("div");
+  total.className = "zai-ft-usage-total";
+  if (!usage) {
+    total.textContent = "Total 0 · Hit 未返回 · Miss 0 · Output 0";
+    return total;
+  }
+  const metrics = tokenUsageMetrics(usage);
+  total.textContent = [
+    `Total ${formatTokenCount(metrics.total)}`,
+    `Hit ${metrics.cacheHit == null ? "未返回" : formatTokenCount(metrics.cacheHit)}`,
+    `Miss ${formatTokenCount(metrics.cacheMiss)}`,
+    `Output ${formatTokenCount(metrics.output)}`,
+  ].join(" · ");
+  return total;
+}
+
+function renderUsageEvent(
+  doc: Document,
+  document: FullTranslationDocument,
+  history: HTMLDetailsElement,
+  event: FullTranslationUsageEvent,
+  attemptNumber: number,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "zai-ft-usage-event";
+  button.dataset.targetBlockId = event.blockId;
+
+  const top = doc.createElement("span");
+  top.className = "zai-ft-usage-event-top";
+  const attempt = doc.createElement("strong");
+  attempt.textContent = `第 ${attemptNumber} 次`;
+  const time = doc.createElement("time");
+  time.dateTime = event.recordedAt;
+  time.textContent = formatUsageEventTime(event.recordedAt);
+  top.append(attempt, time);
+
+  const location = usageEventLocation(document, event.blockId);
+  const context = doc.createElement("span");
+  context.className = "zai-ft-usage-context";
+  context.textContent = location.context;
+  const excerpt = doc.createElement("span");
+  excerpt.className = "zai-ft-usage-excerpt";
+  excerpt.textContent = location.excerpt;
+
+  const metrics = tokenUsageMetrics(event.usage);
+  const stats = doc.createElement("span");
+  stats.className = "zai-ft-usage-stats";
+  stats.append(
+    usageStat(doc, "Total", formatTokenCount(metrics.total)),
+    usageStat(
+      doc,
+      "Hit",
+      metrics.cacheHit == null ? "未返回" : formatTokenCount(metrics.cacheHit),
+    ),
+    usageStat(doc, "Miss", formatTokenCount(metrics.cacheMiss)),
+    usageStat(doc, "Output", formatTokenCount(metrics.output)),
+    usageStat(
+      doc,
+      "Rate",
+      metrics.cacheRate == null ? "未返回" : `${metrics.cacheRate}%`,
+    ),
+  );
+  button.append(top, context, excerpt, stats);
+  button.addEventListener("click", () => {
+    const root = history.closest(".zai-full-translation");
+    const target = Array.from(
+      root?.querySelectorAll("[data-block-id]") ?? [],
+    ).find((row) => (row as HTMLElement).dataset.blockId === event.blockId) as
+      | HTMLElement
+      | undefined;
+    if (!target) return;
+    root
+      ?.querySelectorAll(".zai-ft-block.is-usage-target")
+      .forEach((row: Element) => row.classList.remove("is-usage-target"));
+    target.classList.add("is-usage-target");
+    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    history.open = false;
+    doc.defaultView?.setTimeout(
+      () => target.classList.remove("is-usage-target"),
+      1_800,
+    );
+  });
+  return button;
+}
+
+function usageStat(doc: Document, label: string, value: string): HTMLElement {
+  const stat = doc.createElement("span");
+  stat.textContent = `${label} ${value}`;
+  return stat;
+}
+
+function usageEventLocation(
+  document: FullTranslationDocument,
+  blockId: string,
+): { context: string; excerpt: string } {
+  const blockIndex = document.blocks.findIndex((block) => block.id === blockId);
+  if (blockIndex < 0) {
+    return { context: "原段落已不存在", excerpt: blockId };
+  }
+  const block = document.blocks[blockIndex];
+  let heading: FullTranslationBlock | undefined;
+  for (let index = blockIndex; index >= 0; index -= 1) {
+    if (document.blocks[index]?.kind === "heading") {
+      heading = document.blocks[index];
+      break;
+    }
+  }
+  const headingNumber = heading?.number == null ? "" : String(heading.number);
+  const headingTitle = heading ? usageExcerpt(heading.source, 54) : "文章开头";
+  return {
+    context: [headingNumber, headingTitle].filter(Boolean).join(" "),
+    excerpt: usageExcerpt(block.source, 82),
+  };
+}
+
+function usageExcerpt(source: string, maxLength: number): string {
+  const text = source
+    .replace(/\$\$?([\s\S]*?)\$\$?/g, "$1")
+    .replace(/\\([A-Za-z]+)\*?(?:\{([^{}]*)\})?/g, (_match, command, value) =>
+      value == null ? command : value,
+    )
+    .replace(/[`*_~#]/g, "")
+    .replace(/\s+/g, " ")
+    .trim();
+  return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function formatUsageEventTime(recordedAt: string): string {
+  const date = new Date(recordedAt);
+  if (!Number.isFinite(date.getTime())) return recordedAt;
+  return date.toLocaleString("zh-CN", {
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  });
+}
+
+function eventTime(event: FullTranslationUsageEvent): number {
+  const value = Date.parse(event.recordedAt);
+  return Number.isFinite(value) ? value : 0;
+}
+
+function usageHistoryGapMessage(
+  state: FullTranslationState,
+  eventCount: number,
+): string | null {
+  if (!state.usage) return null;
+  if (!eventCount) return "旧记录只有全文累计；后续翻译会记录到段落";
+  const total = tokenUsageMetrics(state.usage).total;
+  const eventTotal = (state.usageEvents ?? []).reduce(
+    (sum, event) => sum + tokenUsageMetrics(event.usage).total,
+    0,
+  );
+  return eventTotal < total ? "旧数据中的部分 Token 没有逐段明细" : null;
+}
+
+function renderOutline(
+  doc: Document,
+  options: FullTranslationViewOptions,
+  content: HTMLElement,
+): HTMLElement {
+  const outline = doc.createElement("nav");
+  outline.className = "zai-ft-outline";
+  const title = doc.createElement("div");
+  title.className = "zai-ft-outline-title";
+  title.textContent = "文章目录";
+  outline.append(title);
+
+  for (const block of options.document.blocks) {
+    if (block.kind !== "heading") continue;
+    const button = doc.createElement("button");
+    button.type = "button";
+    button.className = `zai-ft-outline-item level-${block.level ?? 1}`;
+    button.dataset.targetBlockId = block.id;
+    const number = block.number == null ? "" : `${block.number} `;
+    const label = doc.createElement("span");
+    renderMarkdownInto(label, `${number}${outlineBlockText(block, options)}`);
+    button.append(label);
+    button.addEventListener("click", () => {
+      outline
+        .querySelectorAll(".zai-ft-outline-item.is-active")
+        .forEach((item: Element) => item.classList.remove("is-active"));
+      button.classList.add("is-active");
+      const rows = Array.from(
+        content.querySelectorAll("[data-block-id]"),
+      ) as HTMLElement[];
+      const target = rows.find((row) => row.dataset.blockId === block.id);
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+    outline.append(button);
+  }
+  return outline;
+}
+
+function outlineBlockText(
+  block: FullTranslationBlock,
+  options: FullTranslationViewOptions,
+): string {
+  if (readingSettings(options).languageMode !== "translation") {
+    return block.source;
+  }
+  const blockState = options.state.blocks[block.id];
+  return effectiveBlockStatus(blockState) === "done" && blockState?.translation
+    ? blockState.translation
+    : block.source;
+}
+
+function renderViewControls(
+  doc: Document,
+  options: FullTranslationViewOptions,
+): HTMLElement {
+  const controls = doc.createElement("div");
+  controls.className = "zai-ft-view-controls";
+
+  const languages = doc.createElement("div");
+  languages.className = "zai-ft-language-modes";
+  languages.append(
+    languageButton(doc, "中英", "bilingual", options),
+    languageButton(doc, "中文", "translation", options),
+    languageButton(doc, "英文", "source", options),
+  );
+
+  const layouts = doc.createElement("div");
+  layouts.className = "zai-ft-layouts";
+  layouts.append(
+    layoutButton(doc, "左右", "parallel", options),
+    layoutButton(doc, "逐段", "interleaved", options),
+  );
+  controls.append(languages, layouts);
+  if (options.onReadingSettingsChange) {
+    controls.append(renderReadingSettingsControl(doc, options));
+  }
+  return controls;
+}
+
+function renderReadingSettingsControl(
+  doc: Document,
+  options: FullTranslationViewOptions,
+): HTMLDetailsElement {
+  const current = readingSettings(options);
+  const details = doc.createElement("details");
+  details.className = "zai-ft-reading-settings zai-ft-toolbar-popover";
+  const summary = doc.createElement("summary");
+  summary.textContent = "阅读设置";
+
+  const panel = doc.createElement("div");
+  panel.className = "zai-ft-reading-settings-panel";
+  const form = doc.createElement("form");
+
+  const markerStyle = settingsSelect(
+    doc,
+    "markerStyle",
+    [
+      ["slashes", "斜线 //"],
+      ["circled", "圆圈序号 ①②③"],
+      ["decimal", "数字序号 [1][2][3]"],
+      ["dot", "圆点 •"],
+      ["custom", "自定义"],
+      ["off", "关闭标记"],
+    ],
+    current.markerStyle,
+  );
+  form.append(settingsField(doc, "句末标记", markerStyle));
+
+  const customMarker = doc.createElement("input");
+  customMarker.type = "text";
+  customMarker.name = "customMarker";
+  customMarker.maxLength = 8;
+  customMarker.value = current.customMarker;
+  customMarker.placeholder = "例如 //";
+  const customField = settingsField(doc, "自定义符号", customMarker);
+  customField.hidden = current.markerStyle !== "custom";
+  form.append(customField);
+
+  const colorMode = settingsSelect(
+    doc,
+    "markerColorMode",
+    [
+      ["palette", "柔和多彩"],
+      ["single", "自选单色"],
+    ],
+    current.markerColorMode,
+  );
+  form.append(settingsField(doc, "符号颜色", colorMode));
+
+  const markerColor = doc.createElement("input");
+  markerColor.type = "color";
+  markerColor.name = "markerColor";
+  markerColor.value = current.markerColor;
+  const colorField = settingsField(doc, "单色", markerColor);
+  colorField.hidden = current.markerColorMode !== "single";
+  form.append(colorField);
+
+  const lineBreakMode = settingsSelect(
+    doc,
+    "lineBreakMode",
+    [
+      ["continuous", "连续排版"],
+      ["sentence", "按句换行"],
+      ["sentence-semicolon", "句子与分号换行"],
+    ],
+    current.lineBreakMode,
+  );
+  form.append(settingsField(doc, "换行方式", lineBreakMode));
+
+  markerStyle.addEventListener("change", () => {
+    customField.hidden = markerStyle.value !== "custom";
+  });
+  colorMode.addEventListener("change", () => {
+    colorField.hidden = colorMode.value !== "single";
+  });
+
+  const apply = doc.createElement("button");
+  apply.type = "submit";
+  apply.className = "zai-ft-reading-settings-apply";
+  apply.textContent = "应用";
+  form.append(apply);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    details.open = false;
+    options.onReadingSettingsChange?.(
+      normalizeFullTranslationReadingSettings({
+        ...current,
+        markerStyle: markerStyle.value,
+        customMarker: customMarker.value,
+        markerColorMode: colorMode.value,
+        markerColor: markerColor.value,
+        lineBreakMode: lineBreakMode.value,
+      }),
+    );
+  });
+  panel.append(form);
+  details.append(summary, panel);
+  return details;
+}
+
+function settingsSelect(
+  doc: Document,
+  name: string,
+  choices: Array<[value: string, label: string]>,
+  value: string,
+): HTMLSelectElement {
+  const select = doc.createElement("select");
+  select.name = name;
+  for (const [optionValue, label] of choices) {
+    const option = doc.createElement("option");
+    option.value = optionValue;
+    option.textContent = label;
+    select.append(option);
+  }
+  select.value = value;
+  return select;
+}
+
+function settingsField(
+  doc: Document,
+  label: string,
+  control: HTMLElement,
+): HTMLLabelElement {
+  const field = doc.createElement("label");
+  field.className = "zai-ft-reading-setting";
+  const text = doc.createElement("span");
+  text.textContent = label;
+  field.append(text, control);
+  return field;
+}
+
+function languageButton(
+  doc: Document,
+  label: string,
+  mode: FullTranslationLanguageMode,
+  options: FullTranslationViewOptions,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.dataset.languageMode = mode;
+  button.textContent = label;
+  const settings = readingSettings(options);
+  if (settings.languageMode === mode) {
+    button.classList.add("on");
+    button.disabled = true;
+  }
+  if (!options.onReadingSettingsChange) button.disabled = true;
+  button.addEventListener("click", () => {
+    options.onReadingSettingsChange?.({ ...settings, languageMode: mode });
+  });
+  return button;
+}
+
+function layoutButton(
+  doc: Document,
+  label: string,
+  layout: FullTranslationLayout,
+  options: FullTranslationViewOptions,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.dataset.layout = layout;
+  button.textContent = label;
+  if (options.layout === layout) {
+    button.classList.add("on");
+  }
+  button.disabled =
+    readingSettings(options).languageMode !== "bilingual" ||
+    options.layout === layout;
+  button.addEventListener("click", () => options.onLayoutChange(layout));
+  return button;
+}
+
+function readingSettings(
+  options: FullTranslationViewOptions,
+): FullTranslationReadingSettings {
+  return options.readingSettings ?? DEFAULT_FULL_TRANSLATION_READING_SETTINGS;
+}
+
+function renderBlockPair(
+  doc: Document,
+  block: FullTranslationBlock,
+  options: FullTranslationViewOptions,
+): HTMLElement {
+  const row = doc.createElement("article");
+  row.className = `zai-ft-block zai-ft-${block.kind}`;
+  row.dataset.blockId = block.id;
+  const reading = readingSettings(options);
+  const blockState = options.state.blocks[block.id];
+  const blockStatus = effectiveBlockStatus(blockState);
+  if (blockStatus) row.dataset.status = blockStatus;
+  const isSharedFormula = block.kind === "formula";
+  const hasSharedVisual = !!(
+    isSharedFormula ||
+    block.assets?.length ||
+    block.table
+  );
+  if (hasSharedVisual) {
+    row.classList.add("has-shared-visual");
+    row.append(renderSharedVisual(doc, block, options.assets));
+  }
+
+  if (!isSharedFormula) {
+    const isPairedInterleavedHeading =
+      block.kind === "heading" &&
+      options.layout === "interleaved" &&
+      reading.languageMode === "bilingual";
+    const source = renderBlockSide(
+      doc,
+      block,
+      block.source,
+      "source",
+      !hasSharedVisual,
+      undefined,
+      reading,
+    );
+    const translation = renderBlockSide(
+      doc,
+      block,
+      translatedBlockText(block, options.state, blockStatus),
+      "translation",
+      !hasSharedVisual && !isPairedInterleavedHeading,
+      blockStatus,
+      reading,
+    );
+    if (block.translatable && options.onTranslateBlock) {
+      translation.prepend(
+        renderBlockTranslationAction(doc, block.id, blockStatus, options),
+      );
+    }
+    row.append(source, translation);
+  }
+  return row;
+}
+
+function renderBlockTranslationAction(
+  doc: Document,
+  blockId: string,
+  status: FullTranslationBlockStatus | undefined,
+  options: FullTranslationViewOptions,
+): HTMLButtonElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "zai-ft-block-action";
+  const busy = options.running && status === "translating";
+  const label = busy
+    ? "正在翻译此段"
+    : status === "done"
+      ? "重新翻译此段"
+      : "翻译此段";
+  button.textContent = busy ? "…" : status === "done" ? "↻" : "译";
+  button.title = label;
+  button.setAttribute("aria-label", label);
+  button.disabled = options.running || !!options.preparing;
+  button.addEventListener("click", () => options.onTranslateBlock?.(blockId));
+  return button;
+}
+
+function renderBlockSide(
+  doc: Document,
+  block: FullTranslationBlock,
+  text: string,
+  side: "source" | "translation",
+  showMarker: boolean,
+  status?: string,
+  readingSettings?: FullTranslationReadingSettings,
+): HTMLElement {
+  const cell = doc.createElement("div");
+  cell.className = `zai-ft-cell zai-ft-${side}`;
+
+  const label = showMarker ? blockLabel(block) : "";
+  if (label) {
+    const marker = doc.createElement("span");
+    marker.className = "zai-ft-marker";
+    marker.textContent = label;
+    cell.append(marker);
+  }
+
+  const body = doc.createElement("div");
+  body.className = "zai-ft-block-body";
+  if (
+    side === "translation" &&
+    status &&
+    status !== "done" &&
+    status !== "skipped"
+  ) {
+    body.classList.add("zai-ft-state");
+  }
+  renderMarkdownInto(body, block.kind === "formula" ? `$$\n${text}\n$$` : text);
+  if (
+    readingSettings &&
+    block.kind !== "heading" &&
+    block.kind !== "title" &&
+    (side === "source" || status === "done" || status === "skipped")
+  ) {
+    decorateSentenceBoundaries(body, readingSettings);
+  }
+  cell.append(body);
+  return cell;
+}
+
+function renderSharedVisual(
+  doc: Document,
+  block: FullTranslationBlock,
+  assets: FullTranslationAssetPreviews,
+): HTMLElement {
+  const visual = doc.createElement("div");
+  visual.className = "zai-ft-shared-visual";
+  const label = blockLabel(block);
+  if (label) {
+    const marker = doc.createElement("span");
+    marker.className = "zai-ft-marker";
+    marker.textContent = label;
+    visual.append(marker);
+  }
+  if (block.assets?.length) {
+    visual.append(renderFigureAssets(doc, block, assets));
+  }
+  if (block.table) visual.append(renderTable(doc, block.table.rows));
+  if (block.kind === "formula") {
+    const body = doc.createElement("div");
+    body.className = "zai-ft-block-body zai-ft-shared-formula";
+    renderMarkdownInto(body, `$$\n${block.source}\n$$`);
+    visual.append(body);
+  }
+  return visual;
+}
+
+function renderFigureAssets(
+  doc: Document,
+  block: FullTranslationBlock,
+  assets: FullTranslationAssetPreviews,
+): HTMLElement {
+  const frame = doc.createElement("div");
+  frame.className = "zai-ft-assets";
+  for (const path of block.assets ?? []) {
+    const item = doc.createElement("div");
+    item.className = "zai-ft-asset";
+    item.dataset.assetPath = path;
+    if (block.number != null) item.dataset.figureNumber = String(block.number);
+    const preview = assets[path];
+    renderAssetItem(doc, item, preview, block.number);
+    frame.append(item);
+  }
+  return frame;
+}
+
+export function updateFullTranslationAssetPreview(
+  root: HTMLElement,
+  path: string,
+  preview: FullTranslationAssetPreview,
+): void {
+  const items = (
+    Array.from(
+      root.querySelectorAll(".zai-ft-asset[data-asset-path]"),
+    ) as HTMLElement[]
+  ).filter((item) => item.dataset.assetPath === path);
+  for (const item of items) {
+    renderAssetItem(
+      root.ownerDocument!,
+      item,
+      preview,
+      item.dataset.figureNumber,
+    );
+  }
+}
+
+function renderAssetItem(
+  doc: Document,
+  item: HTMLElement,
+  preview?: FullTranslationAssetPreview,
+  figureNumber?: string | number,
+): void {
+  item.replaceChildren();
+  if (preview?.previewUrl) {
+    const image = doc.createElement("img");
+    image.src = preview.previewUrl;
+    image.alt = `Figure ${figureNumber ?? ""}`.trim();
+    image.loading = "lazy";
+    item.append(image);
+    return;
+  }
+  const placeholder = doc.createElement("div");
+  placeholder.className = `zai-ft-asset-placeholder${preview?.error ? " is-error" : ""}`;
+  placeholder.textContent = preview?.error ?? "正在加载图片…";
+  item.append(placeholder);
+}
+
+function renderTable(doc: Document, rows: string[][]): HTMLElement {
+  const frame = doc.createElement("div");
+  frame.className = "zai-ft-table-frame";
+  const table = doc.createElement("table");
+  rows.forEach((row, rowIndex) => {
+    const tr = doc.createElement("tr");
+    row.forEach((value) => {
+      const cell = doc.createElement(rowIndex === 0 ? "th" : "td");
+      renderMarkdownInto(cell, value);
+      tr.append(cell);
+    });
+    table.append(tr);
+  });
+  frame.append(table);
+  return frame;
+}
+
+function translatedBlockText(
+  block: FullTranslationBlock,
+  state: FullTranslationState,
+  status?: FullTranslationBlockStatus,
+): string {
+  const blockState = state.blocks[block.id];
+  if (!block.translatable || status === "skipped") return block.source;
+  if (status === "done") return blockState?.translation ?? "";
+  if (status === "translating") return "正在翻译…";
+  if (status === "error") {
+    return `翻译失败：${blockState.error || "未知错误"}`;
+  }
+  return "等待翻译";
+}
+
+function effectiveBlockStatus(
+  blockState?: FullTranslationBlockState,
+): FullTranslationBlockStatus | undefined {
+  if (
+    blockState?.status === "done" &&
+    isTranslationPlaceholderReply(blockState.translation ?? "")
+  ) {
+    return "pending";
+  }
+  return blockState?.status;
+}
+
+function blockLabel(block: FullTranslationBlock): string {
+  if (block.kind === "heading" && block.number != null)
+    return String(block.number);
+  if (block.kind === "formula" && block.number != null)
+    return `(${block.number})`;
+  if (block.kind === "figure-caption" && block.number != null) {
+    return `Figure ${block.number}`;
+  }
+  if (block.kind === "table-caption" && block.number != null) {
+    return `Table ${block.number}`;
+  }
+  return "";
+}
+
+function translationProgress(
+  document: FullTranslationDocument,
+  state: FullTranslationState,
+): { done: number; total: number; pending: number; errors: number } {
+  const translatable = document.blocks.filter((block) => block.translatable);
+  return {
+    total: translatable.length,
+    done: translatable.filter(
+      (block) => effectiveBlockStatus(state.blocks[block.id]) === "done",
+    ).length,
+    pending: translatable.filter((block) => {
+      const status = effectiveBlockStatus(state.blocks[block.id]);
+      return status === "pending" || status === "translating";
+    }).length,
+    errors: translatable.filter(
+      (block) => effectiveBlockStatus(state.blocks[block.id]) === "error",
+    ).length,
+  };
+}
+
+function runLabel(progress: {
+  done: number;
+  pending: number;
+  errors: number;
+}): string {
+  if (progress.errors > 0) return `重试失败 (${progress.errors})`;
+  if (progress.done > 0 && progress.pending > 0) return "继续翻译";
+  if (progress.pending > 0) return "开始翻译";
+  return "已完成";
+}
+
+function translationComplete(progress: {
+  done: number;
+  total: number;
+  pending: number;
+  errors: number;
+}): boolean {
+  return (
+    progress.total > 0 &&
+    progress.done === progress.total &&
+    progress.pending === 0 &&
+    progress.errors === 0
+  );
+}
+
+function tokenUsageSummary(usage: FullTranslationState["usage"]): {
+  label: string;
+  title: string;
+} {
+  if (!usage) {
+    return {
+      label: "累计 0 · 缓存暂无",
+      title: "全文翻译尚未产生 Token 统计。",
+    };
+  }
+  const metrics = tokenUsageMetrics(usage);
+  if (metrics.cacheHit == null) {
+    return {
+      label: `累计 ${formatCompactTokenCount(metrics.total)} · 缓存未返回`,
+      title: [
+        "全文翻译累计 Token",
+        `Input raw: ${formatTokenCount(metrics.rawInput)}`,
+        "Input cache hit: 服务端未返回",
+        `Input cache miss: ${formatTokenCount(metrics.cacheMiss)}`,
+        `Output: ${formatTokenCount(metrics.output)}`,
+        "Cache hit rate: 服务端未返回",
+        `Token total: ${formatTokenCount(metrics.total)}`,
+      ].join("\n"),
+    };
+  }
+
+  return {
+    label: `累计 ${formatCompactTokenCount(metrics.total)} · 缓存 ${metrics.cacheRate}%`,
+    title: [
+      "全文翻译累计 Token",
+      `Input raw: ${formatTokenCount(metrics.rawInput)}`,
+      `Input cache hit: ${formatTokenCount(metrics.cacheHit)}`,
+      `Input cache miss: ${formatTokenCount(metrics.cacheMiss)}`,
+      `Output: ${formatTokenCount(metrics.output)}`,
+      `Cache hit rate: ${metrics.cacheRate}%`,
+      `Token total: ${formatTokenCount(metrics.total)}`,
+      `统计口径: ${
+        metrics.cacheIncluded
+          ? "缓存命中包含在 Input raw 内"
+          : "缓存命中独立于 Input raw"
+      }`,
+    ].join("\n"),
+  };
+}
+
+function formatCompactTokenCount(value: number): string {
+  if (value < 1_000) return formatTokenCount(value);
+  const compact = (value / 1_000).toFixed(1).replace(/\.0$/, "");
+  return `${compact}k`;
+}
+
+interface TokenUsageMetrics {
+  rawInput: number;
+  output: number;
+  cacheHit?: number;
+  cacheMiss: number;
+  cacheRate?: number;
+  cacheIncluded?: boolean;
+  total: number;
+}
+
+function tokenUsageMetrics(usage: FullTranslationUsage): TokenUsageMetrics {
+  const rawInput = Math.max(0, usage.input || 0);
+  const output = Math.max(0, usage.output || 0);
+  if (usage.cacheRead == null) {
+    return {
+      rawInput,
+      output,
+      cacheMiss: rawInput,
+      total: rawInput + output,
+    };
+  }
+  const cacheHit = Math.max(0, usage.cacheRead || 0);
+  const cacheIncluded = usage.cacheReadIncludedInInput ?? cacheHit <= rawInput;
+  const cacheMiss = cacheIncluded ? Math.max(0, rawInput - cacheHit) : rawInput;
+  const inputTotal = cacheHit + cacheMiss;
+  return {
+    rawInput,
+    output,
+    cacheHit,
+    cacheMiss,
+    cacheRate: inputTotal > 0 ? Math.round((cacheHit / inputTotal) * 100) : 0,
+    cacheIncluded,
+    total: inputTotal + output,
+  };
+}
+
+function formatTokenCount(value: number): string {
+  return value.toLocaleString("en-US");
+}

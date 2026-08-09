@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>PDF figure renderer</title>
+  </head>
+  <body>
+    <script type="module">
+      try {
+        const { WorkerMessageHandler } =
+          await import("resource://zotero/reader/pdf/build/pdf.worker.mjs");
+        globalThis.pdfjsWorker = { WorkerMessageHandler };
+        const { getDocument } =
+          await import("resource://zotero/reader/pdf/build/pdf.mjs");
+
+        window.renderPdfFirstPage = async (input) => {
+          const loading = getDocument({ data: new Uint8Array(input) });
+          const pdf = await loading.promise;
+          try {
+            const page = await pdf.getPage(1);
+            const initial = page.getViewport({ scale: 1 });
+            const scale = Math.min(2, 1400 / Math.max(1, initial.width));
+            const viewport = page.getViewport({ scale });
+            const canvas = document.createElement("canvas");
+            canvas.width = Math.ceil(viewport.width);
+            canvas.height = Math.ceil(viewport.height);
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("无法创建图片画布");
+            await page.render({ canvasContext: context, viewport }).promise;
+            page.cleanup?.();
+            return canvas.toDataURL("image/png");
+          } finally {
+            await pdf.destroy?.();
+          }
+        };
+      } catch (error) {
+        window.pdfRendererError =
+          error instanceof Error ? error.message : String(error);
+      }
+    </script>
+  </body>
+</html>
