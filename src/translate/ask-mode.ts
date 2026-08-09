@@ -44,11 +44,11 @@ const IMMERSIVE_CLICK_MODE_KEY =
   "extensions.zotero-ai-sidebar.immersiveClickMode";
 export type ImmersiveClickMode = "card" | "chooser";
 
-// "card" (default): one tap → unified 翻译+解释 card. "chooser": tap → the
-// [✦ 问 AI · 译] action bar (legacy behavior). Stored as a plain pref so the ⚙
+// "chooser" (default): tap → the [✦ 问 AI · 译] action bar. "card":
+// one tap → unified 翻译+解释 card. Stored as a plain pref so the ⚙
 // menu and the controller share one source of truth.
 export function getImmersiveClickMode(prefs: PrefsStore): ImmersiveClickMode {
-  return prefs.get(IMMERSIVE_CLICK_MODE_KEY) === "chooser" ? "chooser" : "card";
+  return prefs.get(IMMERSIVE_CLICK_MODE_KEY) === "card" ? "card" : "chooser";
 }
 export function setImmersiveClickMode(
   prefs: PrefsStore,
