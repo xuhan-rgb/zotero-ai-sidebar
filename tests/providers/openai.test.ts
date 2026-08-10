@@ -17,6 +17,7 @@ const requestLog = vi.hoisted(() => ({
     prompt_cache_retention?: string;
     headers?: Record<string, string>;
   }>,
+  chatRequests: [] as Array<{ model?: string }>,
   // When > 0, FakeOpenAI throws an APIError(500) on the next N calls and
   // then succeeds. Lets tests exercise the relay-routing retry loop without
   // depending on a live relay.
@@ -192,6 +193,22 @@ vi.mock("openai", async (importOriginal) => {
         return fakeStream();
       },
     };
+    chat = {
+      completions: {
+        create: async (params: { model?: string }) => {
+          requestLog.chatRequests.push({ model: params.model });
+          return (async function* () {
+            yield {
+              choices: [{ delta: { content: "Chat" }, finish_reason: null }],
+            };
+            yield {
+              choices: [{ delta: {}, finish_reason: "stop" }],
+              usage: { prompt_tokens: 2, completion_tokens: 1 },
+            };
+          })();
+        },
+      },
+    };
   }
   return { ...actual, default: FakeOpenAI };
 });
@@ -213,6 +230,7 @@ let relayRoutingStore = "{}";
 describe("OpenAIProvider", () => {
   beforeEach(() => {
     requestLog.requests = [];
+    requestLog.chatRequests = [];
     requestLog.retry5xxRemaining = 0;
     requestLog.incompleteResponsesRemaining = 0;
     requestLog.unterminatedResponsesRemaining = 0;
@@ -257,6 +275,37 @@ describe("OpenAIProvider", () => {
     });
     expect(requestLog.requests[0].prompt_cache_key).toBe("zai:openai");
     expect(requestLog.requests[0].prompt_cache_retention).toBe("24h");
+  });
+
+  it("uses the detected transport independently for each model", async () => {
+    const p = new OpenAIProvider();
+    const multiModelPreset: ModelPreset = {
+      ...preset,
+      baseUrl: "https://api.deepseek.com",
+      model: "deepseek-v4-pro",
+      models: ["deepseek-v4-flash", "deepseek-v4-pro"],
+      extras: { openaiChatCompletionsModels: ["deepseek-v4-pro"] },
+    };
+
+    for await (const _ of p.stream(
+      [{ role: "user", content: "hi" }],
+      "be helpful",
+      multiModelPreset,
+      new AbortController().signal,
+    )) {
+      // Drain the Chat Completions stream.
+    }
+    for await (const _ of p.stream(
+      [{ role: "user", content: "hi" }],
+      "be helpful",
+      { ...multiModelPreset, model: "deepseek-v4-flash" },
+      new AbortController().signal,
+    )) {
+      // Drain the Responses stream.
+    }
+
+    expect(requestLog.chatRequests).toEqual([{ model: "deepseek-v4-pro" }]);
+    expect(requestLog.requests).toHaveLength(1);
   });
 
   it("keeps Responses reasoning and enables relay cache on non-official endpoints by default", async () => {

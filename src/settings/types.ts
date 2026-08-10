@@ -34,9 +34,11 @@ export interface ModelPreset {
     reasoningSummary?: ReasoningSummary;
     agentPermissionMode?: AgentPermissionMode;
     omitMaxOutputTokens?: boolean;
-    // Auto-detected during connectivity test: endpoint rejected reasoning.effort
-    // so fall back to Chat Completions for all requests on this preset.
+    // Legacy preset-wide transport flag. New connectivity tests persist the
+    // model-specific list below because one endpoint can expose different
+    // protocol support per model (for example DeepSeek V4 Flash vs Pro).
     openaiUseChatCompletions?: boolean;
+    openaiChatCompletionsModels?: string[];
     // Explicit cache-priority escape hatch for OpenAI-compatible relays where
     // the optional Responses `reasoning` object prevents long-prefix cache
     // hits. Default is false: respect the user's selected reasoning effort.
@@ -54,6 +56,13 @@ export interface ModelPreset {
     translateThinking?: TranslateThinking;
     [key: string]: unknown;
   };
+}
+
+export function usesOpenAIChatCompletions(preset: ModelPreset): boolean {
+  return (
+    preset.extras?.openaiUseChatCompletions === true ||
+    preset.extras?.openaiChatCompletionsModels?.includes(preset.model) === true
+  );
 }
 
 export const DEFAULT_BASE_URLS: Record<ProviderKind, string> = {

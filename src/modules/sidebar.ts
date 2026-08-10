@@ -634,7 +634,6 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
     });
     applyChatAppearance(panel, state.uiSettings, state.localUiSettings);
     panel.append(renderToolbar(doc, mount, state));
-    panel.append(renderConversationSwitcher(doc, mount, state));
     panel.append(renderContextCard(doc, state.itemID));
     panel.append(renderMessages(doc, mount, state));
     panel.append(renderInput(doc, mount, state));
@@ -807,60 +806,19 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   });
   topRow.append(select);
 
-  const settings = buttonEl(doc, "设置");
-  settings.addEventListener("click", () => {
-    openAddonPreferences(doc);
-  });
   if (state.messages.length > 0) {
     const copyAll = buttonEl(doc, "复制MD");
     copyAll.title = state.copyDebugContext
       ? "复制当前对话为 Markdown（含工具上下文和 PDF 片段）"
       : "复制当前对话为 Markdown（只含论文介绍和对话）";
     copyAll.addEventListener("click", () => {
-      void (async () => {
-        // Only build the system prompt when the debug toggle is on — it's an
-        // async Zotero.Items.get + tool-manual assembly, not free.
-        let systemPrompt: string | undefined;
-        let frontBlock: string | undefined;
-        if (state.copyDebugContext) {
-          try {
-            const built = await buildSystemContextOnly(state.itemID);
-            systemPrompt = built.systemPrompt;
-          } catch {
-            systemPrompt = undefined;
-          }
-          if (
-            state.itemID != null &&
-            messagesContainPaperFrontBlock(state.messages)
-          ) {
-            frontBlock = await resolvePinnedFullText(
-              state.itemID,
-              zoteroContextSource,
-              contextPolicy,
-              { force: shouldExportWholePaperFrontBlock(state.messages) },
-            );
-          }
-        }
-        const markdown = formatConversationMarkdown(
-          state,
-          state.copyDebugContext,
-          systemPrompt,
-          frontBlock,
-        );
-        await copyToClipboard(
-          doc,
-          markdown,
-          undefined,
-          markdownToClipboardHTML(doc, markdown),
-        );
-        flashButton(copyAll, "已复制");
-      })();
+      void copyCurrentConversation(doc, state, copyAll);
     });
     topRow.append(copyAll);
 
     const clear = buttonEl(doc, "清空");
     clear.disabled = state.sending;
-    clear.title = "清空并保存当前条目的聊天记录";
+    clear.title = "清空当前对话的全部消息";
     clear.addEventListener("click", () => {
       state.messages = [];
       void persistPanelConversations(state);
@@ -868,6 +826,11 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     });
     topRow.append(clear);
   }
+
+  const settings = buttonEl(doc, "设置");
+  settings.addEventListener("click", () => {
+    openAddonPreferences(doc);
+  });
   // Panel chrome (collapse this column) lives at the header's top-right corner,
   // not among the content-action buttons.
   const collapse = buttonEl(doc, "»");
@@ -932,15 +895,15 @@ function renderConversationSwitcher(
 ): HTMLElement {
   const conversationBusy = state.sending || state.processingQueuedTask === true;
   const wrap = el(doc, "div", "conversation-switcher");
-  const tabsRow = el(doc, "div", "conversation-tabs-row");
   const tabs = el(doc, "div", "conversation-tabs");
   if (!state.historyLoaded) {
     tabs.append(el(doc, "span", "conversation-loading", "正在载入对话…"));
   } else {
-    for (const conversation of state.conversations) {
-      const tab = buttonEl(doc, conversation.title);
+    for (const [index, conversation] of state.conversations.entries()) {
+      const tab = buttonEl(doc, String(index + 1));
       tab.className = "conversation-tab";
-      tab.title = conversation.title;
+      tab.title = `${index + 1}. ${conversation.title}`;
+      tab.setAttribute("aria-label", `切换到${conversation.title}`);
       tab.disabled = conversationBusy;
       if (conversation.id === state.activeConversationID) {
         tab.classList.add("is-active");
@@ -954,20 +917,19 @@ function renderConversationSwitcher(
   }
 
   const add = buttonEl(doc, "+");
-  add.className = "conversation-add";
+  add.className = "conversation-icon conversation-add";
   add.title = "新建独立对话（默认不携带历史）";
+  add.setAttribute("aria-label", "新建独立对话");
   add.disabled = conversationBusy || !state.historyLoaded;
   add.addEventListener("click", () => addConversation(mount, state));
-  tabsRow.append(tabs, add);
 
   const controls = el(doc, "div", "conversation-controls");
   const historyLabel = el(doc, "label", "conversation-history-control");
-  historyLabel.append(el(doc, "span", "", "携带"));
   const historySelect = doc.createElement("select");
   const historyOptions: Array<[ConversationHistoryMode, string]> = [
-    ["none", "不带历史"],
-    ["previous", "仅上一轮"],
-    ["all", "全部对话"],
+    ["none", "无"],
+    ["previous", "1轮"],
+    ["all", "全部"],
   ];
   for (const [value, label] of historyOptions) {
     const option = doc.createElement("option");
@@ -977,21 +939,18 @@ function renderConversationSwitcher(
   }
   historySelect.value = state.historyMode;
   historySelect.disabled = conversationBusy || !state.historyLoaded;
-  historySelect.title = "只控制发送给模型的历史；界面中的完整消息不会删除";
+  historySelect.title =
+    "发送历史：无 / 最近1轮 / 当前对话全部；界面消息不会删除";
+  historySelect.setAttribute("aria-label", "发送历史范围");
   historySelect.addEventListener("change", () => {
     state.historyMode = normalizeConversationHistoryMode(historySelect.value);
     void persistPanelConversations(state);
   });
   historyLabel.append(historySelect);
 
-  const rename = buttonEl(doc, "重命名");
-  rename.className = "conversation-manage";
-  rename.disabled = conversationBusy || !state.historyLoaded;
-  rename.addEventListener("click", () =>
-    renameActiveConversation(mount, state),
-  );
-  const remove = buttonEl(doc, "删除");
-  remove.className = "conversation-manage conversation-delete";
+  const remove = buttonEl(doc, "×");
+  remove.className = "conversation-icon conversation-delete";
+  remove.setAttribute("aria-label", "删除当前对话");
   remove.disabled =
     conversationBusy || !state.historyLoaded || state.conversations.length <= 1;
   remove.title =
@@ -999,9 +958,50 @@ function renderConversationSwitcher(
   remove.addEventListener("click", () =>
     deleteActiveConversation(mount, state),
   );
-  controls.append(historyLabel, rename, remove);
-  wrap.append(tabsRow, controls);
+  controls.append(historyLabel, add, remove);
+  wrap.append(tabs, controls);
   return wrap;
+}
+
+async function copyCurrentConversation(
+  doc: Document,
+  state: PanelState,
+  button: HTMLButtonElement,
+): Promise<void> {
+  let systemPrompt: string | undefined;
+  let frontBlock: string | undefined;
+  if (state.copyDebugContext) {
+    try {
+      const built = await buildSystemContextOnly(state.itemID);
+      systemPrompt = built.systemPrompt;
+    } catch {
+      systemPrompt = undefined;
+    }
+    if (
+      state.itemID != null &&
+      messagesContainPaperFrontBlock(state.messages)
+    ) {
+      frontBlock = await resolvePinnedFullText(
+        state.itemID,
+        zoteroContextSource,
+        contextPolicy,
+        { force: shouldExportWholePaperFrontBlock(state.messages) },
+      );
+    }
+  }
+  const markdown = formatConversationMarkdown(
+    state,
+    state.copyDebugContext,
+    systemPrompt,
+    frontBlock,
+  );
+  await copyToClipboard(
+    doc,
+    markdown,
+    undefined,
+    markdownToClipboardHTML(doc, markdown),
+  );
+  flashButton(button, "已复制");
 }
 
 function switchConversation(
@@ -1044,21 +1044,6 @@ function addConversation(mount: HTMLElement, state: PanelState): void {
   state.conversations.push(conversation);
   state.activeConversationID = conversation.id;
   applyConversation(state, conversation);
-  void persistPanelConversations(state);
-  renderPanel(mount, state);
-}
-
-function renameActiveConversation(mount: HTMLElement, state: PanelState): void {
-  if (state.sending || state.processingQueuedTask || !state.historyLoaded)
-    return;
-  const conversation = activeConversation(state);
-  if (!conversation) return;
-  const name = mount.ownerDocument?.defaultView
-    ?.prompt("重命名当前对话", conversation.title)
-    ?.trim();
-  if (!name || name === conversation.title) return;
-  conversation.title = name.slice(0, 40);
-  conversation.updatedAt = new Date().toISOString();
   void persistPanelConversations(state);
   renderPanel(mount, state);
 }
@@ -2283,6 +2268,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   const selectionChip = renderSelectionChip(doc, mount, state);
   if (selectionChip) row.prepend(selectionChip);
   composer.append(
+    renderConversationSwitcher(doc, mount, state),
     renderQuickPrompts(doc, mount, state),
     renderTaskQueue(doc, mount, state),
     row,

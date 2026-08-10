@@ -78,16 +78,16 @@ export function isReasoningDisabledForDraft(draft: ModelPreset): boolean {
 // max). The composer dropdown for DeepSeek presets surfaces just those, so
 // users can't pick a level that silently maps to something else.
 const REASONING_EFFORT_OPTIONS_DEEPSEEK: Array<[ReasoningEffort, string]> = [
-  ['high', 'High - 标准思考（DeepSeek 默认）'],
+  ["high", "High - 标准思考（DeepSeek 默认）"],
   // We persist 'xhigh' on the preset; on the wire DeepSeek reads it as
   // max. Same approach used by the translate panel for consistency.
-  ['xhigh', 'Max - 强思考（复杂任务）'],
+  ["xhigh", "Max - 强思考（复杂任务）"],
 ];
 
 export function reasoningEffortOptionsForPreset(
   preset: ModelPreset,
 ): Array<[ReasoningEffort, string]> {
-  if (preset.provider === 'anthropic' && preset.extras?.vendor === 'deepseek') {
+  if (preset.provider === "anthropic" && preset.extras?.vendor === "deepseek") {
     return REASONING_EFFORT_OPTIONS_DEEPSEEK;
   }
   return REASONING_EFFORT_OPTIONS;
@@ -99,8 +99,8 @@ export function collapseReasoningForPreset(
   preset: ModelPreset,
   effort: ReasoningEffort,
 ): ReasoningEffort {
-  if (preset.provider === 'anthropic' && preset.extras?.vendor === 'deepseek') {
-    if (effort === 'low' || effort === 'medium') return 'high';
+  if (preset.provider === "anthropic" && preset.extras?.vendor === "deepseek") {
+    if (effort === "low" || effort === "medium") return "high";
   }
   return effort;
 }
@@ -193,6 +193,26 @@ export async function testPresetConnectivity(
   };
 }
 
+export async function detectOpenAIModelTransports(
+  preset: ModelPreset,
+  signal: AbortSignal,
+): Promise<ModelPreset> {
+  if (preset.provider !== "openai") return preset;
+  const models = [
+    ...new Set(
+      (preset.models?.length ? preset.models : [preset.model])
+        .map((model) => model.trim())
+        .filter(Boolean),
+    ),
+  ];
+  let detected = preset;
+  for (const model of models) {
+    const result = await testPresetConnectivity({ ...detected, model }, signal);
+    detected = { ...detected, extras: result.preset.extras };
+  }
+  return { ...detected, model: preset.model };
+}
+
 async function testOpenAIConnectivity(
   preset: ModelPreset,
   signal: AbortSignal,
@@ -200,9 +220,16 @@ async function testOpenAIConnectivity(
   const withMaxTokens = await requestOpenAIConnectivity(preset, signal, true);
   if (withMaxTokens.ok) {
     return {
-      preset: withOmitMaxOutputTokens(preset, false),
+      preset: withOpenAIChatCompletions(
+        withOmitMaxOutputTokens(preset, false),
+        false,
+      ),
       message: `连接成功：${preset.provider} / ${preset.model}（支持 Max tokens）`,
     };
+  }
+
+  if (isOpenAIResponsesUnavailable(withMaxTokens)) {
+    return testChatCompletionsFallback(preset, signal);
   }
 
   if (!isUnsupportedMaxOutputTokens(withMaxTokens.body)) {
@@ -215,14 +242,34 @@ async function testOpenAIConnectivity(
     false,
   );
   if (!withoutMaxTokens.ok) {
+    if (isOpenAIResponsesUnavailable(withoutMaxTokens)) {
+      return testChatCompletionsFallback(preset, signal);
+    }
     throw new Error(openAITestErrorMessage(withoutMaxTokens));
   }
 
   return {
-    preset: withOmitMaxOutputTokens(preset, true),
+    preset: withOpenAIChatCompletions(
+      withOmitMaxOutputTokens(preset, true),
+      false,
+    ),
     message:
       `连接成功：${preset.provider} / ${preset.model}` +
       "（服务不支持 Max tokens，已保存为不发送）",
+  };
+}
+
+async function testChatCompletionsFallback(
+  preset: ModelPreset,
+  signal: AbortSignal,
+): Promise<{ message: string; preset: ModelPreset }> {
+  const result = await requestChatCompletionsConnectivity(preset, signal);
+  if (!result.ok) throw new Error(openAITestErrorMessage(result));
+  return {
+    preset: withOpenAIChatCompletions(preset, true),
+    message:
+      `连接成功：${preset.provider} / ${preset.model}` +
+      "（不支持 Responses API，已切换为 Chat Completions）",
   };
 }
 
@@ -321,6 +368,35 @@ async function requestOpenAIConnectivity(
   };
 }
 
+async function requestChatCompletionsConnectivity(
+  preset: ModelPreset,
+  signal: AbortSignal,
+): Promise<OpenAITestResult> {
+  const base = (preset.baseUrl.trim() || "https://api.openai.com/v1").replace(
+    /\/+$/,
+    "",
+  );
+  const response = await fetch(`${base}/chat/completions`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${preset.apiKey}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      model: preset.model,
+      messages: [{ role: "user", content: "Reply OK." }],
+      max_tokens: 16,
+      stream: false,
+    }),
+    signal,
+  });
+  if (response.ok) {
+    await response.body?.cancel();
+    return { ok: true };
+  }
+  return { ok: false, status: response.status, body: await response.text() };
+}
+
 async function requestPromptCachePair(
   preset: ModelPreset,
   signal: AbortSignal,
@@ -339,7 +415,8 @@ async function requestPromptCacheOnce(
   includeCacheParams: boolean,
 ): Promise<PromptCacheRun> {
   const key = stablePromptCacheKey(
-    options.promptCacheKey ?? `zai:${preset.provider}:${preset.id}:${preset.model}:cache-test`,
+    options.promptCacheKey ??
+      `zai:${preset.provider}:${preset.id}:${preset.model}:cache-test`,
   );
   const body = {
     model: preset.model,
@@ -446,9 +523,7 @@ function openAIResponsesUrl(baseUrl: string): string {
   return `${root.replace(/\/+$/, "")}/responses`;
 }
 
-function openAIResponsesReasoningBodyParam(
-  preset: ModelPreset,
-): {
+function openAIResponsesReasoningBodyParam(preset: ModelPreset): {
   reasoning?: {
     effort: ReasoningEffort;
     summary?: Exclude<ReasoningSummary, "none">;
@@ -519,6 +594,29 @@ function isUnsupportedMaxOutputTokens(body: string): boolean {
   );
 }
 
+function isOpenAIResponsesUnavailable(
+  result: Exclude<OpenAITestResult, { ok: true }>,
+): boolean {
+  if ([404, 405, 501].includes(result.status)) return true;
+  if (isReasoningUnsupported(result.body)) return true;
+  const namesResponses =
+    /codex integration|responses?\s+(?:api|endpoint)|\/responses\b/i.test(
+      result.body,
+    );
+  const saysUnavailable =
+    /unsupported|not support|does not (?:yet )?support|not available|unavailable|will be available|instead for now/i.test(
+      result.body,
+    );
+  return namesResponses && saysUnavailable;
+}
+
+function isReasoningUnsupported(body: string): boolean {
+  return (
+    /unsupported_parameter|unsupported parameter/i.test(body) &&
+    /reasoning/i.test(body)
+  );
+}
+
 function openAITestErrorMessage(
   result: Exclude<OpenAITestResult, { ok: true }>,
 ) {
@@ -532,6 +630,32 @@ function withOmitMaxOutputTokens(
   const extras = { ...preset.extras };
   if (omit) extras.omitMaxOutputTokens = true;
   else delete extras.omitMaxOutputTokens;
+  return { ...preset, extras };
+}
+
+function withOpenAIChatCompletions(
+  preset: ModelPreset,
+  use: boolean,
+): ModelPreset {
+  const extras = { ...preset.extras };
+  const legacyModels = extras.openaiUseChatCompletions
+    ? preset.models?.length
+      ? preset.models
+      : [preset.model]
+    : [];
+  const chatModels = new Set(
+    [...legacyModels, ...(extras.openaiChatCompletionsModels ?? [])]
+      .map((model) => model.trim())
+      .filter(Boolean),
+  );
+  if (use) chatModels.add(preset.model);
+  else chatModels.delete(preset.model);
+  delete extras.openaiUseChatCompletions;
+  if (chatModels.size > 0) {
+    extras.openaiChatCompletionsModels = [...chatModels];
+  } else {
+    delete extras.openaiChatCompletionsModels;
+  }
   return { ...preset, extras };
 }
 

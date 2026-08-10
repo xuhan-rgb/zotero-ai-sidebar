@@ -8,7 +8,11 @@ import {
   unregisterSidebar,
   unregisterSidebarForWindow,
 } from './modules/sidebar';
-import { testPresetPromptCache as runPresetPromptCacheTest } from './modules/preset-utils';
+import {
+  detectOpenAIModelTransports as detectOpenAIModelTransportsWithSignal,
+  testPresetConnectivity as testPresetConnectivityWithSignal,
+  testPresetPromptCache as runPresetPromptCacheTest,
+} from './modules/preset-utils';
 import {
   dispatchPreferenceChange,
   formatPreferenceSaveSections,
@@ -46,8 +50,6 @@ import {
   setImmersiveToggleControlsKey,
   DEFAULT_IMMERSIVE_TOGGLE_KEY,
 } from './translate/ask-mode';
-import { getProvider } from './providers/factory';
-import type { Message } from './providers/types';
 import {
   DEFAULT_QUICK_PROMPT_SETTINGS,
   loadQuickPromptSettings,
@@ -2435,7 +2437,32 @@ async function savePresetControlsWithConnectivity(
     }
   }
   try {
-    savePresets(zoteroPrefs(), rawPresets);
+    const savedByID = new Map(
+      loadPresets(zoteroPrefs()).map((preset) => [preset.id, preset]),
+    );
+    const detectedPresets: ModelPreset[] = [];
+    for (const preset of rawPresets) {
+      const saved = savedByID.get(preset.id);
+      const connectionChanged =
+        !saved ||
+        presetConnectivitySignature(saved) !==
+          presetConnectivitySignature(preset);
+      if (preset.provider === 'openai' && connectionChanged) {
+        setStatus(
+          doc,
+          'zai-preset-status',
+          `正在检测 ${preset.label} 的模型协议…`,
+        );
+        const detected = await detectOpenAIModelTransports(preset);
+        detectedPresets.push({
+          ...detected,
+          extras: { ...detected.extras, testStatus: 'ok' },
+        });
+      } else {
+        detectedPresets.push(preset);
+      }
+    }
+    savePresets(zoteroPrefs(), detectedPresets);
     renderPresetRows(doc, loadPresets(zoteroPrefs()));
     renderTranslateSettings(doc);
     refreshSidebarPreferences();
@@ -2474,6 +2501,7 @@ function presetConnectivitySignature(preset: ModelPreset): string {
     apiKey: preset.apiKey,
     baseUrl: preset.baseUrl,
     model: preset.model,
+    models: preset.models ?? [preset.model],
     maxTokens: preset.maxTokens,
     reasoningEffort: preset.extras?.reasoningEffort,
     reasoningSummary: preset.extras?.reasoningSummary,
@@ -2487,144 +2515,26 @@ async function testPresetConnectivity(
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), 30_000);
   try {
-    if (preset.provider === 'openai') {
-      return await testOpenAIConnectivity(preset, controller.signal);
-    }
-    const messages: Message[] = [{ role: 'user', content: 'Reply OK.' }];
-    let sawAnyChunk = false;
-    for await (const chunk of getProvider(preset).stream(
-      messages,
-      'Connectivity test. Reply with OK only.',
-      {
-        ...preset,
-        maxTokens: Math.min(Math.max(preset.maxTokens || 256, 256), 512),
-      },
-      controller.signal,
-    )) {
-      if (chunk.type === 'error') throw new Error(chunk.message);
-      sawAnyChunk = true;
-      if (chunk.type === 'text_delta' || chunk.type === 'usage') break;
-    }
-    return {
-      preset,
-      message: sawAnyChunk
-        ? `连接成功：${preset.provider} / ${preset.model}`
-        : `连接完成：${preset.provider} / ${preset.model}`,
-    };
+    return await testPresetConnectivityWithSignal(preset, controller.signal);
   } finally {
     clearTimeout(timeout);
   }
 }
 
-async function testOpenAIConnectivity(
+async function detectOpenAIModelTransports(
   preset: ModelPreset,
-  signal: AbortSignal,
-): Promise<{ message: string; preset: ModelPreset }> {
-  const withMaxTokens = await requestOpenAIConnectivity(preset, signal, true);
-  if (withMaxTokens.ok) {
-    return {
-      preset: withOpenAIChatCompletions(
-        withOmitMaxOutputTokens(preset, false),
-        false,
-      ),
-      message: `连接成功：${preset.provider} / ${preset.model}（支持 Max tokens）`,
-    };
+): Promise<ModelPreset> {
+  const modelCount = Math.max(1, preset.models?.length ?? 1);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 30_000 * modelCount);
+  try {
+    return await detectOpenAIModelTransportsWithSignal(
+      preset,
+      controller.signal,
+    );
+  } finally {
+    clearTimeout(timeout);
   }
-  // 404 = endpoint doesn't exist; reasoning error = param unsupported → both mean Chat Completions only
-  if (
-    withMaxTokens.status === 404 ||
-    isReasoningUnsupported(withMaxTokens.body)
-  ) {
-    const chatResult = await requestChatCompletionsConnectivity(preset, signal);
-    if (!chatResult.ok) throw new Error(openAITestErrorMessage(chatResult));
-    return {
-      preset: withOpenAIChatCompletions(preset, true),
-      message:
-        `连接成功：${preset.provider} / ${preset.model}` +
-        '（不支持 Responses API，已切换为 Chat Completions）',
-    };
-  }
-  if (!isUnsupportedMaxOutputTokens(withMaxTokens.body)) {
-    throw new Error(openAITestErrorMessage(withMaxTokens));
-  }
-  const withoutMaxTokens = await requestOpenAIConnectivity(
-    preset,
-    signal,
-    false,
-  );
-  if (!withoutMaxTokens.ok)
-    throw new Error(openAITestErrorMessage(withoutMaxTokens));
-  return {
-    preset: withOpenAIChatCompletions(
-      withOmitMaxOutputTokens(preset, true),
-      false,
-    ),
-    message:
-      `连接成功：${preset.provider} / ${preset.model}` +
-      '（服务不支持 Max tokens，已保存为不发送）',
-  };
-}
-
-type OpenAITestResult =
-  | { ok: true }
-  | { ok: false; status: number; body: string };
-
-async function requestOpenAIConnectivity(
-  preset: ModelPreset,
-  signal: AbortSignal,
-  includeMaxOutputTokens: boolean,
-): Promise<OpenAITestResult> {
-  const body = {
-    model: preset.model,
-    instructions: 'Connectivity test. Reply OK only.',
-    input: [{ role: 'user', content: 'Reply OK.' }],
-    ...(includeMaxOutputTokens ? { max_output_tokens: 256 } : {}),
-    ...openAIResponsesReasoningBodyParam(preset),
-    stream: true,
-    store: false,
-  };
-  const response = await fetch(openAIResponsesUrl(preset.baseUrl), {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${preset.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-    signal,
-  });
-  if (response.ok) {
-    await response.body?.cancel();
-    return { ok: true };
-  }
-  return { ok: false, status: response.status, body: await response.text() };
-}
-
-function openAIResponsesUrl(baseUrl: string): string {
-  const root = baseUrl.trim() || 'https://api.openai.com/v1';
-  return `${root.replace(/\/+$/, '')}/responses`;
-}
-
-function openAIResponsesReasoningBodyParam(preset: ModelPreset): {
-  reasoning?: {
-    effort: ReasoningEffort;
-    summary?: Exclude<ReasoningSummary, 'none'>;
-  };
-} {
-  if (!shouldSendOpenAIResponsesReasoning(preset)) return {};
-  const summary = preset.extras?.reasoningSummary ?? DEFAULT_REASONING_SUMMARY;
-  return {
-    reasoning: {
-      effort: preset.extras?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
-      ...(summary === 'none' ? {} : { summary }),
-    },
-  };
-}
-
-function shouldSendOpenAIResponsesReasoning(preset: ModelPreset): boolean {
-  if (!isOfficialOpenAIEndpointForPreset(preset)) {
-    return preset.extras?.omitResponsesReasoningForCache !== true;
-  }
-  return true;
 }
 
 function isOfficialOpenAIEndpointForPreset(preset: ModelPreset): boolean {
@@ -2635,74 +2545,6 @@ function isOfficialOpenAIEndpointForPreset(preset: ModelPreset): boolean {
   } catch {
     return false;
   }
-}
-
-function isUnsupportedMaxOutputTokens(body: string): boolean {
-  return /unsupported parameter:\s*max_output_tokens|max_output_tokens.*unsupported/i.test(
-    body,
-  );
-}
-
-function isReasoningUnsupported(body: string): boolean {
-  return (
-    /unsupported_parameter|unsupported parameter/i.test(body) &&
-    /reasoning/i.test(body)
-  );
-}
-
-function withOpenAIChatCompletions(
-  preset: ModelPreset,
-  use: boolean,
-): ModelPreset {
-  const extras = { ...preset.extras };
-  if (use) extras.openaiUseChatCompletions = true;
-  else delete extras.openaiUseChatCompletions;
-  return { ...preset, extras };
-}
-
-async function requestChatCompletionsConnectivity(
-  preset: ModelPreset,
-  signal: AbortSignal,
-): Promise<OpenAITestResult> {
-  const base = (preset.baseUrl.trim() || 'https://api.openai.com/v1').replace(
-    /\/+$/,
-    '',
-  );
-  const response = await fetch(`${base}/chat/completions`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${preset.apiKey}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      model: preset.model,
-      messages: [{ role: 'user', content: 'Reply OK.' }],
-      max_tokens: 16,
-      stream: false,
-    }),
-    signal,
-  });
-  if (response.ok) {
-    await response.body?.cancel();
-    return { ok: true };
-  }
-  return { ok: false, status: response.status, body: await response.text() };
-}
-
-function openAITestErrorMessage(
-  result: Exclude<OpenAITestResult, { ok: true }>,
-): string {
-  return `HTTP ${result.status}: ${result.body || 'no body'}`;
-}
-
-function withOmitMaxOutputTokens(
-  preset: ModelPreset,
-  omit: boolean,
-): ModelPreset {
-  const extras = { ...preset.extras };
-  if (omit) extras.omitMaxOutputTokens = true;
-  else delete extras.omitMaxOutputTokens;
-  return { ...preset, extras };
 }
 
 function sanitizedTestError(err: unknown, presets: ModelPreset[]): string {

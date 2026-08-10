@@ -8,10 +8,11 @@ import type {
   StreamChunk,
   ToolExecutionResult,
 } from "./types";
-import type {
-  ModelPreset,
-  ReasoningEffort,
-  ReasoningSummary,
+import {
+  usesOpenAIChatCompletions,
+  type ModelPreset,
+  type ReasoningEffort,
+  type ReasoningSummary,
 } from "../settings/types";
 import type { ToolSettings } from "../settings/tool-settings";
 import { DEFAULT_CONTEXT_POLICY } from "../context/policy";
@@ -149,7 +150,7 @@ export class OpenAIProvider implements Provider {
       dangerouslyAllowBrowser: true,
     });
 
-    if (preset.extras?.openaiUseChatCompletions) {
+    if (usesOpenAIChatCompletions(preset)) {
       yield* this.streamChatCompletions(
         client,
         messages,

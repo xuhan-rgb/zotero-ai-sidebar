@@ -8,6 +8,7 @@ import type { Message } from "../providers/types";
 import {
   DEFAULT_REASONING_EFFORT,
   DEFAULT_REASONING_SUMMARY,
+  usesOpenAIChatCompletions,
   type ModelPreset,
   type ReasoningEffort,
   type ReasoningSummary,
@@ -27,7 +28,7 @@ export function buildPromptCacheDebug(args: {
     preset.provider === "openai" && shouldSendRelayPromptCacheForDebug(preset);
   const requestPath =
     preset.provider === "openai"
-      ? preset.extras?.openaiUseChatCompletions
+      ? usesOpenAIChatCompletions(preset)
         ? "openai.chat_completions"
         : "openai.responses"
       : "anthropic.messages";
