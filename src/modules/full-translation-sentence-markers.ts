@@ -8,9 +8,16 @@ interface DomPoint {
 
 interface ReadingBoundary {
   offset: number;
+  placement: "before" | "after";
   sentenceIndex: number;
   lineBreak: boolean;
   marker: string;
+}
+
+interface LogicalText {
+  text: string;
+  beforePoints: Array<DomPoint | null>;
+  afterPoints: Array<DomPoint | null>;
 }
 
 const PROSE_CONTAINERS = "p, li, blockquote, th, td";
@@ -92,7 +99,10 @@ function decorateProseContainer(
   const insertions = boundaries
     .map((boundary) => ({
       boundary,
-      point: logical.points[boundary.offset] ?? null,
+      point:
+        (boundary.placement === "before"
+          ? logical.beforePoints[boundary.offset]
+          : logical.afterPoints[boundary.offset]) ?? null,
     }))
     .filter(
       (item): item is { boundary: ReadingBoundary; point: DomPoint } =>
@@ -109,6 +119,9 @@ function decorateProseContainer(
     marker.dataset.marker = boundary.marker;
     marker.setAttribute("aria-hidden", "true");
     if (boundary.lineBreak) marker.classList.add("is-line-break");
+    if (boundary.placement === "before" && boundary.marker) {
+      marker.classList.add("is-prefix-marker");
+    }
     if (settings.markerColorMode === "palette") {
       marker.classList.add(`tone-${(boundary.sentenceIndex - 1) % 6}`);
     } else {
@@ -121,13 +134,15 @@ function decorateProseContainer(
 function logicalText(
   root: HTMLElement,
   containers: Set<HTMLElement>,
-): { text: string; points: Array<DomPoint | null> } {
+): LogicalText {
   const chars: string[] = [];
-  const points: Array<DomPoint | null> = [];
+  const beforePoints: Array<DomPoint | null> = [];
+  const afterPoints: Array<DomPoint | null> = [];
   const appendSpace = () => {
     if (chars.length && !/\s/.test(chars[chars.length - 1]!)) {
       chars.push(" ");
-      points.push(null);
+      beforePoints.push(null);
+      afterPoints.push(null);
     }
   };
 
@@ -136,7 +151,8 @@ function logicalText(
       const text = node as Text;
       for (let index = 0; index < text.data.length; index++) {
         chars.push(text.data[index]!);
-        points.push({ node: text, offset: index + 1 });
+        beforePoints.push({ node: text, offset: index });
+        afterPoints.push({ node: text, offset: index + 1 });
       }
       return;
     }
@@ -159,7 +175,7 @@ function logicalText(
   for (const child of Array.from(root.childNodes)) {
     if (child) walk(child);
   }
-  return { text: chars.join(""), points };
+  return { text: chars.join(""), beforePoints, afterPoints };
 }
 
 function isAtomicElement(element: HTMLElement): boolean {
@@ -195,31 +211,70 @@ function readingBoundaries(
   }
   addContextualAbbreviationBoundaries(text, sentenceOffsets);
 
-  const boundaries: Array<{ offset: number; sentence: boolean }> = Array.from(
-    sentenceOffsets,
-    (offset) => ({ offset, sentence: true }),
+  const sentenceEnds = Array.from(sentenceOffsets).sort(
+    (left, right) => left - right,
   );
+  const sentenceSpans: Array<{ start: number; end: number; index: number }> =
+    [];
+  let sentenceStart = 0;
+  sentenceEnds.forEach((end, index) => {
+    while (sentenceStart <= end && /\s/.test(text[sentenceStart] ?? "")) {
+      sentenceStart += 1;
+    }
+    if (sentenceStart <= end) {
+      sentenceSpans.push({ start: sentenceStart, end, index: index + 1 });
+    }
+    sentenceStart = end + 1;
+  });
+
+  const markerAtStart = usesSentencePrefix(settings.markerStyle);
+  const boundaries: ReadingBoundary[] = [];
+  for (const sentence of sentenceSpans) {
+    const marker = sentenceMarker(settings, sentence.index);
+    if (markerAtStart && marker) {
+      boundaries.push({
+        offset: sentence.start,
+        placement: "before",
+        sentenceIndex: sentence.index,
+        lineBreak: false,
+        marker,
+      });
+    }
+    const lineBreak = settings.lineBreakMode !== "continuous";
+    if (!markerAtStart || lineBreak) {
+      boundaries.push({
+        offset: sentence.end,
+        placement: "after",
+        sentenceIndex: sentence.index,
+        lineBreak,
+        marker: markerAtStart ? "" : marker,
+      });
+    }
+  }
+
   if (settings.lineBreakMode === "sentence-semicolon") {
     for (let offset = 0; offset < text.length; offset++) {
       if (SEMICOLON.test(text[offset]!)) {
-        boundaries.push({ offset, sentence: false });
+        const sentenceIndex =
+          sentenceSpans.find((sentence) => sentence.end >= offset)?.index ??
+          Math.max(1, sentenceSpans.length);
+        boundaries.push({
+          offset,
+          placement: "after",
+          sentenceIndex,
+          lineBreak: true,
+          marker: "",
+        });
       }
     }
   }
-  boundaries.sort((left, right) => left.offset - right.offset);
+  return boundaries.sort((left, right) => left.offset - right.offset);
+}
 
-  let sentenceIndex = 0;
-  return boundaries.map((boundary) => {
-    if (boundary.sentence) sentenceIndex += 1;
-    return {
-      offset: boundary.offset,
-      sentenceIndex: Math.max(1, sentenceIndex),
-      lineBreak: boundary.sentence
-        ? settings.lineBreakMode !== "continuous"
-        : settings.lineBreakMode === "sentence-semicolon",
-      marker: boundary.sentence ? sentenceMarker(settings, sentenceIndex) : "",
-    };
-  });
+function usesSentencePrefix(
+  style: FullTranslationReadingSettings["markerStyle"],
+): boolean {
+  return style === "circled" || style === "decimal" || style === "dot";
 }
 
 function addContextualAbbreviationBoundaries(

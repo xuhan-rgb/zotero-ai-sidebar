@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import type { PrefsStore } from '../../src/settings/storage';
-import { loadTranslateSettings, saveTranslateSettings } from '../../src/translate/settings';
+import {
+  loadTranslateSettings,
+  saveTranslateSettings,
+} from '../../src/translate/settings';
 import { DEFAULT_TRANSLATE_SETTINGS } from '../../src/settings/types';
 import { savePresets } from '../../src/settings/storage';
 import { saveQuickPromptSettings } from '../../src/settings/quick-prompts';
@@ -20,7 +23,12 @@ import { loadPresets } from '../../src/settings/storage';
 import { loadQuickPromptSettings } from '../../src/settings/quick-prompts';
 import { loadToolSettings } from '../../src/settings/tool-settings';
 import { loadUiSettings } from '../../src/settings/ui-settings';
-import { loadChatMessages, saveChatMessages } from '../../src/settings/chat-history';
+import {
+  loadChatConversations,
+  loadChatMessages,
+  saveChatConversations,
+  saveChatMessages,
+} from '../../src/settings/chat-history';
 import {
   getCachedTranslation,
   setCachedTranslation,
@@ -179,7 +187,9 @@ describe('sync snapshot round trip', () => {
     expect(snapshot.threads).toHaveLength(1);
     expect(snapshot.threads?.[0].itemKey).toBe('AAAA1111');
     expect(JSON.stringify(snapshot)).toContain('hi there');
-    expect(snapshot.translateCache?.entries['translate-key']?.text).toBe('你好。');
+    expect(snapshot.translateCache?.entries['translate-key']?.text).toBe(
+      '你好。',
+    );
     expect(snapshot.annotations).toEqual([]);
   });
 
@@ -207,8 +217,12 @@ describe('sync snapshot round trip', () => {
     expect(result.annotations.imported).toBe(0);
     expect(result.threads.imported).toBe(0);
     expect(result.translateCache.imported).toBe(0);
-    expect(loadUiSettings(targetPrefs).messageActionsPosition).toBe('top-right');
-    expect(loadUiSettings(targetPrefs).chatFontFamily).toBe('LXGW WenKai, serif');
+    expect(loadUiSettings(targetPrefs).messageActionsPosition).toBe(
+      'top-right',
+    );
+    expect(loadUiSettings(targetPrefs).chatFontFamily).toBe(
+      'LXGW WenKai, serif',
+    );
     expect(loadPresets(targetPrefs)).toEqual([]);
     expect(loadQuickPromptSettings(targetPrefs).builtIns.summary).toBeTruthy();
     expect(loadToolSettings(targetPrefs).webSearchMode).toBe('disabled');
@@ -287,6 +301,110 @@ describe('sync snapshot round trip', () => {
     ]);
   });
 
+  it('keeps multiple conversations for the same Zotero item separate', async () => {
+    const json = JSON.stringify({
+      schema: SYNC_SCHEMA,
+      exportedAt: '2026-08-10T00:00:00Z',
+      presets: [],
+      uiSettings: {},
+      quickPrompts: {},
+      toolSettings: {},
+      threads: [
+        {
+          libraryType: 'user',
+          itemKey: 'AAAA1111',
+          conversationID: 'summary',
+          title: '论文总结',
+          historyMode: 'previous',
+          draftText: '',
+          active: false,
+          createdAt: '2026-08-09T00:00:00Z',
+          updatedAt: '2026-08-10T00:00:00Z',
+          messages: [
+            { role: 'user', content: '总结论文' },
+            { role: 'assistant', content: '总结结果' },
+          ],
+        },
+        {
+          libraryType: 'user',
+          itemKey: 'AAAA1111',
+          conversationID: 'temporary',
+          title: '临时问题',
+          presetID: 'preset-2',
+          historyMode: 'none',
+          draftText: '尚未发送的问题',
+          active: true,
+          createdAt: '2026-08-10T00:00:00Z',
+          updatedAt: '2026-08-10T00:00:00Z',
+          messages: [],
+        },
+      ],
+    });
+
+    const result = await applySyncSnapshot(memPrefs(), parseSyncSnapshot(json));
+    const workspace = await loadChatConversations(42);
+
+    expect(result.threads.imported).toBe(2);
+    expect(workspace.activeConversationID).toBe('temporary');
+    expect(workspace.conversations).toHaveLength(2);
+    expect(workspace.conversations[0].messages[1]?.content).toBe('总结结果');
+    expect(workspace.conversations[1]).toMatchObject({
+      id: 'temporary',
+      presetID: 'preset-2',
+      draftText: '尚未发送的问题',
+      historyMode: 'none',
+      messages: [],
+    });
+  });
+
+  it('exports every conversation with its active and history settings', async () => {
+    await saveChatConversations(42, {
+      activeConversationID: 'second',
+      conversations: [
+        {
+          id: 'first',
+          title: '第一组',
+          createdAt: '2026-08-09T00:00:00Z',
+          updatedAt: '2026-08-09T01:00:00Z',
+          messages: [{ role: 'user', content: 'first' }],
+          draftText: '',
+          historyMode: 'all',
+        },
+        {
+          id: 'second',
+          title: '第二组',
+          createdAt: '2026-08-10T00:00:00Z',
+          updatedAt: '2026-08-10T01:00:00Z',
+          messages: [],
+          presetID: 'preset-2',
+          draftText: 'draft',
+          historyMode: 'none',
+        },
+      ],
+    });
+
+    const snapshot = await buildSyncSnapshot(memPrefs());
+
+    expect(snapshot.threads).toHaveLength(2);
+    expect(snapshot.threads).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          conversationID: 'first',
+          active: false,
+          historyMode: 'all',
+        }),
+        expect.objectContaining({
+          conversationID: 'second',
+          active: true,
+          presetID: 'preset-2',
+          draftText: 'draft',
+          historyMode: 'none',
+          messages: [],
+        }),
+      ]),
+    );
+  });
+
   it('counts unresolved chat threads when the Zotero item is not local yet', async () => {
     const json = JSON.stringify({
       schema: SYNC_SCHEMA,
@@ -342,7 +460,9 @@ describe('sync snapshot round trip', () => {
     expect(reparsed.translateSettings?.triggerMode).toBe('double');
     expect(reparsed.translateSettings?.nextSentenceKey).toBe('Alt+N');
     expect(reparsed.translateSettings?.prevSentenceKey).toBe('Alt+P');
-    expect(reparsed.translateCache?.entries['cache-key']?.text).toBe('缓存译文');
+    expect(reparsed.translateCache?.entries['cache-key']?.text).toBe(
+      '缓存译文',
+    );
 
     const targetPrefs = memPrefs();
     files = new Map();

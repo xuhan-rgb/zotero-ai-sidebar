@@ -1,6 +1,9 @@
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  revealFullTranslationSourceBlock,
   renderFullTranslationView,
   type FullTranslationLayout,
 } from "../../src/modules/full-translation-view";
@@ -113,6 +116,21 @@ function render(layout: FullTranslationLayout = "parallel") {
   });
 }
 
+function openBlockContextMenu(view: HTMLElement, blockId: string): HTMLElement {
+  const body = view.querySelector<HTMLElement>(
+    `[data-block-id="${blockId}"] .zai-ft-translation .zai-ft-block-body`,
+  )!;
+  body.dispatchEvent(
+    new MouseEvent("contextmenu", {
+      bubbles: true,
+      cancelable: true,
+      clientX: 80,
+      clientY: 120,
+    }),
+  );
+  return view.querySelector<HTMLElement>(".zai-ft-block-menu")!;
+}
+
 describe("renderFullTranslationView", () => {
   it("aligns original and translated content by stable block ID", () => {
     const view = render();
@@ -177,6 +195,64 @@ describe("renderFullTranslationView", () => {
     expect(row?.children[1]?.classList.contains("zai-ft-translation")).toBe(
       true,
     );
+  });
+
+  it("renders LaTeX column and row spans without creating covered cells", () => {
+    const spannedDocument: FullTranslationDocument = {
+      ...document,
+      blocks: [
+        {
+          id: "table-5-caption",
+          kind: "table-caption",
+          source: "Component runtime analysis.",
+          translatable: true,
+          number: 5,
+          table: {
+            rows: [
+              ["", { text: "**High-Level**", colSpan: 5 }, "**Low-Level**"],
+              [
+                "",
+                { text: "TrackingSAM", colSpan: 3 },
+                { text: "Pre-Process", rowSpan: 2 },
+                { text: "Model Inference", rowSpan: 2 },
+                { text: "Model Inference", rowSpan: 2 },
+              ],
+              ["", "SAM clicking", "AOT Init", "AOT Tracking"],
+            ],
+          },
+        },
+      ],
+    };
+    const spannedState = createFullTranslationState(
+      spannedDocument,
+      "preset-1",
+      "model-1",
+    );
+    spannedState.blocks["table-5-caption"] = {
+      status: "done",
+      translation: "组件运行时分析。",
+    };
+    const view = renderFullTranslationView(globalThis.document, {
+      document: spannedDocument,
+      state: spannedState,
+      layout: "parallel",
+      running: false,
+      assets: {},
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+    const rows = view.querySelectorAll<HTMLTableRowElement>("table tr");
+
+    expect(rows).toHaveLength(3);
+    expect(rows[0]?.cells).toHaveLength(3);
+    expect(rows[0]?.cells[1]?.colSpan).toBe(5);
+    expect(rows[1]?.cells).toHaveLength(5);
+    expect(rows[1]?.cells[1]?.colSpan).toBe(3);
+    expect(rows[1]?.cells[2]?.rowSpan).toBe(2);
+    expect(rows[2]?.cells).toHaveLength(4);
   });
 
   it("keeps a bilingual heading in one interleaved row with one section number", () => {
@@ -247,6 +323,342 @@ describe("renderFullTranslationView", () => {
       ...readingSettings,
       languageMode: "source",
     });
+  });
+
+  it("keeps source controls out of the paragraph context menu", () => {
+    const readingSettings = {
+      ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+      languageMode: "translation" as const,
+    };
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: readingSettings.layout,
+      running: false,
+      assets: {},
+      readingSettings,
+      onReadingSettingsChange: vi.fn(),
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onTranslateBlock: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+    const paragraph = view.querySelector<HTMLElement>(
+      '[data-block-id="section-1-p1"]',
+    )!;
+    expect(view.querySelector(".zai-ft-source-peek-toggle")).toBeNull();
+
+    const menu = openBlockContextMenu(view, "section-1-p1");
+    expect(menu.hidden).toBe(false);
+    expect(menu.querySelector(".zai-ft-block-menu-source")).toBeNull();
+    expect(menu.textContent).toBe("重新翻译");
+    expect(paragraph.classList.contains("is-source-peek")).toBe(false);
+  });
+
+  it("toggles the current source from the translation's left gutter", () => {
+    const readingSettings = {
+      ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+      languageMode: "translation" as const,
+    };
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: readingSettings.layout,
+      running: false,
+      assets: {},
+      readingSettings,
+      onReadingSettingsChange: vi.fn(),
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+    const heading = view.querySelector<HTMLElement>(
+      '[data-block-id="section-1"]',
+    )!;
+    const paragraph = view.querySelector<HTMLElement>(
+      '[data-block-id="section-1-p1"]',
+    )!;
+    const paragraphGutter = paragraph.querySelector<HTMLButtonElement>(
+      ".zai-ft-source-gutter-toggle",
+    )!;
+    const headingGutter = heading.querySelector<HTMLButtonElement>(
+      ".zai-ft-source-gutter-toggle",
+    )!;
+
+    expect(paragraphGutter.textContent).toBe("");
+    expect(paragraphGutter.getAttribute("aria-label")).toBe("显示本段原文");
+    paragraphGutter.click();
+    expect(paragraph.classList.contains("is-source-peek")).toBe(true);
+    expect(paragraphGutter.getAttribute("aria-expanded")).toBe("true");
+
+    headingGutter.click();
+    expect(heading.classList.contains("is-source-peek")).toBe(true);
+    expect(paragraph.classList.contains("is-source-peek")).toBe(false);
+
+    headingGutter.click();
+    expect(heading.classList.contains("is-source-peek")).toBe(false);
+  });
+
+  it("restores the expanded source after the translation view rerenders", () => {
+    const readingSettings = {
+      ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+      languageMode: "translation" as const,
+    };
+    const options = {
+      document,
+      state: state(),
+      layout: readingSettings.layout,
+      running: false,
+      assets: {},
+      readingSettings,
+      onReadingSettingsChange: vi.fn(),
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    };
+    const view = renderFullTranslationView(globalThis.document, options);
+    view
+      .querySelector<HTMLButtonElement>(
+        '[data-block-id="section-1-p1"] .zai-ft-source-gutter-toggle',
+      )!
+      .click();
+    const expandedSourceBlockId = view.querySelector<HTMLElement>(
+      ".zai-ft-block.is-source-peek[data-block-id]",
+    )?.dataset.blockId;
+
+    const rerendered = renderFullTranslationView(globalThis.document, {
+      ...options,
+      expandedSourceBlockId,
+    });
+    const restored = rerendered.querySelector<HTMLElement>(
+      '[data-block-id="section-1-p1"]',
+    )!;
+
+    expect(restored.classList.contains("is-source-peek")).toBe(true);
+    expect(
+      restored
+        .querySelector(".zai-ft-source-gutter-toggle")
+        ?.getAttribute("aria-expanded"),
+    ).toBe("true");
+  });
+
+  it("reveals and highlights a located source in translation-only mode", () => {
+    vi.useFakeTimers();
+    try {
+      const readingSettings = {
+        ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+        languageMode: "translation" as const,
+      };
+      const view = renderFullTranslationView(globalThis.document, {
+        document,
+        state: state(),
+        layout: readingSettings.layout,
+        running: false,
+        assets: {},
+        readingSettings,
+        onReadingSettingsChange: vi.fn(),
+        onLayoutChange: vi.fn(),
+        onRun: vi.fn(),
+        onRetranslate: vi.fn(),
+        onCancel: vi.fn(),
+        onExit: vi.fn(),
+      });
+      const heading = view.querySelector<HTMLElement>(
+        '[data-block-id="section-1"]',
+      )!;
+      const target = view.querySelector<HTMLElement>(
+        '[data-block-id="section-1-p1"]',
+      )!;
+      heading
+        .querySelector<HTMLButtonElement>(".zai-ft-source-gutter-toggle")!
+        .click();
+      target.scrollIntoView = vi.fn();
+
+      expect(
+        revealFullTranslationSourceBlock(view, "section-1-p1", "Loss"),
+      ).toBe(true);
+      expect(heading.classList.contains("is-source-peek")).toBe(false);
+      expect(target.classList.contains("is-source-peek")).toBe(true);
+      expect(target.classList.contains("is-source-target")).toBe(true);
+      expect(
+        target.querySelector(".zai-ft-source-quote-highlight")?.textContent,
+      ).toBe("Loss");
+      expect(target.scrollIntoView).toHaveBeenCalledWith({
+        behavior: "smooth",
+        block: "center",
+      });
+
+      vi.advanceTimersByTime(2_000);
+      expect(target.classList.contains("is-source-target")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("locates a source without opening a peek in bilingual mode", () => {
+    vi.useFakeTimers();
+    try {
+      const view = render();
+      const target = view.querySelector<HTMLElement>(
+        '[data-block-id="section-1-p1"]',
+      )!;
+      target.scrollIntoView = vi.fn();
+
+      expect(revealFullTranslationSourceBlock(view, "section-1-p1")).toBe(true);
+      expect(target.classList.contains("is-source-peek")).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("restores the source quote highlight after the view rerenders", () => {
+    const readingSettings = {
+      ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+      languageMode: "translation" as const,
+    };
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: readingSettings.layout,
+      running: false,
+      assets: {},
+      readingSettings,
+      expandedSourceBlockId: "section-1-p1",
+      highlightedSourceQuote: {
+        blockId: "section-1-p1",
+        quote: "Loss",
+      },
+      onReadingSettingsChange: vi.fn(),
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+
+    expect(
+      view.querySelector(".zai-ft-source-quote-highlight")?.textContent,
+    ).toBe("Loss");
+    expect(
+      view.querySelector(".zai-ft-translation-quote-highlight"),
+    ).not.toBeNull();
+  });
+
+  it("highlights the matching source and translated sentence together", () => {
+    const readingSettings = {
+      ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+      languageMode: "translation" as const,
+    };
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: readingSettings.layout,
+      running: false,
+      assets: {},
+      readingSettings,
+      onReadingSettingsChange: vi.fn(),
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+
+    expect(
+      revealFullTranslationSourceBlock(
+        view,
+        "figure-1-caption",
+        "System overview.",
+      ),
+    ).toBe(true);
+    expect(
+      view.querySelector(".zai-ft-source-quote-highlight")?.textContent,
+    ).toBe("System overview.");
+    expect(
+      view.querySelector(".zai-ft-translation-quote-highlight")?.textContent,
+    ).toBe("系统概览。");
+  });
+
+  it("leaves translated paragraphs unchanged on ordinary clicks", () => {
+    const readingSettings = {
+      ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+      languageMode: "translation" as const,
+    };
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: readingSettings.layout,
+      running: false,
+      assets: {},
+      readingSettings,
+      onReadingSettingsChange: vi.fn(),
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+    const paragraph = view.querySelector<HTMLElement>(
+      '[data-block-id="section-1-p1"]',
+    )!;
+    const translatedBody = paragraph.querySelector<HTMLElement>(
+      ".zai-ft-translation .zai-ft-block-body",
+    )!;
+
+    translatedBody.click();
+    expect(paragraph.classList.contains("is-source-peek")).toBe(false);
+  });
+
+  it("does not add permanent text labels for paragraph source controls", () => {
+    expect(render().querySelector(".zai-ft-source-peek-toggle")).toBeNull();
+  });
+
+  it("keeps the paragraph context menu hidden until requested", () => {
+    const style = globalThis.document.createElement("style");
+    const css = readFileSync(
+      resolve(process.cwd(), "addon/content/sidebar.css"),
+      "utf8",
+    );
+    style.textContent = css;
+    globalThis.document.head.append(style);
+    const readingSettings = {
+      ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+      languageMode: "translation" as const,
+    };
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: readingSettings.layout,
+      running: false,
+      assets: {},
+      readingSettings,
+      onReadingSettingsChange: vi.fn(),
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onTranslateBlock: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+    globalThis.document.body.append(view);
+    const menu = view.querySelector<HTMLElement>(".zai-ft-block-menu")!;
+    expect(menu.hidden).toBe(true);
+    expect(globalThis.getComputedStyle(menu).position).toBe("fixed");
+    expect(css).toMatch(
+      /\.zai-ft-source-gutter-toggle::before\s*{[^}]*background:\s*transparent;/s,
+    );
+
+    openBlockContextMenu(view, "section-1-p1");
+    expect(menu.hidden).toBe(false);
+
+    view.remove();
+    style.remove();
   });
 
   it("applies sentence marker, color, and line-break reading settings", () => {
@@ -363,7 +775,7 @@ describe("renderFullTranslationView", () => {
     expect(markedSource.textContent).toBe(baselineSource.textContent);
   });
 
-  it("numbers sentence ends by color while treating semicolons as line breaks only", () => {
+  it("numbers sentence starts while keeping sentence and semicolon breaks at their ends", () => {
     const segmentedDocument: FullTranslationDocument = {
       ...document,
       blocks: [
@@ -401,25 +813,42 @@ describe("renderFullTranslationView", () => {
       onCancel: vi.fn(),
       onExit: vi.fn(),
     });
-    const sides = ["source", "translation"].map((side) =>
-      Array.from(
+    const sides = ["source", "translation"].map((side) => ({
+      body: view.querySelector<HTMLElement>(
+        `[data-block-id="segmented-paragraph"] .zai-ft-${side} .zai-ft-block-body`,
+      )!,
+      boundaries: Array.from(
         view.querySelectorAll<HTMLElement>(
           `[data-block-id="segmented-paragraph"] .zai-ft-${side} .zai-ft-sentence-boundary`,
         ),
       ),
-    );
+    }));
 
-    for (const markers of sides) {
+    for (const { body, boundaries } of sides) {
+      const markers = boundaries.filter((boundary) => boundary.dataset.marker);
+      const breaks = boundaries.filter((boundary) =>
+        boundary.classList.contains("is-line-break"),
+      );
+      const prefix = globalThis.document.createRange();
+      prefix.selectNodeContents(body);
+      prefix.setEndBefore(markers[0]!);
+
       expect(markers.map((marker) => marker.dataset.marker)).toEqual([
-        "",
         "①",
         "②",
       ]);
       expect(
-        markers.every((marker) => marker.classList.contains("is-line-break")),
+        markers.every((marker) => !marker.classList.contains("is-line-break")),
       ).toBe(true);
-      expect(markers[1]?.classList.contains("tone-0")).toBe(true);
-      expect(markers[2]?.classList.contains("tone-1")).toBe(true);
+      expect(prefix.toString()).toBe("");
+      expect(markers[0]?.classList.contains("tone-0")).toBe(true);
+      expect(markers[1]?.classList.contains("tone-1")).toBe(true);
+      expect(breaks).toHaveLength(3);
+      expect(breaks.map((boundary) => boundary.dataset.marker)).toEqual([
+        "",
+        "",
+        "",
+      ]);
     }
   });
 
@@ -563,7 +992,7 @@ describe("renderFullTranslationView", () => {
     ]);
   });
 
-  it("offers a per-block translation action only on translatable blocks", () => {
+  it("offers retranslation from a translatable block context menu", () => {
     const onTranslateBlock = vi.fn();
     const view = renderFullTranslationView(globalThis.document, {
       document,
@@ -578,21 +1007,20 @@ describe("renderFullTranslationView", () => {
       onCancel: vi.fn(),
       onExit: vi.fn(),
     });
-    const action = view.querySelector(
-      '[data-block-id="section-1-p1"] .zai-ft-block-action',
-    ) as HTMLButtonElement;
+    const menu = openBlockContextMenu(view, "section-1-p1");
+    const action = menu.querySelector<HTMLButtonElement>(
+      ".zai-ft-block-menu-translate",
+    )!;
 
     expect(action).not.toBeNull();
-    expect(action.closest(".zai-ft-translation")).not.toBeNull();
-    expect(action.title).toBe("重新翻译此段");
-    expect(
-      view.querySelector('[data-block-id="equation-1"] .zai-ft-block-action'),
-    ).toBeNull();
+    expect(action.textContent).toBe("重新翻译");
+    expect(view.querySelector(".zai-ft-block-action")).toBeNull();
     action.click();
     expect(onTranslateBlock).toHaveBeenCalledWith("section-1-p1");
+    expect(menu.hidden).toBe(true);
   });
 
-  it("locks block actions only while a translation request is active", () => {
+  it("locks context-menu translation only while a request is active", () => {
     const translating = state();
     translating.blocks["section-1-p1"] = { status: "translating" };
     const options = {
@@ -612,35 +1040,37 @@ describe("renderFullTranslationView", () => {
       ...options,
       running: true,
     });
-    const activeAction = active.querySelector(
-      '[data-block-id="section-1-p1"] .zai-ft-block-action',
-    ) as HTMLButtonElement;
+    const activeAction = openBlockContextMenu(
+      active,
+      "section-1-p1",
+    ).querySelector<HTMLButtonElement>(".zai-ft-block-menu-translate")!;
     expect(activeAction.disabled).toBe(true);
-    expect(activeAction.title).toBe("正在翻译此段");
+    expect(activeAction.textContent).toBe("正在翻译…");
 
     const resumable = renderFullTranslationView(globalThis.document, {
       ...options,
       running: false,
     });
-    const resumableAction = resumable.querySelector(
-      '[data-block-id="section-1-p1"] .zai-ft-block-action',
-    ) as HTMLButtonElement;
+    const resumableAction = openBlockContextMenu(
+      resumable,
+      "section-1-p1",
+    ).querySelector<HTMLButtonElement>(".zai-ft-block-menu-translate")!;
     expect(resumableAction.disabled).toBe(false);
-    expect(resumableAction.title).toBe("翻译此段");
+    expect(resumableAction.textContent).toBe("翻译此段");
   });
 
   it("shows persisted token usage after translation completes", () => {
     const view = render();
     const usage = view.querySelector(".zai-ft-token-usage");
 
-    expect(usage?.textContent).toContain("累计 1.5k · 缓存 17%");
-    expect(view.querySelector(".zai-ft-usage-total")?.textContent).toContain(
-      "Hit 200 · Miss 1,000 · Output 300",
+    expect(usage?.textContent).toBe("输入 1.2k · 输出 300 · 命中 200");
+    expect(view.querySelector(".zai-ft-usage-total")?.textContent).toBe(
+      "Input 1,200 · Output 300 · Hit 200",
     );
-    expect(usage?.title).toContain("Token total: 1,500");
+    expect(usage?.title).not.toContain("Token total");
   });
 
-  it("shows an explicit total when the provider does not report cache usage", () => {
+  it("shows input and output when the provider does not report cache usage", () => {
     const withoutCache = state();
     withoutCache.usage = { input: 100, output: 20 };
     const view = renderFullTranslationView(globalThis.document, {
@@ -656,11 +1086,11 @@ describe("renderFullTranslationView", () => {
       onExit: vi.fn(),
     });
 
-    expect(view.querySelector(".zai-ft-token-usage")?.textContent).toContain(
-      "累计 120 · 缓存未返回",
+    expect(view.querySelector(".zai-ft-token-usage")?.textContent).toBe(
+      "输入 100 · 输出 20 · 命中未返回",
     );
-    expect(view.querySelector(".zai-ft-usage-total")?.textContent).toContain(
-      "Miss 100",
+    expect(view.querySelector(".zai-ft-usage-total")?.textContent).toBe(
+      "Input 100 · Output 20 · Hit 未返回",
     );
   });
 
@@ -704,15 +1134,14 @@ describe("renderFullTranslationView", () => {
       "figure-1-caption",
     );
     expect(attempts[0]?.textContent).toContain("第 2 次");
-    expect(attempts[0]?.textContent).toContain("Total 150");
+    expect(attempts[0]?.textContent).toContain("Input 120");
     expect(attempts[0]?.textContent).toContain("Hit 未返回");
-    expect(attempts[0]?.textContent).toContain("Miss 120");
     expect(attempts[0]?.textContent).toContain("Output 30");
-    expect(attempts[0]?.textContent).toContain("Rate 未返回");
-    expect(attempts[1]?.textContent).toContain("Total 100");
+    expect(attempts[0]?.textContent).not.toContain("Total");
+    expect(attempts[0]?.textContent).not.toContain("Miss");
+    expect(attempts[1]?.textContent).toContain("Input 80");
     expect(attempts[1]?.textContent).toContain("Hit 20");
-    expect(attempts[1]?.textContent).toContain("Miss 60");
-    expect(attempts[1]?.textContent).toContain("Rate 25%");
+    expect(attempts[1]?.textContent).toContain("Output 20");
   });
 
   it("hides expanded translation statistics when the translation page is clicked", () => {
@@ -925,11 +1354,11 @@ describe("renderFullTranslationView", () => {
     });
     const usage = view.querySelector(".zai-ft-token-usage");
 
-    expect(usage?.textContent).toContain("累计 160 · 缓存 29%");
-    expect(view.querySelector(".zai-ft-usage-total")?.textContent).toContain(
-      "Hit 40 · Miss 100 · Output 20",
+    expect(usage?.textContent).toBe("输入 100 · 输出 20 · 命中 40");
+    expect(view.querySelector(".zai-ft-usage-total")?.textContent).toBe(
+      "Input 100 · Output 20 · Hit 40",
     );
-    expect(usage?.title).toContain("Token total: 160");
+    expect(usage?.title).toContain("缓存命中独立于 Input");
   });
 
   it("requires confirmation before requesting a complete retranslation", () => {

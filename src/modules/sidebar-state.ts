@@ -15,6 +15,8 @@ import type { Message, PdfSelectionLocator } from "../providers/types";
 import type { LocalUiSettings } from "../settings/local-ui-settings";
 import type { UiSettings } from "../settings/ui-settings";
 import type { AgentPermissionMode, ModelPreset } from "../settings/types";
+import type { ChatConversation } from "../settings/chat-history";
+import type { ConversationHistoryMode } from "./conversation-history";
 import type { TranslateModeController } from "../translate/translate-mode";
 import type { AskModeController } from "../translate/ask-mode";
 import type { AssistantProgressStage } from "./assistant-progress";
@@ -158,6 +160,9 @@ export interface PanelState {
   itemID: number | null;
   presets: ModelPreset[];
   selectedId: string | null;
+  conversations: ChatConversation[];
+  activeConversationID: string;
+  historyMode: ConversationHistoryMode;
   editing: boolean;
   messages: Message[];
   historyLoaded: boolean;
@@ -197,6 +202,7 @@ export interface PanelState {
   fullTextTurnMode?: "auto" | "force";
   fullTextTurnSelectionText?: string;
   turnContextSelectionPreviewOpen?: boolean;
+  draftSaveTimer?: number;
 }
 
 export interface MessagesScrollSnapshot {

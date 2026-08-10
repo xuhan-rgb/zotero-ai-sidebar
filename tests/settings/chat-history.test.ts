@@ -1,5 +1,12 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { chatHistoryPath, loadChatMessages, saveChatMessages } from '../../src/settings/chat-history';
+import {
+  chatHistoryPath,
+  createChatConversation,
+  loadChatConversations,
+  loadChatMessages,
+  saveChatConversations,
+  saveChatMessages,
+} from '../../src/settings/chat-history';
 
 let stored = '{}';
 
@@ -20,6 +27,115 @@ beforeEach(() => {
 });
 
 describe('chat history', () => {
+  it('creates a new conversation with no messages or history by default', () => {
+    expect(
+      createChatConversation(
+        'conversation-new',
+        '对话 2',
+        'preset-a',
+        '2026-08-10T00:00:00.000Z',
+      ),
+    ).toEqual({
+      id: 'conversation-new',
+      title: '对话 2',
+      createdAt: '2026-08-10T00:00:00.000Z',
+      updatedAt: '2026-08-10T00:00:00.000Z',
+      messages: [],
+      presetID: 'preset-a',
+      draftText: '',
+      historyMode: 'none',
+    });
+  });
+
+  it('migrates a legacy per-item message array into the first conversation', async () => {
+    stored = JSON.stringify({
+      'item:42': {
+        itemID: 42,
+        updatedAt: '2026-08-01T00:00:00.000Z',
+        messages: [
+          { role: 'user', content: 'legacy question' },
+          { role: 'assistant', content: 'legacy answer' },
+        ],
+      },
+    });
+
+    const workspace = await loadChatConversations(42);
+
+    expect(workspace.activeConversationID).toBe('default');
+    expect(workspace.conversations).toHaveLength(1);
+    expect(workspace.conversations[0]).toMatchObject({
+      id: 'default',
+      title: '对话 1',
+      messages: [
+        { role: 'user', content: 'legacy question' },
+        { role: 'assistant', content: 'legacy answer' },
+      ],
+      draftText: '',
+      historyMode: 'previous',
+    });
+  });
+
+  it('round trips multiple conversations with independent model and draft state', async () => {
+    await saveChatConversations(42, {
+      activeConversationID: 'conversation-b',
+      conversations: [
+        {
+          id: 'conversation-a',
+          title: '论文总结',
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T01:00:00.000Z',
+          messages: [
+            { role: 'user', content: 'summarize' },
+            { role: 'assistant', content: 'summary' },
+          ],
+          presetID: 'preset-a',
+          draftText: '继续总结',
+          historyMode: 'all',
+        },
+        {
+          id: 'conversation-b',
+          title: '实验问题',
+          createdAt: '2026-08-02T00:00:00.000Z',
+          updatedAt: '2026-08-02T00:00:00.000Z',
+          messages: [],
+          presetID: 'preset-b',
+          draftText: '这个表格说明什么？',
+          historyMode: 'none',
+        },
+      ],
+    });
+
+    expect(await loadChatConversations(42)).toEqual({
+      activeConversationID: 'conversation-b',
+      conversations: [
+        {
+          id: 'conversation-a',
+          title: '论文总结',
+          createdAt: '2026-08-01T00:00:00.000Z',
+          updatedAt: '2026-08-01T01:00:00.000Z',
+          messages: [
+            { role: 'user', content: 'summarize' },
+            { role: 'assistant', content: 'summary' },
+          ],
+          presetID: 'preset-a',
+          draftText: '继续总结',
+          historyMode: 'all',
+        },
+        {
+          id: 'conversation-b',
+          title: '实验问题',
+          createdAt: '2026-08-02T00:00:00.000Z',
+          updatedAt: '2026-08-02T00:00:00.000Z',
+          messages: [],
+          presetID: 'preset-b',
+          draftText: '这个表格说明什么？',
+          historyMode: 'none',
+        },
+      ],
+    });
+    expect(await loadChatMessages(42)).toEqual([]);
+  });
+
   it('preserves screenshot attachments and agent context', async () => {
     await saveChatMessages(42, [
       {
@@ -197,7 +313,8 @@ describe('chat history', () => {
   });
 
   it('uses Windows separators for data-dir and old profile migration paths', async () => {
-    const newPath = 'C:\\Users\\admin\\Zotero\\zotero-ai-sidebar-chat-history.json';
+    const newPath =
+      'C:\\Users\\admin\\Zotero\\zotero-ai-sidebar-chat-history.json';
     const oldPath =
       'C:\\Users\\admin\\AppData\\Roaming\\Zotero\\Zotero\\Profiles\\uerjpa0m.default\\zotero-ai-sidebar-chat-history.json';
     const reads: string[] = [];
@@ -232,7 +349,9 @@ describe('chat history', () => {
     });
 
     expect(chatHistoryPath()).toBe(newPath);
-    expect(await loadChatMessages(42)).toEqual([{ role: 'user', content: 'old chat' }]);
+    expect(await loadChatMessages(42)).toEqual([
+      { role: 'user', content: 'old chat' },
+    ]);
     expect(reads).toEqual([newPath, oldPath]);
     expect(writes).toEqual([newPath]);
   });

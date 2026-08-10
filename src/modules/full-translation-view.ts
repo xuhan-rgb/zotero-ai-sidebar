@@ -15,9 +15,11 @@ import {
 import type {
   FullTranslationBlock,
   FullTranslationDocument,
+  FullTranslationTableCell,
 } from "../translate/full-document";
 import type { FullTranslationAssetPreviews } from "../translate/full-document-assets";
 import type { FullTranslationAssetPreview } from "../translate/full-document-assets";
+import { splitSentences } from "../translate/sentence-splitter";
 import { isTranslationPlaceholderReply } from "../translate/translator";
 import { decorateSentenceBoundaries } from "./full-translation-sentence-markers";
 
@@ -32,6 +34,8 @@ export interface FullTranslationViewOptions {
   runError?: string;
   assets: FullTranslationAssetPreviews;
   readingSettings?: FullTranslationReadingSettings;
+  expandedSourceBlockId?: string;
+  highlightedSourceQuote?: { blockId: string; quote: string };
   onLayoutChange(layout: FullTranslationLayout): void;
   onRun(): void;
   onRetranslate(): void;
@@ -56,6 +60,10 @@ export function renderFullTranslationView(
         ? "is-translation-only"
         : "is-source-only",
   ].join(" ");
+  if (options.highlightedSourceQuote) {
+    root.dataset.sourceQuoteBlockId = options.highlightedSourceQuote.blockId;
+    root.dataset.sourceQuote = options.highlightedSourceQuote.quote;
+  }
   root.append(renderToolbar(doc, options));
   if (options.runError) {
     const error = doc.createElement("div");
@@ -72,7 +80,8 @@ export function renderFullTranslationView(
   const reader = doc.createElement("div");
   reader.className = "zai-ft-reader";
   reader.append(renderOutline(doc, options, content), content);
-  root.append(reader);
+  const blockMenu = renderBlockContextMenu(doc, root, content, options);
+  root.append(reader, blockMenu);
   root.addEventListener("click", (event) => {
     const target = event.target as Node | null;
     if (!target) return;
@@ -81,8 +90,255 @@ export function renderFullTranslationView(
     )) {
       if (!popover.contains(target)) popover.open = false;
     }
+    if (!blockMenu.contains(target)) closeBlockContextMenu(blockMenu);
+  });
+  root.addEventListener("keydown", (event) => {
+    const keyEvent = event as KeyboardEvent;
+    if (keyEvent.key !== "Escape") return;
+    if (closeBlockContextMenu(blockMenu)) {
+      event.preventDefault();
+      return;
+    }
+    const expanded = root.querySelector<HTMLElement>(
+      ".zai-ft-block.is-source-peek",
+    );
+    if (!expanded) return;
+    setSourcePeekExpanded(expanded, false);
+    event.preventDefault();
   });
   return root;
+}
+
+export function revealFullTranslationSourceBlock(
+  root: HTMLElement,
+  blockId: string,
+  quote?: string,
+): boolean {
+  const view = (
+    root.matches(".zai-full-translation")
+      ? root
+      : root.querySelector(".zai-full-translation")
+  ) as HTMLElement | null;
+  if (!view) return false;
+  const rows = Array.from(
+    view.querySelectorAll(".zai-ft-block[data-block-id]"),
+  ) as HTMLElement[];
+  const target = rows.find((row) => row.dataset.blockId === blockId);
+  if (!target) return false;
+
+  removeSourceQuoteHighlights(view);
+  if (quote) {
+    view.dataset.sourceQuoteBlockId = blockId;
+    view.dataset.sourceQuote = quote;
+    highlightSourceQuote(target, quote);
+  } else {
+    delete view.dataset.sourceQuoteBlockId;
+    delete view.dataset.sourceQuote;
+  }
+
+  if (
+    view.classList.contains("is-translation-only") &&
+    target.querySelector(".zai-ft-source")
+  ) {
+    const expanded = Array.from(
+      view.querySelectorAll(".zai-ft-block.is-source-peek"),
+    ) as HTMLElement[];
+    expanded.forEach((row) => setSourcePeekExpanded(row, false));
+    setSourcePeekExpanded(target, true);
+  }
+
+  const highlighted = Array.from(
+    view.querySelectorAll(".zai-ft-block.is-source-target"),
+  ) as HTMLElement[];
+  highlighted.forEach((row) => row.classList.remove("is-source-target"));
+  target.classList.add("is-source-target");
+  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  root.ownerDocument?.defaultView?.setTimeout(
+    () => target.classList.remove("is-source-target"),
+    1_800,
+  );
+  return true;
+}
+
+interface SearchTextPoint {
+  node: Text;
+  start: number;
+  end: number;
+}
+
+function highlightSourceQuote(row: HTMLElement, quote: string): boolean {
+  const body = row.querySelector<HTMLElement>(
+    ".zai-ft-source .zai-ft-block-body",
+  );
+  if (!body) return false;
+  const searchable = sourceSearchText(body);
+  const candidates = [quote, ...splitSentences(quote).map((item) => item.text)]
+    .map(normalizeVisibleSearchText)
+    .filter(Boolean)
+    .sort((left, right) => right.length - left.length);
+  const match = candidates
+    .map((candidate) => ({
+      candidate,
+      index: searchable.text.indexOf(candidate),
+    }))
+    .find((candidate) => candidate.index >= 0);
+  if (!match) return false;
+  const matchEnd = match.index + match.candidate.length;
+  const sourceSentences = splitSentences(searchable.text);
+  const sourceIndexes = sourceSentences
+    .map((sentence, index) => ({ sentence, index }))
+    .filter(
+      ({ sentence }) => sentence.end > match.index && sentence.start < matchEnd,
+    )
+    .map(({ index }) => index);
+  const translationBody = row.querySelector<HTMLElement>(
+    ".zai-ft-translation .zai-ft-block-body",
+  );
+  const translationSearch = translationBody
+    ? sourceSearchText(translationBody)
+    : null;
+  const translationSentences = translationSearch
+    ? splitSentences(translationSearch.text)
+    : [];
+
+  const sourceHighlighted = insertSearchHighlight(
+    body,
+    searchable,
+    match.index,
+    matchEnd,
+    "zai-ft-source-quote-highlight",
+  );
+  if (
+    translationBody &&
+    translationSearch &&
+    sourceIndexes.length &&
+    sourceSentences.length &&
+    translationSentences.length
+  ) {
+    const firstSource = sourceIndexes[0]!;
+    const lastSource = sourceIndexes[sourceIndexes.length - 1]!;
+    const firstTranslation = Math.floor(
+      (firstSource * translationSentences.length) / sourceSentences.length,
+    );
+    const translationEnd = Math.min(
+      translationSentences.length,
+      Math.max(
+        firstTranslation + 1,
+        Math.ceil(
+          ((lastSource + 1) * translationSentences.length) /
+            sourceSentences.length,
+        ),
+      ),
+    );
+    const firstSentence = translationSentences[firstTranslation];
+    const lastSentence = translationSentences[translationEnd - 1];
+    if (firstSentence && lastSentence) {
+      insertSearchHighlight(
+        translationBody,
+        translationSearch,
+        firstSentence.start,
+        lastSentence.end,
+        "zai-ft-translation-quote-highlight",
+      );
+    }
+  }
+  return sourceHighlighted;
+}
+
+function insertSearchHighlight(
+  body: HTMLElement,
+  searchable: ReturnType<typeof sourceSearchText>,
+  startOffset: number,
+  endOffset: number,
+  className: string,
+): boolean {
+  const start = searchable.points[startOffset];
+  const end = searchable.points[endOffset - 1];
+  if (!start || !end) return false;
+  const range = body.ownerDocument!.createRange();
+  range.setStart(start.node, start.start);
+  range.setEnd(end.node, end.end);
+  const mark = body.ownerDocument!.createElement("mark");
+  mark.className = className;
+  mark.append(range.extractContents());
+  range.insertNode(mark);
+  return true;
+}
+
+function sourceSearchText(root: HTMLElement): {
+  text: string;
+  points: SearchTextPoint[];
+} {
+  const chars: string[] = [];
+  const points: SearchTextPoint[] = [];
+  const appendText = (node: Text) => {
+    for (let offset = 0; offset < node.data.length; offset++) {
+      const normalized = normalizeVisibleSearchChar(node.data[offset]!);
+      for (const char of normalized) {
+        if (
+          char === " " &&
+          (!chars.length || chars[chars.length - 1] === " ")
+        ) {
+          continue;
+        }
+        chars.push(char);
+        points.push({ node, start: offset, end: offset + 1 });
+      }
+    }
+  };
+  const walk = (node: Node) => {
+    if (node.nodeType === 3) {
+      appendText(node as Text);
+      return;
+    }
+    if (node.nodeType !== 1) return;
+    const element = node as HTMLElement;
+    if (
+      element.matches(".zai-ft-sentence-boundary, .katex-mathml, script, style")
+    ) {
+      return;
+    }
+    for (const child of Array.from(element.childNodes)) {
+      if (child) walk(child);
+    }
+  };
+  for (const child of Array.from(root.childNodes)) {
+    if (child) walk(child);
+  }
+  return { text: chars.join(""), points };
+}
+
+function normalizeVisibleSearchText(value: string): string {
+  return Array.from(value)
+    .map(normalizeVisibleSearchChar)
+    .join("")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+function normalizeVisibleSearchChar(value: string): string {
+  return value
+    .normalize("NFKC")
+    .replace(/[“”]/g, '"')
+    .replace(/[‘’]/g, "'")
+    .replace(/[‐‑‒–—−]/g, "-")
+    .replace(/\s/g, " ")
+    .toLocaleLowerCase();
+}
+
+function removeSourceQuoteHighlights(root: HTMLElement): void {
+  const marks = Array.from(
+    root.querySelectorAll(
+      ".zai-ft-source-quote-highlight, .zai-ft-translation-quote-highlight",
+    ),
+  ) as HTMLElement[];
+  for (const mark of marks) {
+    const parent = mark.parentNode;
+    if (!parent) continue;
+    while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+    mark.remove();
+    parent.normalize();
+  }
 }
 
 function renderToolbar(
@@ -195,15 +451,14 @@ function renderUsageTotal(
   const total = doc.createElement("div");
   total.className = "zai-ft-usage-total";
   if (!usage) {
-    total.textContent = "Total 0 · Hit 未返回 · Miss 0 · Output 0";
+    total.textContent = "Input 0 · Output 0 · Hit 未返回";
     return total;
   }
   const metrics = tokenUsageMetrics(usage);
   total.textContent = [
-    `Total ${formatTokenCount(metrics.total)}`,
-    `Hit ${metrics.cacheHit == null ? "未返回" : formatTokenCount(metrics.cacheHit)}`,
-    `Miss ${formatTokenCount(metrics.cacheMiss)}`,
+    `Input ${formatTokenCount(metrics.rawInput)}`,
     `Output ${formatTokenCount(metrics.output)}`,
+    `Hit ${metrics.cacheHit == null ? "未返回" : formatTokenCount(metrics.cacheHit)}`,
   ].join(" · ");
   return total;
 }
@@ -241,18 +496,12 @@ function renderUsageEvent(
   const stats = doc.createElement("span");
   stats.className = "zai-ft-usage-stats";
   stats.append(
-    usageStat(doc, "Total", formatTokenCount(metrics.total)),
+    usageStat(doc, "Input", formatTokenCount(metrics.rawInput)),
+    usageStat(doc, "Output", formatTokenCount(metrics.output)),
     usageStat(
       doc,
       "Hit",
       metrics.cacheHit == null ? "未返回" : formatTokenCount(metrics.cacheHit),
-    ),
-    usageStat(doc, "Miss", formatTokenCount(metrics.cacheMiss)),
-    usageStat(doc, "Output", formatTokenCount(metrics.output)),
-    usageStat(
-      doc,
-      "Rate",
-      metrics.cacheRate == null ? "未返回" : `${metrics.cacheRate}%`,
     ),
   );
   button.append(top, context, excerpt, stats);
@@ -344,12 +593,14 @@ function usageHistoryGapMessage(
 ): string | null {
   if (!state.usage) return null;
   if (!eventCount) return "旧记录只有全文累计；后续翻译会记录到段落";
-  const total = tokenUsageMetrics(state.usage).total;
-  const eventTotal = (state.usageEvents ?? []).reduce(
-    (sum, event) => sum + tokenUsageMetrics(event.usage).total,
+  const accountedTokens = tokenUsageMetrics(state.usage).accountedTokens;
+  const eventAccountedTokens = (state.usageEvents ?? []).reduce(
+    (sum, event) => sum + tokenUsageMetrics(event.usage).accountedTokens,
     0,
   );
-  return eventTotal < total ? "旧数据中的部分 Token 没有逐段明细" : null;
+  return eventAccountedTokens < accountedTokens
+    ? "旧数据中的部分 Token 没有逐段明细"
+    : null;
 }
 
 function renderOutline(
@@ -657,37 +908,173 @@ function renderBlockPair(
       blockStatus,
       reading,
     );
-    if (block.translatable && options.onTranslateBlock) {
-      translation.prepend(
-        renderBlockTranslationAction(doc, block.id, blockStatus, options),
-      );
+    if (reading.languageMode === "translation" && block.source.trim()) {
+      const label = doc.createElement("span");
+      label.className = "zai-ft-source-peek-label";
+      label.textContent = "原文";
+      source.prepend(label);
+      translation.classList.add("zai-ft-source-peek-trigger");
+      translation.title = "点击左侧查看本段原文；右键重新翻译";
+      translation.setAttribute("aria-expanded", "false");
+      translation.prepend(renderSourceGutterToggle(doc, row));
     }
     row.append(source, translation);
+    if (
+      reading.languageMode === "translation" &&
+      options.expandedSourceBlockId === block.id
+    ) {
+      setSourcePeekExpanded(row, true);
+    }
+    if (options.highlightedSourceQuote?.blockId === block.id) {
+      highlightSourceQuote(row, options.highlightedSourceQuote.quote);
+    }
   }
   return row;
 }
 
-function renderBlockTranslationAction(
+function renderSourceGutterToggle(
   doc: Document,
-  blockId: string,
-  status: FullTranslationBlockStatus | undefined,
-  options: FullTranslationViewOptions,
+  row: HTMLElement,
 ): HTMLButtonElement {
   const button = doc.createElement("button");
   button.type = "button";
-  button.className = "zai-ft-block-action";
-  const busy = options.running && status === "translating";
-  const label = busy
-    ? "正在翻译此段"
-    : status === "done"
-      ? "重新翻译此段"
-      : "翻译此段";
-  button.textContent = busy ? "…" : status === "done" ? "↻" : "译";
-  button.title = label;
-  button.setAttribute("aria-label", label);
-  button.disabled = options.running || !!options.preparing;
-  button.addEventListener("click", () => options.onTranslateBlock?.(blockId));
+  button.className = "zai-ft-source-gutter-toggle";
+  button.title = "显示本段原文";
+  button.setAttribute("aria-label", "显示本段原文");
+  button.setAttribute("aria-expanded", "false");
+  button.addEventListener("click", (event) => {
+    event.stopPropagation();
+    toggleSourcePeek(row);
+  });
   return button;
+}
+
+function toggleSourcePeek(row: HTMLElement): void {
+  const expanded = row.classList.contains("is-source-peek");
+  if (!expanded) {
+    row
+      .closest(".zai-full-translation")
+      ?.querySelectorAll<HTMLElement>(".zai-ft-block.is-source-peek")
+      .forEach((other: HTMLElement) => setSourcePeekExpanded(other, false));
+  }
+  setSourcePeekExpanded(row, !expanded);
+}
+
+function setSourcePeekExpanded(row: HTMLElement, expanded: boolean): void {
+  row.classList.toggle("is-source-peek", expanded);
+  const trigger = row.querySelector<HTMLElement>(".zai-ft-source-peek-trigger");
+  if (trigger) {
+    trigger.title = expanded
+      ? "点击左侧隐藏本段原文；右键重新翻译"
+      : "点击左侧查看本段原文；右键重新翻译";
+    trigger.setAttribute("aria-expanded", String(expanded));
+  }
+  const gutter = row.querySelector<HTMLButtonElement>(
+    ".zai-ft-source-gutter-toggle",
+  );
+  if (gutter) {
+    gutter.title = expanded ? "隐藏本段原文" : "显示本段原文";
+    gutter.setAttribute(
+      "aria-label",
+      expanded ? "隐藏本段原文" : "显示本段原文",
+    );
+    gutter.setAttribute("aria-expanded", String(expanded));
+  }
+}
+
+function renderBlockContextMenu(
+  doc: Document,
+  root: HTMLElement,
+  content: HTMLElement,
+  options: FullTranslationViewOptions,
+): HTMLElement {
+  const menu = doc.createElement("div");
+  menu.className = "zai-ft-block-menu";
+  menu.setAttribute("role", "menu");
+  menu.setAttribute("aria-label", "段落操作");
+  menu.hidden = true;
+
+  content.addEventListener("contextmenu", (event) => {
+    const mouseEvent = event as MouseEvent;
+    const target = event.target as Element | null;
+    const translation = target?.closest(
+      ".zai-ft-translation",
+    ) as HTMLElement | null;
+    const row = translation?.closest(".zai-ft-block") as HTMLElement | null;
+    if (!translation || !row || !content.contains(row)) return;
+
+    const block = options.document.blocks.find(
+      (candidate) => candidate.id === row.dataset.blockId,
+    );
+    if (!block) return;
+    const canTranslate = block.translatable && !!options.onTranslateBlock;
+    if (!canTranslate) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+    menu.replaceChildren();
+
+    const status = effectiveBlockStatus(options.state.blocks[block.id]);
+    const busy = options.running && status === "translating";
+    const translateAction = renderBlockMenuAction(
+      doc,
+      "zai-ft-block-menu-translate",
+      busy ? "正在翻译…" : status === "done" ? "重新翻译" : "翻译此段",
+    );
+    translateAction.disabled = options.running || !!options.preparing;
+    translateAction.addEventListener("click", () => {
+      closeBlockContextMenu(menu);
+      options.onTranslateBlock?.(block.id);
+    });
+    menu.append(translateAction);
+
+    openBlockContextMenu(doc, menu, mouseEvent.clientX, mouseEvent.clientY);
+  });
+  content.addEventListener("scroll", () => closeBlockContextMenu(menu));
+  root.addEventListener("contextmenu", () => closeBlockContextMenu(menu));
+  return menu;
+}
+
+function renderBlockMenuAction(
+  doc: Document,
+  className: string,
+  label: string,
+): HTMLButtonElement {
+  const action = doc.createElement("button");
+  action.type = "button";
+  action.className = `zai-ft-block-menu-item ${className}`;
+  action.setAttribute("role", "menuitem");
+  action.textContent = label;
+  return action;
+}
+
+function openBlockContextMenu(
+  doc: Document,
+  menu: HTMLElement,
+  clientX: number,
+  clientY: number,
+): void {
+  const margin = 8;
+  menu.hidden = false;
+  menu.style.left = `${clientX}px`;
+  menu.style.top = `${clientY}px`;
+
+  const rect = menu.getBoundingClientRect();
+  const viewportWidth = doc.defaultView?.innerWidth ?? 0;
+  const viewportHeight = doc.defaultView?.innerHeight ?? 0;
+  if (viewportWidth && rect.right > viewportWidth - margin) {
+    menu.style.left = `${Math.max(margin, clientX - rect.width)}px`;
+  }
+  if (viewportHeight && rect.bottom > viewportHeight - margin) {
+    menu.style.top = `${Math.max(margin, clientY - rect.height)}px`;
+  }
+  menu.querySelector<HTMLButtonElement>("button:not(:disabled)")?.focus();
+}
+
+function closeBlockContextMenu(menu: HTMLElement): boolean {
+  if (menu.hidden) return false;
+  menu.hidden = true;
+  return true;
 }
 
 function renderBlockSide(
@@ -820,7 +1207,10 @@ function renderAssetItem(
   item.append(placeholder);
 }
 
-function renderTable(doc: Document, rows: string[][]): HTMLElement {
+function renderTable(
+  doc: Document,
+  rows: FullTranslationTableCell[][],
+): HTMLElement {
   const frame = doc.createElement("div");
   frame.className = "zai-ft-table-frame";
   const table = doc.createElement("table");
@@ -828,7 +1218,12 @@ function renderTable(doc: Document, rows: string[][]): HTMLElement {
     const tr = doc.createElement("tr");
     row.forEach((value) => {
       const cell = doc.createElement(rowIndex === 0 ? "th" : "td");
-      renderMarkdownInto(cell, value);
+      const text = typeof value === "string" ? value : value.text;
+      if (typeof value !== "string") {
+        if (value.colSpan) cell.colSpan = value.colSpan;
+        if (value.rowSpan) cell.rowSpan = value.rowSpan;
+      }
+      renderMarkdownInto(cell, text);
       tr.append(cell);
     });
     table.append(tr);
@@ -929,40 +1324,37 @@ function tokenUsageSummary(usage: FullTranslationState["usage"]): {
 } {
   if (!usage) {
     return {
-      label: "累计 0 · 缓存暂无",
+      label: "输入 0 · 输出 0 · 命中暂无",
       title: "全文翻译尚未产生 Token 统计。",
     };
   }
   const metrics = tokenUsageMetrics(usage);
   if (metrics.cacheHit == null) {
     return {
-      label: `累计 ${formatCompactTokenCount(metrics.total)} · 缓存未返回`,
+      label: `输入 ${formatCompactTokenCount(metrics.rawInput)} · 输出 ${formatCompactTokenCount(metrics.output)} · 命中未返回`,
       title: [
         "全文翻译累计 Token",
-        `Input raw: ${formatTokenCount(metrics.rawInput)}`,
-        "Input cache hit: 服务端未返回",
-        `Input cache miss: ${formatTokenCount(metrics.cacheMiss)}`,
+        `Input: ${formatTokenCount(metrics.rawInput)}`,
         `Output: ${formatTokenCount(metrics.output)}`,
-        "Cache hit rate: 服务端未返回",
-        `Token total: ${formatTokenCount(metrics.total)}`,
+        "Cache hit: 服务端未返回",
+        `Input cache miss: ${formatTokenCount(metrics.cacheMiss)}`,
       ].join("\n"),
     };
   }
 
   return {
-    label: `累计 ${formatCompactTokenCount(metrics.total)} · 缓存 ${metrics.cacheRate}%`,
+    label: `输入 ${formatCompactTokenCount(metrics.rawInput)} · 输出 ${formatCompactTokenCount(metrics.output)} · 命中 ${formatCompactTokenCount(metrics.cacheHit)}`,
     title: [
       "全文翻译累计 Token",
-      `Input raw: ${formatTokenCount(metrics.rawInput)}`,
-      `Input cache hit: ${formatTokenCount(metrics.cacheHit)}`,
-      `Input cache miss: ${formatTokenCount(metrics.cacheMiss)}`,
+      `Input: ${formatTokenCount(metrics.rawInput)}`,
       `Output: ${formatTokenCount(metrics.output)}`,
+      `Cache hit: ${formatTokenCount(metrics.cacheHit)}`,
+      `Input cache miss: ${formatTokenCount(metrics.cacheMiss)}`,
       `Cache hit rate: ${metrics.cacheRate}%`,
-      `Token total: ${formatTokenCount(metrics.total)}`,
       `统计口径: ${
         metrics.cacheIncluded
-          ? "缓存命中包含在 Input raw 内"
-          : "缓存命中独立于 Input raw"
+          ? "缓存命中包含在 Input 内"
+          : "缓存命中独立于 Input"
       }`,
     ].join("\n"),
   };
@@ -981,7 +1373,7 @@ interface TokenUsageMetrics {
   cacheMiss: number;
   cacheRate?: number;
   cacheIncluded?: boolean;
-  total: number;
+  accountedTokens: number;
 }
 
 function tokenUsageMetrics(usage: FullTranslationUsage): TokenUsageMetrics {
@@ -992,7 +1384,7 @@ function tokenUsageMetrics(usage: FullTranslationUsage): TokenUsageMetrics {
       rawInput,
       output,
       cacheMiss: rawInput,
-      total: rawInput + output,
+      accountedTokens: rawInput + output,
     };
   }
   const cacheHit = Math.max(0, usage.cacheRead || 0);
@@ -1006,7 +1398,7 @@ function tokenUsageMetrics(usage: FullTranslationUsage): TokenUsageMetrics {
     cacheMiss,
     cacheRate: inputTotal > 0 ? Math.round((cacheHit / inputTotal) * 100) : 0,
     cacheIncluded,
-    total: inputTotal + output,
+    accountedTokens: inputTotal + output,
   };
 }
 

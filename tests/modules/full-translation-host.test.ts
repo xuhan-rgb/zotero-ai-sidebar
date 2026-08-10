@@ -40,4 +40,45 @@ describe("full translation host", () => {
 
     expect(hidden.getAttribute("hidden")).toBe("custom");
   });
+
+  it("leaves an adjacent AI sidebar visible by default", () => {
+    const tab = document.createElement("section");
+    tab.id = "tab-with-visible-sidebar";
+    tab.append(document.createElement("iframe"));
+    const aiColumn = document.createElement("aside");
+    document.body.append(tab, aiColumn);
+
+    const host = mountFullTranslationHost(document, tab.id);
+
+    expect(aiColumn.hasAttribute("hidden")).toBe(false);
+    unmountFullTranslationHost(host!);
+  });
+
+  it("temporarily hides adjacent UI and restores its prior state", () => {
+    const tab = document.createElement("section");
+    tab.id = "tab-with-sidebar";
+    tab.append(document.createElement("iframe"));
+
+    const splitter = document.createElement("hr");
+    const aiColumn = document.createElement("aside");
+    const alreadyHidden = document.createElement("aside");
+    alreadyHidden.setAttribute("hidden", "custom");
+    document.body.append(tab, splitter, aiColumn, alreadyHidden);
+
+    const host = mountFullTranslationHost(document, "tab-with-sidebar", [
+      splitter,
+      aiColumn,
+      alreadyHidden,
+    ]);
+
+    expect(splitter.getAttribute("hidden")).toBe("true");
+    expect(aiColumn.getAttribute("hidden")).toBe("true");
+    expect(alreadyHidden.getAttribute("hidden")).toBe("true");
+
+    unmountFullTranslationHost(host!);
+
+    expect(splitter.hasAttribute("hidden")).toBe(false);
+    expect(aiColumn.hasAttribute("hidden")).toBe(false);
+    expect(alreadyHidden.getAttribute("hidden")).toBe("custom");
+  });
 });

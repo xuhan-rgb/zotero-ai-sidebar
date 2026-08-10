@@ -613,9 +613,66 @@ The observation is $ \mathbf{o}_t = [x] $, where $ y_t $ is visible.
     );
 
     expect(document.blocks[0]?.table?.rows).toEqual([
-      ["**Teacher**", "Score"],
-      ["", "0.9"],
+      [{ text: "**Teacher**", rowSpan: 2 }, "Score"],
+      ["0.9"],
       ["Assistant Rewards", "$r = x$"],
+    ]);
+  });
+
+  it("preserves multicolumn and multirow layout without covered placeholders", () => {
+    const document = buildFullTranslationDocument(
+      "2403.16967",
+      String.raw`\begin{document}
+\begin{table}
+\begin{tabular}{cccccc|c}
+\toprule
+& \multicolumn{5}{c|}{\textbf{High-Level}} & {\textbf{Low-Level}}\\
+\cline{2-7}
+& \multicolumn{3}{c}{TrackingSAM} & \multirow{2}{*}{Pre-Process} & \multirow{2}{*}{Model Inference} & \multirow{2}{*}{Model Inference} \\
+\cline{2-4}
+& SAM clicking & AOT Init & \multicolumn{1}{c}{AOT Tracking} & & & \\
+\midrule
+\multicolumn{1}{c|}{\textbf{Time (s)}} & $1.369\pm0.33$ & $0.323\pm0.72$ & $0.083\pm0.0$ & $0.031\pm0.01$ & $0.003\pm0.0$ & $0.011\pm 0.0$\\
+\midrule
+\multicolumn{1}{c|}{\textbf{Stage}} & \multicolumn{2}{c|}{Initialization} & \multicolumn{4}{c}{Autonumous} \\
+\midrule
+\multicolumn{1}{c|}{\textbf{Device}} & \multicolumn{5}{c|}{External NVIDIA Jetson Orin 64GB} & {Internal NVIDIA Jetson Xavier NX}\\
+\bottomrule
+\end{tabular}
+\caption{Component runtime analysis.}
+\end{table}
+\end{document}`,
+    );
+
+    expect(document.blocks[0]?.table?.rows).toEqual([
+      ["", { text: "**High-Level**", colSpan: 5 }, "**Low-Level**"],
+      [
+        "",
+        { text: "TrackingSAM", colSpan: 3 },
+        { text: "Pre-Process", rowSpan: 2 },
+        { text: "Model Inference", rowSpan: 2 },
+        { text: "Model Inference", rowSpan: 2 },
+      ],
+      ["", "SAM clicking", "AOT Init", "AOT Tracking"],
+      [
+        "**Time (s)**",
+        "$1.369\\pm0.33$",
+        "$0.323\\pm0.72$",
+        "$0.083\\pm0.0$",
+        "$0.031\\pm0.01$",
+        "$0.003\\pm0.0$",
+        "$0.011\\pm 0.0$",
+      ],
+      [
+        "**Stage**",
+        { text: "Initialization", colSpan: 2 },
+        { text: "Autonumous", colSpan: 4 },
+      ],
+      [
+        "**Device**",
+        { text: "External NVIDIA Jetson Orin 64GB", colSpan: 5 },
+        "Internal NVIDIA Jetson Xavier NX",
+      ],
     ]);
   });
 });

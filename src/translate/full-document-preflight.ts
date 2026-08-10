@@ -124,8 +124,9 @@ function inspectBlock(
 
   for (const row of block.table?.rows ?? []) {
     for (const cell of row) {
-      inspectInlineMath(cell, block.id, issues);
-      inspectRawLatex(cell, block.id, issues);
+      const source = typeof cell === "string" ? cell : cell.text;
+      inspectInlineMath(source, block.id, issues);
+      inspectRawLatex(source, block.id, issues);
     }
   }
 

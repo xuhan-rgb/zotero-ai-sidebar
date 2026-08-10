@@ -21,6 +21,8 @@ const requestLog = vi.hoisted(() => ({
   // then succeeds. Lets tests exercise the relay-routing retry loop without
   // depending on a live relay.
   retry5xxRemaining: 0,
+  incompleteResponsesRemaining: 0,
+  unterminatedResponsesRemaining: 0,
 }));
 
 vi.mock("openai", async (importOriginal) => {
@@ -50,7 +52,14 @@ vi.mock("openai", async (importOriginal) => {
         },
         options?: { headers?: Record<string, string> },
       ) => {
-        requestLog.requests.push({ ...params, headers: options?.headers });
+        requestLog.requests.push({
+          ...params,
+          input:
+            params.input == null
+              ? undefined
+              : JSON.parse(JSON.stringify(params.input)),
+          headers: options?.headers,
+        });
         if (requestLog.retry5xxRemaining > 0) {
           requestLog.retry5xxRemaining -= 1;
           throw new actual.APIError(
@@ -60,6 +69,39 @@ vi.mock("openai", async (importOriginal) => {
             new Headers(),
           );
         }
+        if (requestLog.incompleteResponsesRemaining > 0) {
+          requestLog.incompleteResponsesRemaining -= 1;
+          return (async function* () {
+            yield {
+              type: "response.output_text.delta",
+              delta: "Partial answer",
+            };
+            yield {
+              type: "response.incomplete",
+              response: {
+                incomplete_details: { reason: "max_output_tokens" },
+                usage: { input_tokens: 8, output_tokens: 100 },
+              },
+            };
+          })();
+        }
+        if (requestLog.unterminatedResponsesRemaining > 0) {
+          requestLog.unterminatedResponsesRemaining -= 1;
+          return (async function* () {
+            yield {
+              type: "response.output_text.delta",
+              delta: "Interrupted answer",
+            };
+            yield {
+              type: "response.output_item.done",
+              item: {
+                type: "message",
+                role: "assistant",
+                content: [{ type: "output_text", text: "Interrupted answer" }],
+              },
+            };
+          })();
+        }
         const hasFunctionTool = params.tools?.some(
           (tool) =>
             typeof tool === "object" &&
@@ -67,6 +109,9 @@ vi.mock("openai", async (importOriginal) => {
             (tool as { type?: unknown }).type === "function",
         );
         if (params.tools?.length && !hasFunctionTool) {
+          const continuing = JSON.stringify(params.input).includes(
+            "[ZAI_COMPLETE]",
+          );
           return (async function* () {
             yield {
               type: "response.web_search_call.in_progress",
@@ -91,7 +136,7 @@ vi.mock("openai", async (importOriginal) => {
             };
             yield {
               type: "response.output_text.delta",
-              delta: "Web result",
+              delta: continuing ? "Web result\n[ZAI_COMPLETE]" : "Web result",
             };
             yield {
               type: "response.completed",
@@ -169,6 +214,8 @@ describe("OpenAIProvider", () => {
   beforeEach(() => {
     requestLog.requests = [];
     requestLog.retry5xxRemaining = 0;
+    requestLog.incompleteResponsesRemaining = 0;
+    requestLog.unterminatedResponsesRemaining = 0;
     relayRoutingStore = "{}";
     // Provide a Zotero global so loadRelaySalt / persistRelaySalt have a
     // backing File API. They tolerate a missing global but logging would
@@ -453,6 +500,113 @@ describe("OpenAIProvider", () => {
         type: "function_call_output",
         call_id: "call_1",
         output: "[Paper full text]\ncontent",
+      },
+    ]);
+  });
+
+  it("continues a tool-enabled response truncated by max output tokens", async () => {
+    requestLog.incompleteResponsesRemaining = 1;
+    const p = new OpenAIProvider();
+    const got: StreamChunk[] = [];
+
+    for await (const chunk of p.stream(
+      [{ role: "user", content: "请完整总结论文" }],
+      "be helpful",
+      preset,
+      new AbortController().signal,
+      {
+        toolSettings: {
+          webSearchMode: "live",
+          mcpServers: [],
+          arxivMcp: {
+            enabled: false,
+            serverLabel: "arxiv",
+            serverUrl: "",
+            allowedTools: [],
+            requireApproval: "never",
+          },
+        },
+      },
+    )) {
+      got.push(chunk);
+    }
+
+    expect(
+      got
+        .filter((chunk) => chunk.type === "text_delta")
+        .map((chunk) => chunk.text)
+        .join(""),
+    ).toBe("Partial answerWeb result");
+    expect(got).toContainEqual({ type: "usage", input: 8, output: 100 });
+    expect(requestLog.requests).toHaveLength(2);
+    expect(requestLog.requests[1]?.input).toEqual([
+      { role: "user", content: "请完整总结论文" },
+      { role: "assistant", content: "Partial answer" },
+      {
+        role: "user",
+        content:
+          "Continue the same answer exactly from where it was cut off. Do not repeat existing text. Complete every remaining part of the user's request. When and only when the answer is fully complete, end with [ZAI_COMPLETE] on its own line.",
+      },
+    ]);
+  });
+
+  it("repeatedly continues compatible streams until a response completes", async () => {
+    requestLog.unterminatedResponsesRemaining = 2;
+    const p = new OpenAIProvider();
+    const got: StreamChunk[] = [];
+
+    for await (const chunk of p.stream(
+      [{ role: "user", content: "请完整总结论文" }],
+      "be helpful",
+      { ...preset, baseUrl: "https://relay.example/v1" },
+      new AbortController().signal,
+      {
+        toolSettings: {
+          webSearchMode: "live",
+          mcpServers: [],
+          arxivMcp: {
+            enabled: false,
+            serverLabel: "arxiv",
+            serverUrl: "",
+            allowedTools: [],
+            requireApproval: "never",
+          },
+        },
+      },
+    )) {
+      got.push(chunk);
+    }
+
+    expect(
+      got
+        .filter((chunk) => chunk.type === "text_delta")
+        .map((chunk) => chunk.text)
+        .join(""),
+    ).toBe("Interrupted answerInterrupted answerWeb result");
+    expect(got.some((chunk) => chunk.type === "error")).toBe(false);
+    expect(requestLog.requests).toHaveLength(3);
+    expect(requestLog.requests[1]?.input).toEqual([
+      { role: "user", content: "请完整总结论文" },
+      { role: "assistant", content: "Interrupted answer" },
+      {
+        role: "user",
+        content:
+          "Continue the same answer exactly from where it was cut off. Do not repeat existing text. Complete every remaining part of the user's request. When and only when the answer is fully complete, end with [ZAI_COMPLETE] on its own line.",
+      },
+    ]);
+    expect(requestLog.requests[2]?.input).toEqual([
+      { role: "user", content: "请完整总结论文" },
+      { role: "assistant", content: "Interrupted answer" },
+      {
+        role: "user",
+        content:
+          "Continue the same answer exactly from where it was cut off. Do not repeat existing text. Complete every remaining part of the user's request. When and only when the answer is fully complete, end with [ZAI_COMPLETE] on its own line.",
+      },
+      { role: "assistant", content: "Interrupted answer" },
+      {
+        role: "user",
+        content:
+          "Continue the same answer exactly from where it was cut off. Do not repeat existing text. Complete every remaining part of the user's request. When and only when the answer is fully complete, end with [ZAI_COMPLETE] on its own line.",
       },
     ]);
   });

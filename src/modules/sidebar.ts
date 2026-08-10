@@ -48,7 +48,12 @@ import type {
   Message,
   PdfSelectionLocator,
 } from "../providers/types";
-import { loadChatMessages, saveChatMessages } from "../settings/chat-history";
+import {
+  createChatConversation,
+  loadChatConversations,
+  saveChatConversations,
+  type ChatConversation,
+} from "../settings/chat-history";
 import {
   freezeFullText,
   getFrozenFullText,
@@ -131,9 +136,30 @@ import {
   findPreviousUserIndex,
 } from "./chat-message-index";
 import {
+  revealFullTranslationSourceBlock,
   renderFullTranslationView,
   updateFullTranslationAssetPreview,
 } from "./full-translation-view";
+import {
+  findFullTranslationSourceBlockId,
+  readFullTranslationSourceSelection,
+} from "./full-translation-interactions";
+import {
+  buildQuickAskApiMessages,
+  createQuickAskState,
+  createQuickAskUserMessage,
+  isQuickAskShortcut,
+  QUICK_ASK_SHORTCUT_LABEL,
+  quickAskReadOnlyTools,
+  resetQuickAskState,
+  type QuickAskReference,
+  type QuickAskState,
+} from "./quick-ask";
+import { renderQuickAskDialog } from "./quick-ask-dialog";
+import {
+  selectConversationHistory,
+  type ConversationHistoryMode,
+} from "./conversation-history";
 import {
   mountFullTranslationHost,
   unmountFullTranslationHost,
@@ -499,6 +525,21 @@ const fullTranslationNoteVisibility = new WeakMap<
   boolean
 >();
 
+interface QuickAskController {
+  root: HTMLElement;
+  itemID: number | null;
+  state: QuickAskState;
+  abort?: AbortController;
+  userMessage?: Message;
+  assistantMessage?: Message;
+}
+
+const quickAskControllers = new WeakMap<
+  WindowSidebarState,
+  QuickAskController
+>();
+const quickAskOpenRequests = new WeakMap<WindowSidebarState, symbol>();
+
 interface PreparedFullTranslationRun {
   controller: AbortController;
   translator: FullDocumentTranslator;
@@ -522,6 +563,9 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
       itemID,
       presets,
       selectedId: presets[0]?.id ?? null,
+      conversations: [],
+      activeConversationID: "default",
+      historyMode: "previous",
       editing: presets.length === 0,
       messages: [],
       historyLoaded: false,
@@ -570,7 +614,14 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
   const doc = mount.ownerDocument!;
   capturePanelState(mount, state);
   try {
-    refreshActiveReaderSelection(doc.defaultView, state.itemID, false);
+    const sidebar = doc.defaultView
+      ? windowSidebars.get(doc.defaultView)
+      : undefined;
+    if (sidebar?.fullTranslationActive) {
+      refreshFullTranslationSelection(sidebar, state.itemID, false);
+    } else {
+      refreshActiveReaderSelection(doc.defaultView, state.itemID, false);
+    }
   } catch (err) {
     debugZai("sidebar.selection-refresh.failed", { error: errorMessage(err) });
   }
@@ -583,6 +634,7 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
     });
     applyChatAppearance(panel, state.uiSettings, state.localUiSettings);
     panel.append(renderToolbar(doc, mount, state));
+    panel.append(renderConversationSwitcher(doc, mount, state));
     panel.append(renderContextCard(doc, state.itemID));
     panel.append(renderMessages(doc, mount, state));
     panel.append(renderInput(doc, mount, state));
@@ -750,6 +802,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     state.agentPermissionMode = agentPermissionMode(
       selectedChatPreset(state) ?? selectedPreset(state),
     );
+    void persistPanelConversations(state);
     renderPanel(mount, state);
   });
   topRow.append(select);
@@ -810,7 +863,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     clear.title = "清空并保存当前条目的聊天记录";
     clear.addEventListener("click", () => {
       state.messages = [];
-      void saveChatMessages(state.itemID, state.messages);
+      void persistPanelConversations(state);
       renderPanel(mount, state);
     });
     topRow.append(clear);
@@ -852,10 +905,16 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   askBtn.addEventListener("click", () => {
     void toggleAskMode(win, askBtn);
   });
+  const quickAsk = buttonEl(doc, "快问");
+  quickAsk.className = "zai-sidebar-quick-ask-button";
+  quickAsk.title = `临时单次问答；不读取历史，关闭不保存（${QUICK_ASK_SHORTCUT_LABEL}）`;
+  quickAsk.addEventListener("click", () => {
+    void openQuickAsk(win, windowSidebars.get(win));
+  });
   // Content actions, then 设置 (opens full preferences), the 字号 menu (🎚 icon
   // → font-size popup) and the 调试 (copy-debug context) toggle.
   settings.title = "打开 AI 对话完整设置";
-  bottomRow.append(openNote);
+  bottomRow.append(openNote, quickAsk);
   // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留，去掉这行注释即可恢复）。
   // bottomRow.append(translateBtn);
   bottomRow.append(askBtn);
@@ -864,6 +923,262 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   bottomRow.append(renderCopyDebugToggle(doc, mount, state));
   bar.append(topRow, bottomRow);
   return bar;
+}
+
+function renderConversationSwitcher(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement {
+  const conversationBusy = state.sending || state.processingQueuedTask === true;
+  const wrap = el(doc, "div", "conversation-switcher");
+  const tabsRow = el(doc, "div", "conversation-tabs-row");
+  const tabs = el(doc, "div", "conversation-tabs");
+  if (!state.historyLoaded) {
+    tabs.append(el(doc, "span", "conversation-loading", "正在载入对话…"));
+  } else {
+    for (const conversation of state.conversations) {
+      const tab = buttonEl(doc, conversation.title);
+      tab.className = "conversation-tab";
+      tab.title = conversation.title;
+      tab.disabled = conversationBusy;
+      if (conversation.id === state.activeConversationID) {
+        tab.classList.add("is-active");
+        tab.setAttribute("aria-current", "page");
+      }
+      tab.addEventListener("click", () => {
+        switchConversation(mount, state, conversation.id);
+      });
+      tabs.append(tab);
+    }
+  }
+
+  const add = buttonEl(doc, "+");
+  add.className = "conversation-add";
+  add.title = "新建独立对话（默认不携带历史）";
+  add.disabled = conversationBusy || !state.historyLoaded;
+  add.addEventListener("click", () => addConversation(mount, state));
+  tabsRow.append(tabs, add);
+
+  const controls = el(doc, "div", "conversation-controls");
+  const historyLabel = el(doc, "label", "conversation-history-control");
+  historyLabel.append(el(doc, "span", "", "携带"));
+  const historySelect = doc.createElement("select");
+  const historyOptions: Array<[ConversationHistoryMode, string]> = [
+    ["none", "不带历史"],
+    ["previous", "仅上一轮"],
+    ["all", "全部对话"],
+  ];
+  for (const [value, label] of historyOptions) {
+    const option = doc.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    historySelect.append(option);
+  }
+  historySelect.value = state.historyMode;
+  historySelect.disabled = conversationBusy || !state.historyLoaded;
+  historySelect.title = "只控制发送给模型的历史；界面中的完整消息不会删除";
+  historySelect.addEventListener("change", () => {
+    state.historyMode = normalizeConversationHistoryMode(historySelect.value);
+    void persistPanelConversations(state);
+  });
+  historyLabel.append(historySelect);
+
+  const rename = buttonEl(doc, "重命名");
+  rename.className = "conversation-manage";
+  rename.disabled = conversationBusy || !state.historyLoaded;
+  rename.addEventListener("click", () =>
+    renameActiveConversation(mount, state),
+  );
+  const remove = buttonEl(doc, "删除");
+  remove.className = "conversation-manage conversation-delete";
+  remove.disabled =
+    conversationBusy || !state.historyLoaded || state.conversations.length <= 1;
+  remove.title =
+    state.conversations.length <= 1 ? "至少保留一个对话" : "删除当前对话";
+  remove.addEventListener("click", () =>
+    deleteActiveConversation(mount, state),
+  );
+  controls.append(historyLabel, rename, remove);
+  wrap.append(tabsRow, controls);
+  return wrap;
+}
+
+function switchConversation(
+  mount: HTMLElement,
+  state: PanelState,
+  conversationID: string,
+): void {
+  if (
+    state.sending ||
+    state.processingQueuedTask ||
+    !state.historyLoaded ||
+    conversationID === state.activeConversationID
+  ) {
+    return;
+  }
+  capturePanelState(mount, state);
+  captureActiveConversation(state);
+  const conversation = state.conversations.find(
+    (candidate) => candidate.id === conversationID,
+  );
+  if (!conversation) return;
+  state.activeConversationID = conversationID;
+  applyConversation(state, conversation);
+  void persistPanelConversations(state);
+  renderPanel(mount, state);
+}
+
+function addConversation(mount: HTMLElement, state: PanelState): void {
+  if (state.sending || state.processingQueuedTask || !state.historyLoaded)
+    return;
+  capturePanelState(mount, state);
+  captureActiveConversation(state);
+  const now = new Date().toISOString();
+  const conversation = createChatConversation(
+    `conversation-${Date.now()}-${Zotero.Utilities.randomString(6)}`,
+    nextConversationTitle(state.conversations),
+    state.selectedId ?? undefined,
+    now,
+  );
+  state.conversations.push(conversation);
+  state.activeConversationID = conversation.id;
+  applyConversation(state, conversation);
+  void persistPanelConversations(state);
+  renderPanel(mount, state);
+}
+
+function renameActiveConversation(mount: HTMLElement, state: PanelState): void {
+  if (state.sending || state.processingQueuedTask || !state.historyLoaded)
+    return;
+  const conversation = activeConversation(state);
+  if (!conversation) return;
+  const name = mount.ownerDocument?.defaultView
+    ?.prompt("重命名当前对话", conversation.title)
+    ?.trim();
+  if (!name || name === conversation.title) return;
+  conversation.title = name.slice(0, 40);
+  conversation.updatedAt = new Date().toISOString();
+  void persistPanelConversations(state);
+  renderPanel(mount, state);
+}
+
+function deleteActiveConversation(mount: HTMLElement, state: PanelState): void {
+  if (
+    state.sending ||
+    state.processingQueuedTask ||
+    state.conversations.length <= 1
+  ) {
+    return;
+  }
+  const current = activeConversation(state);
+  if (!current) return;
+  const confirmed = mount.ownerDocument?.defaultView?.confirm(
+    `删除“${current.title}”及其中的全部消息？`,
+  );
+  if (!confirmed) return;
+  const currentIndex = state.conversations.indexOf(current);
+  state.conversations = state.conversations.filter(
+    (conversation) => conversation.id !== current.id,
+  );
+  const next =
+    state.conversations[Math.min(currentIndex, state.conversations.length - 1)];
+  state.activeConversationID = next.id;
+  applyConversation(state, next);
+  void persistPanelConversations(state);
+  renderPanel(mount, state);
+}
+
+function nextConversationTitle(conversations: ChatConversation[]): string {
+  const existing = new Set(
+    conversations.map((conversation) => conversation.title),
+  );
+  let index = conversations.length + 1;
+  while (existing.has(`对话 ${index}`)) index += 1;
+  return `对话 ${index}`;
+}
+
+function activeConversation(state: PanelState): ChatConversation | null {
+  return (
+    state.conversations.find(
+      (conversation) => conversation.id === state.activeConversationID,
+    ) ?? null
+  );
+}
+
+function captureActiveConversation(state: PanelState): void {
+  const current = activeConversation(state);
+  if (!current) return;
+  current.updatedAt = new Date().toISOString();
+  current.messages = state.messages;
+  current.draftText = state.draftText;
+  current.historyMode = state.historyMode;
+  if (state.selectedId) current.presetID = state.selectedId;
+  else delete current.presetID;
+}
+
+function applyConversation(
+  state: PanelState,
+  conversation: ChatConversation,
+): void {
+  state.messages = conversation.messages;
+  state.draftText = conversation.draftText;
+  // The current DOM still belongs to the conversation being left. The next
+  // render must not copy that textarea back over the newly restored draft.
+  state.skipNextDraftCapture = true;
+  state.draftSelectionStart = conversation.draftText.length;
+  state.draftSelectionEnd = conversation.draftText.length;
+  state.draftHadFocus = false;
+  state.historyMode = conversation.historyMode;
+  if (
+    conversation.presetID &&
+    state.presets.some((preset) => preset.id === conversation.presetID)
+  ) {
+    state.selectedId = conversation.presetID;
+  } else if (
+    !state.selectedId ||
+    !state.presets.some((preset) => preset.id === state.selectedId)
+  ) {
+    state.selectedId =
+      configuredPresets(state)[0]?.id ?? state.presets[0]?.id ?? null;
+  }
+  state.agentPermissionMode = agentPermissionMode(
+    selectedChatPreset(state) ?? selectedPreset(state),
+  );
+  state.pasteBlocks = [];
+  state.draftImages = [];
+  state.messagesScrollTop = 0;
+  state.autoFollowMessages = true;
+  state.scrollToBottom = true;
+  state.queueOpen = false;
+  resetComposerPromptHistory(state);
+}
+
+function persistPanelConversations(state: PanelState): Promise<void> {
+  captureActiveConversation(state);
+  return saveChatConversations(state.itemID, {
+    activeConversationID: state.activeConversationID,
+    conversations: state.conversations,
+  });
+}
+
+function normalizeConversationHistoryMode(
+  value: string,
+): ConversationHistoryMode {
+  return value === "none" || value === "all" ? value : "previous";
+}
+
+function scheduleDraftConversationSave(
+  mount: HTMLElement,
+  state: PanelState,
+): void {
+  const win = mount.ownerDocument?.defaultView;
+  if (!win || !state.historyLoaded) return;
+  if (state.draftSaveTimer != null) win.clearTimeout(state.draftSaveTimer);
+  state.draftSaveTimer = win.setTimeout(() => {
+    state.draftSaveTimer = undefined;
+    if (states.get(mount) === state) void persistPanelConversations(state);
+  }, 400);
 }
 
 const ZAI_SVG_NS = "http://www.w3.org/2000/svg";
@@ -1283,7 +1598,7 @@ function renderTaskQueue(
   markRead.disabled = unread === 0;
   markRead.addEventListener("click", () => {
     markAllChatTasksRead(state);
-    void saveChatMessages(state.itemID, state.messages);
+    void persistPanelConversations(state);
     renderPanel(mount, state);
   });
   // Cancel-only-pending: leaves the currently running task alone (the
@@ -1299,7 +1614,7 @@ function renderTaskQueue(
     : "把还没轮到的任务标为已取消，不影响当前正在回答的那一条";
   cancelQueued.addEventListener("click", () => {
     cancelQueuedChatTasks(state);
-    void saveChatMessages(state.itemID, state.messages);
+    void persistPanelConversations(state);
     renderPanel(mount, state);
   });
   const clear = buttonEl(doc, "清空队列");
@@ -1311,7 +1626,7 @@ function renderTaskQueue(
     : "直接清空队列记录，不删除聊天内容";
   clear.addEventListener("click", () => {
     clearChatTaskQueue(state);
-    void saveChatMessages(state.itemID, state.messages);
+    void persistPanelConversations(state);
     renderPanel(mount, state);
   });
   const close = buttonEl(doc, "关闭");
@@ -1482,7 +1797,7 @@ function cancelQueuedChatTasks(state: PanelState) {
 
 function hideChatTask(state: PanelState, view: ChatTaskView) {
   view.task.hiddenAt = Date.now();
-  void saveChatMessages(state.itemID, state.messages);
+  void persistPanelConversations(state);
   state.queueOpen = true;
 }
 
@@ -1493,7 +1808,7 @@ function cancelChatTask(
 ) {
   if (view.status === "queued") {
     markMessageTaskCancelled(state.messages[view.userIndex]);
-    void saveChatMessages(state.itemID, state.messages);
+    void persistPanelConversations(state);
     renderPanel(mount, state);
     void processNextQueuedChatTask(mount, state);
     return;
@@ -1503,7 +1818,7 @@ function cancelChatTask(
   view.task.completedAt ??= view.task.cancelledAt;
   state.cancellingTaskID = view.task.id;
   state.abort?.abort();
-  void saveChatMessages(state.itemID, state.messages);
+  void persistPanelConversations(state);
   renderPanel(mount, state);
 }
 
@@ -1553,7 +1868,7 @@ function viewChatTask(
   view: ChatTaskView,
 ) {
   view.task.viewedAt = Date.now();
-  void saveChatMessages(state.itemID, state.messages);
+  void persistPanelConversations(state);
   renderPanel(mount, state);
   afterRender(mount, () => {
     jumpToTaskMessage(mount, view);
@@ -1877,6 +2192,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   input.addEventListener("input", () => {
     resetComposerPromptHistory(state);
     updateStatus();
+    scheduleDraftConversationSave(mount, state);
   });
   for (const event of ["select", "click", "keyup", "focus"]) {
     input.addEventListener(event, () => updateStatus());
@@ -2082,7 +2398,7 @@ function slashCommandDescription(command: SlashCommand): string {
   return command.description;
 }
 
-// 方案 A: the PDF-selection indicator is a chip rendered INSIDE the composer
+// 方案 A: the source-selection indicator is a chip rendered INSIDE the composer
 // box (as the first child of .input-row), not a separate bar above it — so it
 // sits in the same place the eye and cursor already are when sending, and
 // cannot be overlooked. Returns null when there is no selection.
@@ -2099,6 +2415,7 @@ function renderSelectionChip(
   }
 
   const forced = isTurnFullTextForced(state, selectedText);
+  const translationSelection = !!fullTranslationSidebarForMount(mount);
   const previewOpen = state.turnContextSelectionPreviewOpen;
   const wrap = el(doc, "div", "zai-sel-chip-wrap");
   const chip = el(
@@ -2111,10 +2428,17 @@ function renderSelectionChip(
   const body = doc.createElement("button");
   body.type = "button";
   body.className = "zai-sel-chip-body";
-  body.title = "点击展开 / 收起，核对本轮会随消息发送的 PDF 选区原文";
+  body.title = translationSelection
+    ? "点击展开 / 收起，核对本轮会随消息发送的英文原句"
+    : "点击展开 / 收起，核对本轮会随消息发送的 PDF 选区原文";
   body.append(
     el(doc, "span", "zai-sel-chip-icon", forced ? "📄" : "🎯"),
-    el(doc, "span", "zai-sel-chip-label", forced ? "选区+全文" : "选区"),
+    el(
+      doc,
+      "span",
+      "zai-sel-chip-label",
+      forced ? "选区+全文" : translationSelection ? "英文原句" : "选区",
+    ),
     el(
       doc,
       "span",
@@ -2147,13 +2471,15 @@ function renderSelectionChip(
     renderPanel(mount, state);
   });
 
-  // ✕ — drop the selection from this turn (the PDF highlight is left alone).
+  // ✕ — drop the selection from this turn without changing saved highlights.
   const remove = doc.createElement("button");
   remove.type = "button";
   remove.className = "zai-sel-chip-remove";
   remove.textContent = "✕";
   remove.disabled = state.sending;
-  remove.title = "移除选区：本轮不发送，并同时取消 PDF 里的选中";
+  remove.title = translationSelection
+    ? "移除选区：本轮不发送，并同时取消翻译页里的选中"
+    : "移除选区：本轮不发送，并同时取消 PDF 里的选中";
   remove.addEventListener("click", () => {
     ignoreSelectedTextForPrompt(mount, state.itemID);
     renderPanel(mount, state);
@@ -2164,7 +2490,12 @@ function renderSelectionChip(
   if (previewOpen) {
     const preview = el(doc, "div", "zai-sel-chip-preview");
     preview.append(
-      el(doc, "div", "zai-sel-chip-preview-title", "本轮会发送的 PDF 选区"),
+      el(
+        doc,
+        "div",
+        "zai-sel-chip-preview-title",
+        translationSelection ? "本轮会发送的英文原句" : "本轮会发送的 PDF 选区",
+      ),
       el(doc, "div", "zai-sel-chip-preview-body", selectedText),
     );
     wrap.append(preview);
@@ -2832,10 +3163,16 @@ async function sendMessage(
         }
       : {}),
   };
+  userMessage.context = {
+    ...userMessage.context,
+    conversationHistoryMode: state.historyMode,
+  };
   const shouldQueue = state.sending;
   const isolatedExplainSelection = options.explainSelection === true;
   const history =
-    shouldQueue || isolatedExplainSelection ? [] : state.messages.slice();
+    shouldQueue || isolatedExplainSelection
+      ? []
+      : selectConversationHistory(state.messages, state.historyMode);
   state.messages.push(userMessage);
   state.draftText = "";
   state.draftSelectionStart = 0;
@@ -2848,7 +3185,7 @@ async function sendMessage(
   resetTurnFullTextMode(state);
   state.autoFollowMessages = true;
   state.scrollToBottom = true;
-  void saveChatMessages(state.itemID, state.messages);
+  void persistPanelConversations(state);
   if (shouldQueue) {
     state.queueOpen = true;
     renderPanel(mount, state);
@@ -2880,7 +3217,12 @@ async function processNextQueuedChatTask(
       const isolatedHistory = userMessage.context?.explainSelection === true;
       const history = isolatedHistory
         ? []
-        : state.messages.slice(0, next.userIndex);
+        : selectConversationHistory(
+            state.messages.slice(0, next.userIndex),
+            normalizeConversationHistoryMode(
+              userMessage.context?.conversationHistoryMode ?? state.historyMode,
+            ),
+          );
       // Restore whatever annotation context was captured at queue time.
       // INVARIANT: a queued message always uses the PDF selection that was
       // active when it was submitted, NEVER the live selection now —
@@ -3030,7 +3372,7 @@ function createChatTaskMeta(
       : null;
   return {
     id: makeTaskID(),
-    kind: pdfSelection
+    kind: selectedText
       ? "selection"
       : options.fullTextHighlight
         ? "full_text"
@@ -3039,7 +3381,7 @@ function createChatTaskMeta(
           : "general",
     title:
       options.taskTitle ||
-      (pdfSelection ? "选中文字提问" : contentPreview(content, 14) || "提问"),
+      (selectedText ? "选中文字提问" : contentPreview(content, 14) || "提问"),
     promptPreview: contentPreview(selectedText || content, 90),
     createdAt: Date.now(),
     ...(pdfSelection ? { pdfSelection } : {}),
@@ -3078,6 +3420,366 @@ function contentPreview(text: string, maxChars: number): string {
     : normalized;
 }
 
+async function openQuickAsk(
+  win: Window,
+  sidebar: WindowSidebarState | undefined,
+): Promise<void> {
+  if (!sidebar) return;
+  closeQuickAsk(sidebar);
+  setColumnCollapsed(win, sidebar, false);
+  const request = Symbol("quick-ask-open");
+  quickAskOpenRequests.set(sidebar, request);
+  const itemID = safeSelectedItemID(win);
+  const reference = await captureQuickAskReference(sidebar, itemID);
+  if (quickAskOpenRequests.get(sidebar) !== request) return;
+  quickAskOpenRequests.delete(sidebar);
+
+  const controller: QuickAskController = {
+    root: win.document.createElementNS(XHTML_NS, "div") as HTMLElement,
+    itemID,
+    state: createQuickAskState(reference),
+  };
+  quickAskControllers.set(sidebar, controller);
+  renderActiveQuickAsk(sidebar, controller, true);
+}
+
+async function captureQuickAskReference(
+  sidebar: WindowSidebarState,
+  itemID: number | null,
+): Promise<QuickAskReference | null> {
+  const session = fullTranslationSessions.get(sidebar);
+  const host = fullTranslationHosts.get(sidebar);
+  if (sidebar.fullTranslationActive && session && host?.root.isConnected) {
+    const selection = readFullTranslationSourceSelection(
+      host.root,
+      session.document.blocks,
+    );
+    if (selection) {
+      refreshFullTranslationSelection(sidebar, itemID, false);
+      return {
+        kind: selection.origin,
+        displayText: selection.displayText,
+        sourceText: normalizeSelectedText(selection.selectedText),
+      };
+    }
+  }
+
+  const selectedText = await getSelectedTextForPrompt(sidebar.mount, itemID);
+  if (!selectedText) return null;
+  return {
+    kind: "pdf",
+    displayText: selectedText,
+    sourceText: selectedText,
+  };
+}
+
+function renderActiveQuickAsk(
+  sidebar: WindowSidebarState,
+  controller: QuickAskController,
+  focusInput = false,
+): void {
+  if (quickAskControllers.get(sidebar) !== controller) return;
+  const doc = sidebar.mount.ownerDocument!;
+  const previousScroll = controller.root.querySelector<HTMLElement>(
+    ".zai-quick-ask-scroll",
+  );
+  const previousScrollTop = previousScroll?.scrollTop ?? 0;
+  const wasNearBottom = previousScroll
+    ? previousScroll.scrollHeight -
+        previousScroll.clientHeight -
+        previousScroll.scrollTop <
+      40
+    : true;
+  const panelState = states.get(sidebar.mount);
+  const next = renderQuickAskDialog(
+    doc,
+    controller.state,
+    {
+      onQuestionChange: (value) => {
+        controller.state.question = value;
+      },
+      onSend: (value) => void sendQuickAsk(sidebar, controller, value),
+      onStop: () => controller.abort?.abort(),
+      onReset: () => {
+        controller.abort?.abort();
+        controller.abort = undefined;
+        controller.userMessage = undefined;
+        controller.assistantMessage = undefined;
+        controller.state = resetQuickAskState(controller.state);
+        renderActiveQuickAsk(sidebar, controller, true);
+      },
+      onCopy: () => void copyQuickAskAnswer(sidebar, controller),
+      onTransfer: () => void transferQuickAskToResearch(sidebar, controller),
+      onClose: () => closeQuickAsk(sidebar),
+    },
+    {
+      shortcutLabel: QUICK_ASK_SHORTCUT_LABEL,
+      transferDisabled: !!panelState?.sending,
+    },
+  );
+  applyChatAppearance(
+    next,
+    panelState?.uiSettings ?? loadUiSettings(zoteroPrefs()),
+    panelState?.localUiSettings ?? loadLocalUiSettings(zoteroPrefs()),
+  );
+
+  if (controller.root.isConnected) {
+    controller.root.replaceWith(next);
+  } else {
+    sidebar.mount.before(next);
+  }
+  controller.root = next;
+  const nextScroll = next.querySelector<HTMLElement>(".zai-quick-ask-scroll");
+  if (nextScroll) {
+    nextScroll.scrollTop = wasNearBottom
+      ? nextScroll.scrollHeight
+      : previousScrollTop;
+  }
+  if (focusInput) {
+    // Let the fixed layer finish layout before Gecko asks for the IME caret
+    // rectangle; focusing in the insertion tick reports (0, 0) on XUL pages.
+    const focus = () => {
+      if (quickAskControllers.get(sidebar) !== controller) return;
+      controller.root
+        .querySelector<HTMLTextAreaElement>(".zai-quick-ask-input")
+        ?.focus();
+    };
+    const requestFrame = doc.defaultView?.requestAnimationFrame.bind(
+      doc.defaultView,
+    );
+    if (requestFrame) {
+      requestFrame(() => requestFrame(focus));
+    } else {
+      doc.defaultView?.setTimeout(focus, 0);
+    }
+  }
+}
+
+function closeQuickAsk(sidebar: WindowSidebarState): void {
+  quickAskOpenRequests.delete(sidebar);
+  const controller = quickAskControllers.get(sidebar);
+  if (!controller) return;
+  controller.abort?.abort();
+  controller.abort = undefined;
+  controller.root.remove();
+  quickAskControllers.delete(sidebar);
+}
+
+async function sendQuickAsk(
+  sidebar: WindowSidebarState,
+  controller: QuickAskController,
+  rawQuestion: string,
+): Promise<void> {
+  if (
+    quickAskControllers.get(sidebar) !== controller ||
+    controller.state.status !== "idle"
+  ) {
+    return;
+  }
+  const question = rawQuestion.trim();
+  if (!question) return;
+
+  const panelState = states.get(sidebar.mount);
+  const preset = panelState ? selectedChatPreset(panelState) : null;
+  if (!preset?.apiKey || !preset.model) {
+    controller.state = {
+      ...controller.state,
+      question,
+      status: "error",
+      error: "请先配置可用的 AI 模型。",
+    };
+    renderActiveQuickAsk(sidebar, controller);
+    openAddonPreferences(sidebar.mount.ownerDocument!);
+    return;
+  }
+
+  controller.state = {
+    ...controller.state,
+    question,
+    answer: "",
+    thinking: "",
+    status: "sending",
+    statusText: "正在准备当前论文上下文……",
+    error: "",
+    usage: undefined,
+  };
+  renderActiveQuickAsk(sidebar, controller);
+
+  const reference = controller.state.reference;
+  const selectionPayload = reference
+    ? await buildSelectionPromptContext(reference.sourceText, controller.itemID)
+    : { selectedText: "", context: {} };
+  if (quickAskControllers.get(sidebar) !== controller) return;
+  const userMessage = createQuickAskUserMessage(
+    question,
+    reference,
+    selectionPayload.context,
+  );
+  const assistantMessage: Message = { role: "assistant", content: "" };
+  controller.userMessage = userMessage;
+  controller.assistantMessage = assistantMessage;
+
+  const win = sidebar.mount.ownerDocument!.defaultView!;
+  const abort = new win.AbortController();
+  controller.abort = abort;
+  let toolSession: ZoteroAgentToolSession | null = null;
+  let failed = false;
+
+  try {
+    const baseContext = await buildSystemContextOnly(controller.itemID);
+    if (quickAskControllers.get(sidebar) !== controller) return;
+    toolSession = createZoteroAgentToolSession({
+      source: zoteroContextSource,
+      itemID: controller.itemID,
+      policy: contextPolicy,
+      previousMessages: [],
+      getActiveReader: () =>
+        getReaderForCurrentSelection(win, controller.itemID),
+    });
+    const tools = quickAskReadOnlyTools(toolSession.tools);
+    const messagesForApi = buildQuickAskApiMessages(userMessage, contextPolicy);
+    const systemPrompt = `${baseContext.systemPrompt}\n\nQuick Ask mode: answer only the current question. No conversation history is available. Use read-only tools when the current paper is needed; do not claim to remember earlier chats.`;
+    const promptCacheKey = `${buildPromptCacheKey(preset, controller.itemID)}:quick-ask`;
+
+    controller.state.statusText = "正在等待模型回答……";
+    renderActiveQuickAsk(sidebar, controller);
+    for await (const chunk of getProvider(preset).stream(
+      messagesForApi,
+      systemPrompt,
+      preset,
+      abort.signal,
+      {
+        tools,
+        maxToolIterations: contextPolicy.maxToolIterations,
+        permissionMode: "default",
+        toolSettings: loadToolSettings(zoteroPrefs()),
+        promptCacheKey,
+        relayRoutingItemKey: resolveItemKeyForCache(controller.itemID),
+      },
+    )) {
+      if (quickAskControllers.get(sidebar) !== controller) break;
+      if (chunk.type === "text_delta") {
+        assistantMessage.content += chunk.text;
+        controller.state.answer = assistantMessage.content;
+        controller.state.statusText = "正在生成回答……";
+      } else if (chunk.type === "thinking_delta") {
+        assistantMessage.thinking = `${assistantMessage.thinking ?? ""}${chunk.text}`;
+        controller.state.thinking = assistantMessage.thinking;
+        controller.state.statusText = "正在思考……";
+      } else if (chunk.type === "tool_call") {
+        recordToolCall(userMessage, chunk);
+        controller.state.statusText =
+          chunk.status === "started"
+            ? `正在使用 ${chunk.name}……`
+            : `已完成 ${chunk.name}`;
+      } else if (chunk.type === "tool_images") {
+        assistantMessage.images = [
+          ...(assistantMessage.images ?? []),
+          ...chunk.images,
+        ];
+      } else if (chunk.type === "status") {
+        controller.state.statusText = chunk.message;
+      } else if (chunk.type === "usage") {
+        assistantMessage.usage = mergeMessageUsage(
+          assistantMessage.usage,
+          chunk,
+        );
+        controller.state.usage = assistantMessage.usage;
+      } else if (chunk.type === "error") {
+        failed = true;
+        controller.state.error = chunk.message;
+        break;
+      }
+      renderActiveQuickAsk(sidebar, controller);
+    }
+  } catch (err) {
+    failed = true;
+    if (quickAskControllers.get(sidebar) === controller) {
+      controller.state.error =
+        isAbortError(err) || abort.signal.aborted
+          ? "已停止本次临时回答。"
+          : errorMessage(err);
+    }
+  } finally {
+    toolSession?.dispose();
+    if (quickAskControllers.get(sidebar) === controller) {
+      controller.abort = undefined;
+      if (failed || controller.state.error) {
+        controller.state.status = "error";
+        controller.state.statusText = "";
+      } else {
+        if (!controller.state.answer.trim()) {
+          controller.state.answer = "本次请求没有返回可显示的回答。";
+          assistantMessage.content = controller.state.answer;
+        }
+        controller.state.status = "answered";
+        controller.state.statusText = "本次回答未保存";
+      }
+      renderActiveQuickAsk(sidebar, controller);
+    }
+  }
+}
+
+async function copyQuickAskAnswer(
+  sidebar: WindowSidebarState,
+  controller: QuickAskController,
+): Promise<void> {
+  const answer = controller.state.answer.trim();
+  if (!answer || quickAskControllers.get(sidebar) !== controller) return;
+  const doc = sidebar.mount.ownerDocument!;
+  await copyToClipboard(
+    doc,
+    answer,
+    undefined,
+    markdownToClipboardHTML(doc, answer),
+  );
+  if (quickAskControllers.get(sidebar) !== controller) return;
+  controller.state.statusText = "已复制；关闭后仍不会保存本次对话";
+  renderActiveQuickAsk(sidebar, controller);
+}
+
+async function transferQuickAskToResearch(
+  sidebar: WindowSidebarState,
+  controller: QuickAskController,
+): Promise<void> {
+  const state = states.get(sidebar.mount);
+  if (
+    !state ||
+    state.itemID !== controller.itemID ||
+    !controller.userMessage ||
+    !controller.assistantMessage ||
+    !controller.state.answer.trim()
+  ) {
+    controller.state.error = "当前论文已经切换，请复制回答后再关闭。";
+    controller.state.status = "error";
+    renderActiveQuickAsk(sidebar, controller);
+    return;
+  }
+  if (state.sending) {
+    controller.state.error = "研究对话正在回答，请结束后再转入。";
+    controller.state.status = "error";
+    renderActiveQuickAsk(sidebar, controller);
+    return;
+  }
+  await ensureHistoryLoaded(sidebar.mount, state);
+  if (
+    quickAskControllers.get(sidebar) !== controller ||
+    states.get(sidebar.mount) !== state
+  ) {
+    return;
+  }
+  state.messages.push(
+    { ...controller.userMessage },
+    { ...controller.assistantMessage },
+  );
+  await persistPanelConversations(state);
+  state.autoFollowMessages = true;
+  state.scrollToBottom = true;
+  setColumnCollapsed(sidebar.mount.ownerDocument!.defaultView!, sidebar, false);
+  closeQuickAsk(sidebar);
+  renderPanel(sidebar.mount, state);
+}
+
 interface StreamAssistantOptions {
   annotationSnapshot?: SelectionAnnotationDraft | null;
   annotationColorEnabled?: boolean;
@@ -3097,7 +3799,7 @@ interface StreamAssistantOptions {
 //   thinking ⇄ writing → (cleared on finish/error)
 // Each transition triggers a re-render so the user sees what's happening.
 //
-// INVARIANT: `void saveChatMessages(...)` fires on every tool_call chunk.
+// INVARIANT: `void persistPanelConversations(...)` fires on every tool_call chunk.
 // WHY persist mid-stream: if Zotero crashes during a long tool loop, the
 // thread still has the user message + tool traces accumulated so far.
 // (CLAUDE.md "Show Zotero tool-call traces visibly in the conversation".)
@@ -3373,7 +4075,7 @@ async function streamAssistant(
           chunk.status === "started" ? "using_tool" : "waiting_model";
         state.activeAssistantDetail = undefined;
         recordToolCall(userMessage, chunk);
-        void saveChatMessages(state.itemID, state.messages);
+        void persistPanelConversations(state);
         state.scrollToBottom = state.autoFollowMessages;
         renderPanel(mount, state);
       } else if (chunk.type === "tool_images") {
@@ -3431,7 +4133,7 @@ async function streamAssistant(
     state.activeAssistantDetail = undefined;
     state.activeTaskID = undefined;
     state.cancellingTaskID = undefined;
-    void saveChatMessages(state.itemID, state.messages);
+    void persistPanelConversations(state);
     state.scrollToBottom = state.autoFollowMessages;
     state.focusInput = true;
     renderPanel(mount, state);
@@ -3841,10 +4543,14 @@ async function regenerateLastResponse(mount: HTMLElement, state: PanelState) {
   const userMessage = state.messages[userIndex];
   const previousAssistant = state.messages[assistantIndex];
   const carriedSnapshot = previousAssistant.annotationDraft?.snapshot ?? null;
-  const history = state.messages.slice(0, userIndex);
+  const availableHistory = state.messages.slice(0, userIndex);
+  const isolatedHistory = userMessage.context?.explainSelection === true;
+  const history = isolatedHistory
+    ? []
+    : selectConversationHistory(availableHistory, state.historyMode);
   resetChatTaskForRetry(userMessage);
-  state.messages = [...history, userMessage];
-  void saveChatMessages(state.itemID, state.messages);
+  state.messages = [...availableHistory, userMessage];
+  void persistPanelConversations(state);
   await streamAssistant(mount, state, history, userMessage, {
     annotationSnapshot: carriedSnapshot
       ? {
@@ -3854,6 +4560,7 @@ async function regenerateLastResponse(mount: HTMLElement, state: PanelState) {
         }
       : null,
     readingRoute: userMessage.task?.kind === "reading_route",
+    isolatedHistory,
     taskID: userMessage.task?.id,
   });
 }
@@ -3870,7 +4577,7 @@ function resetChatTaskForRetry(message: Message) {
 
 async function loadPersistedMessages(mount: HTMLElement, state: PanelState) {
   if (state.historyLoaded) return;
-  const messages = await loadChatMessages(state.itemID);
+  const workspace = await loadChatConversations(state.itemID);
   const paperPinned =
     state.itemID != null ? await isPaperPinned(state.itemID) : false;
   if (states.get(mount) !== state || state.sending) return;
@@ -3882,13 +4589,19 @@ async function loadPersistedMessages(mount: HTMLElement, state: PanelState) {
   // choice: the user can manually retry via 重试 if they actually wanted
   // those tasks to run, but we don't auto-fire untrusted API calls on
   // boot.
-  const cancelledStale = cancelStaleQueuedTasks(messages);
-  state.messages = messages;
+  let cancelledStale = 0;
+  for (const conversation of workspace.conversations) {
+    cancelledStale += cancelStaleQueuedTasks(conversation.messages);
+  }
+  state.conversations = workspace.conversations;
+  state.activeConversationID = workspace.activeConversationID;
+  const conversation = activeConversation(state) ?? state.conversations[0];
+  applyConversation(state, conversation);
   state.historyLoaded = true;
   state.paperPinned = paperPinned;
   state.scrollToBottom = true;
   if (cancelledStale > 0) {
-    void saveChatMessages(state.itemID, state.messages);
+    void persistPanelConversations(state);
   }
   renderPanel(mount, state);
 }
@@ -3914,8 +4627,8 @@ async function ensureHistoryLoaded(mount: HTMLElement, state: PanelState) {
 
 // Selection state machine
 // =====================================================================
-// Three concurrent maps track PDF text selection per Zotero item ID:
-//   selectedTextByItem        — current selection text from the Reader.
+// Three concurrent maps track source text selection per Zotero item ID:
+//   selectedTextByItem        — current PDF selection or mapped English text.
 //   selectedAnnotationByItem  — Zotero annotation snapshot (for the write
 //                                tool zotero_add_annotation_to_selection).
 //   ignoredSelectedTextByItem — text the user dismissed via the chip's
@@ -3927,7 +4640,9 @@ async function ensureHistoryLoaded(mount: HTMLElement, state: PanelState) {
 //      (event-driven, fires when the user finishes a drag-select).
 //   2. SELECTION_MONITOR_MS poll → `refreshActiveReaderSelection`
 //      (catches keyboard-driven selection and selection-clear).
-// Hybrid because Reader doesn't fire a clear event when a selection ends.
+//   3. Full-translation DOM selection → `refreshFullTranslationSelection`.
+// Hybrid because neither Reader nor the translation view has one reliable
+// selection-clear event.
 //
 // INVARIANT: an item is keyed by parent-item-id where possible (see
 // `readerItemIDs`); the same selection appears under both parent and
@@ -3937,6 +4652,10 @@ async function getSelectedTextForPrompt(
   mount: HTMLElement,
   itemID: number | null,
 ): Promise<string> {
+  const translationSidebar = fullTranslationSidebarForMount(mount);
+  if (translationSidebar) {
+    return refreshFullTranslationSelection(translationSidebar, itemID, false);
+  }
   const win = mount.ownerDocument?.defaultView;
   const reader = getActiveReader(win);
   const ids = readerItemIDs(reader, itemID);
@@ -4002,6 +4721,46 @@ function refreshActiveReaderSelection(
   if (text) {
     rememberReaderSelection(reader, itemID, text);
     return shouldIgnoreSelectedText(ids, text) ? "" : text;
+  }
+  if (clearWhenEmpty) {
+    clearStoredSelectedText(ids);
+    return "";
+  }
+  return firstUsableStoredSelectedText(ids);
+}
+
+function fullTranslationSidebarForMount(
+  mount: HTMLElement,
+): WindowSidebarState | null {
+  const win = mount.ownerDocument?.defaultView;
+  const sidebar = win ? windowSidebars.get(win) : undefined;
+  return sidebar?.mount === mount && sidebar.fullTranslationActive
+    ? sidebar
+    : null;
+}
+
+function refreshFullTranslationSelection(
+  sidebar: WindowSidebarState,
+  itemID: number | null,
+  clearWhenEmpty: boolean,
+): string {
+  const win = sidebar.mount.ownerDocument?.defaultView;
+  const ids = readerItemIDs(getActiveReader(win), itemID);
+  const session = fullTranslationSessions.get(sidebar);
+  const host = fullTranslationHosts.get(sidebar);
+  const selection =
+    session && host?.root.isConnected
+      ? readFullTranslationSourceSelection(host.root, session.document.blocks)
+      : null;
+  if (selection) {
+    const text = normalizeSelectedText(selection.selectedText);
+    if (!text || shouldIgnoreSelectedText(ids, text)) return "";
+    for (const id of ids) {
+      ignoredSelectedTextByItem.delete(id);
+      selectedTextByItem.set(id, text);
+      selectedAnnotationByItem.delete(id);
+    }
+    return text;
   }
   if (clearWhenEmpty) {
     clearStoredSelectedText(ids);
@@ -4170,7 +4929,9 @@ function startSelectionMonitor(win: Window, sidebar: WindowSidebarState) {
     const before = getStoredSelectedText(itemID);
     const focusInSidebar =
       isFocusInside(sidebar.mount) || isFocusInside(sidebar.noteMount);
-    const after = refreshActiveReaderSelection(win, itemID, !focusInSidebar);
+    const after = sidebar.fullTranslationActive
+      ? refreshFullTranslationSelection(sidebar, itemID, !focusInSidebar)
+      : refreshActiveReaderSelection(win, itemID, !focusInSidebar);
     if (before !== after) {
       updateSelectionIndicators(sidebar.mount, itemID);
     }
@@ -4318,8 +5079,8 @@ function clearStoredSelectedText(ids: number[]) {
   }
 }
 
-// User clicked the ✕ on the selection chip. The RELIABLE way to drop the
-// selection is to clear the Reader's actual text selection: otherwise
+// User clicked the ✕ on the selection chip. The reliable way to drop the
+// selection is to clear the active view's actual text selection: otherwise
 // getSelectedTextForPrompt re-reads it at send time and rememberReaderSelection
 // re-arms it — the text-keyed ignore flag is defeated whenever the popup-event
 // and send-time extraction paths yield even slightly different strings. We
@@ -4336,6 +5097,10 @@ function ignoreSelectedTextForPrompt(
     if (text) ignoredSelectedTextByItem.set(id, text);
     selectedTextByItem.delete(id);
     selectedAnnotationByItem.delete(id);
+  }
+  if (fullTranslationSidebarForMount(mount)) {
+    mount.ownerDocument?.defaultView?.getSelection()?.removeAllRanges();
+    return;
   }
   clearReaderTransientPdfState(reader, {
     clearHighlight: false,
@@ -4618,7 +5383,7 @@ function bubble(
   del.disabled = state.sending;
   del.addEventListener("click", () => {
     state.messages = state.messages.filter((_, i) => i !== index);
-    void saveChatMessages(state.itemID, state.messages);
+    void persistPanelConversations(state);
     renderPanel(mount, state);
   });
   actions.append(del);
@@ -4698,7 +5463,7 @@ function renderUserPdfSelectionContext(
     doc,
     "div",
     "bubble-source-selection-label",
-    `PDF 选区${locator ? pdfSelectionPageLabel(locator) : ""}`,
+    locator ? `PDF 选区${pdfSelectionPageLabel(locator)}` : "原文选区",
   );
   head.append(label);
   if (locator) {
@@ -4837,8 +5602,13 @@ function scheduleAssistantPdfQuoteLinks(
     sourceItemID: state.itemID,
     preferredAttachmentID: sourceSelection?.attachmentID ?? null,
     preferredPageIndex: sourceSelection?.pageIndex ?? null,
-    onJump: (quote, button) =>
-      jumpToPdfQuote(
+    onJump: (quote, button) => {
+      const sidebar = fullTranslationSidebarForMount(mount);
+      if (sidebar) {
+        jumpToFullTranslationQuote(sidebar, mount, quote);
+        return;
+      }
+      return jumpToPdfQuote(
         mount,
         state,
         quote,
@@ -4846,8 +5616,30 @@ function scheduleAssistantPdfQuoteLinks(
         button,
         state.itemID,
         sourceSelection?.pageIndex ?? null,
-      ),
+      );
+    },
   });
+}
+
+function jumpToFullTranslationQuote(
+  sidebar: WindowSidebarState,
+  mount: HTMLElement,
+  quote: string,
+): void {
+  const session = fullTranslationSessions.get(sidebar);
+  const host = fullTranslationHosts.get(sidebar);
+  const blockId = session
+    ? findFullTranslationSourceBlockId(session.document.blocks, quote)
+    : null;
+  if (
+    !blockId ||
+    !host?.root.isConnected ||
+    !revealFullTranslationSourceBlock(host.root, blockId, quote)
+  ) {
+    setTempLoadMarkStatus(mount, "原文未定位");
+    return;
+  }
+  setTempLoadMarkStatus(mount, "原文定位");
 }
 
 async function openCurrentItemNote(
@@ -5658,32 +6450,54 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
   const readingSettings =
     panelState?.localUiSettings.fullTranslationReading ??
     DEFAULT_LOCAL_UI_SETTINGS.fullTranslationReading;
-  host.root.replaceChildren(
-    renderFullTranslationView(doc, {
-      document: session.document,
-      state: session.state,
-      layout: readingSettings.layout,
-      running: !!sidebar.fullTranslationAbort,
-      preparing: session.preparing,
-      runError: session.runError,
-      assets: session.assets,
-      readingSettings,
-      onLayoutChange: (next) => {
-        updateFullTranslationReadingSettings(sidebar, {
-          ...readingSettings,
-          layout: next,
-        });
-      },
-      onReadingSettingsChange: (next) =>
-        updateFullTranslationReadingSettings(sidebar, next),
-      onRun: () => void startFullTranslation(sidebar),
-      onRetranslate: () => void restartFullTranslation(sidebar),
-      onTranslateBlock: (blockId) =>
-        void startFullTranslation(sidebar, undefined, blockId),
-      onCancel: () => sidebar.fullTranslationAbort?.abort(),
-      onExit: () => closeFullTranslation(sidebar),
-    }),
+  const expandedSourceBlockId = host.root.querySelector<HTMLElement>(
+    ".zai-ft-block.is-source-peek[data-block-id]",
+  )?.dataset.blockId;
+  const currentView = host.root.querySelector<HTMLElement>(
+    ".zai-full-translation",
   );
+  const highlightedSourceQuote =
+    currentView?.dataset.sourceQuoteBlockId && currentView.dataset.sourceQuote
+      ? {
+          blockId: currentView.dataset.sourceQuoteBlockId,
+          quote: currentView.dataset.sourceQuote,
+        }
+      : undefined;
+  const view = renderFullTranslationView(doc, {
+    document: session.document,
+    state: session.state,
+    layout: readingSettings.layout,
+    running: !!sidebar.fullTranslationAbort,
+    preparing: session.preparing,
+    runError: session.runError,
+    assets: session.assets,
+    readingSettings,
+    expandedSourceBlockId,
+    highlightedSourceQuote,
+    onLayoutChange: (next) => {
+      updateFullTranslationReadingSettings(sidebar, {
+        ...readingSettings,
+        layout: next,
+      });
+    },
+    onReadingSettingsChange: (next) =>
+      updateFullTranslationReadingSettings(sidebar, next),
+    onRun: () => void startFullTranslation(sidebar),
+    onRetranslate: () => void restartFullTranslation(sidebar),
+    onTranslateBlock: (blockId) =>
+      void startFullTranslation(sidebar, undefined, blockId),
+    onCancel: () => sidebar.fullTranslationAbort?.abort(),
+    onExit: () => closeFullTranslation(sidebar),
+  });
+  const captureSelection = () => {
+    const itemID = states.get(sidebar.mount)?.itemID ?? null;
+    const before = getStoredSelectedText(itemID);
+    const after = refreshFullTranslationSelection(sidebar, itemID, false);
+    if (before !== after) updateSelectionIndicators(sidebar.mount, itemID);
+  };
+  view.addEventListener("mouseup", captureSelection);
+  view.addEventListener("keyup", captureSelection);
+  host.root.replaceChildren(view);
   const content = host.root.querySelector<HTMLElement>(".zai-ft-content");
   if (content) content.scrollTop = scrollTop;
 }
@@ -6881,7 +7695,7 @@ async function saveAnnotationDraftFromBubble(
       error: err instanceof Error ? err.message : String(err),
     };
   }
-  void saveChatMessages(state.itemID, state.messages);
+  void persistPanelConversations(state);
   refreshAnnotationSuggestion(mount, index, scrollSnapshot);
 }
 
@@ -6931,7 +7745,7 @@ async function saveTextAnnotationDraftFromBubble(
       error: err instanceof Error ? err.message : String(err),
     };
   }
-  void saveChatMessages(state.itemID, state.messages);
+  void persistPanelConversations(state);
   refreshAnnotationSuggestion(mount, index, scrollSnapshot);
 }
 
@@ -7405,6 +8219,7 @@ function installReaderPromptShortcutHandler(
     if (!targetWin || installedWindows.has(targetWin)) return;
     installedWindows.add(targetWin);
     const handler = (event: KeyboardEvent) => {
+      if (handleQuickAskShortcut(win, sidebar, event)) return;
       if (handleTranslateModeShortcut(win, event)) return;
       if (handleReaderTaskEscape(win, targetWin, sidebar, event)) return;
       void handleReaderPromptShortcut(win, targetWin, sidebar, event);
@@ -7425,6 +8240,18 @@ function installReaderPromptShortcutHandler(
     win.clearInterval(monitorID);
     for (const cleanup of cleanupCallbacks) cleanup();
   };
+}
+
+function handleQuickAskShortcut(
+  win: Window,
+  sidebar: WindowSidebarState,
+  event: KeyboardEvent,
+): boolean {
+  if (event.defaultPrevented || !isQuickAskShortcut(event)) return false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void openQuickAsk(win, sidebar);
+  return true;
 }
 
 function handleTranslateModeShortcut(
@@ -8133,6 +8960,7 @@ export function unregisterSidebarForWindow(win: Window) {
   const state = windowSidebars.get(win);
   if (!state) return;
 
+  closeQuickAsk(state);
   state.fullTranslationAbort?.abort();
   state.fullTranslationAbort = undefined;
   closeFullTranslation(state);

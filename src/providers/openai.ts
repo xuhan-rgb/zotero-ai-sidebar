@@ -34,6 +34,10 @@ const OPENAI_FIRST_EVENT_TIMEOUT_MS = 60_000;
 // prompt cache hits). Retry only happens BEFORE any chunk has been yielded
 // to the user; mid-stream failures fall through to the existing error path.
 const MAX_RELAY_RETRY = 3;
+const MAX_OUTPUT_CONTINUATIONS = 3;
+const OUTPUT_COMPLETION_MARKER = "[ZAI_COMPLETE]";
+const OUTPUT_CONTINUATION_PROMPT =
+  "Continue the same answer exactly from where it was cut off. Do not repeat existing text. Complete every remaining part of the user's request. When and only when the answer is fully complete, end with [ZAI_COMPLETE] on its own line.";
 
 // OpenAI Responses-API tool loop. Three load-bearing decisions, all aligned
 // with OpenAI Codex's harness model:
@@ -69,6 +73,7 @@ type ResponseEvent = {
   response?: {
     error?: { message?: string } | null;
     usage?: ResponseUsage;
+    incomplete_details?: { reason?: string } | null;
   };
 };
 
@@ -216,9 +221,10 @@ export class OpenAIProvider implements Provider {
       }
     }
     if (!stream) {
-      const finalMessage = useRelayRouting && isRetryableRelayError(lastErr)
-        ? `上游中继路由 ${retryLimit + 1} 次均返回 5xx（${errMsg(lastErr)}）。可能后端账号全部异常，建议切换 preset 或稍后重试。`
-        : errMsg(lastErr);
+      const finalMessage =
+        useRelayRouting && isRetryableRelayError(lastErr)
+          ? `上游中继路由 ${retryLimit + 1} 次均返回 5xx（${errMsg(lastErr)}）。可能后端账号全部异常，建议切换 preset 或稍后重试。`
+          : errMsg(lastErr);
       yield { type: "error", message: finalMessage };
       return;
     }
@@ -241,12 +247,9 @@ export class OpenAIProvider implements Provider {
     }
 
     if (useRelayRouting && !streamHadError) {
-      persistRelaySalt(
-        preset.id,
-        preset.model,
-        routingItemKey,
-        salt,
-      ).catch(() => undefined);
+      persistRelaySalt(preset.id, preset.model, routingItemKey, salt).catch(
+        () => undefined,
+      );
     }
   }
 
@@ -453,6 +456,7 @@ export class OpenAIProvider implements Provider {
       ? await loadRelaySalt(preset.id, preset.model, routingItemKey)
       : 0;
     let saltPersisted = false;
+    let outputContinuations = 0;
 
     for (let iteration = 0; iteration <= maxIterations; iteration++) {
       let stream: AsyncIterable<unknown> | null = null;
@@ -495,17 +499,22 @@ export class OpenAIProvider implements Provider {
         }
       }
       if (!stream) {
-        const finalMessage = useRelayRouting && isRetryableRelayError(lastErr)
-          ? `上游中继路由 ${retryLimit + 1} 次均返回 5xx（${errMsg(lastErr)}）。可能后端账号全部异常，建议切换 preset 或稍后重试。`
-          : errMsg(lastErr);
+        const finalMessage =
+          useRelayRouting && isRetryableRelayError(lastErr)
+            ? `上游中继路由 ${retryLimit + 1} 次均返回 5xx（${errMsg(lastErr)}）。可能后端账号全部异常，建议切换 preset 或稍后重试。`
+            : errMsg(lastErr);
         yield { type: "error", message: finalMessage };
         return;
       }
 
-      const output: ResponseOutputItemLike[] = [];
       const calls: ResponseFunctionCallLike[] = [];
       let usage: ResponseUsage | undefined;
       let failed = false;
+      let terminalEvent = false;
+      let incompleteReason = "";
+      let iterationText = "";
+      const expectsCompletionMarker = outputContinuations > 0;
+      let markerTail = "";
 
       try {
         for await (const event of streamEventsWithFirstEventTimeout(
@@ -527,7 +536,20 @@ export class OpenAIProvider implements Provider {
               };
               break;
             case "response.output_text.delta":
-              if (e.delta) yield { type: "text_delta", text: e.delta };
+              if (e.delta) {
+                iterationText += e.delta;
+                if (expectsCompletionMarker) {
+                  markerTail += e.delta;
+                  const keep = OUTPUT_COMPLETION_MARKER.length + 16;
+                  if (markerTail.length > keep) {
+                    const visible = markerTail.slice(0, -keep);
+                    markerTail = markerTail.slice(-keep);
+                    yield { type: "text_delta", text: visible };
+                  }
+                } else {
+                  yield { type: "text_delta", text: e.delta };
+                }
+              }
               break;
             case "response.reasoning_text.delta":
             case "response.reasoning_summary_text.delta":
@@ -535,7 +557,6 @@ export class OpenAIProvider implements Provider {
               break;
             case "response.output_item.done":
               if (e.item) {
-                output.push(e.item);
                 if (isFunctionCall(e.item)) calls.push(e.item);
                 const hostedChunk = hostedOutputItemToChunk(e.item);
                 if (hostedChunk) yield hostedChunk;
@@ -560,9 +581,17 @@ export class OpenAIProvider implements Provider {
               };
               break;
             case "response.completed":
+              terminalEvent = true;
               usage = e.response?.usage;
               break;
+            case "response.incomplete":
+              terminalEvent = true;
+              usage = e.response?.usage;
+              incompleteReason =
+                e.response?.incomplete_details?.reason || "unknown";
+              break;
             case "response.failed":
+              terminalEvent = true;
               yield {
                 type: "error",
                 message: e.response?.error?.message || "OpenAI response failed",
@@ -570,6 +599,7 @@ export class OpenAIProvider implements Provider {
               failed = true;
               break;
             case "error":
+              terminalEvent = true;
               yield {
                 type: "error",
                 message: e.message || "OpenAI stream error",
@@ -586,7 +616,30 @@ export class OpenAIProvider implements Provider {
         return;
       }
 
+      let completedByMarker = false;
+      if (expectsCompletionMarker) {
+        const markerAt = markerTail.lastIndexOf(OUTPUT_COMPLETION_MARKER);
+        if (
+          markerAt >= 0 &&
+          !markerTail.slice(markerAt + OUTPUT_COMPLETION_MARKER.length).trim()
+        ) {
+          const visible = markerTail
+            .slice(0, markerAt)
+            .replace(/[ \t]*\n?[ \t]*$/, "");
+          if (visible) yield { type: "text_delta", text: visible };
+          completedByMarker = true;
+        } else if (markerTail) {
+          yield { type: "text_delta", text: markerTail };
+        }
+      }
+
       if (failed) return;
+
+      // Some compatible relays omit response.completed after a function call.
+      // A fully assembled call can still run safely. Text output is different:
+      // output_item.done may precede an abruptly closed stream, so it must go
+      // through the continuation path below unless a terminal event arrived.
+      if (!terminalEvent && calls.length > 0) terminalEvent = true;
 
       // Persist the salt that just produced a successful first-stream-pass.
       // Subsequent chats for the same paper start from this salt, keeping
@@ -599,15 +652,72 @@ export class OpenAIProvider implements Provider {
         // full, permission) gets swallowed so an unhandled rejection cannot
         // leak into Zotero's event loop. Next chat for this paper would
         // simply rediscover the salt from scratch.
-        persistRelaySalt(
-          preset.id,
-          preset.model,
-          routingItemKey,
-          salt,
-        ).catch(() => undefined);
+        persistRelaySalt(preset.id, preset.model, routingItemKey, salt).catch(
+          () => undefined,
+        );
       }
 
       if (usage) yield usageChunk(usage);
+
+      if (completedByMarker) return;
+
+      const compatibleMissingUsage =
+        !isOfficialOpenAIEndpoint(preset) && terminalEvent && !usage;
+      const continuationReason =
+        incompleteReason === "max_output_tokens"
+          ? "回答达到单次输出上限"
+          : !terminalEvent
+            ? "回答流提前结束"
+            : expectsCompletionMarker
+              ? "回答尚未覆盖全部要求"
+              : compatibleMissingUsage
+                ? "回答结束状态缺少用量"
+                : "";
+      if (
+        continuationReason &&
+        calls.length === 0 &&
+        iterationText &&
+        (!incompleteReason || incompleteReason === "max_output_tokens") &&
+        outputContinuations < MAX_OUTPUT_CONTINUATIONS
+      ) {
+        outputContinuations += 1;
+        input.push(
+          { role: "assistant", content: iterationText },
+          { role: "user", content: OUTPUT_CONTINUATION_PROMPT },
+        );
+        yield {
+          type: "status",
+          message: `${continuationReason}，正在自动续写（${outputContinuations}/${MAX_OUTPUT_CONTINUATIONS}）`,
+        };
+        continue;
+      }
+
+      if (incompleteReason) {
+        yield {
+          type: "error",
+          message:
+            incompleteReason === "max_output_tokens"
+              ? "回答再次达到最大输出长度，已保留当前内容；请发送“继续”完成剩余部分。"
+              : `OpenAI response incomplete: ${incompleteReason}`,
+        };
+        return;
+      }
+
+      if (!terminalEvent) {
+        yield {
+          type: "error",
+          message: "回答多次续写后仍未收到完成标记，请发送“继续”完成剩余部分。",
+        };
+        return;
+      }
+
+      if (expectsCompletionMarker) {
+        yield {
+          type: "error",
+          message: "回答多次续写后仍未覆盖全部要求，请发送“继续”完成剩余部分。",
+        };
+        return;
+      }
 
       // Natural exit: model produced text-only output. No tool calls ⇒ done.
       if (calls.length === 0) {
@@ -969,7 +1079,10 @@ function promptCacheParams(
   salt: number = 0,
 ): { prompt_cache_key?: string; prompt_cache_retention?: "24h" } {
   if (!shouldSendPromptCacheKey(preset)) return {};
-  const key = saltedCacheKey(stablePromptCacheKey(options.promptCacheKey), salt);
+  const key = saltedCacheKey(
+    stablePromptCacheKey(options.promptCacheKey),
+    salt,
+  );
   if (!key) return {};
   return {
     prompt_cache_key: key,

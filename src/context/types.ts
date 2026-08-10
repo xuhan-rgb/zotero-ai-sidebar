@@ -98,6 +98,9 @@ export interface MessageContext {
     annotation: Record<string, unknown>;
   };
   queuedAnnotationColorEnabled?: boolean;
+  // Captured when a task is submitted so queued requests keep the history
+  // scope the user selected at submission time.
+  conversationHistoryMode?: "none" | "previous" | "all";
   planMode?: ContextMode;
   planReason?: string;
   plannerSource?: ContextPlanSource;

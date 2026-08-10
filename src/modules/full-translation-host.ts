@@ -14,6 +14,7 @@ export interface FullTranslationHost {
 export function mountFullTranslationHost(
   doc: Document,
   tabID: string,
+  adjacentElements: readonly Element[] = [],
 ): FullTranslationHost | null {
   const container = doc.getElementById(tabID);
   if (!container) return null;
@@ -21,7 +22,9 @@ export function mountFullTranslationHost(
   const existing = container.querySelector(`:scope > .${ROOT_CLASS}`);
   if (existing) existing.remove();
 
-  const hiddenChildren = Array.from(container.children).map((element) => ({
+  const hiddenChildren = Array.from(
+    new Set([...container.children, ...adjacentElements]),
+  ).map((element) => ({
     element,
     hidden: element.getAttribute("hidden"),
   }));

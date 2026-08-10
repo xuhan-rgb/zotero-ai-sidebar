@@ -106,7 +106,9 @@ export interface ApplySnapshotResult {
   readingPositions: ImportReadingResult;
 }
 
-export async function buildSyncSnapshot(prefs: PrefsStore): Promise<SyncSnapshot> {
+export async function buildSyncSnapshot(
+  prefs: PrefsStore,
+): Promise<SyncSnapshot> {
   const [annotations, threads, translateCache, overviews, readingPositions] =
     await Promise.all([
       exportAllAnnotations(),
@@ -154,9 +156,10 @@ export function parseSyncSnapshot(raw: string): SyncSnapshot {
     quickPrompts: normalizeQuickPromptSettings(parsed.quickPrompts),
     toolSettings: normalizeToolSettings(parsed.toolSettings),
     annotations: normalizePortableAnnotations(parsed.annotations),
-    translateSettings: parsed.translateSettings === undefined
-      ? undefined
-      : normalizeTranslateSettings(parsed.translateSettings),
+    translateSettings:
+      parsed.translateSettings === undefined
+        ? undefined
+        : normalizeTranslateSettings(parsed.translateSettings),
     threads: normalizePortableThreads(parsed.threads),
     translateCache: normalizeTranslateCache(parsed.translateCache),
     overviews: normalizeOverviewStore(parsed.overviews),
@@ -172,7 +175,8 @@ export async function applySyncSnapshot(
   saveUiSettings(prefs, snapshot.uiSettings);
   saveQuickPromptSettings(prefs, snapshot.quickPrompts);
   saveToolSettings(prefs, snapshot.toolSettings);
-  if (snapshot.translateSettings) saveTranslateSettings(prefs, snapshot.translateSettings);
+  if (snapshot.translateSettings)
+    saveTranslateSettings(prefs, snapshot.translateSettings);
   const [annotations, threads, translateCache, overviews, readingPositions] =
     await Promise.all([
       importAllAnnotations(snapshot.annotations),
@@ -196,12 +200,43 @@ function normalizePortableThreads(value: unknown): PortableThread[] {
         ? entry.libraryType
         : null;
     if (!libraryType) continue;
-    const updatedAt = typeof entry.updatedAt === 'string' ? entry.updatedAt : '';
+    const updatedAt =
+      typeof entry.updatedAt === 'string' ? entry.updatedAt : '';
     const messages = Array.isArray(entry.messages) ? entry.messages : [];
-    if (!updatedAt || messages.length === 0) continue;
+    const conversationID =
+      typeof entry.conversationID === 'string'
+        ? entry.conversationID.trim()
+        : '';
+    if (!updatedAt || (messages.length === 0 && !conversationID)) continue;
+    const conversationFields = conversationID
+      ? {
+          conversationID,
+          ...(typeof entry.title === 'string' && entry.title.trim()
+            ? { title: entry.title.trim() }
+            : {}),
+          ...(typeof entry.presetID === 'string' && entry.presetID
+            ? { presetID: entry.presetID }
+            : {}),
+          ...(typeof entry.draftText === 'string'
+            ? { draftText: entry.draftText }
+            : {}),
+          ...(entry.historyMode === 'none' ||
+          entry.historyMode === 'previous' ||
+          entry.historyMode === 'all'
+            ? { historyMode: entry.historyMode }
+            : {}),
+          ...(typeof entry.createdAt === 'string' && entry.createdAt
+            ? { createdAt: entry.createdAt }
+            : {}),
+          ...(typeof entry.active === 'boolean'
+            ? { active: entry.active }
+            : {}),
+        }
+      : {};
     if (libraryType === 'global') {
       threads.push({
         libraryType,
+        ...conversationFields,
         updatedAt,
         messages: messages as PortableThread['messages'],
       });
@@ -215,6 +250,7 @@ function normalizePortableThreads(value: unknown): PortableThread[] {
         libraryType,
         groupID: entry.groupID,
         itemKey,
+        ...conversationFields,
         updatedAt,
         messages: messages as PortableThread['messages'],
       });
@@ -223,6 +259,7 @@ function normalizePortableThreads(value: unknown): PortableThread[] {
     threads.push({
       libraryType,
       itemKey,
+      ...conversationFields,
       updatedAt,
       messages: messages as PortableThread['messages'],
     });

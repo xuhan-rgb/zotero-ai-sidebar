@@ -41,8 +41,12 @@ export interface FullTranslationBlock {
 }
 
 export interface FullTranslationTable {
-  rows: string[][];
+  rows: FullTranslationTableCell[][];
 }
+
+export type FullTranslationTableCell =
+  | string
+  | { text: string; colSpan?: number; rowSpan?: number };
 
 export interface FullTranslationDocument {
   schemaVersion: 1;
@@ -216,10 +220,84 @@ function fullTranslationTable(table: TexTable): FullTranslationTable | null {
   if (!table.tabularTex) return null;
   const body = outerTabularBody(table.tabularTex);
   if (body == null) return null;
+  const activeRowSpans: number[] = [];
   const rows = splitTableSource(body, "row")
-    .map((row) => splitTableSource(row, "column").map(normalizeTableCell))
-    .filter((row) => row.some(Boolean));
+    .map((row) => parseTableRow(row, activeRowSpans))
+    .filter((row) => row.some((cell) => tableCellText(cell)));
   return rows.length ? { rows } : null;
+}
+
+function parseTableRow(
+  source: string,
+  activeRowSpans: number[],
+): FullTranslationTableCell[] {
+  const occupied = activeRowSpans.map((remaining) => remaining > 0);
+  for (let index = 0; index < activeRowSpans.length; index++) {
+    activeRowSpans[index] = Math.max(0, activeRowSpans[index] - 1);
+  }
+
+  const cells: FullTranslationTableCell[] = [];
+  let column = 0;
+  for (const sourceCell of splitTableSource(source, "column")) {
+    const cell = parseTableCell(sourceCell);
+    const text = tableCellText(cell);
+    const colSpan = typeof cell === "string" ? 1 : (cell.colSpan ?? 1);
+    const rowSpan = typeof cell === "string" ? 1 : (cell.rowSpan ?? 1);
+
+    // LaTeX keeps an empty `&` placeholder beneath a multirow cell. HTML
+    // represents that slot through rowspan, so emitting the placeholder would
+    // create an extra column.
+    while (occupied[column] && text) column += 1;
+    if (occupied[column]) {
+      column += colSpan;
+      continue;
+    }
+
+    cells.push(cell);
+    if (rowSpan > 1) {
+      for (let offset = 0; offset < colSpan; offset++) {
+        const target = column + offset;
+        activeRowSpans[target] = Math.max(
+          activeRowSpans[target] ?? 0,
+          rowSpan - 1,
+        );
+      }
+    }
+    column += colSpan;
+  }
+  return cells;
+}
+
+function parseTableCell(value: string): FullTranslationTableCell {
+  let source = stripTableRules(value).trim();
+  let colSpan = 1;
+  let rowSpan = 1;
+
+  for (let iteration = 0; iteration < 5; iteration++) {
+    source = unwrapOuterBraces(source);
+    const command = source.match(
+      /^\\(multicolumn|multirow|shortstack)\b/,
+    )?.[1] as "multicolumn" | "multirow" | "shortstack" | undefined;
+    if (!command) break;
+    const parsed = readTableLayoutCommand(source, 0, command);
+    if (!parsed || source.slice(parsed.end).trim()) break;
+    colSpan = Math.max(colSpan, parsed.colSpan ?? 1);
+    rowSpan = Math.max(rowSpan, parsed.rowSpan ?? 1);
+    source = parsed.content;
+  }
+
+  const text = normalizeTableCell(source);
+  return colSpan > 1 || rowSpan > 1
+    ? {
+        text,
+        ...(colSpan > 1 ? { colSpan } : {}),
+        ...(rowSpan > 1 ? { rowSpan } : {}),
+      }
+    : text;
+}
+
+function tableCellText(cell: FullTranslationTableCell): string {
+  return typeof cell === "string" ? cell : cell.text;
 }
 
 function normalizeTableCell(value: string): string {
@@ -403,7 +481,12 @@ function readTableLayoutCommand(
   text: string,
   start: number,
   command: "multicolumn" | "multirow" | "shortstack",
-): { content: string; end: number } | null {
+): {
+  content: string;
+  end: number;
+  colSpan?: number;
+  rowSpan?: number;
+} | null {
   let cursor = start + command.length + 1;
   if (command === "shortstack") {
     cursor = skipWhitespace(text, cursor);
@@ -433,7 +516,19 @@ function readTableLayoutCommand(
     argumentsFound.push(argument);
     cursor = argument.end;
   }
-  return { content: argumentsFound[2].value, end: cursor };
+  const span = positiveTableSpan(argumentsFound[0].value);
+  return {
+    content: argumentsFound[2].value,
+    end: cursor,
+    ...(command === "multicolumn" && span > 1 ? { colSpan: span } : {}),
+    ...(command === "multirow" && span > 1 ? { rowSpan: span } : {}),
+  };
+}
+
+function positiveTableSpan(value: string): number {
+  const normalized = value.trim();
+  if (!/^\d+$/.test(normalized)) return 1;
+  return Math.max(1, Number.parseInt(normalized, 10));
 }
 
 function flattenNestedTabulars(value: string): string {
