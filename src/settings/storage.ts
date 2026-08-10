@@ -6,6 +6,7 @@ import {
   type AgentPermissionMode,
   type AnthropicVendor,
   type ModelPreset,
+  type ModelSuggestionGroup,
   type ProviderKind,
   type ReasoningEffort,
   type ReasoningSummary,
@@ -127,7 +128,8 @@ function normalizeModels(
 
 // `extras` is provider-specific. OpenAI uses reasoning-* fields (Responses
 // API); Anthropic uses `vendor` to pick the thinking-mode dialect (set by
-// the preset UI, auto-detected from baseUrl/model on legacy load).
+// the preset UI, auto-detected from baseUrl/model on legacy load). OpenAI
+// presets may persist a UI-only model suggestion group separately.
 function normalizeExtras(
   provider: ProviderKind,
   extras: ModelPreset['extras'],
@@ -147,8 +149,14 @@ function normalizeExtras(
     return { ...extras, vendor, reasoningEffort };
   }
   const rawEffort = extras?.reasoningEffort;
+  const normalized = { ...extras };
+  if (isModelSuggestionGroup(extras?.modelSuggestionGroup)) {
+    normalized.modelSuggestionGroup = extras.modelSuggestionGroup;
+  } else {
+    delete normalized.modelSuggestionGroup;
+  }
   return {
-    ...extras,
+    ...normalized,
     reasoningEffort: isReasoningEffort(rawEffort)
       ? rawEffort
       : DEFAULT_REASONING_EFFORT,
@@ -159,6 +167,16 @@ function normalizeExtras(
       ? extras.agentPermissionMode
       : 'default',
   };
+}
+
+function isModelSuggestionGroup(value: unknown): value is ModelSuggestionGroup {
+  return (
+    value === 'auto' ||
+    value === 'openai' ||
+    value === 'deepseek' ||
+    value === 'claude' ||
+    value === 'custom'
+  );
 }
 
 // Initial vendor guess for legacy presets that pre-date the field. Heuristic:

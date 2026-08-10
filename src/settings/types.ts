@@ -12,6 +12,14 @@ export type AgentPermissionMode = 'default' | 'yolo';
 //   compat   = unknown third-party proxy — never send `thinking` so an
 //              endpoint that doesn't recognize the field can't 400.
 export type AnthropicVendor = 'claude' | 'deepseek' | 'compat';
+// OpenAI-compatible model suggestion selection. This is a UI preference only;
+// it never changes the provider transport or request body.
+export type ModelSuggestionGroup =
+  | 'auto'
+  | 'openai'
+  | 'deepseek'
+  | 'claude'
+  | 'custom';
 
 export interface ModelPreset {
   id: string;
@@ -49,6 +57,9 @@ export interface ModelPreset {
     testStatus?: 'ok' | 'failed';
     // Anthropic-only — written by storage normalize / preset UI:
     vendor?: AnthropicVendor;
+    // OpenAI-compatible UI-only model suggestion group. `auto` derives from
+    // Base URL/model IDs; other values are explicit user selections.
+    modelSuggestionGroup?: ModelSuggestionGroup;
     // Translate-only signal — written by translator just before stream(),
     // never persisted via the preset UI. Presence enables thinking on the
     // Anthropic path; absence keeps the chat flow's existing no-thinking
@@ -128,12 +139,21 @@ export const MODEL_CATALOG: Record<'openai' | AnthropicVendor, ModelDescriptor[]
 };
 
 // Derived view: id-only suggestion lists (the preset card chip-row reads this).
-export const MODEL_SUGGESTIONS: Record<'openai' | AnthropicVendor, string[]> = {
+// `custom` is a UI-only catalog key used when an OpenAI-compatible endpoint
+// cannot be identified safely. It intentionally has no suggestions; users can
+// still add any model ID manually.
+export const MODEL_SUGGESTIONS: Record<
+  'openai' | AnthropicVendor | 'custom',
+  string[]
+> = {
   openai: MODEL_CATALOG.openai.map((m) => m.id),
   claude: MODEL_CATALOG.claude.map((m) => m.id),
   deepseek: MODEL_CATALOG.deepseek.map((m) => m.id),
   compat: [],
+  custom: [],
 };
+
+export type ModelSuggestionKey = keyof typeof MODEL_SUGGESTIONS;
 
 // Look up a Claude model's thinking-mode metadata. Catalog hits give precise
 // answers; unknown IDs fall through to a name-pattern heuristic so a future

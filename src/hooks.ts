@@ -83,6 +83,8 @@ import {
   REASONING_SUMMARY_OPTIONS,
   type AnthropicVendor,
   type ModelPreset,
+  type ModelSuggestionGroup,
+  type ModelSuggestionKey,
   type ProviderKind,
   type ReasoningEffort,
   type ReasoningSummary,
@@ -93,6 +95,10 @@ import {
   type TranslateThinking,
   type TranslateTriggerMode,
 } from './settings/types';
+import {
+  inferModelSuggestionGroupFromName,
+  resolveModelSuggestionKey,
+} from './settings/model-catalog';
 import {
   loadUiSettings,
   normalizeUiSettings,
@@ -1704,7 +1710,29 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   const initialVendor: AnthropicVendor =
     preset.extras?.vendor ??
     detectAnthropicVendor(preset.baseUrl, preset.model);
-  const initialKey = preset.provider === 'anthropic' ? initialVendor : 'openai';
+  const automaticKey = resolveModelSuggestionKey(
+    preset.provider,
+    preset.baseUrl,
+    (preset.models?.length ? preset.models : [preset.model]).filter(Boolean),
+    initialVendor,
+  );
+  const inferredNameGroup = inferModelSuggestionGroupFromName(preset.label);
+  const initialGroup: ModelSuggestionGroup =
+    preset.provider === 'openai'
+      ? preset.extras?.modelSuggestionGroup ??
+        (automaticKey === 'custom' ? inferredNameGroup : undefined) ??
+        'auto'
+      : 'auto';
+  const initialKey =
+    initialGroup === 'auto'
+      ? automaticKey
+      : resolveModelSuggestionKey(
+          preset.provider,
+          preset.baseUrl,
+          (preset.models?.length ? preset.models : [preset.model]).filter(Boolean),
+          initialVendor,
+          initialGroup,
+        );
   const modelList = createModelListControl(
     doc,
     (preset.models?.length ? preset.models : [preset.model]).filter(Boolean),
@@ -1736,6 +1764,44 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   // when the preset is anthropic.
   const vendorLabel = el(doc, 'label', '', 'Vendor');
   const reasoningLabel = el(doc, 'label', '', 'Reasoning Summary');
+  const modelGroup = select<ModelSuggestionGroup>(
+    doc,
+    [
+      ['auto', '自动识别'],
+      ['openai', 'OpenAI'],
+      ['deepseek', 'DeepSeek'],
+      ['claude', 'Claude'],
+      ['custom', '自定义'],
+    ],
+    initialGroup,
+  );
+  modelGroup.dataset.field = 'modelSuggestionGroup';
+  const modelGroupLabel = el(doc, 'label', '', '模型组');
+
+  const syncModelSuggestionKey = () => {
+    const kind = provider.value === 'anthropic' ? 'anthropic' : 'openai';
+    const automaticKey = resolveModelSuggestionKey(
+      kind,
+      baseUrl.value,
+      modelList.models(),
+      vendor.value as AnthropicVendor,
+      'auto',
+    );
+    const selectedGroup = modelGroup.value as ModelSuggestionGroup;
+    const nextKey =
+      selectedGroup !== 'auto'
+        ? resolveModelSuggestionKey(
+            kind,
+            baseUrl.value,
+            modelList.models(),
+            vendor.value as AnthropicVendor,
+            selectedGroup,
+          )
+        : kind === 'openai' && automaticKey === 'custom'
+          ? inferModelSuggestionGroupFromName(label.value) ?? automaticKey
+          : automaticKey;
+    modelList.setSuggestionKey(nextKey);
+  };
 
   const syncProvider = () => {
     const isOpenAI = provider.value === 'openai';
@@ -1746,15 +1812,14 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
     };
     showHide(vendorLabel, vendor, !isOpenAI);
     showHide(reasoningLabel, reasoningSummary, isOpenAI);
+    showHide(modelGroupLabel, modelGroup, isOpenAI);
   };
   provider.addEventListener('change', () => {
     const kind = provider.value as ProviderKind;
     if (!label.value.trim())
       label.value = kind === 'anthropic' ? 'Claude' : 'GPT';
     if (!baseUrl.value.trim()) baseUrl.value = DEFAULT_BASE_URLS[kind];
-    const key =
-      kind === 'anthropic' ? (vendor.value as AnthropicVendor) : 'openai';
-    modelList.setSuggestionKey(key);
+    syncModelSuggestionKey();
     if (modelList.models().length === 0 && DEFAULT_MODELS[kind]) {
       modelList.setModels([DEFAULT_MODELS[kind]]);
     }
@@ -1763,9 +1828,19 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   });
   vendor.addEventListener('change', () => {
     if (provider.value !== 'anthropic') return;
-    modelList.setSuggestionKey(vendor.value as AnthropicVendor);
+    syncModelSuggestionKey();
     updatePresetDirtyState(doc);
   });
+  modelGroup.addEventListener('change', () => {
+    syncModelSuggestionKey();
+    updatePresetDirtyState(doc);
+  });
+
+  modelList.onModelsChange(syncModelSuggestionKey);
+  label.addEventListener('input', syncModelSuggestionKey);
+  label.addEventListener('change', syncModelSuggestionKey);
+  baseUrl.addEventListener('input', syncModelSuggestionKey);
+  baseUrl.addEventListener('change', syncModelSuggestionKey);
   syncProvider();
   card.append(
     title,
@@ -1775,6 +1850,7 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
       ['API Key', apiKey],
       ['Base URL', baseUrl],
       ['Models', modelList.element],
+      [modelGroupLabel, modelGroup],
       ['Max tokens', maxTokens],
       [vendorLabel, vendor],
       [reasoningLabel, reasoningSummary],
@@ -2174,13 +2250,12 @@ function truncatePromptCacheTestText(text: string): string {
   return text.length > charBudget ? text.slice(0, charBudget) : text;
 }
 
-type ModelSuggestionKey = keyof typeof MODEL_SUGGESTIONS;
-
 interface ModelListControl {
   element: HTMLElement;
   models(): string[];
   setModels(models: string[]): void;
   setSuggestionKey(key: ModelSuggestionKey): void;
+  onModelsChange(listener: () => void): void;
 }
 
 function createModelListControl(
@@ -2199,6 +2274,7 @@ function createModelListControl(
 
   let suggestionKey: ModelSuggestionKey = initialKey;
   let selectedTestModel = initialTestModel.trim();
+  let modelsChangeListener: (() => void) | undefined;
   const currentModels = () => {
     const values: string[] = [];
     selected
@@ -2243,6 +2319,7 @@ function createModelListControl(
     refreshSuggestions();
     updatePresetDirtyState(doc);
     dispatchPreferenceChange(doc, wrap);
+    modelsChangeListener?.();
   };
 
   const addChip = (value: string) => {
@@ -2336,8 +2413,12 @@ function createModelListControl(
     models: currentModels,
     setModels,
     setSuggestionKey: (key) => {
+      if (suggestionKey === key) return;
       suggestionKey = key;
       refreshSuggestions();
+    },
+    onModelsChange: (listener) => {
+      modelsChangeListener = listener;
     },
   };
 }
@@ -2351,6 +2432,8 @@ function suggestionTitle(key: ModelSuggestionKey): string {
     case 'deepseek':
       return 'DeepSeek 预设模型';
     case 'compat':
+      return '自定义模型';
+    case 'custom':
       return '自定义模型';
   }
 }
@@ -2376,6 +2459,10 @@ function readPresetControls(doc: Document): ModelPreset[] {
             ),
             reasoningSummary: reasoningSummaryValue(
               controlValue(card, 'reasoningSummary'),
+            ),
+            modelSuggestionGroup: modelSuggestionGroupValue(
+              controlValue(card, 'modelSuggestionGroup'),
+              prior?.extras?.modelSuggestionGroup,
             ),
           }
         : {
@@ -2407,6 +2494,22 @@ function vendorValue(
 ): AnthropicVendor {
   if (raw === 'claude' || raw === 'deepseek' || raw === 'compat') return raw;
   return fallback ?? 'compat';
+}
+
+function modelSuggestionGroupValue(
+  raw: string,
+  fallback: ModelSuggestionGroup | undefined,
+): ModelSuggestionGroup {
+  if (
+    raw === 'auto' ||
+    raw === 'openai' ||
+    raw === 'deepseek' ||
+    raw === 'claude' ||
+    raw === 'custom'
+  ) {
+    return raw;
+  }
+  return fallback ?? 'auto';
 }
 
 async function savePresetControlsWithConnectivity(

@@ -73,6 +73,24 @@ describe('preset storage', () => {
     expect(loadPresets(prefs)[0].extras?.agentPermissionMode).toBe('yolo');
   });
 
+  it('preserves an explicit OpenAI model suggestion group', () => {
+    const prefs = memPrefs();
+    writePresetsRaw(prefs, [
+      {
+        id: 'ds-openai',
+        label: 'DeepSeek relay',
+        provider: 'openai',
+        apiKey: 'sk',
+        baseUrl: 'https://relay.example/v1',
+        model: 'custom-model',
+        models: ['custom-model'],
+        maxTokens: 4000,
+        extras: { modelSuggestionGroup: 'deepseek' },
+      },
+    ]);
+    expect(loadPresets(prefs)[0].extras?.modelSuggestionGroup).toBe('deepseek');
+  });
+
   it('back-fills models[] from a legacy preset with only `model`', () => {
     const prefs = memPrefs();
     writePresetsRaw(prefs, [
