@@ -1,0 +1,1969 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Zotero AI Sidebar · 模型选择原型</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --canvas: #e9e5df;
+        --paper: #fbfaf7;
+        --paper-strong: #ffffff;
+        --ink: #282b29;
+        --muted: #777870;
+        --line: #d7d3cb;
+        --line-strong: #bbb7ae;
+        --green: #3f8458;
+        --green-soft: #e8f2e9;
+        --green-ink: #2f6844;
+        --clay: #ae694d;
+        --clay-soft: #f5e9e2;
+        --amber: #9a6a20;
+        --amber-soft: #fbf2dc;
+        --shadow: 0 18px 50px rgba(55, 48, 39, 0.12);
+        --radius: 16px;
+        font-family:
+          Inter,
+          ui-sans-serif,
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          "Segoe UI",
+          sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-width: 320px;
+        min-height: 100vh;
+        color: var(--ink);
+        background:
+          radial-gradient(circle at 12% 0%, #f7f3ec 0, transparent 32%),
+          var(--canvas);
+      }
+
+      button,
+      input,
+      select,
+      textarea {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      .prototype-shell {
+        width: min(1440px, 100%);
+        margin: 0 auto;
+        padding: 22px;
+      }
+
+      .prototype-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 18px;
+        margin-bottom: 14px;
+        padding: 0 2px;
+      }
+
+      .prototype-brand {
+        display: flex;
+        align-items: center;
+        gap: 11px;
+        min-width: 0;
+      }
+
+      .prototype-logo {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        flex: 0 0 auto;
+        border-radius: 12px;
+        background: #9e3d35;
+        color: white;
+        font-size: 18px;
+        font-weight: 800;
+        box-shadow: 0 8px 20px rgba(117, 45, 39, 0.22);
+      }
+
+      .prototype-brand h1 {
+        margin: 0;
+        font-size: 17px;
+        letter-spacing: -0.01em;
+      }
+
+      .prototype-brand p {
+        margin: 3px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .prototype-actions {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 8px;
+        flex-wrap: wrap;
+      }
+
+      .source-chip,
+      .ghost-button {
+        min-height: 34px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: rgba(255, 255, 255, 0.62);
+      }
+
+      .source-chip {
+        display: grid;
+        grid-template-columns: auto auto;
+        align-items: center;
+        column-gap: 7px;
+        padding: 5px 9px;
+        font-size: 11px;
+      }
+
+      .source-chip span {
+        color: var(--muted);
+      }
+
+      .source-chip strong {
+        max-width: 210px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-size: 11px;
+      }
+
+      .source-chip select {
+        grid-column: 2;
+        max-width: 210px;
+        border: 0;
+        outline: 0;
+        padding: 0;
+        background: transparent;
+        color: var(--ink);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .ghost-button {
+        padding: 0 11px;
+        cursor: pointer;
+      }
+
+      .ghost-button:hover {
+        border-color: var(--line-strong);
+        background: white;
+      }
+
+      .prototype-window {
+        min-height: 760px;
+        overflow: hidden;
+        border: 1px solid rgba(87, 80, 68, 0.24);
+        border-radius: 20px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      .window-bar {
+        display: grid;
+        grid-template-columns: 1fr auto 1fr;
+        align-items: center;
+        min-height: 46px;
+        padding: 0 16px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.84);
+      }
+
+      .traffic-lights {
+        display: flex;
+        gap: 7px;
+      }
+
+      .traffic-lights i {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        background: #d8d5cf;
+      }
+
+      .window-title {
+        color: #62635e;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .scene-tabs {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4px;
+        padding: 10px;
+        border-bottom: 1px solid var(--line);
+        background: #f6f4ef;
+      }
+
+      .scene-tab {
+        position: relative;
+        min-width: 150px;
+        border: 1px solid transparent;
+        border-radius: 10px;
+        padding: 9px 13px;
+        background: transparent;
+        color: #6f706a;
+        cursor: pointer;
+        font-size: 12px;
+        font-weight: 700;
+      }
+
+      .scene-tab:hover {
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .scene-tab[aria-selected="true"] {
+        border-color: var(--line);
+        background: white;
+        color: var(--ink);
+        box-shadow: 0 3px 10px rgba(59, 53, 45, 0.06);
+      }
+
+      .scene-tab small {
+        display: block;
+        margin-top: 2px;
+        color: #92938d;
+        font-size: 9px;
+        font-weight: 600;
+      }
+
+      .scene {
+        display: none;
+        min-height: 665px;
+      }
+
+      .scene.is-active {
+        display: block;
+      }
+
+      .settings-layout {
+        display: grid;
+        grid-template-columns: 210px minmax(0, 1fr);
+        min-height: 665px;
+      }
+
+      .settings-nav {
+        padding: 22px 12px;
+        border-right: 1px solid var(--line);
+        background: #f1efea;
+      }
+
+      .settings-nav h2 {
+        margin: 0 10px 14px;
+        color: #777872;
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .settings-nav button {
+        width: 100%;
+        border: 0;
+        border-radius: 8px;
+        padding: 9px 11px;
+        background: transparent;
+        text-align: left;
+        cursor: default;
+        font-size: 12px;
+      }
+
+      .settings-nav button.is-active {
+        background: #dde9df;
+        color: #2f6944;
+        font-weight: 800;
+      }
+
+      .settings-content {
+        overflow: auto;
+        padding: 28px clamp(24px, 5vw, 68px) 44px;
+      }
+
+      .page-title-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 20px;
+      }
+
+      .page-title-row h2,
+      .translation-head h2 {
+        margin: 0;
+        font-size: 22px;
+        letter-spacing: -0.025em;
+      }
+
+      .page-title-row p,
+      .translation-head p {
+        margin: 7px 0 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.6;
+      }
+
+      .autosave {
+        flex: 0 0 auto;
+        border-radius: 999px;
+        padding: 5px 9px;
+        background: var(--green-soft);
+        color: var(--green-ink);
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .quick-discovery {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        align-items: center;
+        gap: 13px;
+        margin-bottom: 16px;
+        border: 1px solid #dfc7b8;
+        border-radius: 13px;
+        padding: 13px 15px;
+        background: linear-gradient(135deg, #fffaf6, var(--clay-soft));
+      }
+
+      .quick-mark {
+        display: grid;
+        width: 36px;
+        height: 36px;
+        place-items: center;
+        border-radius: 11px;
+        background: var(--clay);
+        color: white;
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .quick-discovery strong {
+        display: block;
+        font-size: 13px;
+      }
+
+      .quick-discovery p {
+        margin: 3px 0 0;
+        color: #806c60;
+        font-size: 11px;
+        line-height: 1.45;
+      }
+
+      .shortcut-editor {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .shortcut-editor label {
+        color: #806c60;
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .shortcut-editor input,
+      kbd {
+        border: 1px solid rgba(99, 78, 63, 0.24);
+        border-bottom-width: 2px;
+        border-radius: 7px;
+        background: rgba(255, 255, 255, 0.84);
+        color: #5c463a;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .shortcut-editor input {
+        width: 88px;
+        padding: 7px 8px;
+        text-align: center;
+      }
+
+      kbd {
+        display: inline-flex;
+        min-height: 29px;
+        align-items: center;
+        padding: 3px 9px;
+      }
+
+      .settings-card,
+      .memory-card {
+        border: 1px solid var(--line);
+        border-radius: var(--radius);
+        background: var(--paper-strong);
+      }
+
+      .settings-card {
+        padding: 20px;
+      }
+
+      .presentation-card {
+        margin-top: 14px;
+      }
+
+      .presentation-grid {
+        display: grid;
+        grid-template-columns: 150px minmax(220px, 1fr);
+        align-items: center;
+        gap: 12px 18px;
+        border-top: 1px solid var(--line);
+        padding-top: 15px;
+      }
+
+      .presentation-grid label {
+        color: #555851;
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .presentation-grid select {
+        width: 100%;
+        min-height: 36px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        padding: 6px 10px;
+        outline: 0;
+        background: #f6f5f2;
+        color: var(--ink);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .presentation-grid select:focus {
+        border-color: #92a898;
+        box-shadow: 0 0 0 3px rgba(63, 132, 88, 0.08);
+      }
+
+      .card-heading {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        margin-bottom: 15px;
+      }
+
+      .card-heading h3 {
+        margin: 0;
+        font-size: 15px;
+      }
+
+      .card-heading p {
+        margin: 5px 0 0;
+        color: var(--muted);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      .scope-lines {
+        display: grid;
+        gap: 6px;
+        min-width: 245px;
+        border-left: 1px solid var(--line);
+        padding-left: 15px;
+        color: #666861;
+        font-size: 10px;
+      }
+
+      .scope-lines span {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .scope-lines b {
+        color: var(--green-ink);
+      }
+
+      .compact-picker-shell {
+        display: grid;
+        gap: 7px;
+      }
+
+      .compact-picker-summary {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 42px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: 7px 9px;
+        background: white;
+      }
+
+      .compact-picker-current {
+        min-width: 0;
+        flex: 1 1 auto;
+      }
+
+      .compact-picker-current > span,
+      .compact-picker-current small {
+        display: block;
+        color: #666861;
+        font-size: 9px;
+      }
+
+      .compact-picker-current strong {
+        display: block;
+        overflow: hidden;
+        margin: 2px 0;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .compact-settings-button {
+        flex: 0 0 auto;
+        min-height: 29px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 4px 9px;
+        background: #f7f6f3;
+        cursor: pointer;
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .compact-settings-button:hover,
+      .compact-settings-button[aria-expanded="true"] {
+        border-color: #96aa9b;
+        background: var(--green-soft);
+        color: var(--green-ink);
+      }
+
+      .memory-badge {
+        border-radius: 999px;
+        padding: 4px 7px;
+        background: var(--green-soft);
+        color: var(--green-ink);
+        font-size: 9px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .memory-badge.is-inherited {
+        background: var(--amber-soft);
+        color: var(--amber);
+      }
+
+      .compact-picker {
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        padding: 9px 10px;
+        background: white;
+      }
+
+      .settings-dropdown-picker {
+        border: 0;
+        padding: 0;
+        background: transparent;
+      }
+
+      .compact-picker-fields {
+        display: grid;
+        grid-template-columns:
+          minmax(90px, 0.85fr) minmax(140px, 1.25fr)
+          minmax(90px, 0.8fr);
+        gap: 8px;
+      }
+
+      .compact-picker-field {
+        display: grid;
+        min-width: 0;
+        gap: 4px;
+      }
+
+      .compact-picker-field > span {
+        color: #777972;
+        font-size: 9px;
+        font-weight: 800;
+      }
+
+      .compact-picker-field select {
+        width: 100%;
+        min-width: 0;
+        min-height: 31px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        padding: 4px 7px;
+        outline: 0;
+        background: #f7f6f3;
+        color: var(--ink);
+        font-size: 10px;
+        font-weight: 700;
+      }
+
+      .compact-picker-field select:focus {
+        border-color: #92a898;
+        box-shadow: 0 0 0 3px rgba(63, 132, 88, 0.08);
+      }
+
+      .compact-picker-field select:disabled {
+        color: var(--muted);
+        cursor: not-allowed;
+      }
+
+      .compact-picker-foot {
+        margin: 7px 0 0;
+        color: var(--muted);
+        font-size: 9px;
+        line-height: 1.35;
+      }
+
+      .translation-layout {
+        display: grid;
+        grid-template-columns: minmax(320px, 1fr) minmax(440px, 0.92fr);
+        min-height: 665px;
+      }
+
+      .pdf-mock {
+        position: relative;
+        overflow: hidden;
+        border-right: 1px solid var(--line);
+        padding: 34px clamp(20px, 4vw, 62px);
+        background: #ddd9d2;
+      }
+
+      .pdf-page {
+        min-height: 570px;
+        border: 1px solid #cfcbc3;
+        padding: 40px 44px;
+        background: white;
+        box-shadow: 0 12px 28px rgba(57, 51, 42, 0.12);
+      }
+
+      .pdf-page h3 {
+        margin: 0 0 24px;
+        font-family: Georgia, serif;
+        font-size: 20px;
+        line-height: 1.3;
+      }
+
+      .pdf-page h4 {
+        margin: 26px 0 9px;
+        font-family: Georgia, serif;
+        font-size: 13px;
+      }
+
+      .paper-line {
+        height: 6px;
+        margin: 9px 0;
+        border-radius: 3px;
+        background: #dedbd4;
+      }
+
+      .paper-line.short {
+        width: 72%;
+      }
+
+      .paper-line.highlight {
+        height: 21px;
+        background: #f6e7a7;
+      }
+
+      .translation-panel {
+        display: flex;
+        min-width: 0;
+        flex-direction: column;
+        background: #fbfaf7;
+      }
+
+      .translation-toolbar {
+        display: grid;
+        grid-template-columns: 1fr;
+        align-items: center;
+        gap: 15px;
+        padding: 16px 18px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .translation-head h2 {
+        font-size: 16px;
+      }
+
+      .translation-head p {
+        margin-top: 4px;
+        font-size: 10px;
+      }
+
+      .translation-content {
+        display: grid;
+        gap: 14px;
+        overflow: auto;
+        padding: 22px;
+      }
+
+      .inheritance-note {
+        display: flex;
+        align-items: flex-start;
+        gap: 10px;
+        border: 1px solid #ead9b6;
+        border-radius: 11px;
+        padding: 11px 12px;
+        background: var(--amber-soft);
+        color: #765c2f;
+        font-size: 10px;
+        line-height: 1.5;
+      }
+
+      .inheritance-note.is-independent {
+        border-color: #cadfce;
+        background: var(--green-soft);
+        color: var(--green-ink);
+      }
+
+      .translation-block {
+        border-bottom: 1px solid var(--line);
+        padding: 3px 2px 17px;
+      }
+
+      .translation-block h3 {
+        margin: 0 0 7px;
+        font-size: 15px;
+      }
+
+      .translation-block p {
+        margin: 0;
+        color: #535550;
+        font-family: Georgia, "Noto Serif SC", serif;
+        font-size: 13px;
+        line-height: 1.85;
+      }
+
+      .run-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .primary-button {
+        border: 1px solid #37794f;
+        border-radius: 9px;
+        padding: 8px 13px;
+        background: var(--green);
+        color: white;
+        cursor: pointer;
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .primary-button:hover {
+        background: #36784e;
+      }
+
+      .run-status {
+        min-width: 0;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.45;
+        text-align: right;
+      }
+
+      .run-status.is-stale {
+        color: #945b1c;
+      }
+
+      .quick-scene {
+        position: relative;
+        min-height: 665px;
+        overflow: hidden;
+        background:
+          linear-gradient(rgba(38, 39, 37, 0.38), rgba(38, 39, 37, 0.38)),
+          repeating-linear-gradient(0deg, #d7d4ce 0, #d7d4ce 28px, #ddd9d3 29px);
+      }
+
+      .quick-underlay {
+        position: absolute;
+        inset: 32px 7% auto;
+        height: 560px;
+        border: 1px solid rgba(67, 64, 58, 0.2);
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.7);
+      }
+
+      .quick-dialog {
+        position: relative;
+        z-index: 2;
+        width: min(780px, calc(100% - 40px));
+        margin: 36px auto;
+        overflow: visible;
+        border: 1px solid #d6c8bd;
+        border-radius: 17px;
+        background: #fffaf6;
+        box-shadow: 0 24px 70px rgba(42, 34, 29, 0.28);
+      }
+
+      .quick-dialog-head {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 16px;
+        padding: 18px 19px 13px;
+        border-bottom: 1px solid #eadbd1;
+      }
+
+      .quick-title {
+        display: flex;
+        gap: 11px;
+      }
+
+      .quick-title h2 {
+        margin: 1px 0 3px;
+        font-size: 16px;
+      }
+
+      .quick-title p {
+        margin: 0;
+        color: #806e63;
+        font-size: 10px;
+      }
+
+      .quick-dialog-close {
+        border: 0;
+        background: transparent;
+        color: #877b73;
+        cursor: pointer;
+        font-size: 20px;
+      }
+
+      .quick-dialog-body {
+        display: grid;
+        gap: 12px;
+        padding: 15px 19px 19px;
+      }
+
+      .quick-model-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 10px;
+      }
+
+      .quick-shortcut-copy {
+        color: #806e63;
+        font-size: 9px;
+        text-align: right;
+      }
+
+      .quick-shortcut-copy kbd {
+        margin-bottom: 3px;
+      }
+
+      .reference-card {
+        border: 1px solid #e3d6cd;
+        border-radius: 10px;
+        padding: 10px 11px;
+        background: rgba(255, 255, 255, 0.66);
+      }
+
+      .reference-card strong {
+        display: block;
+        margin-bottom: 5px;
+        color: #806e63;
+        font-size: 9px;
+        text-transform: uppercase;
+      }
+
+      .reference-card p {
+        margin: 0;
+        color: #514941;
+        font-family: Georgia, serif;
+        font-size: 11px;
+        line-height: 1.55;
+      }
+
+      .quick-answer {
+        display: none;
+        border-left: 3px solid var(--clay);
+        padding: 8px 10px;
+        background: rgba(255, 255, 255, 0.55);
+        font-size: 11px;
+        line-height: 1.6;
+      }
+
+      .quick-answer.is-visible {
+        display: block;
+      }
+
+      .quick-answer small {
+        display: block;
+        margin-top: 6px;
+        color: #8b7a70;
+      }
+
+      .quick-compose {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: end;
+        gap: 9px;
+      }
+
+      .quick-compose textarea {
+        min-height: 68px;
+        resize: vertical;
+        border: 1px solid #dacbc1;
+        border-radius: 11px;
+        padding: 10px 11px;
+        outline: 0;
+        background: white;
+        color: var(--ink);
+        font-size: 11px;
+        line-height: 1.5;
+      }
+
+      .quick-compose textarea:focus {
+        border-color: #c1947d;
+        box-shadow: 0 0 0 3px rgba(174, 105, 77, 0.1);
+      }
+
+      .quick-compose .primary-button {
+        border-color: #9d5f45;
+        background: var(--clay);
+      }
+
+      .quick-memory-note {
+        color: #806e63;
+        font-size: 9px;
+      }
+
+      .scene-caption {
+        position: absolute;
+        right: 18px;
+        bottom: 16px;
+        border: 1px solid rgba(255, 255, 255, 0.4);
+        border-radius: 999px;
+        padding: 5px 9px;
+        background: rgba(45, 43, 39, 0.5);
+        color: white;
+        font-size: 9px;
+        backdrop-filter: blur(8px);
+      }
+
+      .toast {
+        position: fixed;
+        z-index: 50;
+        right: 22px;
+        bottom: 22px;
+        max-width: min(390px, calc(100vw - 44px));
+        transform: translateY(18px);
+        border: 1px solid rgba(45, 42, 37, 0.15);
+        border-radius: 11px;
+        padding: 10px 12px;
+        background: #2f332f;
+        color: white;
+        opacity: 0;
+        pointer-events: none;
+        transition: 160ms ease;
+        font-size: 11px;
+        box-shadow: 0 12px 35px rgba(34, 31, 27, 0.2);
+      }
+
+      .toast.is-visible {
+        transform: translateY(0);
+        opacity: 1;
+      }
+
+      @media (max-width: 980px) {
+        .prototype-head {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+
+        .prototype-actions {
+          justify-content: flex-start;
+        }
+
+        .translation-layout {
+          grid-template-columns: 0.72fr 1fr;
+        }
+
+        .translation-toolbar {
+          grid-template-columns: 1fr;
+        }
+
+        .pdf-page {
+          padding: 28px 24px;
+        }
+
+        .card-heading {
+          flex-direction: column;
+        }
+
+        .scope-lines {
+          width: 100%;
+          border-top: 1px solid var(--line);
+          border-left: 0;
+          padding-top: 11px;
+          padding-left: 0;
+        }
+      }
+
+      @media (max-width: 720px) {
+        .prototype-shell {
+          padding: 8px;
+        }
+
+        .prototype-window {
+          min-height: 800px;
+          border-radius: 14px;
+        }
+
+        .scene-tabs {
+          overflow-x: auto;
+          justify-content: flex-start;
+        }
+
+        .scene-tab {
+          min-width: 132px;
+        }
+
+        .settings-layout,
+        .translation-layout {
+          grid-template-columns: 1fr;
+        }
+
+        .settings-nav,
+        .pdf-mock {
+          display: none;
+        }
+
+        .settings-content {
+          padding: 22px 15px 36px;
+        }
+
+        .presentation-grid {
+          grid-template-columns: 1fr;
+          gap: 7px;
+        }
+
+        .presentation-grid select + label {
+          margin-top: 7px;
+        }
+
+        .quick-discovery {
+          grid-template-columns: auto 1fr;
+        }
+
+        .quick-model-row,
+        .compact-picker-fields {
+          grid-template-columns: 1fr;
+        }
+
+        .shortcut-editor,
+        .quick-shortcut-copy {
+          grid-column: 1 / -1;
+          justify-content: flex-start;
+          text-align: left;
+        }
+
+        .quick-dialog {
+          margin-top: 22px;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="prototype-shell">
+      <header class="prototype-head">
+        <div class="prototype-brand">
+          <span class="prototype-logo">Z</span>
+          <div>
+            <h1>统一模型选择 · 交互原型</h1>
+            <p>三个入口，共用一种选择器；来源与记忆边界保持独立。</p>
+          </div>
+        </div>
+        <div class="prototype-actions" aria-label="演示状态">
+          <div class="source-chip">
+            <span>默认翻译</span>
+            <strong id="translation-source-label"></strong>
+          </div>
+          <label class="source-chip">
+            <span>AI 对话来源</span>
+            <select
+              id="ai-chat-source"
+              aria-label="切换演示中的 AI 对话模型"
+            ></select>
+          </label>
+          <button class="ghost-button" id="reset-memory" type="button">
+            重置继承演示
+          </button>
+        </div>
+      </header>
+
+      <main class="prototype-window">
+        <div class="window-bar">
+          <span class="traffic-lights" aria-hidden="true"
+            ><i></i><i></i><i></i
+          ></span>
+          <span class="window-title">Zotero AI Sidebar · Prototype</span>
+          <span></span>
+        </div>
+
+        <nav class="scene-tabs" aria-label="原型场景">
+          <button class="scene-tab" data-scene-button="settings" type="button">
+            1. 设置页
+            <small>默认翻译模型</small>
+          </button>
+          <button class="scene-tab" data-scene-button="full" type="button">
+            2. 全文翻译
+            <small>首次继承 · 独立记忆</small>
+          </button>
+          <button class="scene-tab" data-scene-button="quick" type="button">
+            3. Quick Ask
+            <small>Alt+Q · 独立记忆</small>
+          </button>
+        </nav>
+
+        <section class="scene" data-scene="settings">
+          <div class="settings-layout">
+            <aside class="settings-nav" aria-label="设置分组">
+              <h2>AI 对话</h2>
+              <button type="button">账号与模型</button>
+              <button type="button">快捷提示词</button>
+              <button class="is-active" type="button">沉浸阅读</button>
+              <button type="button">MCP Servers</button>
+              <button type="button">显示设置</button>
+            </aside>
+
+            <div class="settings-content">
+              <div class="page-title-row">
+                <div>
+                  <h2>沉浸阅读</h2>
+                  <p>配置默认翻译模型、翻译呈现方式和阅读交互。</p>
+                </div>
+                <span class="autosave">修改后自动保存</span>
+              </div>
+
+              <section
+                class="quick-discovery"
+                aria-labelledby="quick-discovery-title"
+              >
+                <span class="quick-mark">Q</span>
+                <div>
+                  <strong id="quick-discovery-title">Quick Ask 临时问答</strong>
+                  <p>
+                    在 Zotero
+                    任意页面快速打开；窗口内可选模型和思考强度，并记住上次选择。
+                  </p>
+                </div>
+                <div class="shortcut-editor">
+                  <label for="shortcut-input">快捷键</label>
+                  <input
+                    id="shortcut-input"
+                    value="Alt+Q"
+                    aria-label="Quick Ask 快捷键"
+                  />
+                </div>
+              </section>
+
+              <section
+                class="settings-card"
+                aria-labelledby="translation-default-title"
+              >
+                <div class="card-heading">
+                  <div>
+                    <h3 id="translation-default-title">默认翻译模型</h3>
+                    <p>这是翻译功能的起点，不会永久绑定各个功能窗口。</p>
+                  </div>
+                  <div class="scope-lines">
+                    <span><b>沉浸阅读</b> 始终使用这里的选择</span>
+                    <span><b>全文翻译</b> 仅首次使用时从这里继承</span>
+                  </div>
+                </div>
+                <div id="translation-picker"></div>
+              </section>
+
+              <section
+                class="settings-card presentation-card"
+                aria-labelledby="translation-presentation-title"
+              >
+                <div class="card-heading">
+                  <div>
+                    <h3 id="translation-presentation-title">翻译呈现</h3>
+                    <p>控制沉浸阅读翻译卡的位置与展开大小。</p>
+                  </div>
+                </div>
+                <div class="presentation-grid">
+                  <label for="translate-position">结果位置</label>
+                  <select id="translate-position">
+                    <option value="above">句上方</option>
+                    <option value="below">句下方</option>
+                  </select>
+                  <label for="translate-size">翻译框大小</label>
+                  <select id="translate-size">
+                    <option value="compact">紧凑（固定小框）</option>
+                    <option value="adaptive">自适应（尽量展开）</option>
+                  </select>
+                </div>
+              </section>
+            </div>
+          </div>
+        </section>
+
+        <section class="scene" data-scene="full">
+          <div class="translation-layout">
+            <aside class="pdf-mock" aria-label="论文 PDF 示意">
+              <article class="pdf-page">
+                <h3>Context-Aware Agents for Scholarly Reading</h3>
+                <div class="paper-line"></div>
+                <div class="paper-line short"></div>
+                <h4>1. Introduction</h4>
+                <div class="paper-line"></div>
+                <div class="paper-line"></div>
+                <div class="paper-line short"></div>
+                <div class="paper-line highlight"></div>
+                <div class="paper-line"></div>
+                <h4>2. Method</h4>
+                <div class="paper-line"></div>
+                <div class="paper-line short"></div>
+              </article>
+            </aside>
+
+            <div class="translation-panel">
+              <header class="translation-toolbar">
+                <div class="translation-head">
+                  <h2>全文翻译</h2>
+                  <p>Context-Aware Agents for Scholarly Reading</p>
+                </div>
+                <div id="full-picker"></div>
+              </header>
+
+              <div class="translation-content">
+                <div id="full-memory-note" class="inheritance-note"></div>
+
+                <article class="translation-block">
+                  <h3>摘要</h3>
+                  <p>
+                    本文提出一种面向学术阅读的上下文感知代理。系统按需获取文献片段、注释与当前选区，并在有限上下文预算下生成可追溯的回答。
+                  </p>
+                </article>
+
+                <article class="translation-block">
+                  <h3>1. 引言</h3>
+                  <p>
+                    长文档阅读工具需要在局部问题与全局背景之间取得平衡。模型选择会影响推理能力、响应速度和成本，因此应当在执行入口附近清楚显示。
+                  </p>
+                </article>
+
+                <div class="run-row">
+                  <button
+                    class="primary-button"
+                    id="run-translation"
+                    type="button"
+                  >
+                    开始全文翻译
+                  </button>
+                  <span class="run-status" id="translation-run-status">
+                    尚未记录本篇文献实际使用的模型
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="scene quick-scene" data-scene="quick">
+          <div class="quick-underlay" aria-hidden="true"></div>
+          <article
+            class="quick-dialog"
+            role="dialog"
+            aria-labelledby="quick-dialog-title"
+          >
+            <header class="quick-dialog-head">
+              <div class="quick-title">
+                <span class="quick-mark">Q</span>
+                <div>
+                  <h2 id="quick-dialog-title">Quick Ask</h2>
+                  <p>临时单次问答 · 不读取或保存研究对话</p>
+                </div>
+              </div>
+              <button
+                class="quick-dialog-close"
+                type="button"
+                aria-label="关闭"
+              >
+                ×
+              </button>
+            </header>
+
+            <div class="quick-dialog-body">
+              <div class="quick-model-row">
+                <div id="quick-picker"></div>
+                <div class="quick-shortcut-copy">
+                  <kbd id="quick-shortcut-label">Alt + Q</kbd><br />
+                  再次按快捷键可快速打开
+                </div>
+              </div>
+
+              <div id="quick-memory-note" class="inheritance-note"></div>
+
+              <section class="reference-card">
+                <strong>当前 PDF 选区</strong>
+                <p>
+                  “Model selection should remain close to the action that
+                  consumes it, while defaults stay discoverable in settings.”
+                </p>
+              </section>
+
+              <div class="quick-answer" id="quick-answer">
+                模型选择靠近实际操作，可以让用户在提问前确认本次使用的账号、模型和思考强度；默认来源仍在设置中保持清晰。
+                <small id="quick-answer-model"></small>
+              </div>
+
+              <div class="quick-compose">
+                <textarea id="quick-question" aria-label="Quick Ask 问题">
+解释这句话，并结合当前论文说明它为什么重要。</textarea
+                >
+                <button class="primary-button" id="send-quick" type="button">
+                  发送
+                </button>
+              </div>
+              <span class="quick-memory-note">
+                在这里修改会立即成为 Quick Ask 的独立记忆，但不会改动 AI
+                对话当前模型。
+              </span>
+            </div>
+          </article>
+          <span class="scene-caption"
+            >原型提示：按当前配置的快捷键可跳转到此场景</span
+          >
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <script>
+      (() => {
+        "use strict";
+
+        const STORAGE_KEY = "zai-model-selection-prototype:v1";
+        const accounts = [
+          {
+            id: "deepseek",
+            label: "DeepSeek",
+            provider: "OpenAI 兼容",
+            models: ["deepseek-v4-pro", "deepseek-v4-flash"],
+            efforts: ["high", "xhigh"],
+            defaultEffort: "high",
+          },
+          {
+            id: "openai",
+            label: "OpenAI 主账号",
+            provider: "OpenAI",
+            models: ["gpt-5.6-sol", "gpt-5.5", "gpt-5.4"],
+            efforts: ["low", "medium", "high", "xhigh"],
+            defaultEffort: "xhigh",
+          },
+          {
+            id: "claude",
+            label: "Claude",
+            provider: "Anthropic",
+            models: ["claude-opus-4-7", "claude-sonnet-4-6"],
+            efforts: ["low", "medium", "high", "xhigh"],
+            defaultEffort: "high",
+          },
+          {
+            id: "compat",
+            label: "兼容账号",
+            provider: "第三方兼容",
+            models: ["custom-research-model"],
+            efforts: [],
+            defaultEffort: "none",
+          },
+        ];
+
+        const effortLabels = {
+          none: "不支持",
+          off: "关闭",
+          low: "Low",
+          medium: "Medium",
+          high: "High",
+          xhigh: "Extra high",
+        };
+
+        const defaultState = {
+          activeScene: "settings",
+          shortcut: "Alt+Q",
+          translationDefault: {
+            ...selectionFor("deepseek"),
+            effort: "off",
+          },
+          overlayPosition: "below",
+          overlaySize: "adaptive",
+          aiChat: selectionFor("openai"),
+          fullSelection: null,
+          quickSelection: null,
+          fullActual: null,
+          quickActual: null,
+        };
+
+        const compactSettingsOpen = { full: false, quick: false };
+        let state = loadState();
+        let toastTimer = 0;
+
+        const translationPicker = document.querySelector("#translation-picker");
+        const fullPicker = document.querySelector("#full-picker");
+        const quickPicker = document.querySelector("#quick-picker");
+
+        function accountFor(accountId) {
+          return (
+            accounts.find((account) => account.id === accountId) || accounts[0]
+          );
+        }
+
+        function selectionFor(accountId, model) {
+          const account = accountFor(accountId);
+          return {
+            accountId: account.id,
+            model: account.models.includes(model) ? model : account.models[0],
+            effort: account.defaultEffort,
+          };
+        }
+
+        function normalizeSelection(value, fallback, allowOff = false) {
+          if (!value || typeof value !== "object")
+            return cloneSelection(fallback);
+          const account = accountFor(value.accountId);
+          const normalized = selectionFor(account.id, value.model);
+          if (allowOff && value.effort === "off") normalized.effort = "off";
+          else if (account.efforts.includes(value.effort))
+            normalized.effort = value.effort;
+          return normalized;
+        }
+
+        function cloneSelection(value) {
+          return value ? { ...value } : null;
+        }
+
+        function cloneDefaultState() {
+          return JSON.parse(JSON.stringify(defaultState));
+        }
+
+        function loadState() {
+          try {
+            const saved = JSON.parse(
+              localStorage.getItem(STORAGE_KEY) || "null",
+            );
+            if (!saved || typeof saved !== "object") return cloneDefaultState();
+            return {
+              ...cloneDefaultState(),
+              activeScene: ["settings", "full", "quick"].includes(
+                saved.activeScene,
+              )
+                ? saved.activeScene
+                : "settings",
+              shortcut:
+                typeof saved.shortcut === "string" && saved.shortcut.trim()
+                  ? saved.shortcut.trim()
+                  : defaultState.shortcut,
+              translationDefault: normalizeSelection(
+                saved.translationDefault,
+                defaultState.translationDefault,
+                true,
+              ),
+              overlayPosition: ["above", "below"].includes(
+                saved.overlayPosition,
+              )
+                ? saved.overlayPosition
+                : defaultState.overlayPosition,
+              overlaySize: ["compact", "adaptive"].includes(saved.overlaySize)
+                ? saved.overlaySize
+                : defaultState.overlaySize,
+              aiChat: normalizeSelection(saved.aiChat, defaultState.aiChat),
+              fullSelection: saved.fullSelection
+                ? normalizeSelection(
+                    saved.fullSelection,
+                    defaultState.translationDefault,
+                    true,
+                  )
+                : null,
+              quickSelection: saved.quickSelection
+                ? normalizeSelection(saved.quickSelection, defaultState.aiChat)
+                : null,
+              fullActual: saved.fullActual
+                ? normalizeSelection(
+                    saved.fullActual,
+                    defaultState.translationDefault,
+                    true,
+                  )
+                : null,
+              quickActual: saved.quickActual
+                ? normalizeSelection(saved.quickActual, defaultState.aiChat)
+                : null,
+            };
+          } catch {
+            return cloneDefaultState();
+          }
+        }
+
+        function saveState() {
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+        }
+
+        function effectiveSelection(context) {
+          if (context === "translation")
+            return cloneSelection(state.translationDefault);
+          if (context === "full") {
+            return cloneSelection(
+              state.fullSelection || state.translationDefault,
+            );
+          }
+          return cloneSelection(state.quickSelection || state.aiChat);
+        }
+
+        function isInherited(context) {
+          return context === "full"
+            ? state.fullSelection === null
+            : context === "quick"
+              ? state.quickSelection === null
+              : false;
+        }
+
+        function setSelection(context, next) {
+          const normalized = normalizeSelection(
+            next,
+            effectiveSelection(context),
+            context !== "quick",
+          );
+          if (context === "translation") state.translationDefault = normalized;
+          else if (context === "full") state.fullSelection = normalized;
+          else state.quickSelection = normalized;
+          saveState();
+          render();
+        }
+
+        function selectionLabel(selection) {
+          const account = accountFor(selection.accountId);
+          return `${account.label} · ${selection.model}`;
+        }
+
+        function effortLabel(selection) {
+          if (selection.effort === "off") return "关闭 - 不思考";
+          const account = accountFor(selection.accountId);
+          if (account.efforts.length === 0) return "当前账号不支持思考强度";
+          return `${effortLabels[selection.effort] || selection.effort} 思考强度`;
+        }
+
+        function sameSelection(left, right) {
+          return Boolean(
+            left &&
+            right &&
+            left.accountId === right.accountId &&
+            left.model === right.model &&
+            left.effort === right.effort,
+          );
+        }
+
+        function dropdownPickerMarkup(
+          context,
+          selection,
+          account,
+          sourceText,
+          direct = false,
+        ) {
+          const accountOptions = accounts
+            .map(
+              (item) =>
+                `<option value="${item.id}" ${item.id === account.id ? "selected" : ""}>${item.label}</option>`,
+            )
+            .join("");
+          const modelOptions = account.models
+            .map(
+              (model) =>
+                `<option value="${model}" ${model === selection.model ? "selected" : ""}>${model}</option>`,
+            )
+            .join("");
+          const availableEfforts =
+            context === "quick" ? account.efforts : ["off", ...account.efforts];
+          const effortOptions = availableEfforts.length
+            ? availableEfforts
+                .map(
+                  (effort) =>
+                    `<option value="${effort}" ${effort === selection.effort ? "selected" : ""}>${effortLabels[effort]}</option>`,
+                )
+                .join("")
+            : '<option value="none">当前账号不支持</option>';
+
+          return `
+            <div class="compact-picker ${direct ? "settings-dropdown-picker" : ""}">
+              <div class="compact-picker-fields">
+                <label class="compact-picker-field">
+                  <span>账号</span>
+                  <select data-compact-account data-compact-context="${context}" aria-label="选择账号">
+                    ${accountOptions}
+                  </select>
+                </label>
+                <label class="compact-picker-field">
+                  <span>模型</span>
+                  <select data-compact-model data-compact-context="${context}" aria-label="选择模型">
+                    ${modelOptions}
+                  </select>
+                </label>
+                <label class="compact-picker-field">
+                  <span>${context === "translation" ? "思考程度" : "思考强度"}</span>
+                  <select data-compact-effort data-compact-context="${context}" aria-label="选择思考强度" ${availableEfforts.length ? "" : "disabled"}>
+                    ${effortOptions}
+                  </select>
+                </label>
+              </div>
+              <p class="compact-picker-foot">${sourceText}</p>
+            </div>`;
+        }
+
+        function compactPickerMarkup(
+          context,
+          selection,
+          account,
+          inherited,
+          memoryText,
+          sourceText,
+        ) {
+          const open = compactSettingsOpen[context];
+          return `
+            <div class="compact-picker-shell" data-picker="${context}">
+              <div class="compact-picker-summary">
+                <div class="compact-picker-current">
+                  <span>${context === "full" ? "本次全文翻译" : "本次 Quick Ask"}</span>
+                  <strong>${selection.model}</strong>
+                  <small>${account.label} · ${effortLabel(selection)}</small>
+                </div>
+                <span class="memory-badge ${inherited ? "is-inherited" : ""}">${memoryText}</span>
+                <button
+                  class="compact-settings-button"
+                  type="button"
+                  aria-expanded="${open}"
+                  data-compact-settings-toggle="${context}"
+                >${open ? "收起设置" : "模型设置"}</button>
+              </div>
+              <div data-compact-settings-panel ${open ? "" : "hidden"}>
+                ${dropdownPickerMarkup(context, selection, account, sourceText)}
+              </div>
+            </div>`;
+        }
+
+        function pickerMarkup(context, compact) {
+          const selection = effectiveSelection(context);
+          const account = accountFor(selection.accountId);
+          const inherited = isInherited(context);
+          const memoryText =
+            context === "translation"
+              ? "默认来源"
+              : inherited
+                ? "首次继承"
+                : "已独立记住";
+          const sourceText =
+            context === "full"
+              ? "继承自设置页的默认翻译模型"
+              : context === "quick"
+                ? "继承自 AI 对话当前模型"
+                : "修改后沉浸阅读立即使用；不会覆盖已有的独立记忆";
+
+          if (compact) {
+            return compactPickerMarkup(
+              context,
+              selection,
+              account,
+              inherited,
+              memoryText,
+              sourceText,
+            );
+          }
+          return dropdownPickerMarkup(
+            context,
+            selection,
+            account,
+            sourceText,
+            true,
+          );
+        }
+
+        function renderSourceControls() {
+          document.querySelector("#translation-source-label").textContent =
+            selectionLabel(state.translationDefault);
+          const source = document.querySelector("#ai-chat-source");
+          source.innerHTML = accounts
+            .flatMap((account) =>
+              account.models.map(
+                (model) =>
+                  `<option value="${account.id}|${model}">${account.label} · ${model}</option>`,
+              ),
+            )
+            .join("");
+          source.value = `${state.aiChat.accountId}|${state.aiChat.model}`;
+        }
+
+        function renderScenes() {
+          document.querySelectorAll("[data-scene]").forEach((scene) => {
+            scene.classList.toggle(
+              "is-active",
+              scene.dataset.scene === state.activeScene,
+            );
+          });
+          document.querySelectorAll("[data-scene-button]").forEach((button) => {
+            button.setAttribute(
+              "aria-selected",
+              String(button.dataset.sceneButton === state.activeScene),
+            );
+          });
+        }
+
+        function renderMemoryNotes() {
+          const fullNote = document.querySelector("#full-memory-note");
+          fullNote.classList.toggle("is-independent", !isInherited("full"));
+          fullNote.innerHTML = isInherited("full")
+            ? `<strong>首次继承：</strong><span>当前跟随“默认翻译模型”。在这里切换后，全文翻译会全局记住自己的上次选择。</span>`
+            : `<strong>独立记忆：</strong><span>全文翻译已使用自己的上次选择；设置页后续变化不会覆盖它。</span>`;
+
+          const quickNote = document.querySelector("#quick-memory-note");
+          quickNote.classList.toggle("is-independent", !isInherited("quick"));
+          quickNote.innerHTML = isInherited("quick")
+            ? `<strong>首次继承：</strong><span>当前跟随 AI 对话的账号、模型和思考强度。</span>`
+            : `<strong>独立记忆：</strong><span>Quick Ask 已记住上次选择，但不会反向修改 AI 对话。</span>`;
+        }
+
+        function renderRunState() {
+          const fullCurrent = effectiveSelection("full");
+          const fullStatus = document.querySelector("#translation-run-status");
+          const fullButton = document.querySelector("#run-translation");
+          if (!state.fullActual) {
+            fullStatus.textContent = "尚未记录本篇文献实际使用的模型";
+            fullStatus.classList.remove("is-stale");
+            fullButton.textContent = "开始全文翻译";
+          } else if (sameSelection(state.fullActual, fullCurrent)) {
+            fullStatus.textContent = `本篇译文：${selectionLabel(state.fullActual)}`;
+            fullStatus.classList.remove("is-stale");
+            fullButton.textContent = "重新翻译全文";
+          } else {
+            fullStatus.textContent = `现有译文由 ${selectionLabel(state.fullActual)} 生成；新模型尚未执行`;
+            fullStatus.classList.add("is-stale");
+            fullButton.textContent = "用新模型重新翻译";
+          }
+
+          const quickAnswer = document.querySelector("#quick-answer");
+          quickAnswer.classList.toggle(
+            "is-visible",
+            Boolean(state.quickActual),
+          );
+          document.querySelector("#quick-answer-model").textContent =
+            state.quickActual
+              ? `本次回答：${selectionLabel(state.quickActual)} · ${effortLabel(state.quickActual)}`
+              : "";
+        }
+
+        function spacedShortcut() {
+          return state.shortcut
+            .split("+")
+            .map((part) => part.trim())
+            .filter(Boolean)
+            .join(" + ");
+        }
+
+        function render() {
+          renderSourceControls();
+          renderScenes();
+          translationPicker.innerHTML = pickerMarkup("translation", false);
+          fullPicker.innerHTML = pickerMarkup("full", true);
+          quickPicker.innerHTML = pickerMarkup("quick", true);
+          renderMemoryNotes();
+          renderRunState();
+          document.querySelector("#shortcut-input").value = state.shortcut;
+          document.querySelector("#translate-position").value =
+            state.overlayPosition;
+          document.querySelector("#translate-size").value = state.overlaySize;
+          document.querySelector("#quick-shortcut-label").textContent =
+            spacedShortcut();
+        }
+
+        function showToast(message) {
+          const toast = document.querySelector("#toast");
+          toast.textContent = message;
+          toast.classList.add("is-visible");
+          window.clearTimeout(toastTimer);
+          toastTimer = window.setTimeout(
+            () => toast.classList.remove("is-visible"),
+            2200,
+          );
+        }
+
+        function openScene(scene) {
+          state.activeScene = scene;
+          if (scene === "full" || scene === "quick") {
+            compactSettingsOpen[scene] = false;
+          }
+          saveState();
+          render();
+        }
+
+        function matchesShortcut(event) {
+          if (event.isComposing) return false;
+          const parts = state.shortcut
+            .split("+")
+            .map((part) => part.trim().toLowerCase())
+            .filter(Boolean);
+          if (parts.length === 0) return false;
+          const key = parts.at(-1);
+          const eventKey =
+            event.key === " " ? "space" : event.key.toLowerCase();
+          return (
+            eventKey === key &&
+            event.altKey === parts.includes("alt") &&
+            event.ctrlKey === parts.includes("ctrl") &&
+            event.metaKey ===
+              (parts.includes("meta") || parts.includes("cmd")) &&
+            event.shiftKey === parts.includes("shift")
+          );
+        }
+
+        document.addEventListener("click", (event) => {
+          const target = event.target.closest("button");
+          if (!target) return;
+
+          if (target.dataset.sceneButton) {
+            openScene(target.dataset.sceneButton);
+            return;
+          }
+
+          if (target.dataset.compactSettingsToggle) {
+            const context = target.dataset.compactSettingsToggle;
+            compactSettingsOpen[context] = !compactSettingsOpen[context];
+            render();
+            return;
+          }
+
+          if (target.id === "reset-memory") {
+            state.fullSelection = null;
+            state.quickSelection = null;
+            state.fullActual = null;
+            state.quickActual = null;
+            saveState();
+            render();
+            showToast(
+              "已清除全文翻译与 Quick Ask 的独立记忆；两者重新跟随各自来源。",
+            );
+            return;
+          }
+
+          if (target.id === "run-translation") {
+            state.fullActual = effectiveSelection("full");
+            saveState();
+            render();
+            showToast(
+              `已记录本篇译文实际使用：${selectionLabel(state.fullActual)}`,
+            );
+            return;
+          }
+
+          if (target.id === "send-quick") {
+            state.quickActual = effectiveSelection("quick");
+            saveState();
+            render();
+            showToast(
+              `本次 Quick Ask 使用：${selectionLabel(state.quickActual)}`,
+            );
+            return;
+          }
+
+          if (target.classList.contains("quick-dialog-close")) {
+            openScene("full");
+          }
+        });
+
+        document.addEventListener("change", (event) => {
+          const target = event.target;
+          const context = target.dataset?.compactContext;
+          if (!context) return;
+
+          if (target.matches("[data-compact-account]")) {
+            setSelection(context, selectionFor(target.value));
+          } else if (target.matches("[data-compact-model]")) {
+            setSelection(context, {
+              ...effectiveSelection(context),
+              model: target.value,
+            });
+          } else if (target.matches("[data-compact-effort]")) {
+            setSelection(context, {
+              ...effectiveSelection(context),
+              effort: target.value,
+            });
+          }
+        });
+
+        document
+          .querySelector("#ai-chat-source")
+          .addEventListener("change", (event) => {
+            const [accountId, model] = event.target.value.split("|");
+            state.aiChat = selectionFor(accountId, model);
+            saveState();
+            render();
+            showToast(
+              isInherited("quick")
+                ? "AI 对话来源已变化；Quick Ask 尚未独立修改，因此同步继承。"
+                : "AI 对话来源已变化；Quick Ask 保留自己的独立记忆。",
+            );
+          });
+
+        document
+          .querySelector("#shortcut-input")
+          .addEventListener("change", (event) => {
+            const next = event.target.value.trim();
+            state.shortcut = next || defaultState.shortcut;
+            saveState();
+            render();
+            showToast(`Quick Ask 快捷键已设为 ${spacedShortcut()}`);
+          });
+
+        document
+          .querySelector("#translate-position")
+          .addEventListener("change", (event) => {
+            state.overlayPosition = event.target.value;
+            saveState();
+            showToast("沉浸阅读的翻译结果位置已自动保存。");
+          });
+
+        document
+          .querySelector("#translate-size")
+          .addEventListener("change", (event) => {
+            state.overlaySize = event.target.value;
+            saveState();
+            showToast("沉浸阅读的翻译框大小已自动保存。");
+          });
+
+        document.addEventListener("keydown", (event) => {
+          const editable = event.target.closest?.(
+            "input, textarea, select, [contenteditable=true]",
+          );
+          if (editable || !matchesShortcut(event)) return;
+          event.preventDefault();
+          openScene("quick");
+          window.setTimeout(
+            () => document.querySelector("#quick-question")?.focus(),
+            0,
+          );
+        });
+
+        render();
+      })();
+    </script>
+  </body>
+</html>

@@ -6,6 +6,9 @@ import { createQuickAskState } from "../../src/modules/quick-ask";
 function actions() {
   return {
     onQuestionChange: vi.fn(),
+    onToggleModelSettings: vi.fn(),
+    onModelChange: vi.fn(),
+    onReasoningChange: vi.fn(),
     onSend: vi.fn(),
     onStop: vi.fn(),
     onReset: vi.fn(),
@@ -63,6 +66,135 @@ describe("Quick Ask dialog", () => {
 
     expect(handlers.onQuestionChange).toHaveBeenCalledWith("解释这个结论");
     expect(handlers.onSend).toHaveBeenCalledWith("解释这个结论");
+  });
+
+  it("defaults to the active chat model and allows a temporary model change", () => {
+    const handlers = actions();
+    const root = renderQuickAskDialog(
+      globalThis.document,
+      createQuickAskState(null, {
+        presetId: "openai-main",
+        model: "gpt-5.4",
+        reasoningEffort: "high",
+      }),
+      handlers,
+      {
+        shortcutLabel: "Alt + Q",
+        modelSettingsOpen: true,
+        modelOptions: [
+          {
+            presetId: "openai-main",
+            presetLabel: "OpenAI 主账号",
+            model: "gpt-5.4",
+          },
+          {
+            presetId: "deepseek",
+            presetLabel: "DeepSeek",
+            model: "deepseek-chat",
+          },
+        ],
+        reasoningOptions: [
+          ["none", "关闭 - 不进行额外思考"],
+          ["high", "High - 强推理"],
+        ],
+      },
+    );
+
+    const presetSelect = root.querySelector<HTMLSelectElement>(
+      ".zai-quick-ask-preset-select",
+    )!;
+    const modelSelect = root.querySelector<HTMLSelectElement>(
+      ".zai-quick-ask-model-select",
+    )!;
+    expect(presetSelect.value).toBe("openai-main");
+    expect(presetSelect.options[0]?.textContent).toContain("OpenAI 主账号");
+    expect(modelSelect.value).toBe("gpt-5.4");
+
+    presetSelect.value = "deepseek";
+    presetSelect.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(handlers.onModelChange).toHaveBeenCalledWith(
+      "deepseek",
+      "deepseek-chat",
+    );
+
+    const reasoning = root.querySelector<HTMLSelectElement>(
+      ".zai-quick-ask-reasoning-select",
+    )!;
+    expect(reasoning.value).toBe("high");
+    reasoning.value = "none";
+    reasoning.dispatchEvent(new Event("change", { bubbles: true }));
+    expect(handlers.onReasoningChange).toHaveBeenCalledWith("none");
+  });
+
+  it("explains when the selected account does not support thinking", () => {
+    const root = renderQuickAskDialog(
+      globalThis.document,
+      createQuickAskState(null, {
+        presetId: "compat",
+        model: "custom-model",
+        reasoningEffort: "none",
+      }),
+      actions(),
+      {
+        shortcutLabel: "Alt + Q",
+        modelSettingsOpen: true,
+        modelOptions: [
+          {
+            presetId: "compat",
+            presetLabel: "兼容账号",
+            model: "custom-model",
+          },
+        ],
+        reasoningOptions: [],
+      },
+    );
+
+    const reasoning = root.querySelector<HTMLSelectElement>(
+      ".zai-quick-ask-reasoning-select",
+    )!;
+    expect(reasoning.disabled).toBe(true);
+    expect(reasoning.textContent).toContain("当前账号不支持");
+  });
+
+  it("keeps model controls collapsed behind a settings button by default", () => {
+    const handlers = actions();
+    const root = renderQuickAskDialog(
+      globalThis.document,
+      createQuickAskState(null, {
+        presetId: "openai-main",
+        model: "gpt-5.4",
+        reasoningEffort: "high",
+      }),
+      handlers,
+      {
+        shortcutLabel: "Alt + Q",
+        modelOptions: [
+          {
+            presetId: "openai-main",
+            presetLabel: "OpenAI 主账号",
+            model: "gpt-5.4",
+          },
+        ],
+        reasoningOptions: [["high", "High - 强推理"]],
+      },
+    );
+
+    const toggle = root.querySelector<HTMLButtonElement>(
+      ".zai-quick-ask-model-settings-toggle",
+    )!;
+    const panel = root.querySelector<HTMLElement>(
+      ".zai-quick-ask-model-settings-panel",
+    )!;
+
+    expect(toggle.textContent).toContain("模型设置");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(panel.hidden).toBe(true);
+    expect(root.textContent).toContain("OpenAI 主账号");
+    expect(root.textContent).toContain("gpt-5.4");
+    expect(root.textContent).not.toContain("本次 Quick Ask");
+
+    toggle.click();
+    expect(handlers.onToggleModelSettings).toHaveBeenCalledOnce();
   });
 
   it("shows the Chinese selection and mapped English quote without a follow-up box", () => {

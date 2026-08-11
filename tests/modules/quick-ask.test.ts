@@ -4,10 +4,26 @@ import {
   buildQuickAskApiMessages,
   createQuickAskState,
   createQuickAskUserMessage,
+  DEFAULT_QUICK_ASK_SHORTCUT,
+  getQuickAskShortcut,
   isQuickAskShortcut,
+  loadQuickAskModelSelection,
   quickAskReadOnlyTools,
   resetQuickAskState,
+  saveQuickAskModelSelection,
+  setQuickAskShortcut,
 } from "../../src/modules/quick-ask";
+import type { PrefsStore } from "../../src/settings/storage";
+
+function memoryPrefs(initial?: string): PrefsStore {
+  let value = initial;
+  return {
+    get: () => value,
+    set: (_key, next) => {
+      value = next;
+    },
+  };
+}
 
 describe("Quick Ask", () => {
   it("builds a single-turn API request without accepting chat history", () => {
@@ -37,7 +53,12 @@ describe("Quick Ask", () => {
       displayText: "A selected sentence.",
       sourceText: "A selected sentence.",
     };
-    const state = createQuickAskState(reference);
+    const modelSelection = {
+      presetId: "openai-main",
+      model: "gpt-5.4",
+      reasoningEffort: "high" as const,
+    };
+    const state = createQuickAskState(reference, modelSelection);
     state.question = "First question";
     state.answer = "First answer";
     state.thinking = "Private reasoning";
@@ -54,10 +75,11 @@ describe("Quick Ask", () => {
       error: "",
       usage: undefined,
       reference,
+      modelSelection,
     });
   });
 
-  it("uses Alt+Q without consuming Chinese input-method key combinations", () => {
+  it("uses the configured shortcut without consuming input-method combinations", () => {
     expect(
       isQuickAskShortcut({
         key: "q",
@@ -69,15 +91,18 @@ describe("Quick Ask", () => {
       }),
     ).toBe(true);
     expect(
-      isQuickAskShortcut({
-        key: " ",
-        ctrlKey: true,
-        metaKey: false,
-        shiftKey: true,
-        altKey: false,
-        isComposing: false,
-      }),
-    ).toBe(false);
+      isQuickAskShortcut(
+        {
+          key: " ",
+          ctrlKey: true,
+          metaKey: false,
+          shiftKey: false,
+          altKey: false,
+          isComposing: false,
+        },
+        "Ctrl+Space",
+      ),
+    ).toBe(true);
     expect(
       isQuickAskShortcut({
         key: "q",
@@ -88,6 +113,42 @@ describe("Quick Ask", () => {
         isComposing: true,
       }),
     ).toBe(false);
+  });
+
+  it("stores Alt+Q as the default configurable Quick Ask shortcut", () => {
+    const prefs = memoryPrefs();
+    expect(getQuickAskShortcut(prefs)).toBe(DEFAULT_QUICK_ASK_SHORTCUT);
+
+    setQuickAskShortcut(prefs, "Ctrl+Space");
+    expect(getQuickAskShortcut(prefs)).toBe("Ctrl+Space");
+  });
+
+  it("remembers the Quick Ask model and reasoning independently", () => {
+    const prefs = memoryPrefs();
+    const selection = {
+      presetId: "deepseek",
+      model: "deepseek-reasoner",
+      reasoningEffort: "xhigh" as const,
+    };
+
+    expect(loadQuickAskModelSelection(prefs)).toBeNull();
+    saveQuickAskModelSelection(prefs, selection);
+    expect(loadQuickAskModelSelection(prefs)).toEqual(selection);
+  });
+
+  it("ignores malformed saved Quick Ask model selections", () => {
+    expect(loadQuickAskModelSelection(memoryPrefs("not json"))).toBeNull();
+    expect(
+      loadQuickAskModelSelection(
+        memoryPrefs(
+          JSON.stringify({
+            presetId: "openai",
+            model: "gpt-5.4",
+            reasoningEffort: "turbo",
+          }),
+        ),
+      ),
+    ).toBeNull();
   });
 
   it("removes history access and write tools from the temporary tool session", () => {

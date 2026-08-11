@@ -39,12 +39,26 @@
       color: #2f7046; } #zotero-ai-sidebar-tool-settings .zai-pref-status:empty
       { display: none; } #zotero-ai-sidebar-tool-settings .zai-pref-subtitle {
       color: #4f5b53; font-size: 12px; font-weight: 700; }
-      #zotero-ai-sidebar-tool-settings .zai-grid-section { grid-column: 1 / -1;
-      margin-top: 4px; padding-top: 7px; border-top: 1px solid
-      rgba(80,70,55,0.12); } #zotero-ai-sidebar-tool-settings
-      .zai-grid-section:first-child { margin-top: 0; padding-top: 0; border-top:
-      0; } #zotero-ai-sidebar-tool-settings .zai-card-section { margin-top:
-      12px; padding-top: 10px; border-top: 1px solid rgba(80,70,55,0.12); }
+      #zotero-ai-sidebar-tool-settings .zai-quick-ask-discovery { display: grid;
+      grid-template-columns: minmax(0, 1fr) minmax(140px, 190px); gap: 12px;
+      align-items: end; margin: 12px 0; padding: 10px 12px; border: 1px solid
+      rgba(80,70,55,0.14); border-radius: 8px; background:
+      rgba(255,255,255,0.5); } #zotero-ai-sidebar-tool-settings
+      .zai-quick-ask-discovery-copy { display: grid; gap: 3px; min-width: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-quick-ask-discovery-title { color:
+      #315f43; font-weight: 700; } #zotero-ai-sidebar-tool-settings
+      .zai-quick-ask-discovery-desc, #zotero-ai-sidebar-tool-settings
+      .zai-translate-model-scope { color: #666; font-size: 12px; line-height:
+      1.4; } #zotero-ai-sidebar-tool-settings .zai-quick-ask-key-field {
+      display: grid; gap: 4px; color: #666; font-size: 11px; font-weight: 700; }
+      #zotero-ai-sidebar-tool-settings .zai-translate-model-scope { grid-column:
+      1 / -1; margin: -2px 0 2px; } #zotero-ai-sidebar-tool-settings
+      .zai-grid-section { grid-column: 1 / -1; margin-top: 4px; padding-top:
+      7px; border-top: 1px solid rgba(80,70,55,0.12); }
+      #zotero-ai-sidebar-tool-settings .zai-grid-section:first-child {
+      margin-top: 0; padding-top: 0; border-top: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-card-section { margin-top: 12px;
+      padding-top: 10px; border-top: 1px solid rgba(80,70,55,0.12); }
       #zotero-ai-sidebar-tool-settings .zai-page-section-title { display: flex;
       align-items: center; gap: 10px; margin: 18px 2px 6px; color: #4f5b53;
       font-size: 12px; font-weight: 700; } #zotero-ai-sidebar-tool-settings
@@ -430,8 +444,28 @@
       <html:p class="zai-pref-help">
         配置翻译使用的账号、模型、呈现方式和阅读交互；修改后自动保存并立即生效。
       </html:p>
+      <html:div class="zai-quick-ask-discovery">
+        <html:div class="zai-quick-ask-discovery-copy">
+          <html:span class="zai-quick-ask-discovery-title"
+            >Quick Ask 临时问答</html:span
+          >
+          <html:span class="zai-quick-ask-discovery-desc"
+            >在 Zotero
+            任意页面快速打开；窗口内可选择账号、模型和思考强度，并自动记住上次选择。</html:span
+          >
+        </html:div>
+        <html:label class="zai-quick-ask-key-field" for="zai-quick-ask-key">
+          快捷键
+          <html:input id="zai-quick-ask-key" type="text" placeholder="Alt+Q" />
+        </html:label>
+      </html:div>
       <html:div class="zai-pref-grid">
-        <html:div class="zai-pref-subtitle zai-grid-section">翻译模型</html:div>
+        <html:div class="zai-pref-subtitle zai-grid-section"
+          >默认翻译模型</html:div
+        >
+        <html:p class="zai-translate-model-scope">
+          沉浸阅读始终使用这里的选择；全文翻译首次使用时从这里继承，之后在全文翻译窗口中独立记忆。
+        </html:p>
         <html:label for="zai-translate-preset">配置</html:label>
         <html:select id="zai-translate-preset"></html:select>
         <html:label for="zai-translate-model">模型</html:label>

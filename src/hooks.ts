@@ -10,6 +10,11 @@ import {
   unregisterSidebarForWindow,
 } from './modules/sidebar';
 import {
+  DEFAULT_QUICK_ASK_SHORTCUT,
+  getQuickAskShortcut,
+  setQuickAskShortcut,
+} from './modules/quick-ask';
+import {
   detectOpenAIModelTransports as detectOpenAIModelTransportsWithSignal,
   testPresetConnectivity as testPresetConnectivityWithSignal,
   testPresetPromptCache as runPresetPromptCacheTest,
@@ -304,6 +309,17 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
     doc,
     'zai-immersive-next-key',
   );
+  const quickAskKey = byID<HTMLInputElement>(doc, 'zai-quick-ask-key');
+  if (quickAskKey) {
+    quickAskKey.value = getQuickAskShortcut(zoteroPrefs());
+    quickAskKey.addEventListener('change', () => {
+      setQuickAskShortcut(
+        zoteroPrefs(),
+        quickAskKey.value.trim() || DEFAULT_QUICK_ASK_SHORTCUT,
+      );
+      quickAskKey.value = getQuickAskShortcut(zoteroPrefs());
+    });
+  }
   if (immersiveNextKey) {
     immersiveNextKey.value = getImmersiveNextSentenceKey(zoteroPrefs());
     immersiveNextKey.addEventListener('change', () => {

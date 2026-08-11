@@ -1,4 +1,5 @@
 import type { QuickAskState } from "./quick-ask";
+import type { ReasoningEffort } from "../settings/types";
 import { renderMarkdownInto } from "./markdown-render";
 
 // Zotero's chrome document is XUL; real XHTML controls are required for Gecko
@@ -7,6 +8,9 @@ const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
 export interface QuickAskDialogActions {
   onQuestionChange(value: string): void;
+  onToggleModelSettings(): void;
+  onModelChange(presetId: string, model: string): void;
+  onReasoningChange(value: ReasoningEffort): void;
   onSend(value: string): void;
   onStop(): void;
   onReset(): void;
@@ -15,8 +19,17 @@ export interface QuickAskDialogActions {
   onClose(): void;
 }
 
+export interface QuickAskModelOption {
+  presetId: string;
+  presetLabel: string;
+  model: string;
+}
+
 export interface QuickAskDialogOptions {
   shortcutLabel: string;
+  modelSettingsOpen?: boolean;
+  modelOptions?: QuickAskModelOption[];
+  reasoningOptions?: Array<[ReasoningEffort, string]>;
   transferDisabled?: boolean;
 }
 
@@ -60,6 +73,18 @@ export function renderQuickAskDialog(
       "本窗口不会读取或保存研究对话；关闭后问题和回答都会销毁。",
     ),
   );
+  if (options.modelOptions) {
+    scroll.append(
+      renderModelControls(
+        doc,
+        state,
+        actions,
+        options.modelSettingsOpen === true,
+        options.modelOptions,
+        options.reasoningOptions ?? [],
+      ),
+    );
+  }
   if (state.reference) scroll.append(renderReference(doc, state));
 
   if (state.status === "idle") {
@@ -188,6 +213,143 @@ export function renderQuickAskDialog(
     actions.onClose();
   });
   return layer;
+}
+
+function renderModelControls(
+  doc: Document,
+  state: QuickAskState,
+  actions: QuickAskDialogActions,
+  open: boolean,
+  modelOptions: QuickAskModelOption[],
+  reasoningOptions: Array<[ReasoningEffort, string]>,
+): HTMLElement {
+  const root = el(doc, "section", "zai-quick-ask-model-settings");
+  const current =
+    modelOptions.find(
+      (item) =>
+        item.presetId === state.modelSelection.presetId &&
+        item.model === state.modelSelection.model,
+    ) ?? modelOptions[0];
+  const summary = el(doc, "div", "zai-quick-ask-model-settings-summary");
+  const copy = el(doc, "div", "zai-quick-ask-model-settings-copy");
+  copy.append(
+    el(doc, "strong", "", current?.model ?? "未配置可用模型"),
+    el(
+      doc,
+      "small",
+      "",
+      current
+        ? `${current.presetLabel} · ${quickAskReasoningLabel(state, reasoningOptions)}`
+        : "请先在设置中配置账号和模型",
+    ),
+  );
+  const toggle = buttonEl(doc, open ? "收起设置" : "模型设置");
+  toggle.className = "zai-quick-ask-model-settings-toggle";
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.disabled = state.status !== "idle" || modelOptions.length === 0;
+  toggle.addEventListener("click", actions.onToggleModelSettings);
+  summary.append(copy, toggle);
+
+  const panel = el(doc, "div", "zai-quick-ask-model-settings-panel");
+  panel.hidden = !open;
+  const presetOptions = modelOptions.filter(
+    (item, index) =>
+      modelOptions.findIndex(
+        (candidate) => candidate.presetId === item.presetId,
+      ) === index,
+  );
+  panel.append(
+    quickAskSelect(doc, {
+      label: "账号",
+      className: "zai-quick-ask-preset-select",
+      value: current?.presetId ?? "",
+      options: presetOptions.map((item) => [item.presetId, item.presetLabel]),
+      disabled: state.status !== "idle",
+      emptyLabel: "未配置可用账号",
+      onChange: (presetId) => {
+        const firstModel = modelOptions.find(
+          (item) => item.presetId === presetId,
+        );
+        if (firstModel) actions.onModelChange(presetId, firstModel.model);
+      },
+    }),
+    quickAskSelect(doc, {
+      label: "模型",
+      className: "zai-quick-ask-model-select",
+      value: current?.model ?? "",
+      options: modelOptions
+        .filter((item) => item.presetId === current?.presetId)
+        .map((item) => [item.model, item.model]),
+      disabled: state.status !== "idle",
+      emptyLabel: "未配置可用模型",
+      onChange: (model) => {
+        if (current) actions.onModelChange(current.presetId, model);
+      },
+    }),
+    quickAskSelect(doc, {
+      label: "思考强度",
+      className: "zai-quick-ask-reasoning-select",
+      value: state.modelSelection.reasoningEffort,
+      options: reasoningOptions,
+      disabled: state.status !== "idle" || reasoningOptions.length === 0,
+      emptyLabel: "当前账号不支持",
+      onChange: (value) => actions.onReasoningChange(value as ReasoningEffort),
+    }),
+  );
+  root.append(summary, panel);
+  return root;
+}
+
+interface QuickAskSelectOptions {
+  label: string;
+  className: string;
+  value: string;
+  options: Array<[string, string]>;
+  disabled: boolean;
+  emptyLabel: string;
+  onChange(value: string): void;
+}
+
+function quickAskSelect(
+  doc: Document,
+  options: QuickAskSelectOptions,
+): HTMLElement {
+  const label = el(doc, "label", "zai-quick-ask-model-setting");
+  label.append(el(doc, "span", "", options.label));
+  const select = doc.createElementNS(XHTML_NS, "select") as HTMLSelectElement;
+  select.className = options.className;
+  select.setAttribute("aria-label", `选择本次 Quick Ask 的${options.label}`);
+  if (options.options.length === 0) {
+    const option = doc.createElementNS(XHTML_NS, "option") as HTMLOptionElement;
+    option.textContent = options.emptyLabel;
+    select.append(option);
+  } else {
+    for (const [value, title] of options.options) {
+      const option = doc.createElementNS(
+        XHTML_NS,
+        "option",
+      ) as HTMLOptionElement;
+      option.value = value;
+      option.textContent = title;
+      select.append(option);
+    }
+    select.value = options.value;
+  }
+  select.disabled = options.disabled || options.options.length === 0;
+  select.addEventListener("change", () => options.onChange(select.value));
+  label.append(select);
+  return label;
+}
+
+function quickAskReasoningLabel(
+  state: QuickAskState,
+  reasoningOptions: Array<[ReasoningEffort, string]>,
+): string {
+  return (
+    reasoningOptions.find(
+      ([value]) => value === state.modelSelection.reasoningEffort,
+    )?.[1] ?? "当前账号不支持"
+  );
 }
 
 function renderReference(doc: Document, state: QuickAskState): HTMLElement {

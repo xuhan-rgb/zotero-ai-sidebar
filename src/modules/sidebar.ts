@@ -95,6 +95,7 @@ import {
   type ProviderKind,
   type ReasoningEffort,
   type ReasoningSummary,
+  type TranslateThinking,
 } from "../settings/types";
 import {
   expandSlashCommandMessage,
@@ -108,7 +109,12 @@ import { AskModeController } from "../translate/ask-mode";
 import { getReadingConversations } from "../translate/reading-log";
 import { summarizeReadingConversations } from "../translate/reading-summary";
 import {
+  collapseFullDocumentThinking,
   createFullDocumentTranslator,
+  fullDocumentModelsForPreset,
+  fullDocumentThinkingOptions,
+  resolveFullDocumentModelSelection,
+  saveFullDocumentModelSelection,
   type FullDocumentTranslator,
 } from "../translate/full-document-provider";
 import { runFullDocumentTranslation } from "../translate/full-document-runner";
@@ -138,6 +144,7 @@ import {
 import {
   revealFullTranslationSourceBlock,
   renderFullTranslationView,
+  type FullTranslationModelSettings,
   updateFullTranslationAssetPreview,
 } from "./full-translation-view";
 import {
@@ -148,14 +155,19 @@ import {
   buildQuickAskApiMessages,
   createQuickAskState,
   createQuickAskUserMessage,
+  getQuickAskShortcut,
   isQuickAskShortcut,
-  QUICK_ASK_SHORTCUT_LABEL,
+  loadQuickAskModelSelection,
   quickAskReadOnlyTools,
   resetQuickAskState,
+  saveQuickAskModelSelection,
   type QuickAskReference,
   type QuickAskState,
 } from "./quick-ask";
-import { renderQuickAskDialog } from "./quick-ask-dialog";
+import {
+  renderQuickAskDialog,
+  type QuickAskModelOption,
+} from "./quick-ask-dialog";
 import {
   selectConversationHistory,
   type ConversationHistoryMode,
@@ -520,6 +532,10 @@ const fullTranslationHosts = new WeakMap<
   FullTranslationHost
 >();
 const fullTranslationRequests = new WeakMap<WindowSidebarState, symbol>();
+const fullTranslationModelSettingsOpen = new WeakMap<
+  WindowSidebarState,
+  boolean
+>();
 const fullTranslationNoteVisibility = new WeakMap<
   WindowSidebarState,
   boolean
@@ -529,6 +545,7 @@ interface QuickAskController {
   root: HTMLElement;
   itemID: number | null;
   state: QuickAskState;
+  modelSettingsOpen: boolean;
   abort?: AbortController;
   userMessage?: Message;
   assistantMessage?: Message;
@@ -806,26 +823,30 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   });
   topRow.append(select);
 
-  if (state.messages.length > 0) {
-    const copyAll = buttonEl(doc, "复制MD");
-    copyAll.title = state.copyDebugContext
+  const copyAll = buttonEl(doc, "复制MD");
+  copyAll.disabled = state.messages.length === 0;
+  copyAll.title = copyAll.disabled
+    ? "当前对话还没有可复制的消息"
+    : state.copyDebugContext
       ? "复制当前对话为 Markdown（含工具上下文和 PDF 片段）"
       : "复制当前对话为 Markdown（只含论文介绍和对话）";
-    copyAll.addEventListener("click", () => {
-      void copyCurrentConversation(doc, state, copyAll);
-    });
-    topRow.append(copyAll);
+  copyAll.addEventListener("click", () => {
+    void copyCurrentConversation(doc, state, copyAll);
+  });
+  topRow.append(copyAll);
 
-    const clear = buttonEl(doc, "清空");
-    clear.disabled = state.sending;
-    clear.title = "清空当前对话的全部消息";
-    clear.addEventListener("click", () => {
-      state.messages = [];
-      void persistPanelConversations(state);
-      renderPanel(mount, state);
-    });
-    topRow.append(clear);
-  }
+  const clear = buttonEl(doc, "清空");
+  clear.disabled = state.sending || state.messages.length === 0;
+  clear.title =
+    state.messages.length === 0
+      ? "当前对话还没有可清空的消息"
+      : "清空当前对话的全部消息";
+  clear.addEventListener("click", () => {
+    state.messages = [];
+    void persistPanelConversations(state);
+    renderPanel(mount, state);
+  });
+  topRow.append(clear);
 
   const settings = buttonEl(doc, "设置");
   settings.addEventListener("click", () => {
@@ -868,16 +889,10 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   askBtn.addEventListener("click", () => {
     void toggleAskMode(win, askBtn);
   });
-  const quickAsk = buttonEl(doc, "快问");
-  quickAsk.className = "zai-sidebar-quick-ask-button";
-  quickAsk.title = `临时单次问答；不读取历史，关闭不保存（${QUICK_ASK_SHORTCUT_LABEL}）`;
-  quickAsk.addEventListener("click", () => {
-    void openQuickAsk(win, windowSidebars.get(win));
-  });
   // Content actions, then 设置 (opens full preferences), the 字号 menu (🎚 icon
   // → font-size popup) and the 调试 (copy-debug context) toggle.
   settings.title = "打开 AI 对话完整设置";
-  bottomRow.append(openNote, quickAsk);
+  bottomRow.append(openNote);
   // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留，去掉这行注释即可恢复）。
   // bottomRow.append(translateBtn);
   bottomRow.append(askBtn);
@@ -931,6 +946,12 @@ function renderConversationSwitcher(
     ["previous", "1轮"],
     ["all", "全部"],
   ];
+  const historyTooltips: Record<ConversationHistoryMode, string> = {
+    none: "只发送当前问题，不向模型发送此前问答；界面中的消息仍会保留。",
+    previous:
+      "向模型附带上一轮用户提问和 AI 回答，帮助延续上下文；更早的消息不会发送。",
+    all: "向模型附带当前对话的全部历史消息；界面中的消息不会删除。",
+  };
   for (const [value, label] of historyOptions) {
     const option = doc.createElement("option");
     option.value = value;
@@ -939,11 +960,18 @@ function renderConversationSwitcher(
   }
   historySelect.value = state.historyMode;
   historySelect.disabled = conversationBusy || !state.historyLoaded;
-  historySelect.title =
-    "发送历史：无 / 最近1轮 / 当前对话全部；界面消息不会删除";
+  const updateHistoryTooltip = () => {
+    const tooltip = historyTooltips[state.historyMode];
+    historyLabel.title = tooltip;
+    historyLabel.setAttribute("tooltiptext", tooltip);
+    historySelect.title = tooltip;
+    historySelect.setAttribute("tooltiptext", tooltip);
+  };
+  updateHistoryTooltip();
   historySelect.setAttribute("aria-label", "发送历史范围");
   historySelect.addEventListener("change", () => {
     state.historyMode = normalizeConversationHistoryMode(historySelect.value);
+    updateHistoryTooltip();
     void persistPanelConversations(state);
   });
   historyLabel.append(historySelect);
@@ -3429,11 +3457,29 @@ async function openQuickAsk(
   const reference = await captureQuickAskReference(sidebar, itemID);
   if (quickAskOpenRequests.get(sidebar) !== request) return;
   quickAskOpenRequests.delete(sidebar);
+  const panelState = states.get(sidebar.mount);
+  const activePreset = panelState ? selectedChatPreset(panelState) : null;
+  const savedSelection = loadQuickAskModelSelection(zoteroPrefs());
+  const modelOptions = quickAskModelOptions(panelState);
+  const initialSelection =
+    savedSelection &&
+    modelOptions.some(
+      (option) =>
+        option.presetId === savedSelection.presetId &&
+        option.model === savedSelection.model,
+    )
+      ? savedSelection
+      : {
+          presetId: activePreset?.id ?? "",
+          model: activePreset?.model ?? "",
+          reasoningEffort: quickAskReasoningEffort(activePreset ?? undefined),
+        };
 
   const controller: QuickAskController = {
     root: win.document.createElementNS(XHTML_NS, "div") as HTMLElement,
     itemID,
-    state: createQuickAskState(reference),
+    state: createQuickAskState(reference, initialSelection),
+    modelSettingsOpen: false,
   };
   quickAskControllers.set(sidebar, controller);
   renderActiveQuickAsk(sidebar, controller, true);
@@ -3487,12 +3533,74 @@ function renderActiveQuickAsk(
       40
     : true;
   const panelState = states.get(sidebar.mount);
+  const modelOptions = quickAskModelOptions(panelState);
+  let selectedPreset = quickAskConfiguredPreset(
+    panelState,
+    controller.state.modelSelection.presetId,
+  );
+  if (
+    modelOptions.length > 0 &&
+    !modelOptions.some(
+      (option) =>
+        option.presetId === controller.state.modelSelection.presetId &&
+        option.model === controller.state.modelSelection.model,
+    )
+  ) {
+    selectedPreset = quickAskConfiguredPreset(
+      panelState,
+      modelOptions[0].presetId,
+    );
+    controller.state.modelSelection = {
+      presetId: modelOptions[0].presetId,
+      model: modelOptions[0].model,
+      reasoningEffort: quickAskReasoningEffort(selectedPreset),
+    };
+  }
+  const reasoningOptions =
+    selectedPreset && !isReasoningDisabledForDraft(selectedPreset)
+      ? reasoningEffortOptionsForPreset(selectedPreset)
+      : [];
+  if (
+    reasoningOptions.length > 0 &&
+    !reasoningOptions.some(
+      ([effort]) => effort === controller.state.modelSelection.reasoningEffort,
+    )
+  ) {
+    controller.state.modelSelection.reasoningEffort =
+      quickAskReasoningEffort(selectedPreset);
+    saveQuickAskModelSelection(zoteroPrefs(), controller.state.modelSelection);
+  }
   const next = renderQuickAskDialog(
     doc,
     controller.state,
     {
       onQuestionChange: (value) => {
         controller.state.question = value;
+      },
+      onToggleModelSettings: () => {
+        controller.modelSettingsOpen = !controller.modelSettingsOpen;
+        renderActiveQuickAsk(sidebar, controller);
+      },
+      onModelChange: (presetId, model) => {
+        const preset = quickAskConfiguredPreset(panelState, presetId);
+        controller.state.modelSelection = {
+          presetId,
+          model,
+          reasoningEffort: quickAskReasoningEffort(preset),
+        };
+        saveQuickAskModelSelection(
+          zoteroPrefs(),
+          controller.state.modelSelection,
+        );
+        renderActiveQuickAsk(sidebar, controller);
+      },
+      onReasoningChange: (reasoningEffort) => {
+        controller.state.modelSelection.reasoningEffort = reasoningEffort;
+        saveQuickAskModelSelection(
+          zoteroPrefs(),
+          controller.state.modelSelection,
+        );
+        renderActiveQuickAsk(sidebar, controller);
       },
       onSend: (value) => void sendQuickAsk(sidebar, controller, value),
       onStop: () => controller.abort?.abort(),
@@ -3509,7 +3617,13 @@ function renderActiveQuickAsk(
       onClose: () => closeQuickAsk(sidebar),
     },
     {
-      shortcutLabel: QUICK_ASK_SHORTCUT_LABEL,
+      shortcutLabel: getQuickAskShortcut(zoteroPrefs())
+        .split("+")
+        .map((part) => part.trim())
+        .join(" + "),
+      modelSettingsOpen: controller.modelSettingsOpen,
+      modelOptions,
+      reasoningOptions,
       transferDisabled: !!panelState?.sending,
     },
   );
@@ -3551,6 +3665,39 @@ function renderActiveQuickAsk(
   }
 }
 
+function quickAskModelOptions(
+  panelState: PanelState | undefined,
+): QuickAskModelOption[] {
+  if (!panelState) return [];
+  return configuredPresets(panelState).flatMap((preset) => {
+    const models = preset.models?.length ? preset.models : [preset.model];
+    return Array.from(new Set(models.filter(Boolean))).map((model) => ({
+      presetId: preset.id,
+      presetLabel: presetSelectLabel(preset),
+      model,
+    }));
+  });
+}
+
+function quickAskConfiguredPreset(
+  panelState: PanelState | undefined,
+  presetId: string,
+): ModelPreset | undefined {
+  return panelState
+    ? configuredPresets(panelState).find((preset) => preset.id === presetId)
+    : undefined;
+}
+
+function quickAskReasoningEffort(
+  preset: ModelPreset | undefined,
+): ReasoningEffort {
+  if (!preset) return DEFAULT_REASONING_EFFORT;
+  return collapseReasoningForPreset(
+    preset,
+    preset.extras?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
+  );
+}
+
 function closeQuickAsk(sidebar: WindowSidebarState): void {
   quickAskOpenRequests.delete(sidebar);
   const controller = quickAskControllers.get(sidebar);
@@ -3576,7 +3723,24 @@ async function sendQuickAsk(
   if (!question) return;
 
   const panelState = states.get(sidebar.mount);
-  const preset = panelState ? selectedChatPreset(panelState) : null;
+  const selected = controller.state.modelSelection;
+  const storedPreset = quickAskConfiguredPreset(panelState, selected.presetId);
+  const availableModels = storedPreset?.models?.length
+    ? storedPreset.models
+    : storedPreset?.model
+      ? [storedPreset.model]
+      : [];
+  const presetWithModel =
+    storedPreset && availableModels.includes(selected.model)
+      ? { ...storedPreset, model: selected.model }
+      : null;
+  const preset =
+    presetWithModel && !isReasoningDisabledForDraft(presetWithModel)
+      ? withReasoningEffort(
+          presetWithModel,
+          collapseReasoningForPreset(presetWithModel, selected.reasoningEffort),
+        )
+      : presetWithModel;
   if (!preset?.apiKey || !preset.model) {
     controller.state = {
       ...controller.state,
@@ -6326,6 +6490,7 @@ async function showFullTranslation(sidebar: WindowSidebarState): Promise<void> {
   if (fullTranslationRequests.get(sidebar) !== request) return;
   if (!sidebar.fullTranslationActive) {
     fullTranslationNoteVisibility.set(sidebar, noteColumnIsVisible(sidebar));
+    fullTranslationModelSettingsOpen.set(sidebar, false);
   }
   sidebar.fullTranslationActive = true;
   setNoteColumnVisible(sidebar, false);
@@ -6459,6 +6624,7 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
           quote: currentView.dataset.sourceQuote,
         }
       : undefined;
+  const modelSettings = fullTranslationModelSettings(sidebar);
   const view = renderFullTranslationView(doc, {
     document: session.document,
     state: session.state,
@@ -6470,6 +6636,24 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
     readingSettings,
     expandedSourceBlockId,
     highlightedSourceQuote,
+    ...(modelSettings
+      ? {
+          modelSettings,
+          onToggleModelSettings: () => {
+            fullTranslationModelSettingsOpen.set(
+              sidebar,
+              !fullTranslationModelSettingsOpen.get(sidebar),
+            );
+            renderFullTranslationPanel(sidebar);
+          },
+          onModelPresetChange: (presetId: string) =>
+            updateFullTranslationModelPreset(sidebar, presetId),
+          onModelChange: (model: string) =>
+            updateFullTranslationModel(sidebar, model),
+          onModelThinkingChange: (thinking: TranslateThinking) =>
+            updateFullTranslationThinking(sidebar, thinking),
+        }
+      : {}),
     onLayoutChange: (next) => {
       updateFullTranslationReadingSettings(sidebar, {
         ...readingSettings,
@@ -6496,6 +6680,80 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
   host.root.replaceChildren(view);
   const content = host.root.querySelector<HTMLElement>(".zai-ft-content");
   if (content) content.scrollTop = scrollTop;
+}
+
+function fullTranslationModelSettings(
+  sidebar: WindowSidebarState,
+): FullTranslationModelSettings | undefined {
+  try {
+    const prefs = zoteroPrefs();
+    const resolved = resolveFullDocumentModelSelection(prefs);
+    const presets = loadPresets(prefs).filter(
+      (preset) => fullDocumentModelsForPreset(preset).length > 0,
+    );
+    return {
+      ...resolved.selection,
+      presetLabel: resolved.preset.label,
+      inherited: resolved.inherited,
+      open: fullTranslationModelSettingsOpen.get(sidebar) === true,
+      presets: presets.map((preset) => ({
+        id: preset.id,
+        label: presetSelectLabel(preset),
+      })),
+      models: fullDocumentModelsForPreset(resolved.preset),
+      thinkingOptions: fullDocumentThinkingOptions(resolved.preset),
+    };
+  } catch {
+    return undefined;
+  }
+}
+
+function updateFullTranslationModelPreset(
+  sidebar: WindowSidebarState,
+  presetId: string,
+): void {
+  const prefs = zoteroPrefs();
+  const current = resolveFullDocumentModelSelection(prefs);
+  const preset = loadPresets(prefs).find(
+    (candidate) => candidate.id === presetId,
+  );
+  if (!preset) return;
+  const model = fullDocumentModelsForPreset(preset)[0];
+  if (!model) return;
+  saveFullDocumentModelSelection(prefs, {
+    presetId,
+    model,
+    thinking: collapseFullDocumentThinking(preset, current.selection.thinking),
+  });
+  renderFullTranslationPanel(sidebar);
+}
+
+function updateFullTranslationModel(
+  sidebar: WindowSidebarState,
+  model: string,
+): void {
+  const prefs = zoteroPrefs();
+  const current = resolveFullDocumentModelSelection(prefs);
+  if (!fullDocumentModelsForPreset(current.preset).includes(model)) return;
+  saveFullDocumentModelSelection(prefs, { ...current.selection, model });
+  renderFullTranslationPanel(sidebar);
+}
+
+function updateFullTranslationThinking(
+  sidebar: WindowSidebarState,
+  thinking: TranslateThinking,
+): void {
+  const prefs = zoteroPrefs();
+  const current = resolveFullDocumentModelSelection(prefs);
+  if (
+    !fullDocumentThinkingOptions(current.preset).some(
+      ([value]) => value === thinking,
+    )
+  ) {
+    return;
+  }
+  saveFullDocumentModelSelection(prefs, { ...current.selection, thinking });
+  renderFullTranslationPanel(sidebar);
 }
 
 function updateFullTranslationReadingSettings(
@@ -6650,6 +6908,7 @@ function closeFullTranslation(sidebar: WindowSidebarState): void {
   const host = fullTranslationHosts.get(sidebar);
   if (host) unmountFullTranslationHost(host);
   fullTranslationHosts.delete(sidebar);
+  fullTranslationModelSettingsOpen.delete(sidebar);
   const hadNoteSnapshot = fullTranslationNoteVisibility.has(sidebar);
   const restoreNote = fullTranslationNoteVisibility.get(sidebar) === true;
   fullTranslationNoteVisibility.delete(sidebar);
@@ -8243,7 +8502,13 @@ function handleQuickAskShortcut(
   sidebar: WindowSidebarState,
   event: KeyboardEvent,
 ): boolean {
-  if (event.defaultPrevented || !isQuickAskShortcut(event)) return false;
+  if (
+    event.defaultPrevented ||
+    isEditableEventTarget(event.target) ||
+    !isQuickAskShortcut(event, getQuickAskShortcut(zoteroPrefs()))
+  ) {
+    return false;
+  }
   event.preventDefault();
   event.stopImmediatePropagation();
   void openQuickAsk(win, sidebar);

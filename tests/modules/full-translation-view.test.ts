@@ -132,6 +132,133 @@ function openBlockContextMenu(view: HTMLElement, blockId: string): HTMLElement {
 }
 
 describe("renderFullTranslationView", () => {
+  it("keeps model dropdowns collapsed behind a settings button", () => {
+    const onToggleModelSettings = vi.fn();
+    const onModelPresetChange = vi.fn();
+    const onModelChange = vi.fn();
+    const onModelThinkingChange = vi.fn();
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: "parallel",
+      running: false,
+      assets: {},
+      modelSettings: {
+        presetId: "preset-1",
+        presetLabel: "Primary",
+        model: "model-1",
+        thinking: "low",
+        inherited: true,
+        open: false,
+        presets: [
+          { id: "preset-1", label: "Primary" },
+          { id: "preset-2", label: "Secondary" },
+        ],
+        models: ["model-1", "model-2"],
+        thinkingOptions: [
+          ["off", "关闭 - 不思考"],
+          ["low", "Low - 省 token"],
+        ],
+      },
+      onToggleModelSettings,
+      onModelPresetChange,
+      onModelChange,
+      onModelThinkingChange,
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+
+    const toggle = view.querySelector<HTMLButtonElement>(
+      ".zai-ft-model-settings-toggle",
+    )!;
+    const panel = view.querySelector<HTMLElement>(
+      ".zai-ft-model-settings-panel",
+    )!;
+    expect(toggle.textContent).toContain("model-1");
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(toggle.closest(".zai-ft-progress")).not.toBeNull();
+    expect(view.querySelector(".zai-ft-model-settings-summary")).toBeNull();
+    expect(panel.hidden).toBe(true);
+    expect(view.textContent).toContain("Primary");
+    expect(view.textContent).toContain("model-1");
+    expect(view.textContent).not.toContain("首次继承");
+
+    toggle.click();
+    expect(onToggleModelSettings).toHaveBeenCalledOnce();
+  });
+
+  it("routes full translation model dropdown changes to the controller", () => {
+    const onToggleModelSettings = vi.fn();
+    const onModelPresetChange = vi.fn();
+    const onModelChange = vi.fn();
+    const onModelThinkingChange = vi.fn();
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: "parallel",
+      running: false,
+      assets: {},
+      modelSettings: {
+        presetId: "preset-1",
+        presetLabel: "Primary",
+        model: "model-1",
+        thinking: "low",
+        inherited: false,
+        open: true,
+        presets: [
+          { id: "preset-1", label: "Primary" },
+          { id: "preset-2", label: "Secondary" },
+        ],
+        models: ["model-1", "model-2"],
+        thinkingOptions: [
+          ["off", "关闭 - 不思考"],
+          ["low", "Low - 省 token"],
+        ],
+      },
+      onToggleModelSettings,
+      onModelPresetChange,
+      onModelChange,
+      onModelThinkingChange,
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+
+    const preset = view.querySelector<HTMLSelectElement>(
+      ".zai-ft-model-preset-select",
+    )!;
+    const model = view.querySelector<HTMLSelectElement>(
+      ".zai-ft-model-select",
+    )!;
+    const thinking = view.querySelector<HTMLSelectElement>(
+      ".zai-ft-model-thinking-select",
+    )!;
+    expect(
+      view.querySelector<HTMLElement>(".zai-ft-model-settings-panel")!.hidden,
+    ).toBe(false);
+
+    preset.value = "preset-2";
+    preset.dispatchEvent(new Event("change", { bubbles: true }));
+    model.value = "model-2";
+    model.dispatchEvent(new Event("change", { bubbles: true }));
+    thinking.value = "off";
+    thinking.dispatchEvent(new Event("change", { bubbles: true }));
+
+    expect(onModelPresetChange).toHaveBeenCalledWith("preset-2");
+    expect(onModelChange).toHaveBeenCalledWith("model-2");
+    expect(onModelThinkingChange).toHaveBeenCalledWith("off");
+
+    view.querySelector<HTMLElement>(".zai-ft-model-settings-panel")!.click();
+    expect(onToggleModelSettings).not.toHaveBeenCalled();
+    view.querySelector<HTMLElement>(".zai-ft-content")!.click();
+    expect(onToggleModelSettings).toHaveBeenCalledOnce();
+  });
+
   it("aligns original and translated content by stable block ID", () => {
     const view = render();
     const row = view.querySelector('[data-block-id="section-1-p1"]');

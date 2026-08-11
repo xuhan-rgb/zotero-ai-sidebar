@@ -22,8 +22,21 @@ import type { FullTranslationAssetPreview } from "../translate/full-document-ass
 import { splitSentences } from "../translate/sentence-splitter";
 import { isTranslationPlaceholderReply } from "../translate/translator";
 import { decorateSentenceBoundaries } from "./full-translation-sentence-markers";
+import type { TranslateThinking } from "../settings/types";
 
 export type FullTranslationLayout = "parallel" | "interleaved";
+
+export interface FullTranslationModelSettings {
+  presetId: string;
+  presetLabel: string;
+  model: string;
+  thinking: TranslateThinking;
+  inherited: boolean;
+  open: boolean;
+  presets: Array<{ id: string; label: string }>;
+  models: string[];
+  thinkingOptions: Array<[TranslateThinking, string]>;
+}
 
 export interface FullTranslationViewOptions {
   document: FullTranslationDocument;
@@ -36,6 +49,11 @@ export interface FullTranslationViewOptions {
   readingSettings?: FullTranslationReadingSettings;
   expandedSourceBlockId?: string;
   highlightedSourceQuote?: { blockId: string; quote: string };
+  modelSettings?: FullTranslationModelSettings;
+  onToggleModelSettings?(): void;
+  onModelPresetChange?(presetId: string): void;
+  onModelChange?(model: string): void;
+  onModelThinkingChange?(thinking: TranslateThinking): void;
   onLayoutChange(layout: FullTranslationLayout): void;
   onRun(): void;
   onRetranslate(): void;
@@ -85,6 +103,16 @@ export function renderFullTranslationView(
   root.addEventListener("click", (event) => {
     const target = event.target as Node | null;
     if (!target) return;
+    const modelSettings = root.querySelector<HTMLElement>(
+      ".zai-ft-model-settings",
+    );
+    if (
+      options.modelSettings?.open &&
+      modelSettings &&
+      !modelSettings.contains(target)
+    ) {
+      options.onToggleModelSettings?.();
+    }
     for (const popover of root.querySelectorAll<HTMLDetailsElement>(
       ".zai-ft-toolbar-popover[open]",
     )) {
@@ -352,11 +380,15 @@ function renderToolbar(
   const summary = doc.createElement("div");
   summary.className = "zai-ft-progress";
   summary.textContent = `${progress.done}/${progress.total} 已翻译`;
-  const model = doc.createElement("span");
-  model.className = "zai-ft-model";
-  model.textContent = options.state.model;
-  model.title = `翻译模型：${options.state.model}`;
-  summary.append(model);
+  if (options.modelSettings) {
+    summary.append(renderModelSettings(doc, options));
+  } else {
+    const model = doc.createElement("span");
+    model.className = "zai-ft-model";
+    model.textContent = options.state.model;
+    model.title = `翻译模型：${options.state.model}`;
+    summary.append(model);
+  }
   summary.append(renderUsageHistory(doc, options.document, options.state));
 
   const viewControls = renderViewControls(doc, options);
@@ -392,6 +424,107 @@ function renderToolbar(
 
   toolbar.append(summary, viewControls, action, exit);
   return toolbar;
+}
+
+function renderModelSettings(
+  doc: Document,
+  options: FullTranslationViewOptions,
+): HTMLElement {
+  const settings = options.modelSettings!;
+  const root = doc.createElement("div");
+  root.className = "zai-ft-model-settings";
+
+  const toggle = doc.createElement("button");
+  toggle.type = "button";
+  toggle.className = "zai-ft-model-settings-toggle";
+  toggle.textContent = settings.model;
+  toggle.title = `${settings.presetLabel} · ${fullTranslationThinkingLabel(settings)}`;
+  toggle.setAttribute("aria-label", `配置全文翻译模型：${settings.model}`);
+  toggle.setAttribute("aria-expanded", String(settings.open));
+  toggle.disabled = options.running || !!options.preparing;
+  toggle.addEventListener("click", () => options.onToggleModelSettings?.());
+
+  const panel = doc.createElement("div");
+  panel.className = "zai-ft-model-settings-panel";
+  if (!settings.open) panel.setAttribute("hidden", "hidden");
+  const busy = options.running || !!options.preparing;
+  panel.append(
+    fullTranslationModelSelect(doc, {
+      label: "账号",
+      className: "zai-ft-model-preset-select",
+      value: settings.presetId,
+      options: settings.presets.map((preset) => [preset.id, preset.label]),
+      disabled: busy,
+      onChange: (value) => options.onModelPresetChange?.(value),
+    }),
+    fullTranslationModelSelect(doc, {
+      label: "模型",
+      className: "zai-ft-model-select",
+      value: settings.model,
+      options: settings.models.map((value) => [value, value]),
+      disabled: busy,
+      onChange: (value) => options.onModelChange?.(value),
+    }),
+    fullTranslationModelSelect(doc, {
+      label: "思考强度",
+      className: "zai-ft-model-thinking-select",
+      value: settings.thinking,
+      options: settings.thinkingOptions,
+      disabled: busy,
+      onChange: (value) =>
+        options.onModelThinkingChange?.(value as TranslateThinking),
+    }),
+  );
+  const help = doc.createElement("p");
+  help.className = "zai-ft-model-settings-help";
+  help.textContent = settings.inherited
+    ? "当前从设置页的默认翻译模型继承；修改后全文翻译会全局记住自己的选择。"
+    : "全文翻译正在使用自己的全局选择，不会改动沉浸阅读默认模型。";
+  panel.append(help);
+  root.append(toggle, panel);
+  return root;
+}
+
+interface FullTranslationSelectOptions {
+  label: string;
+  className: string;
+  value: string;
+  options: Array<[string, string]>;
+  disabled: boolean;
+  onChange(value: string): void;
+}
+
+function fullTranslationModelSelect(
+  doc: Document,
+  options: FullTranslationSelectOptions,
+): HTMLElement {
+  const label = doc.createElement("label");
+  label.className = "zai-ft-model-setting";
+  const text = doc.createElement("span");
+  text.textContent = options.label;
+  const select = doc.createElement("select");
+  select.className = options.className;
+  select.disabled = options.disabled || options.options.length === 0;
+  for (const [value, title] of options.options) {
+    const option = doc.createElement("option");
+    option.value = value;
+    option.textContent = title;
+    select.append(option);
+  }
+  select.value = options.value;
+  select.addEventListener("change", () => options.onChange(select.value));
+  label.append(text, select);
+  return label;
+}
+
+function fullTranslationThinkingLabel(
+  settings: FullTranslationModelSettings,
+): string {
+  return (
+    settings.thinkingOptions.find(
+      ([value]) => value === settings.thinking,
+    )?.[1] ?? settings.thinking
+  );
 }
 
 function renderUsageHistory(
