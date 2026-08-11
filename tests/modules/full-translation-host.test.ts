@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   mountFullTranslationHost,
+  syncFullTranslationHostBounds,
   unmountFullTranslationHost,
 } from "../../src/modules/full-translation-host";
 
@@ -52,6 +53,28 @@ describe("full translation host", () => {
 
     expect(aiColumn.hasAttribute("hidden")).toBe(false);
     unmountFullTranslationHost(host!);
+  });
+
+  it("keeps the translation host to the left of the AI sidebar splitter", () => {
+    const tab = document.createElement("section");
+    tab.id = "tab-beside-sidebar";
+    const splitter = document.createElement("hr");
+    let splitterLeft = 720;
+    tab.getBoundingClientRect = () =>
+      ({ left: 0, right: 1200, width: 1200 }) as DOMRect;
+    splitter.getBoundingClientRect = () =>
+      ({ left: splitterLeft, right: splitterLeft + 4, width: 4 }) as DOMRect;
+    document.body.append(tab, splitter);
+
+    const host = mountFullTranslationHost(document, tab.id, [], splitter)!;
+    expect(host.root.style.width).toBe("720px");
+    expect(host.root.style.maxWidth).toBe("720px");
+
+    splitterLeft = 640;
+    syncFullTranslationHostBounds(host);
+    expect(host.root.style.width).toBe("640px");
+
+    unmountFullTranslationHost(host);
   });
 
   it("temporarily hides adjacent UI and restores its prior state", () => {

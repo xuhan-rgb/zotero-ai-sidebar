@@ -174,6 +174,7 @@ import {
 } from "./conversation-history";
 import {
   mountFullTranslationHost,
+  syncFullTranslationHostBounds,
   unmountFullTranslationHost,
   type FullTranslationHost,
 } from "./full-translation-host";
@@ -6546,13 +6547,24 @@ function ensureFullTranslationHost(
   if (!tabID) return null;
   const previous = fullTranslationHosts.get(sidebar);
   if (previous?.container.id === tabID && previous.root.isConnected) {
+    syncFullTranslationHostBounds(previous);
     return previous;
   }
   if (previous) unmountFullTranslationHost(previous);
-  const host = mountFullTranslationHost(sidebar.mount.ownerDocument!, tabID);
+  const host = mountFullTranslationHost(
+    sidebar.mount.ownerDocument!,
+    tabID,
+    [],
+    sidebar.splitter,
+  );
   if (host) fullTranslationHosts.set(sidebar, host);
   else fullTranslationHosts.delete(sidebar);
   return host;
+}
+
+function syncFullTranslationHostLayout(sidebar: WindowSidebarState): void {
+  const host = fullTranslationHosts.get(sidebar);
+  if (host?.root.isConnected) syncFullTranslationHostBounds(host);
 }
 
 async function loadFullTranslationAssets(
@@ -8282,8 +8294,14 @@ export function registerSidebarForWindow(win: Window) {
     noteSplitter,
     noteMount,
   };
-  splitter.addEventListener("command", () => updateToggleButton(state));
-  splitter.addEventListener("mouseup", () => updateToggleButton(state));
+  splitter.addEventListener("command", () => {
+    updateToggleButton(state);
+    syncFullTranslationHostLayout(state);
+  });
+  splitter.addEventListener("mouseup", () => {
+    updateToggleButton(state);
+    syncFullTranslationHostLayout(state);
+  });
   windowSidebars.set(win, state);
   mountedWindows.add(win);
   installReaderLayoutMemory(win, state);
@@ -8313,6 +8331,7 @@ function installReaderLayoutMemory(
   state: WindowSidebarState,
 ): void {
   const remember = () => rememberLastNoteWidth(state);
+  const syncTranslation = () => syncFullTranslationHostLayout(state);
   const scheduleRemember = () => {
     if (state.layoutSaveTimer != null) win.clearTimeout(state.layoutSaveTimer);
     state.layoutSaveTimer = win.setTimeout(() => {
@@ -8325,17 +8344,23 @@ function installReaderLayoutMemory(
     | undefined;
   const ResizeObserverCtor = (win as any).ResizeObserver;
   if (typeof ResizeObserverCtor === "function") {
-    resizeObserver = new ResizeObserverCtor(scheduleRemember);
+    resizeObserver = new ResizeObserverCtor(() => {
+      scheduleRemember();
+      syncTranslation();
+    });
     resizeObserver?.observe(state.noteColumn);
+    resizeObserver?.observe(state.column);
   }
   state.noteSplitter.addEventListener("command", scheduleRemember);
   state.noteSplitter.addEventListener("mouseup", remember);
   win.addEventListener("mouseup", remember, true);
+  win.addEventListener("resize", syncTranslation);
   state.layoutCleanup = () => {
     resizeObserver?.disconnect();
     state.noteSplitter.removeEventListener("command", scheduleRemember);
     state.noteSplitter.removeEventListener("mouseup", remember);
     win.removeEventListener("mouseup", remember, true);
+    win.removeEventListener("resize", syncTranslation);
     win.removeEventListener("beforeunload", remember);
     if (state.layoutSaveTimer != null) {
       win.clearTimeout(state.layoutSaveTimer);
@@ -9293,6 +9318,8 @@ function renderWindowSidebar(win: Window) {
     void migrateAskModeOnReaderSwitch(win);
   }
   updateToggleButton(state);
+  syncFullTranslationHostLayout(state);
+  win.requestAnimationFrame?.(() => syncFullTranslationHostLayout(state));
 }
 
 function switchNoteForItem(
