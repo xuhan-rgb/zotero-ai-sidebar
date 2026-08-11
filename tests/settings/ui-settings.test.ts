@@ -27,6 +27,7 @@ describe('ui settings storage', () => {
     saveUiSettings(prefs, {
       messageActionsPosition: 'top-right',
       messageActionsLayout: 'inside',
+      preferenceBorderStyle: 'clear',
       chatFontFamily: '"LXGW WenKai", serif',
       userProfile: { label: '我', avatar: '🙂' },
       assistantProfile: { label: '助手', avatar: 'https://example.test/ai.png' },
@@ -36,6 +37,7 @@ describe('ui settings storage', () => {
     expect(loadUiSettings(prefs)).toEqual({
       messageActionsPosition: 'top-right',
       messageActionsLayout: 'inside',
+      preferenceBorderStyle: 'clear',
       chatFontFamily: '"LXGW WenKai", serif',
       userProfile: { label: '我', avatar: '🙂' },
       assistantProfile: { label: '助手', avatar: 'https://example.test/ai.png' },
@@ -76,5 +78,14 @@ describe('ui settings storage', () => {
       JSON.stringify({ chatFontFamily: 'safe; color:red' }),
     );
     expect(loadUiSettings(prefs).chatFontFamily).toBe('');
+  });
+
+  it('falls back to the soft preference border style for unknown values', () => {
+    const prefs = memPrefs();
+    prefs.set(
+      'extensions.zotero-ai-sidebar.uiSettings',
+      JSON.stringify({ preferenceBorderStyle: 'high-contrast' }),
+    );
+    expect(loadUiSettings(prefs).preferenceBorderStyle).toBe('soft');
   });
 });

@@ -2,6 +2,7 @@ import type { PrefsStore } from './storage';
 
 export type MessageActionsPosition = 'top-right' | 'bottom-right';
 export type MessageActionsLayout = 'edge' | 'inside';
+export type PreferenceBorderStyle = 'soft' | 'clear';
 
 export interface ChatProfileSettings {
   label: string;
@@ -11,6 +12,7 @@ export interface ChatProfileSettings {
 export interface UiSettings {
   messageActionsPosition: MessageActionsPosition;
   messageActionsLayout: MessageActionsLayout;
+  preferenceBorderStyle: PreferenceBorderStyle;
   chatFontFamily: string;
   userProfile: ChatProfileSettings;
   assistantProfile: ChatProfileSettings;
@@ -26,6 +28,7 @@ export interface UiSettings {
 export const DEFAULT_UI_SETTINGS: UiSettings = {
   messageActionsPosition: 'bottom-right',
   messageActionsLayout: 'inside',
+  preferenceBorderStyle: 'soft',
   chatFontFamily: '',
   userProfile: { label: 'YOU', avatar: '' },
   assistantProfile: { label: 'AI', avatar: '' },
@@ -62,6 +65,9 @@ export function normalizeUiSettings(value: unknown): UiSettings {
     messageActionsLayout: isMessageActionsLayout(input.messageActionsLayout)
       ? input.messageActionsLayout
       : DEFAULT_UI_SETTINGS.messageActionsLayout,
+    preferenceBorderStyle: isPreferenceBorderStyle(input.preferenceBorderStyle)
+      ? input.preferenceBorderStyle
+      : DEFAULT_UI_SETTINGS.preferenceBorderStyle,
     chatFontFamily: normalizeChatFontFamily(input.chatFontFamily),
     userProfile: normalizeProfile(input.userProfile, DEFAULT_UI_SETTINGS.userProfile),
     assistantProfile: normalizeProfile(
@@ -80,6 +86,12 @@ function isMessageActionsPosition(value: unknown): value is MessageActionsPositi
 
 function isMessageActionsLayout(value: unknown): value is MessageActionsLayout {
   return value === 'edge' || value === 'inside';
+}
+
+function isPreferenceBorderStyle(
+  value: unknown,
+): value is PreferenceBorderStyle {
+  return value === 'soft' || value === 'clear';
 }
 
 function normalizeProfile(

@@ -166,6 +166,12 @@ describe("preference save controls", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("uses a flat account picker instead of an account select", () => {
+    expect(preferenceMarkup).toContain('id="zai-preset-picker"');
+    expect(preferenceMarkup).toContain('role="listbox"');
+    expect(preferenceMarkup).not.toContain('id="zai-preset-select"');
+  });
+
   it("groups settings in their editing workflow order", () => {
     const sectionTitles = Array.from(
       preferenceMarkup.matchAll(

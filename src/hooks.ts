@@ -3,6 +3,7 @@ import { createZToolkit } from './utils/ztoolkit';
 import { zoteroContextSource } from './context/zotero-source';
 import {
   refreshSidebarPreferences,
+  getActiveSidebarPresetId,
   registerSidebar,
   registerSidebarForWindow,
   unregisterSidebar,
@@ -232,7 +233,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
   if (!root) return;
 
   if (forceRender || root.dataset.rendered !== 'true') {
-    renderPresetSettings(doc);
+    renderPresetSettings(doc, getActiveSidebarPresetId());
     renderTranslateSettings(doc);
     renderUiSettings(doc);
     renderPromptSettings(doc);
@@ -542,7 +543,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
   );
   bindAutoSaveControls(
     doc,
-    '#zai-ui-user-label, #zai-ui-user-avatar, #zai-ui-assistant-label, #zai-ui-assistant-avatar, #zai-ui-chat-font, #zai-ui-actions-position, #zai-ui-actions-layout, #zai-ui-composer-queue',
+    '#zai-ui-user-label, #zai-ui-user-avatar, #zai-ui-assistant-label, #zai-ui-assistant-avatar, #zai-ui-chat-font, #zai-ui-actions-position, #zai-ui-actions-layout, #zai-ui-preference-border-style, #zai-ui-composer-queue',
     () => saveUiSettingsControls(doc),
   );
   bindAutoSaveControls(doc, '#zai-tool-web-search', () =>
@@ -1163,8 +1164,11 @@ function parseConfigBackup(raw: string): ParsedConfigBackup | string {
   return result;
 }
 
-function renderPresetSettings(doc: Document): void {
-  renderPresetRows(doc, loadPresets(zoteroPrefs()));
+function renderPresetSettings(
+  doc: Document,
+  dialogPresetId?: string | null,
+): void {
+  renderPresetRows(doc, loadPresets(zoteroPrefs()), dialogPresetId);
   updatePresetDirtyState(doc);
   setStatus(doc, 'zai-preset-status', '已加载账号配置。');
 }
@@ -1464,6 +1468,12 @@ function renderUiSettings(doc: Document): void {
   if (position) position.value = settings.messageActionsPosition;
   const layout = byID<HTMLSelectElement>(doc, 'zai-ui-actions-layout');
   if (layout) layout.value = settings.messageActionsLayout;
+  const borderStyle = byID<HTMLSelectElement>(
+    doc,
+    'zai-ui-preference-border-style',
+  );
+  if (borderStyle) borderStyle.value = settings.preferenceBorderStyle;
+  applyPreferenceBorderStyle(doc, settings.preferenceBorderStyle);
   const queue = byID<HTMLInputElement>(doc, 'zai-ui-composer-queue');
   if (queue) queue.checked = settings.composerQueueWhileSending;
   setStatus(doc, 'zai-ui-status', '已加载显示设置。');
@@ -1472,6 +1482,10 @@ function renderUiSettings(doc: Document): void {
 function readUiSettingsControls(doc: Document): UiSettings {
   const position = byID<HTMLSelectElement>(doc, 'zai-ui-actions-position');
   const layout = byID<HTMLSelectElement>(doc, 'zai-ui-actions-layout');
+  const borderStyle = byID<HTMLSelectElement>(
+    doc,
+    'zai-ui-preference-border-style',
+  );
   return normalizeUiSettings({
     userProfile: {
       label: byID<HTMLInputElement>(doc, 'zai-ui-user-label')?.value,
@@ -1484,15 +1498,26 @@ function readUiSettingsControls(doc: Document): UiSettings {
     chatFontFamily: byID<HTMLInputElement>(doc, 'zai-ui-chat-font')?.value,
     messageActionsPosition: position?.value,
     messageActionsLayout: layout?.value,
+    preferenceBorderStyle: borderStyle?.value,
     composerQueueWhileSending:
       byID<HTMLInputElement>(doc, 'zai-ui-composer-queue')?.checked === true,
   });
 }
 
 function saveUiSettingsControls(doc: Document): void {
-  saveUiSettings(zoteroPrefs(), readUiSettingsControls(doc));
+  const settings = readUiSettingsControls(doc);
+  saveUiSettings(zoteroPrefs(), settings);
+  applyPreferenceBorderStyle(doc, settings.preferenceBorderStyle);
   refreshSidebarPreferences();
   setStatus(doc, 'zai-ui-status', '显示设置已自动保存，侧边栏已刷新。');
+}
+
+function applyPreferenceBorderStyle(
+  doc: Document,
+  style: UiSettings['preferenceBorderStyle'],
+): void {
+  const root = byID<HTMLElement>(doc, 'zotero-ai-sidebar-tool-settings');
+  if (root) root.dataset.borderStyle = style;
 }
 
 function setInputValue(doc: Document, id: string, value: string): void {
@@ -1575,11 +1600,22 @@ function formatSyncMeta(account: SyncAccount): string {
   return parts.join(' · ');
 }
 
-function renderPresetRows(doc: Document, presets: ModelPreset[]): void {
+function renderPresetRows(
+  doc: Document,
+  presets: ModelPreset[],
+  dialogPresetId?: string | null,
+): void {
   const list = byID<HTMLElement>(doc, 'zai-preset-list');
+  const picker = byID<HTMLElement>(doc, 'zai-preset-picker');
+  const previousSelection = picker?.dataset.activePresetId ?? '';
   if (!list) return;
   list.replaceChildren();
+  picker?.replaceChildren();
+  if (picker && dialogPresetId !== undefined) {
+    picker.dataset.dialogPresetId = dialogPresetId ?? '';
+  }
   if (presets.length === 0) {
+    picker?.setAttribute('hidden', 'hidden');
     list.append(
       el(
         doc,
@@ -1591,17 +1627,96 @@ function renderPresetRows(doc: Document, presets: ModelPreset[]): void {
     refreshCacheTestControls(doc, presets);
     return;
   }
+  const requestedSelection = dialogPresetId ?? previousSelection;
+  const selectedId = presets.some(
+    (preset) => preset.id === requestedSelection,
+  )
+    ? requestedSelection
+    : presets[0].id;
+  if (picker) {
+    picker.removeAttribute('hidden');
+    const activeDialogId = picker.dataset.dialogPresetId ?? '';
+    for (const preset of presets) {
+      picker.append(presetPickerItem(doc, preset, preset.id === activeDialogId));
+    }
+  }
   for (const preset of presets) list.append(presetRow(doc, preset));
+  activatePresetRow(doc, selectedId);
   refreshCacheTestControls(doc, presets);
   attachPresetDirtyListeners(doc);
   updatePresetDirtyState(doc);
 }
 
 function openPresetRow(doc: Document, id: string): void {
-  const row = doc.querySelector(
-    `.zai-preset-row[data-id="${cssEscape(id)}"]`,
-  ) as HTMLDetailsElement | null;
-  if (row) row.open = true;
+  activatePresetRow(doc, id);
+}
+
+function activatePresetRow(doc: Document, id: string): void {
+  const picker = byID<HTMLElement>(doc, 'zai-preset-picker');
+  if (picker) picker.dataset.activePresetId = id;
+  for (const node of Array.from(
+    doc.querySelectorAll('.zai-preset-picker-item'),
+  )) {
+    const item = node as HTMLButtonElement;
+    item.setAttribute('aria-selected', String(item.dataset.id === id));
+  }
+  const rows = Array.from(doc.querySelectorAll('.zai-preset-row'));
+  for (const node of rows) {
+    const row = node as HTMLElement;
+    const active = row.dataset.id === id;
+    if (active) row.removeAttribute('hidden');
+    else row.setAttribute('hidden', 'hidden');
+    row.classList.toggle('zai-preset-row-active', active);
+    if (active && row.tagName.toLowerCase() === 'details') {
+      (row as HTMLDetailsElement).open = true;
+    }
+  }
+}
+
+function presetPickerItem(
+  doc: Document,
+  preset: ModelPreset,
+  activeInDialog: boolean,
+): HTMLButtonElement {
+  const item = doc.createElement('button');
+  item.type = 'button';
+  item.className = 'zai-preset-picker-item';
+  item.dataset.id = preset.id;
+  item.setAttribute('role', 'option');
+  item.setAttribute('aria-selected', 'false');
+  const status = el(doc, 'span', 'zai-preset-status-dot');
+  applyPresetStatusDot(status, preset.extras?.testStatus);
+  const copy = el(doc, 'span', 'zai-preset-picker-copy');
+  const title = el(doc, 'span', 'zai-preset-picker-title');
+  const provider = preset.provider === 'anthropic' ? 'Anthropic' : 'OpenAI';
+  title.append(
+    el(doc, 'strong', '', preset.label || provider),
+    el(doc, 'span', 'zai-preset-provider-badge', provider),
+  );
+  const modelCount = preset.models?.length ?? (preset.model ? 1 : 0);
+  const model = preset.model || preset.models?.[0] || '未填写模型';
+  const suffix = modelCount > 1 ? ` +${modelCount - 1}` : '';
+  copy.append(
+    title,
+    el(doc, 'span', 'zai-preset-picker-meta', `${model}${suffix}`),
+  );
+  item.append(status, copy);
+  if (activeInDialog) {
+    item.append(el(doc, 'span', 'zai-preset-dialog-badge', 'AI 对话'));
+  }
+  item.addEventListener('click', () => activatePresetRow(doc, preset.id));
+  return item;
+}
+
+function refreshPresetPickerItem(
+  doc: Document,
+  preset: ModelPreset,
+): void {
+  const item = doc.querySelector<HTMLElement>(
+    `.zai-preset-picker-item[data-id="${cssEscape(preset.id)}"]`,
+  );
+  const status = item?.querySelector<HTMLElement>('.zai-preset-status-dot');
+  if (status) applyPresetStatusDot(status, preset.extras?.testStatus);
 }
 
 function applyPresetStatusDot(
@@ -1621,19 +1736,11 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   const card = doc.createElement('details');
   card.className = 'zai-subcard zai-preset-row';
   card.dataset.id = preset.id;
-  card.open = !preset.apiKey || !preset.model;
+  card.open = true;
   const title = doc.createElement('summary');
   title.className = 'zai-subcard-title zai-preset-summary';
   const main = el(doc, 'span', 'zai-preset-summary-main');
-  const statusDot = el(doc, 'span', 'zai-preset-status-dot');
-  const applyDot = (status?: 'ok' | 'failed') =>
-    applyPresetStatusDot(statusDot, status);
-  applyDot(preset.extras?.testStatus);
-  main.append(
-    statusDot,
-    el(doc, 'strong', '', preset.label || preset.provider),
-    el(doc, 'span', 'zai-preset-summary-meta', presetSummary(preset)),
-  );
+  main.append(el(doc, 'strong', '', '配置详情'));
   title.append(main);
   const testMsg = el(doc, 'span', 'zai-preset-test-msg');
   const flagControl = presetFlagsControl(doc, preset);
@@ -1656,7 +1763,8 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
       const result = await testPresetConnectivity(testPreset);
       const saved = mergePresetTestResult(rawPreset, result.preset, 'ok');
       updatePresetInStorage(saved);
-      applyDot('ok');
+      refreshPresetPickerItem(doc, saved);
+      activatePresetRow(doc, rawPreset.id);
       testBtn.textContent = '✓ 通过';
       testMsg.textContent = result.message;
       testMsg.className = 'zai-preset-test-msg zai-test-ok';
@@ -1664,7 +1772,8 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
       const msg = err instanceof Error ? err.message : String(err);
       const failed = mergePresetTestResult(rawPreset, testPreset, 'failed');
       updatePresetInStorage(failed);
-      applyDot('failed');
+      refreshPresetPickerItem(doc, failed);
+      activatePresetRow(doc, rawPreset.id);
       testBtn.textContent = '✗ 失败';
       testMsg.textContent = msg;
       testMsg.className = 'zai-preset-test-msg zai-test-fail';
@@ -1681,7 +1790,11 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   remove.addEventListener('click', (event) => {
     event.preventDefault();
     event.stopPropagation();
+    const remaining = readPresetControls(doc).filter(
+      (candidate) => candidate.id !== preset.id,
+    );
     card.remove();
+    renderPresetRows(doc, remaining);
     updatePresetDirtyState(doc);
     setStatus(
       doc,
@@ -1997,8 +2110,7 @@ async function runSelectedPromptCacheTest(doc: Document): Promise<void> {
     updatePresetInStorage(saved);
     const flags = card.querySelector<HTMLElement>('.preset-flags-control');
     if (flags) refreshPresetFlags(flags, saved);
-    const statusDot = card.querySelector<HTMLElement>('.zai-preset-status-dot');
-    if (statusDot) applyPresetStatusDot(statusDot, 'ok');
+    refreshPresetPickerItem(doc, saved);
     setStatus(doc, 'zai-cache-test-status', result.message);
   } catch (err) {
     setStatus(
@@ -2029,17 +2141,6 @@ function updatePresetInStorage(preset: ModelPreset): void {
   const next = all.map((p) => (p.id === preset.id ? preset : p));
   savePresets(zoteroPrefs(), next);
   refreshSidebarPreferences();
-}
-
-function presetSummary(preset: ModelPreset): string {
-  const modelCount = preset.models?.length ?? (preset.model ? 1 : 0);
-  const modelText =
-    modelCount > 1
-      ? `${preset.model || preset.models?.[0]} +${modelCount - 1}`
-      : preset.model || '未填写模型';
-  const base =
-    preset.baseUrl || DEFAULT_BASE_URLS[preset.provider] || '默认 Base URL';
-  return `${preset.provider} · ${modelText} · ${base}`;
 }
 
 type PresetFlagBadge = {

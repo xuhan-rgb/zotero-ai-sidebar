@@ -1313,6 +1313,16 @@ export function refreshSidebarPreferences(): void {
   }
 }
 
+/** Return the active AI-dialog account without changing sidebar state. */
+export function getActiveSidebarPresetId(): string | null {
+  for (const win of Zotero.getMainWindows()) {
+    const sidebar = windowSidebars.get(win);
+    const state = sidebar ? states.get(sidebar.mount) : undefined;
+    if (state) return selectedChatPreset(state)?.id ?? state.selectedId;
+  }
+  return null;
+}
+
 function openAddonPreferences(doc: Document): void {
   const paneID = `${addon.data.config.addonRef}-prefs`;
   const zotero = Zotero as unknown as {

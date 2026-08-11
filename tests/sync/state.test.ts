@@ -119,6 +119,7 @@ describe('sync snapshot round trip', () => {
     saveUiSettings(prefs, {
       messageActionsPosition: 'bottom-right',
       messageActionsLayout: 'edge',
+      preferenceBorderStyle: 'soft',
       chatFontFamily: 'Noto Serif CJK SC, serif',
       userProfile: { label: 'me', avatar: '🙂' },
       assistantProfile: { label: 'ai', avatar: '🤖' },
@@ -198,6 +199,7 @@ describe('sync snapshot round trip', () => {
     saveUiSettings(sourcePrefs, {
       messageActionsPosition: 'top-right',
       messageActionsLayout: 'inside',
+      preferenceBorderStyle: 'clear',
       chatFontFamily: 'LXGW WenKai, serif',
       userProfile: { label: 'YOU', avatar: '' },
       assistantProfile: { label: 'AI', avatar: '' },
