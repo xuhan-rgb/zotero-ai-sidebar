@@ -33,6 +33,7 @@ export interface QuickAskModelSelection {
 
 export interface QuickAskState {
   status: QuickAskStatus;
+  messages: Message[];
   question: string;
   answer: string;
   thinking: string;
@@ -62,6 +63,7 @@ export function createQuickAskState(
 ): QuickAskState {
   return {
     status: "idle",
+    messages: [],
     question: "",
     answer: "",
     thinking: "",
@@ -71,10 +73,6 @@ export function createQuickAskState(
     reference,
     modelSelection: { ...modelSelection },
   };
-}
-
-export function resetQuickAskState(state: QuickAskState): QuickAskState {
-  return createQuickAskState(state.reference, state.modelSelection);
 }
 
 export function loadQuickAskModelSelection(
@@ -139,7 +137,7 @@ export function createQuickAskUserMessage(
         planMode: "selected_text",
         plannerSource: "selected",
         planReason:
-          "Quick Ask 单次请求：只发送当前选区和本轮附近上下文，不读取聊天历史",
+          "Quick Ask 临时会话：发送当前选区和本轮附近上下文，不读取研究对话历史",
       }
     : Object.keys(context).length
       ? context
@@ -152,10 +150,15 @@ export function createQuickAskUserMessage(
 }
 
 export function buildQuickAskApiMessages(
-  userMessage: Message,
+  messages: Message[],
   policy: ContextPolicy = DEFAULT_CONTEXT_POLICY,
 ): Message[] {
-  return toApiMessages([userMessage], { message: userMessage }, policy);
+  const currentMessage = messages[messages.length - 1];
+  return toApiMessages(
+    messages,
+    currentMessage ? { message: currentMessage } : undefined,
+    policy,
+  );
 }
 
 export function isQuickAskShortcut(

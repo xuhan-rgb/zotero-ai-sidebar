@@ -4,13 +4,14 @@
 
 An AI research assistant that lives inside Zotero. Ask about the paper you're reading; the sidebar reads its PDF (or the arXiv LaTeX source when available), shows its work, and writes back to your notes.
 
-> 👀 **[Illustrated usage guide →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)** (pure-HTML, product-faithful UI: overview · model config · chat · immersive translation · notes & overview · shortcuts)
+> 👀 **[Illustrated usage guide →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)** (pure-HTML, product-faithful UI: overview · model config · chat · Quick Ask · immersive/full translation · notes & overview · shortcuts)
 
 📖 [Full usage guide](docs/USAGE.md) ([中文](docs/USAGE.zh-CN.md)) — quick start, workflows, reference, and troubleshooting.
 
 ## What you can do with it
 
 - **Ask anything about the paper you're reading** — *"summarize this"*, *"what's the core contribution"*, *"compare with X"*. The model fetches the parts of the PDF it needs and shows its work in a tool trace.
+- **Open Quick Ask anywhere and keep following up** — press `Alt+Q` by default for a temporary conversation that remembers turns while the window stays open, is destroyed on close, and can be explicitly transferred into the current paper's research chat.
 - **See the whole paper at a glance** — generate a *全文总览* map: a phase-grouped section skeleton (motivation / method / validation) with one-line gists, innovation / result markers, and a structural flowchart. Click a section to jump to that spot in the PDF; your reading position is remembered per paper and synced across machines.
 - **arXiv papers come through clean** — equations and figures are pulled from the LaTeX source instead of broken PDF text. *"Explain Eq. (3)"* and *"walk me through Figure 2"* actually work.
 - **Immersive PDF translation** — turn on immersive mode, click a sentence to get a translation card in place; walk the paper with `Enter` / `Shift+Enter`, `/` jumps the cursor into the ask box, and `Esc` closes the card while keeping the sentence on the reading highlight.
@@ -38,12 +39,15 @@ Open the AI Sidebar settings in Zotero and configure at least one model preset:
 - Model: any model ID supported by that endpoint
 - Max tokens / tool iterations: local safety and output controls
 
-For immersive PDF translation, configure the "Translation / Immersive reading" sections in plugin settings:
+Configure PDF translation in the **Immersive reading** section:
 
-- Model / reasoning effort / result position (above or below) / card size — shared with the immersive card
+- Default translation model — immersive reading always uses this account, model, and reasoning effort; arXiv full-document translation inherits it on first use, then remembers its own selection from the translation toolbar
+- Result position (above or below) / card size — controls the immersive translation card
 - Neighbour context: send the previous and next sentence as context for a more accurate translation
 - Key-term linking: highlight original ↔ translated key-term pairs, cross-lit on hover
 - Shortcuts: next/prev sentence (default `Enter` / `Shift+Enter`), a selection quick-translate key (default Space), a focus-ask key (default `/`), and a collapse-toolbar key (default `h`), all remappable
+
+Quick Ask opens with `Alt+Q` by default. It initially uses the active AI-chat model, then independently remembers the account, model, and reasoning effort selected inside Quick Ask; changing it does not modify the research chat or translation defaults.
 
 Do not hardcode personal API keys, base URLs, or private model IDs in this repository.
 
@@ -52,6 +56,7 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 ### Chat & UI
 
 - **AI chat inside Zotero**: open a dedicated sidebar and discuss the current paper without leaving Zotero.
+- **Temporary multi-turn Quick Ask**: press `Alt+Q` by default, ask follow-up questions in the same popup, copy the latest answer, or transfer every turn into the research chat. It neither reads research-chat history nor persists after the popup closes.
 - **Configurable providers**: supports Anthropic, OpenAI, and OpenAI-compatible endpoints through local Zotero preferences. Model presets include connectivity tests and a per-preset model list with a footer switcher.
 - **Quick prompts & slash commands**: customizable prompt buttons next to the composer plus built-in slash commands (`/arxiv-search`, `/web-search`) that expand into explicit instructions for the model.
 - **Markdown output**: renders headings, lists, code blocks, quotes, links, thinking/context blocks, and tool-call traces.
@@ -88,6 +93,7 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 ### Translation
 
 - **Immersive PDF translation**: turn on `沉浸` (immersive) in the PDF Reader toolbar, then click a sentence for an in-place card (original + translation, cheapest path). The card can switch to interleaved EN/中文 (逐句对照), key-term linking (重点词对应), neighbour context (结合上下句), and adaptive width — and you can keep asking (追问) for an explanation or examples.
+- **arXiv full-document translation**: when a paper has the `LaTeX 源` badge, open a reconstructed full-paper reader and switch between bilingual / translation / source and parallel / interleaved layouts. Click the model name in its toolbar to choose the account, model, and reasoning effort; the first run inherits the translation default, then remembers an independent selection.
 - **Save & reuse translations**: save a card's translation as a Zotero highlight annotation (💾); if the sentence already carries one, the card shows that saved note instead of re-translating, and saving upserts by key so you never get duplicate highlights. While immersive mode is on, Zotero's native selection popup is suppressed so the card stays the single surface.
 - **Stepping, quick-translate & ask**: `Enter` / `Shift+Enter` move to the next / previous sentence; selecting (or hovering) a sentence and pressing the quick key (default Space) translates it directly; `/` moves the cursor into the card's 追问 box (Enter is reserved for stepping); `Esc` closes the card while keeping the sentence on the reading highlight, so you can keep stepping; a collapse-toolbar key (default `h`) folds the card's meta bar and foot row down to just the composer. All keys are configurable in settings.
 

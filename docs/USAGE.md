@@ -25,6 +25,8 @@ This document targets **end users** and is split in two halves:
   - [2.7 See the whole paper at a glance (overview map)](#27-see-the-whole-paper-at-a-glance-overview-map)
   - [2.8 Sync chats and config across devices (WebDAV)](#28-sync-chats-and-config-across-devices-webdav)
   - [2.9 Back up and migrate config](#29-back-up-and-migrate-config)
+  - [2.10 Use Quick Ask for a temporary multi-turn conversation](#210-use-quick-ask-for-a-temporary-multi-turn-conversation)
+  - [2.11 Read an arXiv paper in full-document translation](#211-read-an-arxiv-paper-in-full-document-translation)
 - [3. Reference Manual](#3-reference-manual)
   - [3.1 Model presets](#31-model-presets)
   - [3.2 Sidebar UI map](#32-sidebar-ui-map)
@@ -243,6 +245,28 @@ If you don't want WebDAV, plain export/import works:
 - **Import** loads that JSON on the new machine — keys come across too, nothing to re-enter.
 - Because the file holds your keys, keep it private: don't paste it into a public issue or a shared drive.
 
+### 2.10 Use Quick Ask for a temporary multi-turn conversation
+
+Use this when you want to ask a few questions without switching or adding noise to the current paper's research chat. You can also select text in the PDF or full-document translation view first and ask about that passage.
+
+1. Press `Alt+Q` by default. Remap it under `Settings → Immersive reading → Quick Ask`; the shortcut is ignored while focus is inside an editable field.
+2. If PDF text or full-translation source text was selected before opening, Quick Ask attaches it to the first turn. Without a selection, the model can still use read-only tools to inspect the current paper when needed.
+3. Ask the first question. After the answer, a compact **Continue asking** composer stays at the bottom. Later requests include the completed turns from this popup, so follow-ups such as “why?”, “give another example”, and “how could this claim be verified?” work directly.
+4. Click the model summary or **Model settings** to change the account, model, and reasoning effort. The first use follows the active AI-chat model; later Quick Ask remembers its own selection without changing the research chat or translation defaults.
+5. **Copy** copies only the latest answer. **Transfer to research chat** writes every turn from this popup into the current paper's research chat, then closes Quick Ask.
+
+Quick Ask does not read saved research-chat history and exposes no write tools. Press `Esc`, use the close button, or click the backdrop to destroy the entire temporary conversation; reopening starts a new one.
+
+### 2.11 Read an arXiv paper in full-document translation
+
+When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full translation)** beside it to open a reconstructed full-paper reader. This requires an available arXiv LaTeX source, so ordinary PDFs and arXiv entries without public source do not show the entry point.
+
+- Use **中英 / 中文 / 英文** for bilingual / translation / source display, and **左右 / 逐段** for parallel / interleaved layout. **阅读设置** also controls source color, font size, line height, and paragraph spacing.
+- Click the model name in the progress bar to open **Account / Model / Reasoning effort** selectors. The first use inherits the **Default translation model** from settings; after a change, full-document translation remembers an independent global selection and does not modify the immersive-reading default.
+- **开始翻译 (Start)** translates pending blocks. After interruption it becomes **继续翻译 (Continue)** without clearing completed work; use **重新翻译 (Retranslate)** only when you want to rebuild all translations.
+- The full-translation view can stay beside the AI sidebar. Select source or translated text and press `Alt+Q` to start a temporary multi-turn Quick Ask about it.
+- Click **返回 PDF (Back to PDF)** to exit the full-translation reader.
+
 ---
 
 ## 3. Reference Manual
@@ -370,7 +394,7 @@ Type `/` in the composer to open completion. The two built-in commands:
 
 ### 3.5 PDF immersive translation
 
-Settings live in two blocks: "Translation" (model / reasoning effort / result position / card size — shared with the immersive card; items tagged 仅译 only affect the now-hidden legacy translate mode) and "Immersive reading" (immersive-card options).
+The **Default translation model** in Settings → Immersive reading controls the account, model, and reasoning effort used by the immersive card. arXiv full-document translation inherits it on first use, then can remember an independent selection from its own toolbar; neither surface overwrites the other. Result position, card size, and the options below apply to the immersive card.
 
 | Setting (Immersive reading) | Meaning |
 |---|---|

@@ -159,7 +159,6 @@ import {
   isQuickAskShortcut,
   loadQuickAskModelSelection,
   quickAskReadOnlyTools,
-  resetQuickAskState,
   saveQuickAskModelSelection,
   type QuickAskReference,
   type QuickAskState,
@@ -548,8 +547,6 @@ interface QuickAskController {
   state: QuickAskState;
   modelSettingsOpen: boolean;
   abort?: AbortController;
-  userMessage?: Message;
-  assistantMessage?: Message;
 }
 
 const quickAskControllers = new WeakMap<
@@ -3605,14 +3602,6 @@ function renderActiveQuickAsk(
       },
       onSend: (value) => void sendQuickAsk(sidebar, controller, value),
       onStop: () => controller.abort?.abort(),
-      onReset: () => {
-        controller.abort?.abort();
-        controller.abort = undefined;
-        controller.userMessage = undefined;
-        controller.assistantMessage = undefined;
-        controller.state = resetQuickAskState(controller.state);
-        renderActiveQuickAsk(sidebar, controller, true);
-      },
       onCopy: () => void copyQuickAskAnswer(sidebar, controller),
       onTransfer: () => void transferQuickAskToResearch(sidebar, controller),
       onClose: () => closeQuickAsk(sidebar),
@@ -3716,7 +3705,7 @@ async function sendQuickAsk(
 ): Promise<void> {
   if (
     quickAskControllers.get(sidebar) !== controller ||
-    controller.state.status !== "idle"
+    controller.state.status === "sending"
   ) {
     return;
   }
@@ -3766,7 +3755,9 @@ async function sendQuickAsk(
   };
   renderActiveQuickAsk(sidebar, controller);
 
-  const reference = controller.state.reference;
+  const reference = controller.state.messages.length
+    ? null
+    : controller.state.reference;
   const selectionPayload = reference
     ? await buildSelectionPromptContext(reference.sourceText, controller.itemID)
     : { selectedText: "", context: {} };
@@ -3777,8 +3768,7 @@ async function sendQuickAsk(
     selectionPayload.context,
   );
   const assistantMessage: Message = { role: "assistant", content: "" };
-  controller.userMessage = userMessage;
-  controller.assistantMessage = assistantMessage;
+  const conversation = [...controller.state.messages, userMessage];
 
   const win = sidebar.mount.ownerDocument!.defaultView!;
   const abort = new win.AbortController();
@@ -3793,13 +3783,16 @@ async function sendQuickAsk(
       source: zoteroContextSource,
       itemID: controller.itemID,
       policy: contextPolicy,
-      previousMessages: [],
+      previousMessages: controller.state.messages,
       getActiveReader: () =>
         getReaderForCurrentSelection(win, controller.itemID),
     });
     const tools = quickAskReadOnlyTools(toolSession.tools);
-    const messagesForApi = buildQuickAskApiMessages(userMessage, contextPolicy);
-    const systemPrompt = `${baseContext.systemPrompt}\n\nQuick Ask mode: answer only the current question. No conversation history is available. Use read-only tools when the current paper is needed; do not claim to remember earlier chats.`;
+    const messagesForApi = buildQuickAskApiMessages(
+      conversation,
+      contextPolicy,
+    );
+    const systemPrompt = `${baseContext.systemPrompt}\n\nQuick Ask mode: this is a temporary in-memory conversation. Use the preceding Quick Ask turns to answer follow-up questions. No saved research conversation history is available. Use read-only tools when the current paper is needed; do not claim to remember chats outside this Quick Ask window.`;
     const promptCacheKey = `${buildPromptCacheKey(preset, controller.itemID)}:quick-ask`;
 
     controller.state.statusText = "正在等待模型回答……";
@@ -3873,8 +3866,12 @@ async function sendQuickAsk(
           controller.state.answer = "本次请求没有返回可显示的回答。";
           assistantMessage.content = controller.state.answer;
         }
+        controller.state.messages.push(userMessage, assistantMessage);
+        controller.state.question = "";
+        controller.state.answer = "";
+        controller.state.thinking = "";
         controller.state.status = "answered";
-        controller.state.statusText = "本次回答未保存";
+        controller.state.statusText = `临时会话 ${controller.state.messages.length / 2} 轮 · 关闭后销毁`;
       }
       renderActiveQuickAsk(sidebar, controller);
     }
@@ -3885,7 +3882,7 @@ async function copyQuickAskAnswer(
   sidebar: WindowSidebarState,
   controller: QuickAskController,
 ): Promise<void> {
-  const answer = controller.state.answer.trim();
+  const answer = latestQuickAskAnswer(controller.state);
   if (!answer || quickAskControllers.get(sidebar) !== controller) return;
   const doc = sidebar.mount.ownerDocument!;
   await copyToClipboard(
@@ -3899,6 +3896,16 @@ async function copyQuickAskAnswer(
   renderActiveQuickAsk(sidebar, controller);
 }
 
+function latestQuickAskAnswer(state: QuickAskState): string {
+  for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+    const message = state.messages[index];
+    if (message.role === "assistant" && message.content.trim()) {
+      return message.content.trim();
+    }
+  }
+  return "";
+}
+
 async function transferQuickAskToResearch(
   sidebar: WindowSidebarState,
   controller: QuickAskController,
@@ -3907,9 +3914,7 @@ async function transferQuickAskToResearch(
   if (
     !state ||
     state.itemID !== controller.itemID ||
-    !controller.userMessage ||
-    !controller.assistantMessage ||
-    !controller.state.answer.trim()
+    !latestQuickAskAnswer(controller.state)
   ) {
     controller.state.error = "当前论文已经切换，请复制回答后再关闭。";
     controller.state.status = "error";
@@ -3930,8 +3935,7 @@ async function transferQuickAskToResearch(
     return;
   }
   state.messages.push(
-    { ...controller.userMessage },
-    { ...controller.assistantMessage },
+    ...controller.state.messages.map((message) => ({ ...message })),
   );
   await persistPanelConversations(state);
   state.autoFollowMessages = true;

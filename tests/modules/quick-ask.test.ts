@@ -9,7 +9,6 @@ import {
   isQuickAskShortcut,
   loadQuickAskModelSelection,
   quickAskReadOnlyTools,
-  resetQuickAskState,
   saveQuickAskModelSelection,
   setQuickAskShortcut,
 } from "../../src/modules/quick-ask";
@@ -26,8 +25,8 @@ function memoryPrefs(initial?: string): PrefsStore {
 }
 
 describe("Quick Ask", () => {
-  it("builds a single-turn API request without accepting chat history", () => {
-    const userMessage = createQuickAskUserMessage(
+  it("builds a multi-turn API request without accepting research chat history", () => {
+    const firstUserMessage = createQuickAskUserMessage(
       "这句话是什么意思？",
       {
         kind: "translation",
@@ -36,47 +35,26 @@ describe("Quick Ask", () => {
       },
       {},
     );
+    const firstAssistantMessage = {
+      role: "assistant" as const,
+      content: "它表示第二个结果提升了准确率。",
+    };
+    const followUpMessage = createQuickAskUserMessage("为什么？", null, {});
 
-    const messages = buildQuickAskApiMessages(userMessage);
+    const messages = buildQuickAskApiMessages([
+      firstUserMessage,
+      firstAssistantMessage,
+      followUpMessage,
+    ]);
 
-    expect(messages).toHaveLength(1);
+    expect(messages).toHaveLength(3);
     expect(messages[0]?.role).toBe("user");
     expect(messages[0]?.content).toContain(
       "The second result improves accuracy.",
     );
     expect(messages[0]?.content).toContain("这句话是什么意思？");
-  });
-
-  it("clears the previous question and answer while keeping the captured quote", () => {
-    const reference = {
-      kind: "pdf" as const,
-      displayText: "A selected sentence.",
-      sourceText: "A selected sentence.",
-    };
-    const modelSelection = {
-      presetId: "openai-main",
-      model: "gpt-5.4",
-      reasoningEffort: "high" as const,
-    };
-    const state = createQuickAskState(reference, modelSelection);
-    state.question = "First question";
-    state.answer = "First answer";
-    state.thinking = "Private reasoning";
-    state.status = "answered";
-
-    const reset = resetQuickAskState(state);
-
-    expect(reset).toEqual({
-      status: "idle",
-      question: "",
-      answer: "",
-      thinking: "",
-      statusText: "",
-      error: "",
-      usage: undefined,
-      reference,
-      modelSelection,
-    });
+    expect(messages[1]).toEqual(firstAssistantMessage);
+    expect(messages[2]?.content).toContain("为什么？");
   });
 
   it("uses the configured shortcut without consuming input-method combinations", () => {

@@ -11,7 +11,6 @@ function actions() {
     onReasoningChange: vi.fn(),
     onSend: vi.fn(),
     onStop: vi.fn(),
-    onReset: vi.fn(),
     onCopy: vi.fn(),
     onTransfer: vi.fn(),
     onClose: vi.fn(),
@@ -42,7 +41,7 @@ describe("Quick Ask dialog", () => {
     expect(root.querySelector("button")?.namespaceURI).toBe(xhtml);
   });
 
-  it("enables the one-shot send action as the user types", () => {
+  it("enables the continuous send action as the user types", () => {
     const handlers = actions();
     const root = renderQuickAskDialog(
       globalThis.document,
@@ -197,7 +196,7 @@ describe("Quick Ask dialog", () => {
     expect(handlers.onToggleModelSettings).toHaveBeenCalledOnce();
   });
 
-  it("shows the Chinese selection and mapped English quote without a follow-up box", () => {
+  it("keeps the transcript and follow-up box after an answer", () => {
     const handlers = actions();
     const state = createQuickAskState({
       kind: "translation",
@@ -205,8 +204,10 @@ describe("Quick Ask dialog", () => {
       sourceText: "The second result improves accuracy.",
     });
     state.status = "answered";
-    state.question = "为什么？";
-    state.answer = "因为训练目标不同。";
+    state.messages.push(
+      { role: "user", content: "为什么？" },
+      { role: "assistant", content: "因为训练目标不同。" },
+    );
 
     const root = renderQuickAskDialog(globalThis.document, state, handlers, {
       shortcutLabel: "Ctrl/Cmd + Shift + Space",
@@ -214,8 +215,20 @@ describe("Quick Ask dialog", () => {
 
     expect(root.textContent).toContain("第二个结果提高了准确率。");
     expect(root.textContent).toContain("The second result improves accuracy.");
-    expect(root.querySelector(".zai-quick-ask-input")).toBeNull();
-    expect(root.textContent).toContain("再问一个");
+    expect(root.textContent).toContain("为什么？");
+    expect(root.textContent).toContain("因为训练目标不同。");
+    const followUp = root.querySelector<HTMLTextAreaElement>(
+      ".zai-quick-ask-input",
+    )!;
+    followUp.value = "这个结论如何验证？";
+    followUp.dispatchEvent(new Event("input", { bubbles: true }));
+    const continueButton = Array.from(root.querySelectorAll("button")).find(
+      (button) => button.textContent === "继续询问",
+    )!;
+    continueButton.click();
+
+    expect(handlers.onSend).toHaveBeenCalledWith("这个结论如何验证？");
+    expect(root.textContent).toContain("继续询问");
   });
 
   it("closes and destroys the popup on Escape", () => {

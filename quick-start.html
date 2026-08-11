@@ -215,15 +215,16 @@
 
   <header class="hero">
     <h1>Zotero AI Sidebar · 使用教程</h1>
-    <p>Zotero 里的 AI 对话侧栏：对正在读的论文随便问、PDF 沉浸式翻译、写回笔记，全部本地驱动、模型可自配。下面的界面都是用 HTML 还原的真实插件外观。</p>
+    <p>Zotero 里的 AI 对话侧栏：对正在读的论文随便问、Quick Ask 临时连续追问、PDF 沉浸/全文翻译、写回笔记，全部本地驱动、模型可自配。下面的界面都是用 HTML 还原的真实插件外观。</p>
     <nav class="toc">
       <a href="#overview">① 界面总览</a>
       <a href="#config">② 配置模型</a>
       <a href="#chat">③ 对话</a>
-      <a href="#immersive">④ 沉浸式翻译</a>
-      <a href="#notes">⑤ 笔记与总览</a>
-      <a href="#steps">⑥ 三步上手</a>
-      <a href="#keys">⑦ 快捷键</a>
+      <a href="#quick-ask">④ Quick Ask</a>
+      <a href="#immersive">⑤ 翻译阅读</a>
+      <a href="#notes">⑥ 笔记与总览</a>
+      <a href="#steps">⑦ 三步上手</a>
+      <a href="#keys">⑧ 快捷键</a>
     </nav>
   </header>
 
@@ -304,7 +305,7 @@
         <li><span class="k">复制MD / 清空</span><span class="d">把整段对话复制为 Markdown；清空当前论文的对话线程。</span></li>
         <li><span class="k">»</span><span class="d">折叠 / 展开侧栏。</span></li>
         <li><span class="k">打开笔记</span><span class="d">打开<b>笔记列</b>：AI 笔记 / 阅读路线 / 总览三个标签。</span></li>
-        <li><span class="k">沉浸 ✓</span><span class="d">开 / 关 <b>PDF 沉浸式翻译</b>（点亮即开，见第 3 节）。</span></li>
+        <li><span class="k">沉浸 ✓</span><span class="d">开 / 关 <b>PDF 沉浸式翻译</b>（点亮即开，见第 5 节）。</span></li>
         <li><span class="k">设置 · 字号 · 调试</span><span class="d">完整设置页；中间的滑杆图标改<b>字号</b>；调试开关让复制带工具上下文与思考过程。</span></li>
         <li><span class="k">LaTeX 源</span><span class="d">arXiv 论文徽章：公式 / 插图从 LaTeX 源取，不吃 PDF 乱码。</span></li>
         <li><span class="k">思考与上下文</span><span class="d">可折叠：本轮自动发了哪些上下文、调用了哪些<b>本地工具</b>（带绿点的 trace）。</span></li>
@@ -373,6 +374,7 @@
       </ul>
     </div>
 
+    <div class="tip">💡 <b>三个模型选择互不覆盖</b>：研究对话使用侧边栏当前模型；Quick Ask 首次跟随研究对话，之后独立记忆；沉浸阅读使用设置页的“默认翻译模型”，arXiv 全文翻译首次继承它，之后在全文翻译顶部独立记忆。</div>
     <div class="warn-box">🔒 <b>隐私提醒</b>：API Key 和 Base URL 都是敏感信息，截图 / 分享前请打码。导出的配置 JSON 和 WebDAV 的 <span class="kbd">state.json</span> 里也含密钥，妥善保管、不要公开。</div>
   </section>
 
@@ -390,9 +392,45 @@
     <div class=”tip”>✍️ 这类「写回 PDF」都是 Agent <b>显式工具调用</b>、过程可见、且受权限控制——默认模式会先确认，开 <b>YOLO</b> 可直接执行，不会偷偷改你的 PDF。</div>
   </section>
 
-  <!-- ============ 4. 沉浸式翻译 ============ -->
+  <!-- ============ 4. Quick Ask ============ -->
+  <section id="quick-ask">
+    <h2><span class="n">4</span>Quick Ask 临时连续对话</h2>
+    <p class="lead">默认按 <span class="kbd">Alt+Q</span> 在 Zotero 任意页面打开。它适合临时问几轮：窗口内保留上下文，关闭后全部销毁，不会混入当前论文的研究对话。</p>
+
+    <div class="grid2">
+      <div class="win" aria-label="Quick Ask 临时连续对话">
+        <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">Quick Ask · Alt + Q</span></div>
+        <div class="sb">
+          <div class="sb-row top"><span class="sb-label">Q&nbsp; Quick Ask</span><span class="spacer"></span><span class="btn ghost">Alt + Q</span><span class="btn ghost">×</span></div>
+          <div class="sb-row"><span class="model">gpt-5.6-luna</span><span style="color:var(--muted)">GPT (openai) · Low</span><span class="spacer"></span><span class="btn">模型设置</span></div>
+          <div class="flow">
+            <div class="quote">参考选区：The second result improves accuracy.</div>
+            <div class="msg-user"><div class="bubble">这句话是什么意思？</div></div>
+            <div class="answer">它表示第二个结果提升了准确率。</div>
+            <div class="msg-user"><div class="bubble">为什么？如何验证？</div></div>
+            <div class="answer">可以比较两组实验的评价指标，并查看消融实验是否控制了其它变量。</div>
+          </div>
+          <div class="composer">
+            <div class="input">继续追问……</div>
+            <div class="ctx"><span style="color:var(--faint)">Enter 发送 · Shift+Enter 换行</span><span class="spacer"></span><span class="btn">复制</span><span class="btn">转入研究对话</span><span class="btn active">继续询问</span></div>
+          </div>
+        </div>
+      </div>
+
+      <ul class="legend">
+        <li><span class="k">选区参考</span><span class="d">打开前选中了 PDF 或全文翻译原文时，第一轮会带上该选区；没有选区也可让模型按需读取当前论文。</span></li>
+        <li><span class="k">连续追问</span><span class="d">每轮完成后输入框仍在，后续问题会携带本窗口已经完成的问答，可以直接问“为什么”“再举例”。</span></li>
+        <li><span class="k">模型设置</span><span class="d">可切账号、模型和思考程度。首次采用当前研究对话模型，修改后由 Quick Ask 独立记忆。</span></li>
+        <li><span class="k">复制</span><span class="d">只复制最后一次回答。</span></li>
+        <li><span class="k">转入研究对话</span><span class="d">把本窗口<b>全部轮次</b>保存到当前论文的研究对话，再关闭 Quick Ask。</span></li>
+        <li><span class="k">关闭即销毁</span><span class="d">按 <span class="kbd">Esc</span>、点右上角 × 或点窗口外空白处都会销毁临时会话；重新打开从空会话开始。</span></li>
+      </ul>
+    </div>
+  </section>
+
+  <!-- ============ 5. 翻译阅读 ============ -->
   <section id="immersive">
-    <h2><span class="n">4</span>PDF 沉浸式翻译</h2>
+    <h2><span class="n">5</span>PDF 沉浸式与全文翻译</h2>
     <p class="lead">点工具栏「沉浸」开启后，点句子即在原文旁出译文卡；也可选中 / 悬停某句后按<b>快捷翻译键（默认空格）</b>直接翻这一句。</p>
 
     <div class="grid2">
@@ -446,11 +484,13 @@
         <li><span class="k">Esc</span><span class="d">关掉卡片，该句回到<b>「在读高亮」</b>（见下方第二张图），可继续 <span class="kbd">Enter</span> 切句。</span></li>
       </ul>
     </div>
+
+    <div class="tip">📖 <b>arXiv 全文翻译</b>：论文标题旁有 <span class="badge">LaTeX 源</span> 时，可点“全文翻译”进入整篇阅读页。顶部支持中英 / 中文 / 英文、左右 / 逐段；点进度栏中的模型名称可切换账号、模型和思考强度。首次从设置页的默认翻译模型继承，修改后由全文翻译独立记忆。选择原文后也可按 <span class="kbd">Alt+Q</span> 连续追问。</div>
   </section>
 
-  <!-- ============ 5. 笔记与总览 ============ -->
+  <!-- ============ 6. 笔记与总览 ============ -->
   <section id="notes">
-    <h2><span class="n">5</span>笔记与总览</h2>
+    <h2><span class="n">6</span>笔记与总览</h2>
     <p class="lead">点「打开笔记」展开笔记列，目标布局是 <b>PDF | 笔记 | AI 对话</b>。笔记用 Zotero 官方富文本编辑器（Enter / 列表 / 链接行为与主笔记一致，自动保存）。顶部四个模块各司其职：</p>
 
     <div class="grid2">
@@ -530,9 +570,9 @@
     </div>
   </section>
 
-  <!-- ============ 6. 三步上手 ============ -->
+  <!-- ============ 7. 三步上手 ============ -->
   <section id="steps">
-    <h2><span class="n">6</span>三步上手</h2>
+    <h2><span class="n">7</span>三步上手</h2>
     <div class="steps">
       <div class="step"><b>配模型</b><p>「设置」里新增一个模型预设：填 Base URL、API key、模型 ID、最大 token 与思考程度。预设与密钥只存在本地 Zotero 偏好里。</p></div>
       <div class="step"><b>开读 + 提问</b><p>在 Reader 打开 PDF，侧栏直接问，或点「总结论文 / 全文重点」。需要逐句精读时点「沉浸」。</p></div>
@@ -541,12 +581,13 @@
     <div class="tip">💡 数据本地优先：不开同步时什么都不出本机；开了 WebDAV 才会把含预设（含 API key）、对话、批注、翻译缓存的 <b>state.json</b> 推到<b>你自己的</b>端点，不发给 zotero.org 或第三方。</div>
   </section>
 
-  <!-- ============ 7. 快捷键 ============ -->
+  <!-- ============ 8. 快捷键 ============ -->
   <section id="keys">
-    <h2><span class="n">7</span>快捷键速查</h2>
+    <h2><span class="n">8</span>快捷键速查</h2>
     <table class="keys">
       <tr><th>操作</th><th>默认键</th><th>说明</th></tr>
       <tr><td>发送提问</td><td><span class="kbd">Enter</span></td><td>输入框里发送；<span class="kbd">Shift+Enter</span> 换行</td></tr>
+      <tr><td>打开 Quick Ask</td><td><span class="kbd">Alt+Q</span></td><td>打开临时连续对话；可在设置中修改，输入框聚焦时不会触发</td></tr>
       <tr><td>沉浸 · 下一句</td><td><span class="kbd">Enter</span></td><td>卡片开着时翻下一句；没开卡时移动「在读高亮」</td></tr>
       <tr><td>沉浸 · 上一句</td><td><span class="kbd">Shift+Enter</span></td><td>同上，反方向</td></tr>
       <tr><td>沉浸 · 选区快译</td><td><span class="kbd">空格</span></td><td>翻当前在读 / 选中的句子；无高亮时照常翻页（键可改）</td></tr>
@@ -554,7 +595,7 @@
       <tr><td>沉浸 · 收起工具栏</td><td><span class="kbd">h</span></td><td>折叠卡片的信息栏 + 底部按钮行，只留输入框；再按展开（键可改）</td></tr>
       <tr><td>沉浸 · 关卡</td><td><span class="kbd">Esc</span></td><td>关掉译文卡，该句回到「在读高亮」，可继续切句</td></tr>
     </table>
-    <div class="tip">切句 / 选区快译的键都能在「设置 → 沉浸阅读」里改成 ArrowDown / ArrowUp、j / k 等。</div>
+    <div class="tip">Quick Ask、切句、选区快译等快捷键都能在「设置 → 沉浸阅读」里修改。</div>
   </section>
 
   <footer>Zotero AI Sidebar · 本页为离线使用教程，界面为 HTML 还原，非真实截图。</footer>

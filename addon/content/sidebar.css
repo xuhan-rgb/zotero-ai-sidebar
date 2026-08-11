@@ -4932,6 +4932,10 @@ div.math-fallback {
   color: #a09489;
 }
 
+.zai-quick-ask-composer.is-follow-up .zai-quick-ask-input {
+  min-height: 68px;
+}
+
 .zai-quick-ask-question {
   max-width: 86%;
   margin: 2px 0 17px auto;
@@ -4949,6 +4953,10 @@ div.math-fallback {
   color: #292621;
   font-size: var(--zai-chat-font-size);
   line-height: 1.68;
+}
+
+.zai-quick-ask-assistant-turn {
+  margin-bottom: 18px;
 }
 
 .zai-quick-ask-answer > :first-child,

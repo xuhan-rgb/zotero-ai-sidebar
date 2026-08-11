@@ -13,7 +13,6 @@ export interface QuickAskDialogActions {
   onReasoningChange(value: ReasoningEffort): void;
   onSend(value: string): void;
   onStop(): void;
-  onReset(): void;
   onCopy(): void;
   onTransfer(): void;
   onClose(): void;
@@ -50,7 +49,7 @@ export function renderQuickAskDialog(
   const heading = el(doc, "div", "zai-quick-ask-heading");
   heading.append(
     el(doc, "strong", "zai-quick-ask-title", "Quick Ask"),
-    el(doc, "span", "zai-quick-ask-subtitle", "单次问答 · 不读取历史"),
+    el(doc, "span", "zai-quick-ask-subtitle", "临时连续对话 · 不读取研究历史"),
   );
   const shortcut = el(
     doc,
@@ -70,7 +69,7 @@ export function renderQuickAskDialog(
       doc,
       "div",
       "zai-quick-ask-notice",
-      "本窗口不会读取或保存研究对话；关闭后问题和回答都会销毁。",
+      "本窗口可以连续追问，但不会读取或保存研究对话；关闭后全部销毁。",
     ),
   );
   if (options.modelOptions) {
@@ -87,18 +86,30 @@ export function renderQuickAskDialog(
   }
   if (state.reference) scroll.append(renderReference(doc, state));
 
-  if (state.status === "idle") {
+  state.messages.forEach((message) => {
+    scroll.append(renderConversationMessage(doc, message));
+  });
+
+  if (state.status === "sending") {
+    scroll.append(
+      el(doc, "div", "zai-quick-ask-question", state.question.trim()),
+      renderAssistantMessage(doc, state.answer, state.thinking, true),
+    );
+  } else {
     const composer = el(doc, "div", "zai-quick-ask-composer");
+    if (state.messages.length) composer.classList.add("is-follow-up");
     const input = doc.createElementNS(
       XHTML_NS,
       "textarea",
     ) as HTMLTextAreaElement;
     input.className = "zai-quick-ask-input";
     input.value = state.question;
-    input.rows = 4;
-    input.placeholder = state.reference
-      ? "针对这段内容提问……"
-      : "输入一个临时问题；需要论文内容时，AI 会按需检索当前论文……";
+    input.rows = state.messages.length ? 2 : 4;
+    input.placeholder = state.messages.length
+      ? "继续追问……"
+      : state.reference
+        ? "针对这段内容提问……"
+        : "输入一个临时问题；需要论文内容时，AI 会按需检索当前论文……";
     input.addEventListener("input", () => {
       actions.onQuestionChange(input.value);
       const send = dialog.querySelector<HTMLButtonElement>(
@@ -114,31 +125,6 @@ export function renderQuickAskDialog(
     });
     composer.append(input);
     scroll.append(composer);
-  } else {
-    scroll.append(
-      el(doc, "div", "zai-quick-ask-question", state.question.trim()),
-    );
-    const answer = el(doc, "div", "zai-quick-ask-answer");
-    answer.setAttribute("aria-live", "polite");
-    if (state.answer) {
-      renderMarkdownInto(answer, state.answer);
-    } else if (state.status === "sending") {
-      answer.append(el(doc, "div", "zai-quick-ask-waiting", "正在准备回答……"));
-    }
-    scroll.append(answer);
-    if (state.thinking) {
-      const thinking = doc.createElementNS(
-        XHTML_NS,
-        "details",
-      ) as HTMLDetailsElement;
-      thinking.className = "zai-quick-ask-thinking";
-      const summary = doc.createElementNS(XHTML_NS, "summary") as HTMLElement;
-      summary.textContent = "思考过程";
-      const body = el(doc, "div", "zai-quick-ask-thinking-body");
-      renderMarkdownInto(body, state.thinking);
-      thinking.append(summary, body);
-      scroll.append(thinking);
-    }
   }
 
   if (state.statusText || state.error || state.usage) {
@@ -157,14 +143,39 @@ export function renderQuickAskDialog(
   }
 
   const foot = el(doc, "footer", "zai-quick-ask-foot");
-  if (state.status === "idle") {
+  if (state.status === "sending") {
+    const hint = el(
+      doc,
+      "span",
+      "zai-quick-ask-hint",
+      "对话只保留在当前浮层中",
+    );
+    const stop = buttonEl(doc, "停止");
+    stop.addEventListener("click", actions.onStop);
+    foot.append(hint, stop);
+  } else {
     const hint = el(
       doc,
       "span",
       "zai-quick-ask-hint",
       "Enter 发送 · Shift+Enter 换行",
     );
-    const send = buttonEl(doc, "询问");
+    const latestAnswer = latestAssistantAnswer(state);
+    if (state.messages.length) {
+      const copy = buttonEl(doc, "复制");
+      copy.disabled = !latestAnswer;
+      copy.addEventListener("click", actions.onCopy);
+      const transfer = buttonEl(doc, "转入研究对话");
+      transfer.disabled = !latestAnswer || options.transferDisabled === true;
+      transfer.title = options.transferDisabled
+        ? "研究对话正在回答，请结束后再转入"
+        : "把本窗口的全部问答显式保存到当前研究对话";
+      transfer.addEventListener("click", actions.onTransfer);
+      foot.append(hint, copy, transfer);
+    } else {
+      foot.append(hint);
+    }
+    const send = buttonEl(doc, state.messages.length ? "继续询问" : "询问");
     send.className = "zai-quick-ask-primary";
     send.disabled = !state.question.trim();
     send.addEventListener("click", () => {
@@ -173,32 +184,7 @@ export function renderQuickAskDialog(
       );
       actions.onSend(input?.value ?? state.question);
     });
-    foot.append(hint, send);
-  } else if (state.status === "sending") {
-    const hint = el(
-      doc,
-      "span",
-      "zai-quick-ask-hint",
-      "回答只保留在当前浮层中",
-    );
-    const stop = buttonEl(doc, "停止");
-    stop.addEventListener("click", actions.onStop);
-    foot.append(hint, stop);
-  } else {
-    const copy = buttonEl(doc, "复制");
-    copy.disabled = !state.answer.trim();
-    copy.addEventListener("click", actions.onCopy);
-    const transfer = buttonEl(doc, "转入研究对话");
-    transfer.disabled =
-      !state.answer.trim() || options.transferDisabled === true;
-    transfer.title = options.transferDisabled
-      ? "研究对话正在回答，请结束后再转入"
-      : "把本次问题和回答显式保存到当前研究对话";
-    transfer.addEventListener("click", actions.onTransfer);
-    const reset = buttonEl(doc, "再问一个");
-    reset.className = "zai-quick-ask-primary";
-    reset.addEventListener("click", actions.onReset);
-    foot.append(copy, transfer, reset);
+    foot.append(send);
   }
 
   dialog.append(head, scroll, foot);
@@ -213,6 +199,62 @@ export function renderQuickAskDialog(
     actions.onClose();
   });
   return layer;
+}
+
+function renderConversationMessage(
+  doc: Document,
+  message: QuickAskState["messages"][number],
+): HTMLElement {
+  if (message.role === "user") {
+    return el(doc, "div", "zai-quick-ask-question", message.content.trim());
+  }
+  return renderAssistantMessage(
+    doc,
+    message.content,
+    message.thinking ?? "",
+    false,
+  );
+}
+
+function renderAssistantMessage(
+  doc: Document,
+  content: string,
+  thinkingText: string,
+  live: boolean,
+): HTMLElement {
+  const turn = el(doc, "div", "zai-quick-ask-assistant-turn");
+  const answer = el(doc, "div", "zai-quick-ask-answer");
+  if (live) answer.setAttribute("aria-live", "polite");
+  if (content) {
+    renderMarkdownInto(answer, content);
+  } else if (live) {
+    answer.append(el(doc, "div", "zai-quick-ask-waiting", "正在准备回答……"));
+  }
+  turn.append(answer);
+  if (thinkingText) {
+    const thinking = doc.createElementNS(
+      XHTML_NS,
+      "details",
+    ) as HTMLDetailsElement;
+    thinking.className = "zai-quick-ask-thinking";
+    const summary = doc.createElementNS(XHTML_NS, "summary") as HTMLElement;
+    summary.textContent = "思考过程";
+    const body = el(doc, "div", "zai-quick-ask-thinking-body");
+    renderMarkdownInto(body, thinkingText);
+    thinking.append(summary, body);
+    turn.append(thinking);
+  }
+  return turn;
+}
+
+function latestAssistantAnswer(state: QuickAskState): string {
+  for (let index = state.messages.length - 1; index >= 0; index -= 1) {
+    const message = state.messages[index];
+    if (message.role === "assistant" && message.content.trim()) {
+      return message.content.trim();
+    }
+  }
+  return "";
 }
 
 function renderModelControls(
