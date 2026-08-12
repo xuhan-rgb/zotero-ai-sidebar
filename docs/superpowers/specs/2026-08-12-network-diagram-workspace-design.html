@@ -300,6 +300,17 @@
         padding: 14px;
       }
 
+      .state-caption {
+        margin: 4px 0 7px;
+        color: var(--faint);
+        font-size: 10.5px;
+        text-align: center;
+      }
+
+      .state-caption strong {
+        color: var(--accent-strong);
+      }
+
       .source-panel,
       .chat-panel,
       .version-bar {
@@ -312,6 +323,83 @@
       .source-panel {
         margin-bottom: 12px;
         background: #fffaf4;
+      }
+
+      .analysis-progress {
+        margin-top: 11px;
+        padding: 10px 11px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #fff;
+      }
+
+      .progress-head {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 8px;
+        font-size: 11px;
+      }
+
+      .progress-head strong {
+        color: var(--accent-strong);
+      }
+
+      .progress-list {
+        display: grid;
+        gap: 5px;
+      }
+
+      .progress-item {
+        display: grid;
+        grid-template-columns: 17px minmax(0, 1fr) auto;
+        gap: 6px;
+        align-items: start;
+        color: var(--muted);
+        font-size: 10.5px;
+      }
+
+      .progress-item .state {
+        color: var(--faint);
+        text-align: center;
+      }
+
+      .progress-item.done .state {
+        color: var(--green);
+      }
+
+      .progress-item.active .state,
+      .progress-item.active strong {
+        color: var(--accent);
+      }
+
+      .progress-item .detail {
+        color: var(--faint);
+        font-size: 10px;
+        text-align: right;
+      }
+
+      .coverage {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 5px;
+        margin-top: 9px;
+      }
+
+      .coverage span {
+        padding: 3px 5px;
+        border: 1px solid var(--line);
+        border-radius: 5px;
+        background: var(--paper-soft);
+        color: var(--muted);
+        font-size: 9.5px;
+        text-align: center;
+      }
+
+      .coverage span.done {
+        border-color: #b8d9bc;
+        background: var(--green-soft);
+        color: var(--green);
       }
 
       .field-label {
@@ -362,6 +450,14 @@
         background: #fff;
         text-align: center;
         font-size: 11px;
+      }
+
+      .node small {
+        display: block;
+        margin-top: 2px;
+        color: var(--faint);
+        font-size: 9px;
+        font-weight: 500;
       }
 
       .node:not(:last-child)::after {
@@ -689,9 +785,9 @@
         对话、证据定位、局部修改、版本历史与跨设备同步。
       </p>
       <div class="meta">
-        <span class="tag">版本 v1</span>
+        <span class="tag">版本 v1.1</span>
         <span class="tag">日期 2026-08-12</span>
-        <span class="tag">状态：设计已确认</span>
+        <span class="tag">状态：修订待复核</span>
         <span class="tag">第一版：仅公开 GitHub 仓库</span>
       </div>
     </header>
@@ -765,6 +861,10 @@
               <span class="button">↩ 在读 2.1</span>
             </div>
             <div class="wf-body">
+              <div class="state-caption">
+                <strong>状态 A · 分析中</strong>
+                — 首次生成只显示仓库输入与以下进度，不显示半成品图
+              </div>
               <div class="source-panel">
                 <span class="field-label">公开 GitHub 仓库</span>
                 <div class="input-row">
@@ -778,30 +878,125 @@
                     font-size: 10.5px;
                   "
                 >
-                  当前来源：owner/repo · commit 8a31c2f · 已读取 8 个文件
+                  分析中：owner/repo · commit 8a31c2f · 已读取 5/8 个候选文件
                 </p>
+                <div class="analysis-progress">
+                  <div class="progress-head">
+                    <strong>正在建立详细网络图</strong>
+                    <span class="wf-spacer"></span>
+                    <span>第 4/6 步</span>
+                  </div>
+                  <div class="progress-list">
+                    <div class="progress-item done">
+                      <span class="state">✓</span>
+                      <span><strong>固定仓库版本</strong> · 默认分支 main</span>
+                      <span class="detail">8a31c2f</span>
+                    </div>
+                    <div class="progress-item done">
+                      <span class="state">✓</span>
+                      <span
+                        ><strong>扫描代码树</strong> · 428 个文件，筛出 34
+                        个候选</span
+                      >
+                      <span class="detail">目录完成</span>
+                    </div>
+                    <div class="progress-item done">
+                      <span class="state">✓</span>
+                      <span
+                        ><strong>读取论文方法</strong> · §4.1、§4.2、§4.3</span
+                      >
+                      <span class="detail">3 节</span>
+                    </div>
+                    <div class="progress-item active">
+                      <span class="state">●</span>
+                      <span
+                        ><strong>追踪代码路径</strong> · WorldModel.forward →
+                        PlannerHead</span
+                      >
+                      <span class="detail">5/8 文件</span>
+                    </div>
+                    <div class="progress-item">
+                      <span class="state">○</span>
+                      <span><strong>建立论文 ↔ 代码映射</strong></span>
+                      <span class="detail">等待</span>
+                    </div>
+                    <div class="progress-item">
+                      <span class="state">○</span>
+                      <span><strong>检查初始图细节门槛并生成 v1</strong></span>
+                      <span class="detail">等待</span>
+                    </div>
+                  </div>
+                  <div class="coverage" aria-label="初始图覆盖度">
+                    <span class="done">✓ 输入 / 预处理</span>
+                    <span class="done">✓ 主干 / 特征层级</span>
+                    <span>核心创新</span>
+                    <span>分支 / 融合</span>
+                    <span>推理路径</span>
+                    <span>训练监督</span>
+                    <span>参数 / 张量</span>
+                    <span>输出</span>
+                  </div>
+                </div>
               </div>
 
+              <div class="state-caption">
+                <strong>状态 B · 生成完成</strong>
+                — 通过八类细节门槛后，状态 A 才原子切换为以下详细 v1
+              </div>
               <div class="graph-canvas">
-                <div class="node">当前多视角图像</div>
-                <div class="node">图像 Backbone</div>
-                <div class="branch-row">
-                  <div class="node">BEV 查询编码器</div>
-                  <div class="node innovation">✦ 视角查询 / 交叉注意力</div>
+                <div class="node">
+                  当前多视角图像
+                  <small>[B, V, 3, H, W] · 归一化 / 数据增强</small>
                 </div>
-                <div class="node">视觉潜变量</div>
-                <div class="node innovation">✦ Transformer 潜在世界模型</div>
-                <div class="node innovation">✦ 未来视觉潜变量</div>
-                <div class="branch-row">
-                  <div class="node">规划预测头</div>
-                  <div class="node">运动 / 地图感知分支</div>
+                <div class="node">
+                  图像 Backbone + FPN
+                  <small>多尺度 C3–C5 → P3–P5</small>
                 </div>
-                <div class="node">航点预测输出</div>
+                <div class="branch-row">
+                  <div class="node">
+                    BEV 查询编码器
+                    <small>BEV queries + 位置编码</small>
+                  </div>
+                  <div class="node innovation">
+                    ✦ 视角查询 / 交叉注意力
+                    <small>PV queries × 多尺度图像特征</small>
+                  </div>
+                </div>
+                <div class="node">
+                  视觉潜变量融合
+                  <small>BEV latent / perspective-view latent</small>
+                </div>
+                <div class="node innovation">
+                  ✦ 动作条件潜变量 MLP
+                  <small>当前 latent + 历史 / 规划动作</small>
+                </div>
+                <div class="node innovation">
+                  ✦ Transformer 潜在世界模型
+                  <small>时序 token + 位置编码 + N× attention block</small>
+                </div>
+                <div class="node innovation">
+                  ✦ 未来视觉潜变量
+                  <small>一步 / 多步自回归未来状态</small>
+                </div>
+                <div class="branch-row">
+                  <div class="node">
+                    规划预测头
+                    <small>latent decoder → waypoint queries</small>
+                  </div>
+                  <div class="node">
+                    运动 / 地图感知分支
+                    <small>可选推理上下文与辅助监督</small>
+                  </div>
+                </div>
+                <div class="node">
+                  航点预测输出
+                  <small>[B, T, 2] · 训练损失 / 推理控制</small>
+                </div>
               </div>
 
               <div class="version-bar">
-                <strong>版本 v3</strong>
-                <span>GitHub 8a31c2f · 8 个代码依据</span>
+                <strong>首次生成 v1 · 详细基线已通过</strong>
+                <span>GitHub 8a31c2f · 8 个代码依据 · 覆盖 8/8 类结构</span>
                 <span class="wf-spacer"></span>
                 <span class="button">撤销上一版</span>
                 <span class="button">恢复最新版</span>
@@ -812,15 +1007,8 @@
                 <strong style="font-size: 12px">网络图优化助手</strong>
                 <div style="margin-top: 10px">
                   <div class="message ai">
-                    已根据论文 §4.2 和 models/attention.py
-                    补充视角查询与交叉注意力模块，生成网络图 v3。
-                  </div>
-                  <div class="message user">
-                    展开 Transformer 世界模型内部结构，并标出输入输出。
-                  </div>
-                  <div class="message ai">
-                    已生成 v4：新增时序
-                    token、位置编码、多层自注意力和未来潜变量预测。
+                    详细 v1
+                    已生成：覆盖输入、主干、创新模块、分支、训练/推理路径、参数/张量与输出，并关联论文和代码依据。你可以从下面选择一个方向继续优化。
                   </div>
                 </div>
                 <div class="chips">
@@ -1028,6 +1216,11 @@
 
         <section id="first-generation">
           <h2><span class="number">06</span>首次生成流程</h2>
+          <p class="lead">
+            首次生成不是粗略草图。分析过程中显示可核对的进度和覆盖度；旧图保持可见，只有详细
+            v1
+            通过完整度门槛后才原子替换。没有旧图时，以进度面板占位，不展示半成品网络图。
+          </p>
           <div class="flow">
             <div class="flow-step">
               <div class="flow-num">1</div>
@@ -1069,10 +1262,83 @@
             <div class="flow-step">
               <div class="flow-num">6</div>
               <div class="flow-content">
-                <strong>生成、校验并保存网络图 v1</strong>
-                <span>只有图结构和证据均合法才产生版本并替换当前图。</span>
+                <strong>生成候选图并执行“初始细节门槛”</strong>
+                <span
+                  >缺少基本结构时，在预算内再定向读取一次相关代码，而不是先发布稀疏图。</span
+                >
               </div>
             </div>
+            <div class="flow-step">
+              <div class="flow-num">7</div>
+              <div class="flow-content">
+                <strong>原子保存详细网络图 v1</strong>
+                <span
+                  >结构、证据和细节门槛全部通过后才产生版本并替换当前图。</span
+                >
+              </div>
+            </div>
+          </div>
+
+          <h3>初始网络图 v1 的细节门槛</h3>
+          <p>
+            门槛按结构覆盖判断，不使用固定节点数量；简单网络不应被人为填充，复杂网络也不能只用几个抽象节点概括。
+          </p>
+          <table>
+            <thead>
+              <tr>
+                <th>覆盖类别</th>
+                <th>v1 要求</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>输入与预处理</td>
+                <td>列出输入模态、关键预处理，以及能确认的张量形状。</td>
+              </tr>
+              <tr>
+                <td>主干与特征层级</td>
+                <td>
+                  不能只写“Backbone”；应展开到论文或代码实际区分的主要 stage
+                  或多尺度输出。
+                </td>
+              </tr>
+              <tr>
+                <td>核心创新</td>
+                <td>
+                  每个创新模块至少展开一层内部计算或子模块，并标注论文或代码依据。
+                </td>
+              </tr>
+              <tr>
+                <td>关键分支与融合</td>
+                <td>
+                  显示并行分支、汇合位置、跳连和边的语义，不把不同路径压成一个节点。
+                </td>
+              </tr>
+              <tr>
+                <td>完整推理路径</td>
+                <td>从真实输入连续追踪到最终输出，不允许中间断链。</td>
+              </tr>
+              <tr>
+                <td>训练路径</td>
+                <td>
+                  代码或论文明确存在时，显示辅助头、监督信号和损失；只看推理可在后续对话隐藏。
+                </td>
+              </tr>
+              <tr>
+                <td>配置与张量细节</td>
+                <td>
+                  尽量标注层数、通道、注意力头、时序长度和形状；无法确认的字段明确留空而不是猜测。
+                </td>
+              </tr>
+              <tr>
+                <td>输出</td>
+                <td>列出每个主要输出及其用途，并区分训练输出与部署输出。</td>
+              </tr>
+            </tbody>
+          </table>
+          <div class="callout">
+            如果证据预算耗尽后仍无法达到细节门槛，本轮显示“证据不足”报告与缺失类别，保留原图且不产生
+            v1。
           </div>
         </section>
 
@@ -1106,6 +1372,7 @@
           <h2><span class="number">08</span>模型调用契约</h2>
           <h3>Parameters</h3>
           <pre><code>currentGraph       : 当前网络图，非训练参数
+generationMode     : initial | refine；initial 必须通过 v1 细节门槛
 selectedNode       : 用户选中的节点，可为空
 userInstruction    : 本轮修改要求
 paperEvidence      : 论文方法章节证据
@@ -1122,16 +1389,21 @@ neededFiles   = choose_missing_evidence(requestScope, evidenceIndex)
 newEvidence   = read_allowed_files(neededFiles)
 graphPatch    = generate_patch(currentGraph, requestScope, evidenceIndex + newEvidence)
 validatedGraph = validate_and_apply(currentGraph, graphPatch)
+coverage      = evaluate_initial_detail_gate(validatedGraph, evidenceIndex)
+if initial &amp;&amp; coverage.missing: targeted_read_once(coverage.missing)
+if initial &amp;&amp; still_missing: keep_current_graph_and_report()
 revision      = save_new_version(validatedGraph, evidenceReferences)</code></pre>
 
           <h3>Loss / objective</h3>
           <p>没有本地训练或新增可学习参数，使用推理时约束目标：</p>
           <pre><code>Objective =
     满足用户本轮修改要求
+  + 首次生成覆盖完整输入到输出路径及核心创新细节
   + 保留无关模块稳定
   + 最大化论文/代码证据覆盖
   + 保持网络图可读性
   - 无依据的架构细节
+  - 用单一抽象节点代替已确认的内部结构
   - 不必要的节点数量
   - 与本轮无关的大范围重绘</code></pre>
         </section>
@@ -1159,6 +1431,31 @@ revision      = save_new_version(validatedGraph, evidenceReferences)</code></pre
   evidenceIndex: EvidenceReference[];
 }
 
+type InitialDetailCategory =
+  | "input-preprocess"
+  | "backbone-features"
+  | "core-innovations"
+  | "branches-fusion"
+  | "inference-path"
+  | "training-path"
+  | "parameters-tensors"
+  | "outputs";
+
+interface NetworkDiagramAnalysisProgress {
+  status:
+    | "validating"
+    | "scanning"
+    | "reading-paper"
+    | "reading-code"
+    | "mapping"
+    | "validating-detail";
+  currentDetail: string;
+  completedSteps: string[];
+  readFiles: { path: string; symbols: string[] }[];
+  readPaperSections: string[];
+  coverage: Record&lt;InitialDetailCategory, "missing" | "partial" | "done"&gt;;
+}
+
 interface NetworkDiagramRevision {
   id: string;
   parentID?: string;
@@ -1181,6 +1478,11 @@ interface DetailedNetworkNode {
   evidenceIDs: string[];
   evidenceStatus: "code-confirmed" | "paper-only" | "inferred";
 }</code></pre>
+          <p>
+            AnalysisProgress
+            是当前分析任务的临时界面状态；任务结束后只保存结果摘要和证据索引，不把逐步日志写进网络图版本或
+            WebDAV 同步负载。
+          </p>
 
           <h3>节点依据展示</h3>
           <table>
@@ -1288,6 +1590,13 @@ interface DetailedNetworkNode {
                 <td>不生成空版本</td>
               </tr>
               <tr>
+                <td>候选 v1 细节不足</td>
+                <td>
+                  显示缺失类别，并在资源预算内定向补读一次；仍不足则报告“证据不足”
+                </td>
+                <td>保留原图，不发布半成品</td>
+              </tr>
+              <tr>
                 <td>论文与代码不一致</td>
                 <td>并列显示差异与各自依据</td>
                 <td>不把推断标成代码事实</td>
@@ -1321,13 +1630,15 @@ interface DetailedNetworkNode {
                 <li>固定 commit 与路径校验</li>
                 <li>文件筛选和资源预算</li>
                 <li>图补丁与证据校验</li>
+                <li>v1 细节覆盖度判定</li>
                 <li>版本撤销和恢复</li>
               </ul>
             </div>
             <div class="test-card">
               <strong>集成测试</strong>
               <ul>
-                <li>公开仓库生成 v1</li>
+                <li>公开仓库一次生成详细 v1</li>
+                <li>细节不足时定向补读且不发布半成品</li>
                 <li>对话修改生成 v2</li>
                 <li>按需补读代码</li>
                 <li>限流和非法图不覆盖</li>
@@ -1338,6 +1649,7 @@ interface DetailedNetworkNode {
               <strong>DOM 交互测试</strong>
               <ul>
                 <li>重新生成按钮可见性</li>
+                <li>分析阶段、文件、符号与覆盖度实时显示</li>
                 <li>来源栏与发送状态</li>
                 <li>选择节点局部优化</li>
                 <li>图高度跟随 SVG</li>
@@ -1347,7 +1659,16 @@ interface DetailedNetworkNode {
           </div>
           <h3>完成条件</h3>
           <ol>
-            <li>用户仅提供公开仓库链接即可生成有代码依据的网络图；</li>
+            <li>
+              用户仅提供公开仓库链接，即可一次生成通过细节门槛、有代码依据的可用网络图；
+            </li>
+            <li>
+              分析期间显示当前阶段、已读章节、文件/符号、读取数量与八类细节覆盖度；
+            </li>
+            <li>
+              细节不足时保留当前图并说明缺失项，绝不先发布一个空泛 v1
+              再依赖后续对话补齐；
+            </li>
             <li>后续对话只修改网络图，不污染主对话或其他总览栏目；</li>
             <li>每次成功修改均可撤销，任何失败均不覆盖当前图；</li>
             <li>节点依据可以定位到论文章节或固定 commit 下的代码符号；</li>
@@ -1370,7 +1691,8 @@ interface DetailedNetworkNode {
             <li>在导出的浏览器 HTML 中继续调用 AI。</li>
           </ul>
           <div class="callout">
-            第一版成功的核心不是“读取尽可能多的代码”，而是用有限、可追溯的论文和代码证据，稳定地产生可以逐步改进的网络图。
+            第一版成功的核心不是“读取尽可能多的代码”，也不是先交付粗略图再慢慢补齐；而是用有限、可追溯的论文和代码证据，一次生成达到可用细节基线的
+            v1，后续对话再做有目的的局部展开、简化和视角切换。
           </div>
         </section>
       </main>
