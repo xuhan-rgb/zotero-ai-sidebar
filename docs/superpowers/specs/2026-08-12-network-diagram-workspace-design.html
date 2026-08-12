@@ -1,0 +1,1383 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero AI Sidebar · 网络图重新生成与逐步优化设计图纸</title>
+    <style>
+      :root {
+        --paper: #fffdf8;
+        --paper-soft: #fbf7f0;
+        --canvas: #efe7da;
+        --ink: #27231e;
+        --muted: #756b5f;
+        --faint: #9d9285;
+        --line: #e2d5c4;
+        --line-strong: #ccbba6;
+        --accent: #bc6035;
+        --accent-strong: #9f4823;
+        --accent-soft: #fff0e6;
+        --green: #3f874b;
+        --green-soft: #edf7ec;
+        --blue: #3475ad;
+        --blue-soft: #ebf4fd;
+        --warning: #a96a15;
+        --warning-soft: #fff7de;
+        --danger: #b4473f;
+        --danger-soft: #fff0ed;
+        --shadow: 0 12px 38px rgba(67, 47, 27, 0.12);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        scroll-behavior: smooth;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(960px 460px at 50% -180px, #fff8ed, transparent),
+          var(--canvas);
+        color: var(--ink);
+        font:
+          14px/1.72 -apple-system,
+          BlinkMacSystemFont,
+          "Noto Sans CJK SC",
+          "PingFang SC",
+          "Microsoft YaHei",
+          sans-serif;
+      }
+
+      a {
+        color: var(--blue);
+        text-decoration: none;
+      }
+
+      a:hover {
+        text-decoration: underline;
+      }
+
+      code,
+      pre {
+        font-family: "JetBrains Mono", "Cascadia Code", Consolas, monospace;
+      }
+
+      header {
+        padding: 36px max(28px, calc((100vw - 1180px) / 2)) 28px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 253, 248, 0.88);
+        backdrop-filter: blur(14px);
+      }
+
+      .eyebrow {
+        margin-bottom: 6px;
+        color: var(--accent-strong);
+        font-size: 11px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(25px, 4vw, 38px);
+        line-height: 1.25;
+        letter-spacing: -0.025em;
+      }
+
+      .subtitle {
+        max-width: 820px;
+        margin: 12px 0 0;
+        color: var(--muted);
+        font-size: 15px;
+      }
+
+      .meta {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 8px;
+        margin-top: 18px;
+      }
+
+      .tag {
+        padding: 3px 9px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: var(--paper);
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: 220px minmax(0, 1fr);
+        gap: 28px;
+        width: min(1240px, calc(100vw - 40px));
+        margin: 24px auto 70px;
+      }
+
+      nav {
+        position: sticky;
+        top: 20px;
+        align-self: start;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        background: rgba(255, 253, 248, 0.94);
+        box-shadow: 0 8px 26px rgba(67, 47, 27, 0.07);
+      }
+
+      nav strong {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--accent-strong);
+        font-size: 12px;
+      }
+
+      nav a {
+        display: block;
+        padding: 5px 7px;
+        border-radius: 6px;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      nav a:hover {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        text-decoration: none;
+      }
+
+      main {
+        min-width: 0;
+      }
+
+      section {
+        margin-bottom: 22px;
+        padding: 24px 26px;
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        background: var(--paper);
+        box-shadow: var(--shadow);
+      }
+
+      h2 {
+        margin: 0 0 6px;
+        font-size: 20px;
+        line-height: 1.3;
+      }
+
+      h2 .number {
+        margin-right: 8px;
+        color: var(--accent);
+        font-weight: 500;
+      }
+
+      h3 {
+        margin: 22px 0 8px;
+        color: var(--accent-strong);
+        font-size: 14px;
+      }
+
+      p {
+        margin: 8px 0;
+      }
+
+      ul,
+      ol {
+        padding-left: 22px;
+      }
+
+      li + li {
+        margin-top: 5px;
+      }
+
+      .lead {
+        max-width: 860px;
+        margin: 0 0 16px;
+        color: var(--muted);
+      }
+
+      .summary-grid {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .summary-cell {
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--paper-soft);
+      }
+
+      .summary-cell .key {
+        margin-bottom: 4px;
+        color: var(--faint);
+        font-size: 10px;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .summary-cell .value {
+        color: var(--ink);
+        font-size: 12.5px;
+      }
+
+      .callout {
+        margin-top: 14px;
+        padding: 11px 13px;
+        border-left: 3px solid var(--accent);
+        border-radius: 8px;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+
+      .wireframe {
+        margin-top: 14px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 13px;
+        background: #fff;
+      }
+
+      .wf-header {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        padding: 9px 12px;
+        border-bottom: 1px solid var(--line);
+        background: var(--paper-soft);
+      }
+
+      .wf-title {
+        margin-right: 4px;
+        font-weight: 800;
+      }
+
+      .tabs {
+        display: inline-flex;
+        gap: 2px;
+        padding: 2px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: #f7f2ea;
+      }
+
+      .tab,
+      .button {
+        padding: 4px 9px;
+        border: 1px solid transparent;
+        border-radius: 6px;
+        background: transparent;
+        color: var(--muted);
+        font: inherit;
+        font-size: 11px;
+      }
+
+      .tab.active {
+        background: #fff;
+        color: var(--accent-strong);
+        font-weight: 700;
+        box-shadow: 0 1px 4px rgba(67, 47, 27, 0.13);
+      }
+
+      .button {
+        border-color: var(--line);
+        background: #fff;
+        color: var(--accent-strong);
+      }
+
+      .wf-spacer {
+        flex: 1;
+      }
+
+      .wf-body {
+        padding: 14px;
+      }
+
+      .source-panel,
+      .chat-panel,
+      .version-bar {
+        padding: 13px 14px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--paper);
+      }
+
+      .source-panel {
+        margin-bottom: 12px;
+        background: #fffaf4;
+      }
+
+      .field-label {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--muted);
+        font-size: 11px;
+        font-weight: 700;
+      }
+
+      .input-row {
+        display: flex;
+        gap: 8px;
+      }
+
+      .fake-input {
+        flex: 1;
+        min-width: 0;
+        padding: 7px 9px;
+        overflow: hidden;
+        border: 1px solid var(--line-strong);
+        border-radius: 7px;
+        background: #fff;
+        color: var(--faint);
+        font-size: 11.5px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .graph-canvas {
+        display: grid;
+        gap: 20px;
+        justify-items: center;
+        margin: 12px 0;
+        padding: 22px 12px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background:
+          radial-gradient(circle at 50% 0, #fff8ef, transparent 54%), #fff;
+      }
+
+      .node {
+        position: relative;
+        min-width: 150px;
+        padding: 7px 12px;
+        border: 1.5px solid var(--line-strong);
+        border-radius: 7px;
+        background: #fff;
+        text-align: center;
+        font-size: 11px;
+      }
+
+      .node:not(:last-child)::after {
+        position: absolute;
+        top: calc(100% + 1px);
+        left: 50%;
+        width: 1px;
+        height: 20px;
+        background: var(--line-strong);
+        content: "";
+      }
+
+      .node.innovation {
+        border-color: var(--green);
+        background: var(--green-soft);
+        color: #2d6c39;
+        font-weight: 700;
+      }
+
+      .branch-row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(160px, 1fr));
+        gap: 28px;
+      }
+
+      .branch-row .node::after {
+        display: none;
+      }
+
+      .version-bar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 7px;
+        margin-bottom: 12px;
+        background: var(--blue-soft);
+        color: #2d608e;
+        font-size: 11px;
+      }
+
+      .chat-panel {
+        background: #fff;
+      }
+
+      .message {
+        max-width: 78%;
+        margin-bottom: 9px;
+        padding: 8px 10px;
+        border-radius: 9px;
+        font-size: 11.5px;
+      }
+
+      .message.ai {
+        border: 1px solid var(--line);
+        background: var(--paper-soft);
+      }
+
+      .message.user {
+        margin-left: auto;
+        border: 1px solid #d4e4f4;
+        background: var(--blue-soft);
+      }
+
+      .chips {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 5px;
+        margin: 12px 0 8px;
+      }
+
+      .chip {
+        padding: 3px 7px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        background: #fff;
+        color: var(--muted);
+        font-size: 10px;
+      }
+
+      .architecture {
+        display: grid;
+        gap: 14px;
+        margin-top: 16px;
+      }
+
+      .arch-row {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .arch-box {
+        padding: 13px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: var(--paper-soft);
+      }
+
+      .arch-box.primary {
+        border-color: #e6b597;
+        background: var(--accent-soft);
+      }
+
+      .arch-box.green {
+        border-color: #acd0b1;
+        background: var(--green-soft);
+      }
+
+      .arch-box.blue {
+        border-color: #b7d3ed;
+        background: var(--blue-soft);
+      }
+
+      .arch-box strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 12px;
+      }
+
+      .arch-box span {
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .arrow {
+        color: var(--faint);
+        text-align: center;
+      }
+
+      .flow {
+        margin-top: 14px;
+        padding: 16px;
+        border: 1px solid var(--line);
+        border-radius: 11px;
+        background: var(--paper-soft);
+      }
+
+      .flow-step {
+        display: grid;
+        grid-template-columns: 34px minmax(0, 1fr);
+        gap: 10px;
+        position: relative;
+        padding-bottom: 14px;
+      }
+
+      .flow-step:last-child {
+        padding-bottom: 0;
+      }
+
+      .flow-step:not(:last-child)::before {
+        position: absolute;
+        top: 28px;
+        bottom: 2px;
+        left: 16px;
+        width: 1px;
+        background: var(--line-strong);
+        content: "";
+      }
+
+      .flow-num {
+        display: grid;
+        z-index: 1;
+        width: 33px;
+        height: 33px;
+        place-items: center;
+        border: 1px solid #e4ad8a;
+        border-radius: 50%;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .flow-content {
+        padding: 5px 0;
+      }
+
+      .flow-content strong {
+        display: block;
+        font-size: 12px;
+      }
+
+      .flow-content span {
+        color: var(--muted);
+        font-size: 11.5px;
+      }
+
+      pre {
+        margin: 12px 0;
+        padding: 14px 16px;
+        overflow: auto;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: #292620;
+        color: #f5eee4;
+        font-size: 11.5px;
+        line-height: 1.6;
+      }
+
+      table {
+        width: 100%;
+        margin-top: 12px;
+        border-collapse: collapse;
+        font-size: 12px;
+      }
+
+      th,
+      td {
+        padding: 8px 9px;
+        border: 1px solid var(--line);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        background: var(--paper-soft);
+        color: var(--accent-strong);
+      }
+
+      .status-confirmed {
+        color: var(--green);
+        font-weight: 700;
+      }
+
+      .status-inferred {
+        color: var(--warning);
+        font-weight: 700;
+      }
+
+      .test-grid {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .test-card {
+        padding: 12px 13px;
+        border: 1px solid var(--line);
+        border-radius: 9px;
+        background: var(--paper-soft);
+      }
+
+      .test-card strong {
+        display: block;
+        margin-bottom: 6px;
+        color: var(--accent-strong);
+        font-size: 12px;
+      }
+
+      .test-card ul {
+        margin: 0;
+        padding-left: 17px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      footer {
+        padding: 22px;
+        border-top: 1px solid var(--line);
+        background: rgba(255, 253, 248, 0.8);
+        color: var(--muted);
+        text-align: center;
+        font-size: 11px;
+      }
+
+      @media (max-width: 900px) {
+        .layout {
+          grid-template-columns: 1fr;
+        }
+
+        nav {
+          position: static;
+          columns: 2;
+        }
+
+        nav strong {
+          column-span: all;
+        }
+
+        .summary-grid,
+        .arch-row,
+        .test-grid {
+          grid-template-columns: 1fr 1fr;
+        }
+      }
+
+      @media (max-width: 620px) {
+        header {
+          padding: 26px 20px 22px;
+        }
+
+        .layout {
+          width: min(100% - 20px, 1240px);
+          gap: 14px;
+        }
+
+        section {
+          padding: 19px 17px;
+        }
+
+        .summary-grid,
+        .arch-row,
+        .test-grid,
+        .branch-row {
+          grid-template-columns: 1fr;
+        }
+
+        .wf-header {
+          flex-wrap: wrap;
+        }
+
+        .wf-spacer {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <div class="eyebrow">Zotero AI Sidebar · Design Blueprint</div>
+      <h1>网络图重新生成与逐步优化</h1>
+      <p class="subtitle">
+        面向论文方法章节与公开 GitHub 参考实现的网络拓扑工作区：独立 AI
+        对话、证据定位、局部修改、版本历史与跨设备同步。
+      </p>
+      <div class="meta">
+        <span class="tag">版本 v1</span>
+        <span class="tag">日期 2026-08-12</span>
+        <span class="tag">状态：设计已确认</span>
+        <span class="tag">第一版：仅公开 GitHub 仓库</span>
+      </div>
+    </header>
+
+    <div class="layout">
+      <nav aria-label="设计目录">
+        <strong>设计目录</strong>
+        <a href="#scope">1. 目标与边界</a>
+        <a href="#ui">2. 界面图纸</a>
+        <a href="#conversation">3. AI 对话</a>
+        <a href="#architecture">4. 组件架构</a>
+        <a href="#repository">5. GitHub 读取</a>
+        <a href="#first-generation">6. 首次生成</a>
+        <a href="#iteration">7. 逐轮优化</a>
+        <a href="#contract">8. 模型契约</a>
+        <a href="#data">9. 数据结构</a>
+        <a href="#sync">10. 存储与同步</a>
+        <a href="#errors">11. 错误处理</a>
+        <a href="#tests">12. 测试图纸</a>
+        <a href="#non-goals">13. 非目标</a>
+      </nav>
+
+      <main>
+        <section id="scope">
+          <h2><span class="number">01</span>目标与边界</h2>
+          <p class="lead">
+            用户提供一个公开 GitHub 仓库链接。插件联合论文方法章节和固定 commit
+            下的真实代码生成网络图，并允许在图下方使用独立对话逐步展开、简化和核对。
+          </p>
+          <div class="summary-grid">
+            <div class="summary-cell">
+              <div class="key">Repository</div>
+              <div class="value">仅公开 github.com 仓库，不保存 Token</div>
+            </div>
+            <div class="summary-cell">
+              <div class="key">Conversation</div>
+              <div class="value">独立网络图对话，复用主对话模型配置</div>
+            </div>
+            <div class="summary-cell">
+              <div class="key">Evidence</div>
+              <div class="value">节点关联论文章节、代码路径与符号</div>
+            </div>
+            <div class="summary-cell">
+              <div class="key">Revision</div>
+              <div class="value">每次成功修改生成不可变版本</div>
+            </div>
+          </div>
+          <div class="callout">
+            不克隆仓库、不执行代码、不安装依赖、不下载模型权重；任何生成失败都不能覆盖当前网络图。
+          </div>
+        </section>
+
+        <section id="ui">
+          <h2><span class="number">02</span>界面图纸</h2>
+          <p class="lead">
+            “重新生成”只在网络图栏目出现；核心讲述只属于目录。网络图画布按实际
+            SVG 高度收缩，对话紧接图下方，不保留大块无效空白。
+          </p>
+
+          <div class="wireframe" aria-label="网络图工作区线框图">
+            <div class="wf-header">
+              <span class="wf-title">📍 全文总览</span>
+              <span class="tabs">
+                <span class="tab">目录</span>
+                <span class="tab">结构图</span>
+                <span class="tab active">网络图</span>
+              </span>
+              <span class="button">↻ 重新生成</span>
+              <span class="wf-spacer"></span>
+              <span class="button">↗ 浏览器</span>
+              <span class="button">↩ 在读 2.1</span>
+            </div>
+            <div class="wf-body">
+              <div class="source-panel">
+                <span class="field-label">公开 GitHub 仓库</span>
+                <div class="input-row">
+                  <div class="fake-input">https://github.com/owner/repo</div>
+                  <span class="button">分析并生成</span>
+                </div>
+                <p
+                  style="
+                    margin: 7px 0 0;
+                    color: var(--muted);
+                    font-size: 10.5px;
+                  "
+                >
+                  当前来源：owner/repo · commit 8a31c2f · 已读取 8 个文件
+                </p>
+              </div>
+
+              <div class="graph-canvas">
+                <div class="node">当前多视角图像</div>
+                <div class="node">图像 Backbone</div>
+                <div class="branch-row">
+                  <div class="node">BEV 查询编码器</div>
+                  <div class="node innovation">✦ 视角查询 / 交叉注意力</div>
+                </div>
+                <div class="node">视觉潜变量</div>
+                <div class="node innovation">✦ Transformer 潜在世界模型</div>
+                <div class="node innovation">✦ 未来视觉潜变量</div>
+                <div class="branch-row">
+                  <div class="node">规划预测头</div>
+                  <div class="node">运动 / 地图感知分支</div>
+                </div>
+                <div class="node">航点预测输出</div>
+              </div>
+
+              <div class="version-bar">
+                <strong>版本 v3</strong>
+                <span>GitHub 8a31c2f · 8 个代码依据</span>
+                <span class="wf-spacer"></span>
+                <span class="button">撤销上一版</span>
+                <span class="button">恢复最新版</span>
+                <span class="button">查看依据</span>
+              </div>
+
+              <div class="chat-panel">
+                <strong style="font-size: 12px">网络图优化助手</strong>
+                <div style="margin-top: 10px">
+                  <div class="message ai">
+                    已根据论文 §4.2 和 models/attention.py
+                    补充视角查询与交叉注意力模块，生成网络图 v3。
+                  </div>
+                  <div class="message user">
+                    展开 Transformer 世界模型内部结构，并标出输入输出。
+                  </div>
+                  <div class="message ai">
+                    已生成 v4：新增时序
+                    token、位置编码、多层自注意力和未来潜变量预测。
+                  </div>
+                </div>
+                <div class="chips">
+                  <span class="chip">补充细节</span>
+                  <span class="chip">只看推理</span>
+                  <span class="chip">显示训练分支</span>
+                  <span class="chip">标注张量尺寸</span>
+                  <span class="chip">展开选中节点</span>
+                  <span class="chip">简化为汇报图</span>
+                </div>
+                <div class="input-row">
+                  <div class="fake-input">输入进一步修改要求……</div>
+                  <span class="button">发送</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="conversation">
+          <h2><span class="number">03</span>独立 AI 对话</h2>
+          <p class="lead">
+            网络图对话与论文主对话分离，但复用当前模型、API、推理强度和联网设置。网络图指令不会污染论文问答历史。
+          </p>
+          <div class="arch-row">
+            <div class="arch-box primary">
+              <strong>主对话</strong>
+              <span>论文问答、翻译、笔记、注释与研究任务。</span>
+            </div>
+            <div class="arch-box green">
+              <strong>网络图优化对话</strong>
+              <span>GitHub 分析、局部展开、简化、证据核对与版本历史。</span>
+            </div>
+            <div class="arch-box blue">
+              <strong>共享配置</strong>
+              <span>当前模型、API 连接、推理强度与联网能力。</span>
+            </div>
+          </div>
+          <h3>每轮上下文</h3>
+          <ul>
+            <li>当前网络图与当前版本；</li>
+            <li>用户选中的节点与本轮要求；</li>
+            <li>固定 GitHub commit 与已读取证据索引；</li>
+            <li>论文相关方法章节；</li>
+            <li>网络图对话摘要与最近消息。</li>
+          </ul>
+          <p>
+            所有历史消息都保存，但模型调用使用“对话摘要 +
+            最近消息”，避免多轮优化后上下文无限增长。
+          </p>
+        </section>
+
+        <section id="architecture">
+          <h2><span class="number">04</span>组件架构</h2>
+          <p class="lead">
+            仓库读取、证据构建、图修改和版本存储彼此隔离；UI 不直接访问
+            GitHub，也不直接写总览缓存。
+          </p>
+          <div class="architecture">
+            <div class="arch-box primary">
+              <strong>Network Diagram Workspace UI</strong>
+              <span>来源栏 · 网络图画布 · 版本控制 · 依据面板 · 专用对话</span>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="arch-box blue">
+              <strong>Network Diagram Controller</strong>
+              <span>协调首次生成、逐轮优化、状态切换和失败恢复</span>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="arch-row">
+              <div class="arch-box">
+                <strong>GitHub Reader</strong>
+                <span>URL 校验、commit 固定、目录树、文件预算和本地缓存</span>
+              </div>
+              <div class="arch-box">
+                <strong>Evidence Builder</strong>
+                <span>论文概念、配置、类、forward 与网络节点的映射</span>
+              </div>
+              <div class="arch-box green">
+                <strong>Diagram Agent</strong>
+                <span>首次生成、证据申请、结构化图补丁和修改说明</span>
+              </div>
+            </div>
+            <div class="arrow">↓</div>
+            <div class="arch-row">
+              <div class="arch-box">
+                <strong>Revision Store</strong>
+                <span>完整快照、父版本、对话、当前与最新版本指针</span>
+              </div>
+              <div class="arch-box">
+                <strong>WebDAV Adapter</strong>
+                <span>同步版本、对话、来源和证据定位，不同步源码正文</span>
+              </div>
+              <div class="arch-box">
+                <strong>Overview Export</strong>
+                <span>导出最终图与来源，不携带对话、API 配置或源码</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="repository">
+          <h2><span class="number">05</span>公开 GitHub 仓库读取</h2>
+          <p class="lead">
+            通过 GitHub REST API 读取公开资源，不依赖本机 git
+            或登录状态。同一次分析固定到一个 commit SHA。
+          </p>
+          <div class="flow">
+            <div class="flow-step">
+              <div class="flow-num">1</div>
+              <div class="flow-content">
+                <strong>校验链接</strong>
+                <span
+                  >只接受 github.com/{owner}/{repo}，拒绝任意网页和带凭证
+                  URL。</span
+                >
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">2</div>
+              <div class="flow-content">
+                <strong>固定版本</strong>
+                <span
+                  >获取默认分支和当前 commit SHA，后续文件统一按 SHA
+                  读取。</span
+                >
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">3</div>
+              <div class="flow-content">
+                <strong>读取目录树</strong>
+                <span
+                  >使用 Git Trees API 获取文件清单，不逐层遍历所有目录。</span
+                >
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">4</div>
+              <div class="flow-content">
+                <strong>两轮文件选择</strong>
+                <span
+                  >先读取 README、配置和模型入口，再由 AI
+                  指定需要补读的确切文件。</span
+                >
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">5</div>
+              <div class="flow-content">
+                <strong>形成证据索引</strong>
+                <span>记录 repository、commit、path、symbol 和可用行号。</span>
+              </div>
+            </div>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>限制</th>
+                <th>第一版取值</th>
+                <th>目的</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>单文件文本</td>
+                <td>最多 120 KB</td>
+                <td>阻止异常大文件占满上下文</td>
+              </tr>
+              <tr>
+                <td>单轮文件数</td>
+                <td>最多 12 个</td>
+                <td>控制 GitHub 请求和模型输入</td>
+              </tr>
+              <tr>
+                <td>单次分析文本</td>
+                <td>最多 600 KB</td>
+                <td>保证可预测的资源预算</td>
+              </tr>
+              <tr>
+                <td>允许的文件</td>
+                <td>必须来自固定 commit 的目录树</td>
+                <td>阻止模型构造任意 URL 或路径</td>
+              </tr>
+              <tr>
+                <td>执行能力</td>
+                <td>无</td>
+                <td>不执行仓库代码和安装脚本</td>
+              </tr>
+            </tbody>
+          </table>
+          <p style="font-size: 11.5px; color: var(--muted)">
+            API 依据：
+            <a href="https://docs.github.com/en/rest/git/trees">Git Trees</a>、
+            <a href="https://docs.github.com/en/rest/repos/contents"
+              >Repository Contents</a
+            >、
+            <a
+              href="https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api"
+              >Rate Limits</a
+            >。
+          </p>
+        </section>
+
+        <section id="first-generation">
+          <h2><span class="number">06</span>首次生成流程</h2>
+          <div class="flow">
+            <div class="flow-step">
+              <div class="flow-num">1</div>
+              <div class="flow-content">
+                <strong>用户提交仓库链接与可选要求</strong>
+                <span>例如“重点展示推理阶段，并标注主要张量尺寸”。</span>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">2</div>
+              <div class="flow-content">
+                <strong>固定仓库版本并读取目录树</strong>
+                <span>仓库更新不会改变当前分析中已经读取的代码版本。</span>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">3</div>
+              <div class="flow-content">
+                <strong>选择并读取两批关键文件</strong>
+                <span
+                  >README、配置、模型入口、模块注册、forward 和推理路径。</span
+                >
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">4</div>
+              <div class="flow-content">
+                <strong>读取论文最相关的 1–2 个方法章节</strong>
+                <span>arXiv 使用章节读取，普通 PDF 使用章节字符范围。</span>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">5</div>
+              <div class="flow-content">
+                <strong>建立论文概念与代码符号映射</strong>
+                <span>区分代码确认、仅论文描述和推断内容。</span>
+              </div>
+            </div>
+            <div class="flow-step">
+              <div class="flow-num">6</div>
+              <div class="flow-content">
+                <strong>生成、校验并保存网络图 v1</strong>
+                <span>只有图结构和证据均合法才产生版本并替换当前图。</span>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section id="iteration">
+          <h2><span class="number">07</span>逐轮优化与版本</h2>
+          <p class="lead">
+            每轮以当前图为基线生成“结构化补丁”，避免无关节点被大范围重画。补丁通过校验后物化为完整快照，便于可靠撤销。
+          </p>
+          <pre><code>用户选择节点（可选）
+  → 输入修改要求
+  → 组合当前图、证据索引和最近对话
+  → 证据不足时申请读取确切文件
+  → AI 返回 message + graphPatch + evidence + warnings
+  → 校验节点、连线、证据与无关分支稳定性
+  → 生成完整快照 vN
+  → 定位到本轮 changedNodeIDs</code></pre>
+          <h3>版本操作</h3>
+          <ul>
+            <li><strong>撤销上一版：</strong>切换到父版本，不删除后续版本；</li>
+            <li><strong>恢复最新版：</strong>回到最新成功版本；</li>
+            <li>
+              <strong>版本记录：</strong>按时间显示用户要求、修改摘要与来源；
+            </li>
+            <li>
+              <strong>设为最终版：</strong>复制到当前总览并更新 HTML 附件。
+            </li>
+          </ul>
+        </section>
+
+        <section id="contract">
+          <h2><span class="number">08</span>模型调用契约</h2>
+          <h3>Parameters</h3>
+          <pre><code>currentGraph       : 当前网络图，非训练参数
+selectedNode       : 用户选中的节点，可为空
+userInstruction    : 本轮修改要求
+paperEvidence      : 论文方法章节证据
+repositoryEvidence : 固定 commit 下的代码证据
+recentMessages     : 网络图专用对话摘要与最近消息
+modelPreset        : 复用主对话当前模型配置
+fileBudget         : 文件数量与文本大小限制，超参数</code></pre>
+
+          <h3>Data flow</h3>
+          <pre><code>evidenceIndex = map(paperEvidence, repositoryEvidence)
+requestScope  = understand(userInstruction, selectedNode)
+
+neededFiles   = choose_missing_evidence(requestScope, evidenceIndex)
+newEvidence   = read_allowed_files(neededFiles)
+graphPatch    = generate_patch(currentGraph, requestScope, evidenceIndex + newEvidence)
+validatedGraph = validate_and_apply(currentGraph, graphPatch)
+revision      = save_new_version(validatedGraph, evidenceReferences)</code></pre>
+
+          <h3>Loss / objective</h3>
+          <p>没有本地训练或新增可学习参数，使用推理时约束目标：</p>
+          <pre><code>Objective =
+    满足用户本轮修改要求
+  + 保留无关模块稳定
+  + 最大化论文/代码证据覆盖
+  + 保持网络图可读性
+  - 无依据的架构细节
+  - 不必要的节点数量
+  - 与本轮无关的大范围重绘</code></pre>
+        </section>
+
+        <section id="data">
+          <h2><span class="number">09</span>数据结构</h2>
+          <p class="lead">
+            当前最终图继续保存在
+            OverviewData.networkTopology，以兼容现有渲染和导出；完整工作区另存，避免总览对象无限膨胀。
+          </p>
+          <pre><code>interface NetworkDiagramWorkspace {
+  itemKey: string;
+  repository?: {
+    url: string;
+    owner: string;
+    repo: string;
+    commitSHA: string;
+    defaultBranch: string;
+    analyzedAt: number;
+  };
+  currentRevisionID?: string;
+  latestRevisionID?: string;
+  revisions: NetworkDiagramRevision[];
+  messages: NetworkDiagramMessage[];
+  evidenceIndex: EvidenceReference[];
+}
+
+interface NetworkDiagramRevision {
+  id: string;
+  parentID?: string;
+  createdAt: number;
+  userInstruction: string;
+  assistantSummary: string;
+  graph: DetailedNetworkGraph;
+  evidenceIDs: string[];
+  changedNodeIDs: string[];
+}
+
+interface DetailedNetworkNode {
+  id: string;
+  label: string;
+  type: "input" | "module" | "innovation" | "fusion" | "output";
+  stage?: string;
+  description?: string;
+  tensorShape?: string;
+  sectionNo?: string;
+  evidenceIDs: string[];
+  evidenceStatus: "code-confirmed" | "paper-only" | "inferred";
+}</code></pre>
+
+          <h3>节点依据展示</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>节点</th>
+                <th>作用</th>
+                <th>依据</th>
+                <th>状态</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>CrossViewAttention</td>
+                <td>聚合多视角特征形成视觉潜变量</td>
+                <td>
+                  models/attention.py · CrossViewAttention.forward；论文 §4.2
+                </td>
+                <td class="status-confirmed">代码确认</td>
+              </tr>
+              <tr>
+                <td>未来状态约束</td>
+                <td>约束未来潜变量预测</td>
+                <td>论文 §4.1，当前已读代码未定位</td>
+                <td class="status-inferred">仅论文描述</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="sync">
+          <h2><span class="number">10</span>存储、同步与导出</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>数据</th>
+                <th>保存位置</th>
+                <th>同步方式</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>当前最终网络图</td>
+                <td>OverviewData.networkTopology</td>
+                <td>总览缓存 + HTML 附件</td>
+              </tr>
+              <tr>
+                <td>网络图对话与版本</td>
+                <td>独立 Network Diagram Store</td>
+                <td>AI Sidebar WebDAV</td>
+              </tr>
+              <tr>
+                <td>GitHub URL、commit、文件路径和符号</td>
+                <td>Network Diagram Store</td>
+                <td>AI Sidebar WebDAV</td>
+              </tr>
+              <tr>
+                <td>仓库源码正文</td>
+                <td>本地、按 commit 缓存</td>
+                <td>不同步，需要时重新读取</td>
+              </tr>
+              <tr>
+                <td>最终 HTML 总览</td>
+                <td>Zotero 子附件</td>
+                <td>Zotero 文件同步</td>
+              </tr>
+            </tbody>
+          </table>
+          <p>
+            浏览器 HTML 只包含当前最终图、版本号、仓库 URL、commit
+            SHA、论文章节和代码定位；不包含可编辑对话、历史版本、API
+            设置或源码正文。
+          </p>
+        </section>
+
+        <section id="errors">
+          <h2><span class="number">11</span>错误处理与回退</h2>
+          <table>
+            <thead>
+              <tr>
+                <th>场景</th>
+                <th>界面行为</th>
+                <th>数据保证</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>URL 不合法</td>
+                <td>在输入框下说明只接受公开 GitHub 仓库</td>
+                <td>不发出网络请求</td>
+              </tr>
+              <tr>
+                <td>仓库不存在或私有</td>
+                <td>显示“无法公开访问”</td>
+                <td>保留当前图</td>
+              </tr>
+              <tr>
+                <td>GitHub 限流</td>
+                <td>显示恢复时间，不连续重试</td>
+                <td>保留输入和缓存</td>
+              </tr>
+              <tr>
+                <td>未找到模型实现</td>
+                <td>列出已经检查的文件，允许补充路径提示</td>
+                <td>不生成空版本</td>
+              </tr>
+              <tr>
+                <td>论文与代码不一致</td>
+                <td>并列显示差异与各自依据</td>
+                <td>不把推断标成代码事实</td>
+              </tr>
+              <tr>
+                <td>模型返回非法图补丁</td>
+                <td>显示校验错误</td>
+                <td>不应用、不产生版本</td>
+              </tr>
+              <tr>
+                <td>网络中断</td>
+                <td>允许重试本轮</td>
+                <td>当前图和用户输入不丢失</td>
+              </tr>
+              <tr>
+                <td>更换仓库</td>
+                <td>覆盖来源前确认</td>
+                <td>旧版本仍可查看</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
+
+        <section id="tests">
+          <h2><span class="number">12</span>测试图纸与验收标准</h2>
+          <div class="test-grid">
+            <div class="test-card">
+              <strong>单元测试</strong>
+              <ul>
+                <li>GitHub URL 白名单</li>
+                <li>固定 commit 与路径校验</li>
+                <li>文件筛选和资源预算</li>
+                <li>图补丁与证据校验</li>
+                <li>版本撤销和恢复</li>
+              </ul>
+            </div>
+            <div class="test-card">
+              <strong>集成测试</strong>
+              <ul>
+                <li>公开仓库生成 v1</li>
+                <li>对话修改生成 v2</li>
+                <li>按需补读代码</li>
+                <li>限流和非法图不覆盖</li>
+                <li>WebDAV 恢复版本</li>
+              </ul>
+            </div>
+            <div class="test-card">
+              <strong>DOM 交互测试</strong>
+              <ul>
+                <li>重新生成按钮可见性</li>
+                <li>来源栏与发送状态</li>
+                <li>选择节点局部优化</li>
+                <li>图高度跟随 SVG</li>
+                <li>导出排除编辑对话</li>
+              </ul>
+            </div>
+          </div>
+          <h3>完成条件</h3>
+          <ol>
+            <li>用户仅提供公开仓库链接即可生成有代码依据的网络图；</li>
+            <li>后续对话只修改网络图，不污染主对话或其他总览栏目；</li>
+            <li>每次成功修改均可撤销，任何失败均不覆盖当前图；</li>
+            <li>节点依据可以定位到论文章节或固定 commit 下的代码符号；</li>
+            <li>图形高度适配实际内容，图下对话不会被大块空白推远；</li>
+            <li>
+              跨设备恢复当前图、版本和对话，但不在 WebDAV 中保存源码正文。
+            </li>
+          </ol>
+        </section>
+
+        <section id="non-goals">
+          <h2><span class="number">13</span>第一版非目标</h2>
+          <ul>
+            <li>私有 GitHub 仓库与 GitHub Token 管理；</li>
+            <li>GitLab、Gitee 等其他代码平台；</li>
+            <li>克隆、执行、编译仓库代码或下载权重；</li>
+            <li>运行时张量追踪和自动性能分析；</li>
+            <li>多人同时编辑同一网络图；</li>
+            <li>自动读取完整主对话；</li>
+            <li>在导出的浏览器 HTML 中继续调用 AI。</li>
+          </ul>
+          <div class="callout">
+            第一版成功的核心不是“读取尽可能多的代码”，而是用有限、可追溯的论文和代码证据，稳定地产生可以逐步改进的网络图。
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <footer>
+      Zotero AI Sidebar · Network Diagram Workspace Design · 2026-08-12
+    </footer>
+  </body>
+</html>
