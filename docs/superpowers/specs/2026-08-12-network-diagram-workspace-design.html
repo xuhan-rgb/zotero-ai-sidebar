@@ -785,7 +785,7 @@
         对话、证据定位、局部修改、版本历史与跨设备同步。
       </p>
       <div class="meta">
-        <span class="tag">版本 v1.1</span>
+        <span class="tag">版本 v1.2</span>
         <span class="tag">日期 2026-08-12</span>
         <span class="tag">状态：修订待复核</span>
         <span class="tag">第一版：仅公开 GitHub 仓库</span>
@@ -878,7 +878,7 @@
                     font-size: 10.5px;
                   "
                 >
-                  分析中：owner/repo · commit 8a31c2f · 已读取 5/8 个候选文件
+                  分析中：owner/repo · commit 8a31c2f · 正在读取第 2 批候选文件
                 </p>
                 <div class="analysis-progress">
                   <div class="progress-head">
@@ -913,7 +913,7 @@
                         ><strong>追踪代码路径</strong> · WorldModel.forward →
                         PlannerHead</span
                       >
-                      <span class="detail">5/8 文件</span>
+                      <span class="detail">第 2 批 · 已读 5 个</span>
                     </div>
                     <div class="progress-item">
                       <span class="state">○</span>
@@ -1149,10 +1149,10 @@
             <div class="flow-step">
               <div class="flow-num">4</div>
               <div class="flow-content">
-                <strong>两轮文件选择</strong>
+                <strong>按相关性分批选择</strong>
                 <span
-                  >先读取 README、配置和模型入口，再由 AI
-                  指定需要补读的确切文件。</span
+                  >先读取
+                  README、配置和模型入口，再按细节缺失项继续选择确切路径与符号；不设置固定文件总数。</span
                 >
               </div>
             </div>
@@ -1175,19 +1175,24 @@
             </thead>
             <tbody>
               <tr>
-                <td>单文件文本</td>
-                <td>最多 120 KB</td>
+                <td>单次文件提取</td>
+                <td>最多 120 KB；超大文件按相关符号分段</td>
                 <td>阻止异常大文件占满上下文</td>
               </tr>
               <tr>
-                <td>单轮文件数</td>
-                <td>最多 12 个</td>
-                <td>控制 GitHub 请求和模型输入</td>
+                <td>候选文件读取</td>
+                <td>按相关性分批，无固定文件总数</td>
+                <td>避免仓库拆分方式导致关键模块被过早截断</td>
               </tr>
               <tr>
                 <td>单次分析文本</td>
                 <td>最多 600 KB</td>
                 <td>保证可预测的资源预算</td>
+              </tr>
+              <tr>
+                <td>停止条件</td>
+                <td>通过八类细节门槛，或总资源预算耗尽</td>
+                <td>文件数量不作为结束分析或发布 v1 的依据</td>
               </tr>
               <tr>
                 <td>允许的文件</td>
@@ -1264,7 +1269,7 @@
               <div class="flow-content">
                 <strong>生成候选图并执行“初始细节门槛”</strong>
                 <span
-                  >缺少基本结构时，在预算内再定向读取一次相关代码，而不是先发布稀疏图。</span
+                  >缺少基本结构时，在总资源预算内分批继续读取相关路径与符号，而不是因文件数量或首批结束而发布稀疏图。</span
                 >
               </div>
             </div>
@@ -1379,20 +1384,23 @@ paperEvidence      : 论文方法章节证据
 repositoryEvidence : 固定 commit 下的代码证据
 recentMessages     : 网络图专用对话摘要与最近消息
 modelPreset        : 复用主对话当前模型配置
-fileBudget         : 文件数量与文本大小限制，超参数</code></pre>
+analysisBudget     : 总文本、Token、GitHub 请求与时间限制，超参数</code></pre>
 
           <h3>Data flow</h3>
           <pre><code>evidenceIndex = map(paperEvidence, repositoryEvidence)
 requestScope  = understand(userInstruction, selectedNode)
 
-neededFiles   = choose_missing_evidence(requestScope, evidenceIndex)
-newEvidence   = read_allowed_files(neededFiles)
-graphPatch    = generate_patch(currentGraph, requestScope, evidenceIndex + newEvidence)
-validatedGraph = validate_and_apply(currentGraph, graphPatch)
-coverage      = evaluate_initial_detail_gate(validatedGraph, evidenceIndex)
-if initial &amp;&amp; coverage.missing: targeted_read_once(coverage.missing)
-if initial &amp;&amp; still_missing: keep_current_graph_and_report()
-revision      = save_new_version(validatedGraph, evidenceReferences)</code></pre>
+do:
+  neededBatch   = choose_missing_evidence_batch(requestScope, evidenceIndex)
+  newEvidence   = read_allowed_symbols(neededBatch, analysisBudget)
+  evidenceIndex.add(newEvidence)
+  graphPatch     = generate_patch(currentGraph, requestScope, evidenceIndex)
+  validatedGraph = validate_and_apply(currentGraph, graphPatch)
+  coverage       = evaluate_initial_detail_gate(validatedGraph, evidenceIndex)
+while initial &amp;&amp; coverage.missing &amp;&amp; neededBatch.nonempty &amp;&amp; analysisBudget.remaining
+
+if initial &amp;&amp; coverage.missing: return keep_current_graph_and_report()
+revision = save_new_version(validatedGraph, evidenceReferences)</code></pre>
 
           <h3>Loss / objective</h3>
           <p>没有本地训练或新增可学习参数，使用推理时约束目标：</p>
@@ -1592,7 +1600,7 @@ interface DetailedNetworkNode {
               <tr>
                 <td>候选 v1 细节不足</td>
                 <td>
-                  显示缺失类别，并在资源预算内定向补读一次；仍不足则报告“证据不足”
+                  显示缺失类别，并在总资源预算内分批定向补读；预算耗尽后仍不足则报告“证据不足”
                 </td>
                 <td>保留原图，不发布半成品</td>
               </tr>
@@ -1629,6 +1637,7 @@ interface DetailedNetworkNode {
                 <li>GitHub URL 白名单</li>
                 <li>固定 commit 与路径校验</li>
                 <li>文件筛选和资源预算</li>
+                <li>文件数量不会触发分析停止</li>
                 <li>图补丁与证据校验</li>
                 <li>v1 细节覆盖度判定</li>
                 <li>版本撤销和恢复</li>
@@ -1665,6 +1674,7 @@ interface DetailedNetworkNode {
             <li>
               分析期间显示当前阶段、已读章节、文件/符号、读取数量与八类细节覆盖度；
             </li>
+            <li>候选文件按相关性分批读取，不以固定文件数量作为停止条件；</li>
             <li>
               细节不足时保留当前图并说明缺失项，绝不先发布一个空泛 v1
               再依赖后续对话补齐；
