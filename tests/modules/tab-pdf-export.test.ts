@@ -43,4 +43,21 @@ describe("note-panel PDF export", () => {
     expect(css).toContain("break-inside:avoid");
     expect(css).toContain("print-color-adjust:exact");
   });
+
+  it("expands Zotero's scroll-bound note editor into a paginated document", () => {
+    const css = panelPdfPrintCss("note");
+
+    expect(css).toContain(
+      "#editor-container{position:static!important;inset:auto!important;height:auto!important;overflow:visible!important}",
+    );
+    expect(css).toContain(
+      "#editor-container .editor{position:static!important;inset:auto!important;height:auto!important;overflow:visible!important}",
+    );
+    expect(css).toContain(
+      "#editor-container .editor .editor-core{display:block!important;flex:none!important;height:auto!important;overflow:visible!important}",
+    );
+    expect(css).toContain(
+      "#editor-container .editor .editor-core .primary-editor{display:block!important;min-height:0!important;height:auto!important;overflow:visible!important}",
+    );
+  });
 });

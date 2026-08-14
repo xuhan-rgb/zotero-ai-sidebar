@@ -27,6 +27,11 @@ export function panelPdfPrintCss(kind: PanelPdfKind): string {
     kind === "note"
       ? [
           ".zai-pdf-note{box-sizing:border-box;width:100%;max-width:none;min-height:0;overflow:visible;padding:0;color:#24211d;background:#fff;font-size:14px;line-height:1.55}",
+          "#editor-container{position:static!important;inset:auto!important;height:auto!important;overflow:visible!important}",
+          "#editor-container .editor{position:static!important;inset:auto!important;height:auto!important;overflow:visible!important}",
+          "#editor-container .editor .editor-core{display:block!important;flex:none!important;height:auto!important;overflow:visible!important}",
+          "#editor-container .editor .editor-core .primary-editor{display:block!important;min-height:0!important;height:auto!important;overflow:visible!important}",
+          ".toolbar,.findbar,.noticebar,.context-menu,.popup{display:none!important}",
           ".zai-pdf-note h1,.zai-pdf-note h2,.zai-pdf-note h3,.zai-pdf-note h4,.zai-pdf-note h5,.zai-pdf-note h6{break-after:avoid-page}",
           ".zai-pdf-note blockquote,.zai-pdf-note pre,.zai-pdf-note table,.zai-pdf-note figure,.zai-pdf-note li{break-inside:avoid}",
           ".zai-pdf-note img,.zai-pdf-note svg{max-width:100%;height:auto}",
