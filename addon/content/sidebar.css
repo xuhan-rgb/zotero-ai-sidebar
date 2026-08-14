@@ -213,6 +213,20 @@
   background: rgba(255, 253, 248, 0.96);
 }
 
+:root.zai-docked-window .zai-note-window-head {
+  -moz-window-dragging: drag;
+}
+
+:root.zai-docked-window .zai-note-window-head button,
+:root.zai-docked-window .zai-note-window-head input,
+:root.zai-docked-window .zai-note-window-head select,
+:root.zai-docked-window .zai-note-window-head textarea,
+:root.zai-docked-window .zai-note-window-head a,
+:root.zai-docked-window .zai-note-window-head summary,
+:root.zai-docked-window .zai-note-window-head [role="button"] {
+  -moz-window-dragging: no-drag;
+}
+
 .zai-note-window-title {
   flex: 1;
   min-width: 0;
@@ -596,6 +610,20 @@
 
 .preset-switcher-top {
   overflow: visible;
+}
+
+:root.zai-docked-window .zai-root-docked .preset-switcher-top {
+  -moz-window-dragging: drag;
+}
+
+:root.zai-docked-window .zai-root-docked .preset-switcher-top button,
+:root.zai-docked-window .zai-root-docked .preset-switcher-top input,
+:root.zai-docked-window .zai-root-docked .preset-switcher-top select,
+:root.zai-docked-window .zai-root-docked .preset-switcher-top textarea,
+:root.zai-docked-window .zai-root-docked .preset-switcher-top a,
+:root.zai-docked-window .zai-root-docked .preset-switcher-top summary,
+:root.zai-docked-window .zai-root-docked .preset-switcher-top [role="button"] {
+  -moz-window-dragging: no-drag;
 }
 
 .zai-compact-menu {

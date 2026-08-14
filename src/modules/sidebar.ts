@@ -105,7 +105,11 @@ import {
 import { serializeSelectionAsMarkdown } from "../ui/selection-serialize";
 import { mountSelectionPopupGuard } from "../translate/overlay";
 import { TranslateModeController } from "../translate/translate-mode";
-import { AskModeController } from "../translate/ask-mode";
+import {
+  AskModeController,
+  getImmersiveModeShortcut,
+  isImmersiveModeShortcut,
+} from "../translate/ask-mode";
 import { getReadingConversations } from "../translate/reading-log";
 import { summarizeReadingConversations } from "../translate/reading-summary";
 import {
@@ -253,6 +257,7 @@ import {
   isAiNote,
   isReadingRouteNote,
   isZoteroNote,
+  noteTitle,
   parentItemForNotes,
   resolveReadingRouteNote,
   resolveTargetNote,
@@ -282,6 +287,12 @@ import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
 import { renderNetworkDiagramAnalysisCard } from "./network-diagram-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import {
+  buildPanelPdfHtml,
+  printContentWindowAsPdf,
+  printPanelHtmlAsPdf,
+} from "./tab-pdf-export";
+import {
+  collectPluginCss,
   openOverviewInBrowser,
   writeOverviewAttachment,
   type ZoteroExportApi,
@@ -1186,8 +1197,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   });
   const askBtn = buttonEl(doc, "沉浸");
   askBtn.className = "zai-sidebar-ask-button";
-  askBtn.title =
-    "沉浸式阅读：单击句子高亮，旁边弹出 [✦ 问 AI] / [译] 选择（点击切换开关）";
+  askBtn.title = `沉浸式阅读（快捷键：${getImmersiveModeShortcut(zoteroPrefs())}）：单击句子高亮，旁边弹出 [✦ 问 AI] / [译] 选择（点击切换开关）`;
   syncAskBtnState(win, askBtn);
   askBtn.addEventListener("click", () => {
     void toggleAskMode(win, askBtn);
@@ -1205,15 +1215,13 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     menuContent.append(
       copyAll,
       clear,
-      openNote,
-      askBtn,
       settings,
       renderFontIconMenu(doc, mount, state),
       renderCopyDebugToggle(doc, mount, state),
     );
     // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留）。
     // menuContent.append(translateBtn);
-    topRow.append(layoutMenu, menu, collapse);
+    topRow.append(layoutMenu, openNote, askBtn, menu, collapse);
     bar.append(topRow);
   } else {
     topRow.append(copyAll, clear, collapse);
@@ -6742,6 +6750,119 @@ function buildSummaryMenuItem(
   return item;
 }
 
+function buildTabPdfExportMenuItem(
+  doc: Document,
+  sidebar: WindowSidebarState,
+): HTMLButtonElement {
+  const item = buttonEl(doc, "▣ 转为 PDF");
+  const original = item.textContent ?? "转为 PDF";
+  const originalTitle = "将当前笔记、路线或总览页面转换为 PDF";
+  item.title = originalTitle;
+  item.dataset.zaiKeepOpen = "1";
+  item.addEventListener("click", () => {
+    item.disabled = true;
+    item.textContent = "转换中…";
+    void exportCurrentNotePanelAsPdf(sidebar)
+      .then(() => {
+        item.textContent = "打印流程已结束";
+      })
+      .catch((err) => {
+        item.textContent = "转换失败";
+        item.title = errorMessage(err);
+      })
+      .finally(() => {
+        doc.defaultView?.setTimeout(() => {
+          item.textContent = original;
+          item.title = originalTitle;
+          item.disabled = false;
+        }, 2200);
+      });
+  });
+  return item;
+}
+
+async function exportCurrentNotePanelAsPdf(
+  sidebar: WindowSidebarState,
+): Promise<void> {
+  await saveVisibleNoteBeforeSwitch(sidebar);
+  const doc = sidebar.noteMount.ownerDocument!;
+  const title = currentNotePanelPdfTitle(sidebar);
+
+  if (sidebar.overviewActive) {
+    const overview = sidebar.noteMount.querySelector(
+      ".zai-overview-window-body .overview-block",
+    ) as HTMLElement | null;
+    if (!overview) throw new Error("当前总览暂无可导出的内容");
+    const clone = overview.cloneNode(true) as HTMLElement;
+    keepOnlyActiveOverviewPane(clone);
+    const html = buildPanelPdfHtml({
+      title,
+      bodyHtml: String(clone.outerHTML),
+      pluginCss: collectPluginCss(doc),
+      kind: "overview",
+    });
+    await printPanelHtmlAsPdf(html);
+    return;
+  }
+
+  const note = sidebar.noteItemID ? getZoteroItem(sidebar.noteItemID) : null;
+  if (!isZoteroNote(note)) throw new Error("当前页面暂无可导出的内容");
+
+  const editorWindow =
+    findActiveNoteEditor(sidebar)?.getCurrentInstance?.()?._iframeWindow;
+  const exposedEditorWindow = editorWindow?.wrappedJSObject ?? editorWindow;
+  if (
+    editorWindow &&
+    typeof (exposedEditorWindow as Window & { zoteroPrint?: unknown })
+      .zoteroPrint === "function"
+  ) {
+    await printContentWindowAsPdf(editorWindow, "note");
+    return;
+  }
+
+  const noteHtml = note.getNote?.() || "";
+  if (!noteHtml.trim()) throw new Error("当前笔记暂无可导出的内容");
+  await printPanelHtmlAsPdf(
+    buildPanelPdfHtml({
+      title,
+      bodyHtml: noteHtml,
+      pluginCss: collectPluginCss(doc),
+      kind: "note",
+    }),
+  );
+}
+
+function currentNotePanelPdfTitle(sidebar: WindowSidebarState): string {
+  const panelItemID = states.get(sidebar.mount)?.itemID ?? null;
+  const panelItem = panelItemID == null ? null : getZoteroItem(panelItemID);
+  const parent = panelItem ? parentItemForNotes(panelItem) : null;
+  const paperTitle =
+    parent?.getField?.("title") || parent?.getDisplayTitle?.() || "";
+  if (sidebar.overviewActive) {
+    return paperTitle ? `${paperTitle} · 全文总览` : "全文总览";
+  }
+  const note = sidebar.noteItemID ? getZoteroItem(sidebar.noteItemID) : null;
+  const viewTitle = isZoteroNote(note) ? noteTitle(note) : "AI 笔记";
+  return paperTitle ? `${paperTitle} · ${viewTitle}` : viewTitle;
+}
+
+function keepOnlyActiveOverviewPane(overview: HTMLElement): void {
+  const panes = Array.from(
+    overview.querySelectorAll(".overview-view-pane"),
+  ) as HTMLElement[];
+  const activePane = panes.find((pane) => pane.classList.contains("active"));
+  if (activePane) {
+    for (const pane of panes) {
+      if (pane !== activePane) pane.remove();
+    }
+  }
+  overview.querySelector(".overview-view-tabs")?.remove();
+  const controls = Array.from(
+    overview.querySelectorAll("button,input,textarea,select"),
+  ) as Element[];
+  controls.forEach((control) => control.remove());
+}
+
 interface NoteHeadParts {
   head: HTMLElement;
   status: HTMLElement | null;
@@ -6802,6 +6923,7 @@ function renderNoteHead(
   const menuItems: HTMLButtonElement[] = [];
   if (opts.view === "normal")
     menuItems.push(buildSummaryMenuItem(doc, sidebar));
+  menuItems.push(buildTabPdfExportMenuItem(doc, sidebar));
   if (opts.menuExtra) menuItems.push(...opts.menuExtra);
   if (menuItems.length) head.append(buildNoteMenu(doc, menuItems));
 
@@ -10219,8 +10341,8 @@ function installReaderPromptShortcutHandler(
     if (!targetWin || installedWindows.has(targetWin)) return;
     installedWindows.add(targetWin);
     const handler = (event: KeyboardEvent) => {
+      if (handleImmersiveModeShortcut(win, event)) return;
       if (handleQuickAskShortcut(win, sidebar, event)) return;
-      if (handleTranslateModeShortcut(win, event)) return;
       if (handleReaderTaskEscape(win, targetWin, sidebar, event)) return;
       void handleReaderPromptShortcut(win, targetWin, sidebar, event);
     };
@@ -10242,6 +10364,28 @@ function installReaderPromptShortcutHandler(
   };
 }
 
+function handleImmersiveModeShortcut(
+  win: Window,
+  event: KeyboardEvent,
+): boolean {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    isEditableEventTarget(event.target)
+  ) {
+    return false;
+  }
+  if (
+    !isImmersiveModeShortcut(event, getImmersiveModeShortcut(zoteroPrefs()))
+  ) {
+    return false;
+  }
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  void toggleAskMode(win);
+  return true;
+}
+
 function handleQuickAskShortcut(
   win: Window,
   sidebar: WindowSidebarState,
@@ -10257,26 +10401,6 @@ function handleQuickAskShortcut(
   event.preventDefault();
   event.stopImmediatePropagation();
   void openQuickAsk(win, sidebar);
-  return true;
-}
-
-function handleTranslateModeShortcut(
-  win: Window,
-  event: KeyboardEvent,
-): boolean {
-  if (!event.altKey || event.ctrlKey || event.metaKey || event.shiftKey)
-    return false;
-  if (event.key.toLowerCase() !== "t") return false;
-  if (isEditableEventTarget(event.target)) return false;
-  event.preventDefault();
-  event.stopPropagation();
-  const readerDoc = (event.target as Node | null)?.ownerDocument;
-  const button =
-    readerDoc?.querySelector<HTMLElement>(".zai-reader-translate-button") ??
-    win.document.querySelector<HTMLElement>(".zai-reader-translate-button");
-  const fallback = win.document.documentElement as HTMLElement | null;
-  if (!button && !fallback) return true;
-  void toggleTranslateMode(win, button ?? fallback!);
   return true;
 }
 
@@ -11413,11 +11537,11 @@ function setTranslateButtonLabel(btn: HTMLElement, enabled: boolean): void {
 // as a separate, independent controller so the standalone "译" quick mode is
 // never touched. The two in-place modes are mutually exclusive: enabling one
 // disables the other.
-async function toggleAskMode(win: Window, btn: HTMLElement): Promise<void> {
+async function toggleAskMode(win: Window, btn?: HTMLElement): Promise<void> {
   const ctrl = await getOrCreateAskController(win);
   if (!ctrl) {
     syncAskButtons(win);
-    flashButton(btn as HTMLButtonElement, "无PDF");
+    if (btn) flashButton(btn as HTMLButtonElement, "无PDF");
     return;
   }
   if (ctrl.isEnabled()) {
@@ -11433,11 +11557,11 @@ async function toggleAskMode(win: Window, btn: HTMLElement): Promise<void> {
       // Drop keyboard focus off the toggle so a later Space (the default 选区
       // 快捷翻译键, and the universal "click the focused button" key) can't
       // re-trigger this button and switch immersive back off.
-      (btn as HTMLButtonElement).blur?.();
+      (btn as HTMLButtonElement | undefined)?.blur?.();
     } catch (err) {
       debugZai("ask.enable.failed", { error: errorMessage(err) });
       syncAskButtons(win);
-      flashButton(btn as HTMLButtonElement, "失败");
+      if (btn) flashButton(btn as HTMLButtonElement, "失败");
     }
   }
 }

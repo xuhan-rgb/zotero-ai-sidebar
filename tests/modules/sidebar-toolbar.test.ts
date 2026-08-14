@@ -134,11 +134,33 @@ describe("AI dialog toolbar", () => {
       "const layoutMenu = renderLayoutMenu(doc, mount, state)",
     );
     expect(toolbarSource).toContain(
-      "topRow.append(layoutMenu, menu, collapse)",
+      "topRow.append(layoutMenu, openNote, askBtn, menu, collapse)",
     );
     expect(toolbarSource).toContain("settings,\n      layoutMenu,");
     expect(sidebarSource).toContain('"header-layout-menu"');
     expect(sidebarSource).toContain('"模式"');
+  });
+
+  it("keeps note and immersive controls beside mode in compact layout", () => {
+    expect(toolbarSource).toContain(
+      "topRow.append(layoutMenu, openNote, askBtn, menu, collapse)",
+    );
+    expect(toolbarSource).toMatch(
+      /menuContent\.append\(\s*copyAll,\s*clear,\s*settings,/s,
+    );
+  });
+
+  it("toggles immersive mode from its configured reader shortcut", () => {
+    expect(sidebarSource).toContain("function handleImmersiveModeShortcut(");
+    expect(sidebarSource).toContain("getImmersiveModeShortcut(zoteroPrefs())");
+    expect(sidebarSource).toContain("void toggleAskMode(win)");
+    expect(sidebarSource).toContain(
+      "if (handleImmersiveModeShortcut(win, event)) return",
+    );
+    expect(sidebarSource).not.toContain("handleTranslateModeShortcut");
+    expect(toolbarSource).toContain(
+      "`沉浸式阅读（快捷键：${getImmersiveModeShortcut(zoteroPrefs())}）",
+    );
   });
 
   it("toggles compact menus explicitly for Zotero XUL documents", () => {

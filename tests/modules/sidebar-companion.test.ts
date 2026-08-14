@@ -51,6 +51,34 @@ describe("optional docked sidebar layout", () => {
     );
   });
 
+  it("uses empty note-header space as a window drag region", () => {
+    expect(sidebarCSS).toMatch(
+      /\.zai-note-window-head\s*\{[^}]*-moz-window-dragging:\s*drag;/s,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.zai-note-window-head button,[^}]*-moz-window-dragging:\s*no-drag;/s,
+    );
+  });
+
+  it("uses the docked AI toolbar title as a window drag region", () => {
+    expect(sidebarCSS).toMatch(
+      /\.zai-root-docked \.preset-switcher-top\s*\{[^}]*-moz-window-dragging:\s*drag;/s,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.zai-root-docked \.preset-switcher-top button,[^}]*-moz-window-dragging:\s*no-drag;/s,
+    );
+  });
+
+  it("exports the selected note-panel view from the overflow menu", () => {
+    expect(sidebarSource).toContain("function buildTabPdfExportMenuItem(");
+    expect(sidebarSource).toContain('buttonEl(doc, "▣ 转为 PDF")');
+    expect(sidebarSource).toContain("exportCurrentNotePanelAsPdf(sidebar)");
+    expect(sidebarSource).toContain("saveVisibleNoteBeforeSwitch(sidebar)");
+    expect(sidebarSource).toContain(
+      "menuItems.push(buildTabPdfExportMenuItem(doc, sidebar))",
+    );
+  });
+
   it("keeps the Zotero main-window geometry unchanged while switching modes", () => {
     expect(sidebarSource).toContain("const dockedSidebarLayouts = new WeakMap");
     expect(sidebarSource).toContain("columnWidth:");

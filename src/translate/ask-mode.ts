@@ -26,11 +26,7 @@ import {
   BREAKDOWN_LEGEND,
   type AskMode,
 } from "./asker";
-import {
-  cacheKey,
-  getCachedTranslation,
-  setCachedTranslation,
-} from "./cache";
+import { cacheKey, getCachedTranslation, setCachedTranslation } from "./cache";
 import { newConversationId, recordReadingConversation } from "./reading-log";
 import { matchesKeybinding, parseKeybinding } from "./keybinding";
 import {
@@ -43,6 +39,49 @@ import {
 const IMMERSIVE_CLICK_MODE_KEY =
   "extensions.zotero-ai-sidebar.immersiveClickMode";
 export type ImmersiveClickMode = "card" | "chooser";
+
+const IMMERSIVE_MODE_SHORTCUT_PREF =
+  "extensions.zotero-ai-sidebar.immersiveModeShortcut";
+export const DEFAULT_IMMERSIVE_MODE_SHORTCUT = "Alt+T";
+
+export function getImmersiveModeShortcut(prefs: PrefsStore): string {
+  const value = prefs.get(IMMERSIVE_MODE_SHORTCUT_PREF);
+  const normalized = typeof value === "string" ? value.trim() : "";
+  if (!normalized || normalized.toLowerCase() === "alt+r") {
+    return DEFAULT_IMMERSIVE_MODE_SHORTCUT;
+  }
+  return normalized;
+}
+
+export function setImmersiveModeShortcut(
+  prefs: PrefsStore,
+  value: string,
+): void {
+  prefs.set(
+    IMMERSIVE_MODE_SHORTCUT_PREF,
+    value.trim() || DEFAULT_IMMERSIVE_MODE_SHORTCUT,
+  );
+}
+
+export function isImmersiveModeShortcut(
+  event: Pick<
+    KeyboardEvent,
+    "key" | "shiftKey" | "ctrlKey" | "altKey" | "metaKey" | "isComposing"
+  >,
+  shortcut: string,
+): boolean {
+  if (event.isComposing) return false;
+  const binding = parseKeybinding(shortcut);
+  if (!binding) return false;
+  const eventKey = event.key === " " ? "Space" : event.key;
+  return (
+    eventKey.toLowerCase() === binding.key.toLowerCase() &&
+    event.shiftKey === binding.shift &&
+    event.ctrlKey === binding.ctrl &&
+    event.altKey === binding.alt &&
+    event.metaKey === binding.meta
+  );
+}
 
 // "chooser" (default): tap → the [✦ 问 AI · 译] action bar. "card":
 // one tap → unified 翻译+解释 card. Stored as a plain pref so the ⚙
@@ -70,11 +109,15 @@ export const DEFAULT_IMMERSIVE_PREV_KEY = "Shift+Enter";
 
 export function getImmersiveNextSentenceKey(prefs: PrefsStore): string {
   const value = prefs.get(IMMERSIVE_NEXT_KEY_PREF);
-  return typeof value === "string" && value ? value : DEFAULT_IMMERSIVE_NEXT_KEY;
+  return typeof value === "string" && value
+    ? value
+    : DEFAULT_IMMERSIVE_NEXT_KEY;
 }
 export function getImmersivePrevSentenceKey(prefs: PrefsStore): string {
   const value = prefs.get(IMMERSIVE_PREV_KEY_PREF);
-  return typeof value === "string" && value ? value : DEFAULT_IMMERSIVE_PREV_KEY;
+  return typeof value === "string" && value
+    ? value
+    : DEFAULT_IMMERSIVE_PREV_KEY;
 }
 export function setImmersiveNextSentenceKey(
   prefs: PrefsStore,
@@ -490,16 +533,28 @@ export class AskModeController {
     this.enableSeq++;
     this.active = false;
     if (this.boundWindow && this.pointerDownHandler) {
-      this.boundWindow.removeEventListener("pointerdown", this.pointerDownHandler, true);
+      this.boundWindow.removeEventListener(
+        "pointerdown",
+        this.pointerDownHandler,
+        true,
+      );
     }
     if (this.boundWindow && this.mouseDownHandler) {
-      this.boundWindow.removeEventListener("mousedown", this.mouseDownHandler, true);
+      this.boundWindow.removeEventListener(
+        "mousedown",
+        this.mouseDownHandler,
+        true,
+      );
     }
     if (this.boundWindow && this.clickHandler) {
       this.boundWindow.removeEventListener("click", this.clickHandler, true);
     }
     if (this.boundWindow && this.mouseMoveHandler) {
-      this.boundWindow.removeEventListener("mousemove", this.mouseMoveHandler, true);
+      this.boundWindow.removeEventListener(
+        "mousemove",
+        this.mouseMoveHandler,
+        true,
+      );
     }
     if (this.boundWindow && this.selectionShieldHandler) {
       for (const type of SELECTION_SHIELD_EVENTS) {
@@ -789,7 +844,8 @@ export class AskModeController {
     try {
       if (win.document?.hasFocus?.()) return; // reader already has focus
       const host = this.ctx.hostWindow;
-      if (host && isEditableTarget(host.document?.activeElement ?? null)) return;
+      if (host && isEditableTarget(host.document?.activeElement ?? null))
+        return;
       if (isEditableTarget(win.document?.activeElement ?? null)) return;
       win.focus();
     } catch {
@@ -837,7 +893,10 @@ export class AskModeController {
       tries < 40 && targetIndex >= 0 && targetIndex < count;
       tries++, targetIndex += delta
     ) {
-      const located = await this.locator.sentenceAtIndex(pageIndex, targetIndex);
+      const located = await this.locator.sentenceAtIndex(
+        pageIndex,
+        targetIndex,
+      );
       if (this.readingSeq !== token) return; // superseded by a newer move/jump
       if (!located) continue; // unlocatable sentence — skip to the next index
       const bundle =
@@ -1067,7 +1126,10 @@ export class AskModeController {
   private persistDefaultParagraph(on: boolean): void {
     const settings = loadTranslateSettings(this.ctx.prefs);
     if (settings.defaultParagraph === on) return;
-    saveTranslateSettings(this.ctx.prefs, { ...settings, defaultParagraph: on });
+    saveTranslateSettings(this.ctx.prefs, {
+      ...settings,
+      defaultParagraph: on,
+    });
   }
 
   // Re-run the translation INTO the existing card (no rebuild) — toggling
@@ -1138,7 +1200,9 @@ export class AskModeController {
     // 快捷翻译键 (default Space): translate the sentence the reading guide is on
     // (the same one Enter steps), else an explicit selection. Only consumes the
     // key when there's a target — otherwise Space keeps scrolling.
-    const quick = parseKeybinding(getImmersiveQuickTranslateKey(this.ctx.prefs));
+    const quick = parseKeybinding(
+      getImmersiveQuickTranslateKey(this.ctx.prefs),
+    );
     if (quick && matchesKeybinding(ev, quick)) {
       if (isEditableTarget(ev.target)) return; // typing in 追问 → don't hijack
       if (this.quickTranslateSelection(ev)) return;
@@ -1241,7 +1305,11 @@ export class AskModeController {
       void this.runFlow("read", reading);
       return true;
     }
-    const selection = sel as { pageIndex: number; text: string; rects: number[][] };
+    const selection = sel as {
+      pageIndex: number;
+      text: string;
+      rects: number[][];
+    };
     const locator = this.locator;
     void (async () => {
       let detected: DetectedSentence | null = null;
@@ -1275,7 +1343,11 @@ export class AskModeController {
     // non-empty text. No cache — always the CURRENT selection, never a previous one.
     const popup = readerSelectionPopupPoint(this.ctx.reader);
     if (popup?.text && popup.rects.length) {
-      return { pageIndex: popup.pageIndex, text: popup.text, rects: popup.rects };
+      return {
+        pageIndex: popup.pageIndex,
+        text: popup.text,
+        rects: popup.rects,
+      };
     }
     return null;
   }
@@ -1669,7 +1741,8 @@ export class AskModeController {
     const ctrl = this.abortCtrl;
     if (!ctrl) return;
     let buffer = "";
-    const superseded = () => this.overlay !== overlay || this.abortCtrl !== ctrl;
+    const superseded = () =>
+      this.overlay !== overlay || this.abortCtrl !== ctrl;
     try {
       for await (const chunk of answerMessages({
         messages: this.askMessages,
@@ -1893,7 +1966,8 @@ export class AskModeController {
     }
     let buffer = "";
     let usageLabel = "";
-    const superseded = () => this.overlay !== overlay || this.abortCtrl !== ctrl;
+    const superseded = () =>
+      this.overlay !== overlay || this.abortCtrl !== ctrl;
     try {
       for await (const chunk of translateSentence({
         sentence: current.text,
@@ -1913,7 +1987,11 @@ export class AskModeController {
         } else if (chunk.type === "error" && chunk.message) {
           overlay.setError(chunk.message);
         } else if (chunk.type === "usage") {
-          usageLabel = formatTokenLabel(chunk.input, chunk.output, chunk.cacheRead);
+          usageLabel = formatTokenLabel(
+            chunk.input,
+            chunk.output,
+            chunk.cacheRead,
+          );
         } else if (chunk.type === "done") {
           if (buffer) {
             overlay.setDone();
@@ -1987,7 +2065,8 @@ export class AskModeController {
     let buffer = "";
     let usageLabel = "";
     let needPlainFallback = false;
-    const superseded = () => this.overlay !== overlay || this.abortCtrl !== ctrl;
+    const superseded = () =>
+      this.overlay !== overlay || this.abortCtrl !== ctrl;
     try {
       for await (const chunk of answerSentence({
         sentence: current.text,
@@ -2006,11 +2085,17 @@ export class AskModeController {
           buffer += chunk.text;
           // Show the translation portion live; hide the trailing 词对 block until
           // it's parsed into hover spans on completion.
-          overlay.setBodyStreaming(parseTranslationWithPairs(buffer).translation);
+          overlay.setBodyStreaming(
+            parseTranslationWithPairs(buffer).translation,
+          );
         } else if (chunk.type === "error" && chunk.message) {
           overlay.setError(chunk.message);
         } else if (chunk.type === "usage") {
-          usageLabel = formatTokenLabel(chunk.input, chunk.output, chunk.cacheRead);
+          usageLabel = formatTokenLabel(
+            chunk.input,
+            chunk.output,
+            chunk.cacheRead,
+          );
         } else if (chunk.type === "done") {
           const parsed = parseTranslationWithPairs(buffer);
           if (parsed.translation.trim()) {
@@ -2102,7 +2187,8 @@ export class AskModeController {
     }
     let buffer = "";
     let usageLabel = "";
-    const superseded = () => this.overlay !== overlay || this.abortCtrl !== ctrl;
+    const superseded = () =>
+      this.overlay !== overlay || this.abortCtrl !== ctrl;
     try {
       for await (const chunk of answerSentence({
         sentence: current.text,
@@ -2123,7 +2209,11 @@ export class AskModeController {
         } else if (chunk.type === "error" && chunk.message) {
           overlay.setError(chunk.message);
         } else if (chunk.type === "usage") {
-          usageLabel = formatTokenLabel(chunk.input, chunk.output, chunk.cacheRead);
+          usageLabel = formatTokenLabel(
+            chunk.input,
+            chunk.output,
+            chunk.cacheRead,
+          );
         } else if (chunk.type === "done") {
           if (parseAlignedPairs(buffer).length) {
             apply(buffer);
@@ -2205,7 +2295,11 @@ export class AskModeController {
         } else if (chunk.type === "error" && chunk.message) {
           overlay.setBreakdownError(chunk.message);
         } else if (chunk.type === "usage") {
-          usageLabel = formatTokenLabel(chunk.input, chunk.output, chunk.cacheRead);
+          usageLabel = formatTokenLabel(
+            chunk.input,
+            chunk.output,
+            chunk.cacheRead,
+          );
         } else if (chunk.type === "done") {
           if (buffer.trim()) {
             // 拆解 token cost → bottom-right of the breakdown panel.
@@ -2225,7 +2319,8 @@ export class AskModeController {
         }
       }
     } catch (err) {
-      if (this.overlay === overlay) overlay.setBreakdownError(errorMessage(err));
+      if (this.overlay === overlay)
+        overlay.setBreakdownError(errorMessage(err));
     }
   }
 
@@ -2514,9 +2609,12 @@ function buildSelectionSentence(
     text: sel.text,
     pageIndex: sel.pageIndex,
     pageLabel: bundle.pageLabel,
-    rects: sel.rects.map(
-      (r) => [r[0], r[1], r[2], r[3]],
-    ) as DetectedSentence["rects"],
+    rects: sel.rects.map((r) => [
+      r[0],
+      r[1],
+      r[2],
+      r[3],
+    ]) as DetectedSentence["rects"],
     sortIndex: "",
     pageSentenceIndex: -1,
     pageSentenceCount: 0,
@@ -2533,7 +2631,9 @@ function parsePdfRects(value: unknown): number[][] {
     if (
       Array.isArray(entry) &&
       entry.length >= 4 &&
-      entry.slice(0, 4).every((n) => typeof n === "number" && Number.isFinite(n))
+      entry
+        .slice(0, 4)
+        .every((n) => typeof n === "number" && Number.isFinite(n))
     ) {
       out.push(entry.slice(0, 4) as number[]);
     }

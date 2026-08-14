@@ -290,8 +290,9 @@ describe("preference save controls", () => {
     expect(preferenceMarkup).toContain("窗口内可选择账号、模型和思考强度");
     expect(preferenceMarkup).toContain("单击直接打开翻译卡");
     expect(preferenceMarkup).toContain("翻译时结合上下句");
-    expect(preferenceMarkup).toContain("快捷键（5 项）");
+    expect(preferenceMarkup).toContain("快捷键（6 项）");
     for (const id of [
+      "zai-immersive-mode-key",
       "zai-translate-preset",
       "zai-translate-model",
       "zai-translate-thinking",
