@@ -72,11 +72,16 @@ describe("optional docked sidebar layout", () => {
   it("exports the selected note-panel view from the overflow menu", () => {
     expect(sidebarSource).toContain("function buildTabPdfExportMenuItem(");
     expect(sidebarSource).toContain('buttonEl(doc, "▣ 转为 PDF")');
-    expect(sidebarSource).toContain("exportCurrentNotePanelAsPdf(sidebar)");
+    expect(sidebarSource).toContain("exportCurrentNotePanelAsPdf(");
     expect(sidebarSource).toContain("saveVisibleNoteBeforeSwitch(sidebar)");
+    expect(sidebarSource).toContain("renderPdfExportDialog(");
+    expect(sidebarSource).toContain("copyPdfFileToClipboard(completedPath)");
+    expect(sidebarSource).toContain("copyToClipboard(doc, completedPath");
     expect(sidebarSource).toContain(
       "menuItems.push(buildTabPdfExportMenuItem(doc, sidebar))",
     );
+    expect(sidebarCSS).toContain(".zai-pdf-export-layer");
+    expect(sidebarCSS).toContain(".zai-pdf-export-actions");
   });
 
   it("keeps the Zotero main-window geometry unchanged while switching modes", () => {

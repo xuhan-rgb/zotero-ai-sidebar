@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 
 import {
   buildPanelPdfHtml,
+  configurePdfPrintSettings,
+  panelPdfFileName,
   panelPdfPrintCss,
 } from "../../src/modules/tab-pdf-export";
 
@@ -59,5 +61,35 @@ describe("note-panel PDF export", () => {
     expect(css).toContain(
       "#editor-container .editor .editor-core .primary-editor{display:block!important;min-height:0!important;height:auto!important;overflow:visible!important}",
     );
+  });
+
+  it("uses readable view-specific PDF filenames", () => {
+    expect(panelPdfFileName("A  Paper: Test", "AI笔记")).toBe(
+      "A Paper_ Test - AI笔记.pdf",
+    );
+    expect(panelPdfFileName("论文标题", "阅读路线")).toBe(
+      "论文标题 - 阅读路线.pdf",
+    );
+    expect(panelPdfFileName("   ", "全文总览")).toBe(
+      "Zotero论文 - 全文总览.pdf",
+    );
+  });
+
+  it("configures silent PDF-to-file output without a system print dialog", () => {
+    const settings = {
+      kOutputDestinationFile: 1,
+      kOutputFormatPDF: 2,
+    } as unknown as nsIPrintSettings;
+
+    configurePdfPrintSettings(settings, "/tmp/Paper - AI笔记.pdf");
+
+    expect(settings.outputDestination).toBe(1);
+    expect(settings.outputFormat).toBe(2);
+    expect(settings.toFileName).toBe("/tmp/Paper - AI笔记.pdf");
+    expect(settings.printSilent).toBe(true);
+    expect(settings.printBGColors).toBe(true);
+    expect(settings.printBGImages).toBe(true);
+    expect(settings.headerStrLeft).toBe("");
+    expect(settings.footerStrRight).toBe("");
   });
 });

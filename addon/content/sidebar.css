@@ -5680,6 +5680,161 @@ div.math-fallback {
 
 /* Quick Ask lives outside the persistent sidebar tree so closing the layer can
    destroy every temporary DOM/state reference without touching chat history. */
+.zai-pdf-export-layer {
+  position: fixed;
+  z-index: 12500;
+  inset: 0;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(35, 31, 26, 0.38);
+  font-family: var(--zai-font);
+  -moz-user-select: text;
+  user-select: text;
+  animation: zai-quick-ask-layer-in 130ms ease-out;
+}
+
+.zai-pdf-export-dialog {
+  display: grid;
+  width: min(560px, calc(100vw - 48px));
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 14px;
+  box-sizing: border-box;
+  padding: 20px;
+  overflow: hidden;
+  border: 1px solid rgba(120, 88, 57, 0.3);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fffaf2, #fffdf9 48%);
+  box-shadow:
+    0 24px 64px rgba(43, 32, 21, 0.26),
+    0 2px 7px rgba(66, 45, 26, 0.12);
+  color: var(--zai-text);
+  animation: zai-quick-ask-dialog-in 170ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.zai-pdf-export-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border-radius: 12px;
+  background: #f1e6d8;
+  color: #9e4926;
+  font: 800 11px/1 var(--zai-mono);
+}
+
+.zai-pdf-export-icon.is-done {
+  background: #e2f2e7;
+  color: #287448;
+  font-size: 21px;
+}
+
+.zai-pdf-export-icon.is-error {
+  background: #f8e4e1;
+  color: #a53f32;
+  font-size: 21px;
+}
+
+.zai-pdf-export-content {
+  display: grid;
+  min-width: 0;
+  align-content: center;
+  gap: 7px;
+}
+
+.zai-pdf-export-title {
+  color: #30271f;
+  font-size: 16px;
+}
+
+.zai-pdf-export-file-name,
+.zai-pdf-export-path {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--zai-muted);
+  font-size: 12px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.zai-pdf-export-path {
+  padding: 7px 9px;
+  border: 1px solid rgba(151, 121, 87, 0.18);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.68);
+  font-family: var(--zai-mono);
+  font-size: 10.5px;
+}
+
+.zai-pdf-export-progress {
+  height: 5px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #eadfd1;
+}
+
+.zai-pdf-export-progress-bar {
+  display: block;
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #c96f43, #e7a37c);
+  animation: zai-pdf-export-progress 1.1s ease-in-out infinite;
+}
+
+.zai-pdf-export-error {
+  color: #a53f32;
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.zai-pdf-export-actions {
+  display: flex;
+  grid-column: 1 / -1;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 7px;
+  padding-top: 5px;
+}
+
+.zai-pdf-export-actions button {
+  min-height: 30px;
+  padding: 0 12px;
+  border: 1px solid rgba(130, 101, 70, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--zai-text);
+  cursor: pointer;
+  font: 650 12px/1 var(--zai-font);
+}
+
+.zai-pdf-export-actions button:hover {
+  background: #fff;
+  border-color: rgba(169, 78, 37, 0.38);
+}
+
+.zai-pdf-export-actions button.is-primary {
+  border-color: #a94e25;
+  background: #a94e25;
+  color: #fff;
+}
+
+.zai-pdf-export-actions button:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+@keyframes zai-pdf-export-progress {
+  from {
+    transform: translateX(-105%);
+  }
+  to {
+    transform: translateX(245%);
+  }
+}
+
 .zai-quick-ask-layer {
   position: fixed;
   z-index: 12000;

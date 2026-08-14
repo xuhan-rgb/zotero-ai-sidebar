@@ -288,9 +288,17 @@ import { renderNetworkDiagramAnalysisCard } from "./network-diagram-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import {
   buildPanelPdfHtml,
-  printContentWindowAsPdf,
-  printPanelHtmlAsPdf,
+  copyPdfFileToClipboard,
+  panelPdfFileName,
+  pickPanelPdfSavePath,
+  saveContentWindowAsPdf,
+  savePanelHtmlAsPdf,
 } from "./tab-pdf-export";
+import {
+  renderPdfExportDialog,
+  type PdfExportDialogActions,
+  type PdfExportDialogState,
+} from "./pdf-export-dialog";
 import {
   collectPluginCss,
   openOverviewInBrowser,
@@ -6755,38 +6763,73 @@ function buildTabPdfExportMenuItem(
   sidebar: WindowSidebarState,
 ): HTMLButtonElement {
   const item = buttonEl(doc, "▣ 转为 PDF");
-  const original = item.textContent ?? "转为 PDF";
-  const originalTitle = "将当前笔记、路线或总览页面转换为 PDF";
-  item.title = originalTitle;
-  item.dataset.zaiKeepOpen = "1";
+  item.title = "将当前笔记、路线或总览页面转换为 PDF";
   item.addEventListener("click", () => {
-    item.disabled = true;
-    item.textContent = "转换中…";
-    void exportCurrentNotePanelAsPdf(sidebar)
-      .then(() => {
-        item.textContent = "打印流程已结束";
-      })
-      .catch((err) => {
-        item.textContent = "转换失败";
-        item.title = errorMessage(err);
-      })
-      .finally(() => {
-        doc.defaultView?.setTimeout(() => {
-          item.textContent = original;
-          item.title = originalTitle;
-          item.disabled = false;
-        }, 2200);
-      });
+    void openCurrentNotePanelPdfExport(sidebar);
   });
   return item;
 }
 
+async function openCurrentNotePanelPdfExport(
+  sidebar: WindowSidebarState,
+): Promise<void> {
+  const doc = sidebar.noteMount.ownerDocument!;
+  const mainWindow = hostWindowForSidebar(sidebar);
+  if (!mainWindow) throw new Error("无法获取 Zotero 主窗口");
+  const info = currentNotePanelPdfInfo(sidebar);
+  const fileName = panelPdfFileName(info.paperTitle, info.fileLabel);
+  doc.querySelector(".zai-pdf-export-layer")?.remove();
+
+  let dialog: HTMLElement | null = null;
+  let completedPath = "";
+  const close = () => {
+    dialog?.remove();
+    dialog = null;
+  };
+  const actions: PdfExportDialogActions = {
+    onCopyFile: () => copyPdfFileToClipboard(completedPath),
+    onCopyPath: () =>
+      copyToClipboard(doc, completedPath, "pdf-export:copy-path"),
+    onOpen: () => Zotero.launchFile(completedPath),
+    onClose: close,
+  };
+  const renderDialog = (state: PdfExportDialogState) => {
+    const next = renderPdfExportDialog(doc, state, actions);
+    if (dialog?.isConnected) dialog.replaceWith(next);
+    else sidebar.mount.before(next);
+    dialog = next;
+  };
+
+  renderDialog({ status: "choosing", fileName });
+  await waitForDocumentPaint(doc);
+  const targetPath = await pickPanelPdfSavePath(mainWindow, fileName);
+  if (!targetPath) {
+    close();
+    return;
+  }
+
+  renderDialog({ status: "converting", fileName });
+  try {
+    await exportCurrentNotePanelAsPdf(sidebar, targetPath, mainWindow);
+    completedPath = targetPath;
+    renderDialog({ status: "done", fileName, path: targetPath });
+  } catch (err) {
+    renderDialog({
+      status: "error",
+      fileName,
+      message: errorMessage(err),
+    });
+  }
+}
+
 async function exportCurrentNotePanelAsPdf(
   sidebar: WindowSidebarState,
+  targetPath: string,
+  mainWindow: Window,
 ): Promise<void> {
   await saveVisibleNoteBeforeSwitch(sidebar);
   const doc = sidebar.noteMount.ownerDocument!;
-  const title = currentNotePanelPdfTitle(sidebar);
+  const title = currentNotePanelPdfInfo(sidebar).documentTitle;
 
   if (sidebar.overviewActive) {
     const overview = sidebar.noteMount.querySelector(
@@ -6801,7 +6844,7 @@ async function exportCurrentNotePanelAsPdf(
       pluginCss: collectPluginCss(doc),
       kind: "overview",
     });
-    await printPanelHtmlAsPdf(html);
+    await savePanelHtmlAsPdf(html, targetPath, mainWindow);
     return;
   }
 
@@ -6810,40 +6853,64 @@ async function exportCurrentNotePanelAsPdf(
 
   const editorWindow =
     findActiveNoteEditor(sidebar)?.getCurrentInstance?.()?._iframeWindow;
-  const exposedEditorWindow = editorWindow?.wrappedJSObject ?? editorWindow;
-  if (
-    editorWindow &&
-    typeof (exposedEditorWindow as Window & { zoteroPrint?: unknown })
-      .zoteroPrint === "function"
-  ) {
-    await printContentWindowAsPdf(editorWindow, "note");
+  if (editorWindow?.browsingContext) {
+    await saveContentWindowAsPdf(editorWindow, "note", targetPath, mainWindow);
     return;
   }
 
   const noteHtml = note.getNote?.() || "";
   if (!noteHtml.trim()) throw new Error("当前笔记暂无可导出的内容");
-  await printPanelHtmlAsPdf(
+  await savePanelHtmlAsPdf(
     buildPanelPdfHtml({
       title,
       bodyHtml: noteHtml,
       pluginCss: collectPluginCss(doc),
       kind: "note",
     }),
+    targetPath,
+    mainWindow,
   );
 }
 
-function currentNotePanelPdfTitle(sidebar: WindowSidebarState): string {
+function currentNotePanelPdfInfo(sidebar: WindowSidebarState): {
+  documentTitle: string;
+  paperTitle: string;
+  fileLabel: "AI笔记" | "阅读路线" | "全文总览";
+} {
   const panelItemID = states.get(sidebar.mount)?.itemID ?? null;
   const panelItem = panelItemID == null ? null : getZoteroItem(panelItemID);
   const parent = panelItem ? parentItemForNotes(panelItem) : null;
   const paperTitle =
     parent?.getField?.("title") || parent?.getDisplayTitle?.() || "";
   if (sidebar.overviewActive) {
-    return paperTitle ? `${paperTitle} · 全文总览` : "全文总览";
+    return {
+      documentTitle: paperTitle ? `${paperTitle} · 全文总览` : "全文总览",
+      paperTitle,
+      fileLabel: "全文总览",
+    };
   }
   const note = sidebar.noteItemID ? getZoteroItem(sidebar.noteItemID) : null;
   const viewTitle = isZoteroNote(note) ? noteTitle(note) : "AI 笔记";
-  return paperTitle ? `${paperTitle} · ${viewTitle}` : viewTitle;
+  const fileLabel =
+    isZoteroNote(note) && isReadingRouteNote(note) ? "阅读路线" : "AI笔记";
+  return {
+    documentTitle: paperTitle ? `${paperTitle} · ${viewTitle}` : viewTitle,
+    paperTitle,
+    fileLabel,
+  };
+}
+
+function waitForDocumentPaint(doc: Document): Promise<void> {
+  return new Promise((resolve) => {
+    const requestFrame = doc.defaultView?.requestAnimationFrame.bind(
+      doc.defaultView,
+    );
+    if (!requestFrame) {
+      resolve();
+      return;
+    }
+    requestFrame(() => requestFrame(() => resolve()));
+  });
 }
 
 function keepOnlyActiveOverviewPane(overview: HTMLElement): void {

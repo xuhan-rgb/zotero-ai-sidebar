@@ -10,13 +10,19 @@ interface PanelPdfHtmlOptions {
 }
 
 interface HiddenPrintBrowser {
+  browsingContext: PrintableBrowsingContext;
   load(source: string): Promise<boolean>;
   waitForDocument(options?: {
     allowInteractiveAfter?: number | false;
   }): Promise<void>;
-  print(options?: object): Promise<void>;
   destroy(): void;
 }
+
+type PrintableBrowsingContext = BrowsingContext & {
+  print(settings: nsIPrintSettings): Promise<void>;
+};
+
+type PanelPdfFileLabel = "AI笔记" | "阅读路线" | "全文总览";
 
 interface HiddenPrintBrowserConstructor {
   new (options: { useHiddenFrame: false }): HiddenPrintBrowser;
@@ -75,12 +81,82 @@ export function buildPanelPdfHtml(options: PanelPdfHtmlOptions): string {
   ].join("\n");
 }
 
-// Print an already-rendered Zotero note editor. This preserves Zotero's own
+export function panelPdfFileName(
+  paperTitle: string,
+  label: PanelPdfFileLabel,
+): string {
+  const cleanedTitle = paperTitle
+    .replace(/[\\/:*?"<>|\u0000-\u001f]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .replace(/[. ]+$/g, "");
+  const title = cleanedTitle || "Zotero论文";
+  const suffix = ` - ${label}.pdf`;
+  return `${title.slice(0, Math.max(1, 180 - suffix.length))}${suffix}`;
+}
+
+export function configurePdfPrintSettings(
+  settings: nsIPrintSettings,
+  targetPath: string,
+): void {
+  settings.outputDestination = settings.kOutputDestinationFile ?? 1;
+  settings.outputFormat = settings.kOutputFormatPDF ?? 2;
+  settings.toFileName = targetPath;
+  settings.printSilent = true;
+  settings.printBGColors = true;
+  settings.printBGImages = true;
+  settings.headerStrLeft = "";
+  settings.headerStrCenter = "";
+  settings.headerStrRight = "";
+  settings.footerStrLeft = "";
+  settings.footerStrCenter = "";
+  settings.footerStrRight = "";
+}
+
+export async function pickPanelPdfSavePath(
+  mainWindow: Window,
+  suggestedName: string,
+): Promise<string | null> {
+  if (!mainWindow.browsingContext) throw new Error("当前窗口不支持文件选择器");
+  const nsFilePicker = Components.interfaces.nsIFilePicker;
+  const filePickerClass = (
+    Components.classes as unknown as Record<
+      string,
+      { createInstance(iid: typeof nsFilePicker): nsIFilePicker }
+    >
+  )["@mozilla.org/filepicker;1"];
+  const picker = filePickerClass.createInstance(nsFilePicker);
+  picker.init(
+    mainWindow.browsingContext,
+    "保存转换后的 PDF",
+    nsFilePicker.modeSave,
+  );
+  picker.appendFilter("PDF 文件", "*.pdf");
+  picker.defaultExtension = "pdf";
+  picker.defaultString = suggestedName;
+  const result = await new Promise<nsIFilePicker.ResultCode>((resolve) => {
+    picker.open({ done: resolve });
+  });
+  if (result === nsFilePicker.returnCancel) return null;
+  if (
+    result !== nsFilePicker.returnOK &&
+    result !== nsFilePicker.returnReplace
+  ) {
+    return null;
+  }
+  const path = picker.file?.path;
+  if (!path) return null;
+  return /\.pdf$/i.test(path) ? path : `${path}.pdf`;
+}
+
+// Export an already-rendered Zotero note editor. This preserves Zotero's own
 // equation, image, citation, and note CSS rendering instead of reconstructing
 // the editor from serialized note HTML.
-export async function printContentWindowAsPdf(
+export async function saveContentWindowAsPdf(
   contentWindow: Window,
   kind: PanelPdfKind,
+  targetPath: string,
+  mainWindow: Window,
 ): Promise<void> {
   await waitForPrintableContent(contentWindow);
   const doc = contentWindow.document;
@@ -91,26 +167,25 @@ export async function printContentWindowAsPdf(
   const hadPrintClass = doc.body?.classList.contains("zai-pdf-note") ?? false;
   if (kind === "note") doc.body?.classList.add("zai-pdf-note");
   try {
-    const exposedWindow = contentWindow.wrappedJSObject ?? contentWindow;
-    const print = (
-      exposedWindow as Window & {
-        zoteroPrint?: (options?: object) => Promise<void>;
-      }
-    ).zoteroPrint;
-    if (typeof print !== "function") {
-      throw new Error("当前 Zotero 版本未提供原生 PDF 打印接口");
-    }
-    await print.call(exposedWindow, {});
+    await printBrowsingContextToPdf(
+      contentWindow.browsingContext as PrintableBrowsingContext,
+      targetPath,
+      mainWindow,
+    );
   } finally {
     if (!hadPrintClass) doc.body?.classList.remove("zai-pdf-note");
     style.remove();
   }
 }
 
-// Standalone printing is used for 总览 and as a fallback when Zotero's note
-// editor iframe is unavailable. HiddenBrowser is Zotero's native print path and
-// opens the system print dialog, where the user chooses “打印到文件 / PDF”.
-export async function printPanelHtmlAsPdf(html: string): Promise<void> {
+// Standalone rendering is used for 总览 and as a fallback when Zotero's note
+// editor iframe is unavailable. HiddenBrowser loads the print-only document;
+// the browsing context writes it directly to the user-selected PDF path.
+export async function savePanelHtmlAsPdf(
+  html: string,
+  targetPath: string,
+  mainWindow: Window,
+): Promise<void> {
   const tempRoot = Zotero.getTempDirectory?.()?.path;
   if (!tempRoot) throw new Error("无法创建 PDF 打印页面");
   const path = appendLocalPath(
@@ -126,11 +201,94 @@ export async function printPanelHtmlAsPdf(html: string): Promise<void> {
     const loaded = await browser.load(path);
     if (!loaded) throw new Error("PDF 打印页面加载失败");
     await browser.waitForDocument();
-    await browser.print({});
+    await printBrowsingContextToPdf(
+      browser.browsingContext,
+      targetPath,
+      mainWindow,
+    );
   } finally {
     browser.destroy();
     await Zotero.File.removeIfExists(path).catch(() => undefined);
   }
+}
+
+export function copyPdfFileToClipboard(path: string): void {
+  const transferable = (
+    Components.classes as unknown as Record<
+      string,
+      {
+        createInstance(
+          iid: typeof Components.interfaces.nsITransferable,
+        ): nsITransferable;
+      }
+    >
+  )["@mozilla.org/widget/transferable;1"].createInstance(
+    Components.interfaces.nsITransferable,
+  );
+  transferable.init(null as unknown as nsILoadContext);
+
+  const file = Zotero.File.pathToFile(path);
+  transferable.addDataFlavor("application/x-moz-file");
+  transferable.setTransferData("application/x-moz-file", file);
+
+  const fileURI = Zotero.File.pathToFileURI(path);
+  addClipboardString(transferable, "text/uri-list", fileURI);
+  addClipboardString(
+    transferable,
+    "x-special/gnome-copied-files",
+    `copy\n${fileURI}`,
+  );
+  Services.clipboard.setData(
+    transferable,
+    null as unknown as nsIClipboardOwner,
+    Components.interfaces.nsIClipboard.kGlobalClipboard,
+  );
+}
+
+async function printBrowsingContextToPdf(
+  browsingContext: PrintableBrowsingContext,
+  targetPath: string,
+  mainWindow: Window,
+): Promise<void> {
+  const printUtils = (
+    mainWindow as Window & {
+      PrintUtils?: {
+        getPrintSettings(
+          printerName: string,
+          defaultsOnly: boolean,
+        ): nsIPrintSettings;
+      };
+    }
+  ).PrintUtils;
+  if (!printUtils) throw new Error("当前 Zotero 版本未提供 PDF 输出接口");
+  const settings = printUtils.getPrintSettings("", false);
+  configurePdfPrintSettings(settings, targetPath);
+  await IOUtils.remove(targetPath, { ignoreAbsent: true });
+  await browsingContext.print(settings);
+  const info = await IOUtils.stat(targetPath).catch(() => null);
+  if (!info || (info.size ?? 0) <= 0) throw new Error("PDF 文件生成失败");
+}
+
+function addClipboardString(
+  transferable: nsITransferable,
+  flavor: string,
+  value: string,
+): void {
+  const supportsString = (
+    Components.classes as unknown as Record<
+      string,
+      {
+        createInstance(
+          iid: typeof Components.interfaces.nsISupportsString,
+        ): nsISupportsString;
+      }
+    >
+  )["@mozilla.org/supports-string;1"].createInstance(
+    Components.interfaces.nsISupportsString,
+  );
+  supportsString.data = value;
+  transferable.addDataFlavor(flavor);
+  transferable.setTransferData(flavor, supportsString);
 }
 
 async function waitForPrintableContent(contentWindow: Window): Promise<void> {
