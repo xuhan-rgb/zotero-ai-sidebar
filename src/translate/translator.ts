@@ -7,10 +7,10 @@ import type {
 } from "../settings/types";
 
 const SYSTEM_PROMPT =
-  "英译中。只输出简体中文译文；术语、缩写、公式、模型名可保留原文。";
+  "英译中。准确、通顺，采用自然的中文学术表达；保持原文逻辑与句间衔接，不要逐词硬译。完整保留术语、缩写、变量、上下标、公式、集合符号及公式编号，不要改写或拆散公式。只输出简体中文译文。";
 
 const STRICT_SYSTEM_PROMPT =
-  "英译中，只输出含中文的译文；不要英文改写、解释或引号。";
+  "英译中。准确、通顺，采用自然的中文学术表达；完整保留变量、上下标、公式、集合符号及公式编号。只输出含中文的译文，不要英文改写、解释或引号。";
 const TRANSLATE_CONTEXT_CHAR_LIMIT = 600;
 const TRANSLATE_MAX_OUTPUT_TOKENS = 384;
 

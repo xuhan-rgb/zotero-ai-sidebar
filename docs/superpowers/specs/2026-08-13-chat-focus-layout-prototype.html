@@ -1,0 +1,1208 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero AI 对话 · 专注布局原型</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f1ede5;
+        --panel: #fffdf9;
+        --panel-strong: #ffffff;
+        --text: #25211d;
+        --muted: #8a7e72;
+        --faint: #b7aa9d;
+        --border: #e3d8ca;
+        --accent: #c7663d;
+        --accent-strong: #9f4528;
+        --accent-soft: #fff1e8;
+        --blue: #5f54ff;
+        --blue-soft: #f1efff;
+        --green: #2e7c59;
+        --shadow: 0 20px 55px rgba(75, 55, 35, 0.14);
+        --radius: 14px;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 12% 0%, #fff9ef 0 16%, transparent 37%),
+          linear-gradient(145deg, #eee7dd, #f7f4ee 48%, #ebe6de);
+        color: var(--text);
+        font-family:
+          Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      button,
+      select {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      .page {
+        width: min(1180px, calc(100% - 28px));
+        margin: 0 auto;
+        padding: 24px 0 42px;
+      }
+
+      .intro {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 18px;
+        align-items: end;
+        margin-bottom: 18px;
+      }
+
+      .eyebrow {
+        margin: 0 0 6px;
+        color: var(--accent-strong);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(23px, 4vw, 38px);
+        line-height: 1.16;
+      }
+
+      .subtitle {
+        max-width: 720px;
+        margin: 9px 0 0;
+        color: #6f645a;
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .mode-picker {
+        display: inline-flex;
+        gap: 4px;
+        padding: 4px;
+        border: 1px solid rgba(120, 89, 60, 0.16);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.74);
+        box-shadow: 0 8px 26px rgba(75, 55, 35, 0.08);
+      }
+
+      .mode-picker button {
+        min-width: 86px;
+        padding: 8px 12px;
+        border: 0;
+        border-radius: 9px;
+        background: transparent;
+        cursor: pointer;
+        font-size: 13px;
+        font-weight: 750;
+      }
+
+      .mode-picker button[aria-pressed="true"] {
+        background: var(--panel-strong);
+        color: var(--accent-strong);
+        box-shadow: 0 2px 10px rgba(75, 55, 35, 0.12);
+      }
+
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(380px, 548px) minmax(300px, 1fr);
+        gap: 22px;
+        align-items: start;
+      }
+
+      .prototype-frame {
+        overflow: hidden;
+        min-height: 760px;
+        border: 1px solid rgba(117, 84, 53, 0.22);
+        border-radius: 18px;
+        background: var(--panel);
+        box-shadow: var(--shadow);
+      }
+
+      .prototype-caption {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        min-height: 42px;
+        padding: 9px 13px;
+        border-bottom: 1px solid var(--border);
+        background: #f5efe7;
+        color: #66594d;
+        font-size: 12px;
+      }
+
+      .prototype-caption strong {
+        color: var(--text);
+        font-size: 13px;
+      }
+
+      .recommended {
+        padding: 3px 8px;
+        border-radius: 999px;
+        background: #e7f4ec;
+        color: var(--green);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .chat {
+        position: relative;
+        display: flex;
+        flex-direction: column;
+        height: 718px;
+        background:
+          linear-gradient(rgba(255, 253, 249, 0.94), rgba(255, 253, 249, 0.94)),
+          repeating-linear-gradient(
+            -35deg,
+            transparent 0 35px,
+            rgba(166, 126, 88, 0.035) 36px 37px
+          );
+      }
+
+      .toolbar {
+        border-bottom: 1px solid var(--border);
+        background: rgba(255, 255, 255, 0.84);
+      }
+
+      .toolbar-row,
+      .focus-toolbar,
+      .zen-toolbar {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-width: 0;
+      }
+
+      .toolbar-row {
+        min-height: 48px;
+        padding: 7px 10px;
+      }
+
+      .toolbar-row + .toolbar-row {
+        min-height: 43px;
+        border-top: 1px solid rgba(227, 216, 202, 0.72);
+      }
+
+      .toolbar-title {
+        flex: 0 0 auto;
+        font-weight: 850;
+      }
+
+      .preset {
+        min-width: 0;
+        flex: 1;
+        height: 34px;
+        padding: 0 10px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: var(--panel-strong);
+        color: var(--text);
+      }
+
+      .ui-btn,
+      .icon-btn,
+      .chip,
+      .prompt-btn {
+        border: 1px solid var(--border);
+        background: var(--panel-strong);
+        cursor: pointer;
+      }
+
+      .ui-btn {
+        flex: 0 0 auto;
+        min-height: 32px;
+        padding: 5px 10px;
+        border-radius: 9px;
+      }
+
+      .icon-btn {
+        display: inline-grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 33px;
+        height: 33px;
+        padding: 0;
+        border-radius: 10px;
+        font-weight: 850;
+      }
+
+      .switch {
+        width: 42px;
+        height: 24px;
+        padding: 3px;
+        border-radius: 99px;
+        background: #e7b293;
+      }
+
+      .switch::after {
+        display: block;
+        width: 18px;
+        height: 18px;
+        margin-left: 18px;
+        border-radius: 50%;
+        background: #c97a4b;
+        content: "";
+      }
+
+      .focus-toolbar {
+        min-height: 50px;
+        padding: 8px 10px;
+      }
+
+      .focus-toolbar .preset {
+        height: 33px;
+      }
+
+      .zen-toolbar {
+        min-height: 38px;
+        padding: 5px 8px 4px 12px;
+        border-bottom: 1px solid rgba(227, 216, 202, 0.65);
+      }
+
+      .zen-toolbar .model-name {
+        min-width: 0;
+        overflow: hidden;
+        flex: 1;
+        color: var(--muted);
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .context-card {
+        min-width: 0;
+        padding: 10px 12px;
+        border-bottom: 1px solid var(--border);
+        background: rgba(255, 253, 248, 0.76);
+      }
+
+      .context-title {
+        overflow: hidden;
+        font-size: 12px;
+        font-weight: 800;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .context-meta {
+        margin-top: 4px;
+        color: var(--muted);
+        font:
+          11px/1.4 ui-monospace,
+          monospace;
+      }
+
+      .focus-context {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 36px;
+        padding: 5px 11px;
+      }
+
+      .focus-context .context-title {
+        flex: 1;
+      }
+
+      .badge {
+        flex: 0 0 auto;
+        padding: 2px 7px;
+        border-radius: 999px;
+        background: #e8f3ee;
+        color: var(--green);
+        font-size: 10px;
+        font-weight: 800;
+      }
+
+      .messages {
+        min-height: 0;
+        overflow: auto;
+        flex: 1;
+        padding: 13px 15px 18px;
+        scrollbar-color: #d4c5b6 transparent;
+      }
+
+      .thought {
+        margin: 0 0 13px;
+        color: #256c83;
+        font-size: 13px;
+        font-weight: 800;
+      }
+
+      .thinking {
+        margin: 0 0 15px 7px;
+        padding: 5px 0 5px 16px;
+        border-left: 2px solid #d8eaf1;
+        color: #756b61;
+        font-size: 12px;
+        font-weight: 650;
+        line-height: 1.6;
+      }
+
+      .answer {
+        font-size: 14px;
+        line-height: 1.65;
+      }
+
+      .answer p {
+        margin: 0 0 9px;
+      }
+
+      .answer ol {
+        margin: 4px 0 12px;
+        padding-left: 25px;
+      }
+
+      .answer li {
+        margin: 5px 0;
+      }
+
+      code {
+        padding: 2px 5px;
+        border: 1px solid #ead6c8;
+        border-radius: 6px;
+        background: #fff7f2;
+        color: var(--accent-strong);
+      }
+
+      .conversation-bar {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+        min-height: 52px;
+        padding: 8px 10px;
+        border-top: 2px solid #8b79ff;
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .focus-conversation {
+        min-height: 40px;
+        padding: 5px 9px;
+        border-top-width: 1px;
+      }
+
+      .tabs,
+      .conversation-actions {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .tab {
+        display: grid;
+        place-items: center;
+        min-width: 36px;
+        height: 36px;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--panel-strong);
+        color: #665f58;
+        font-weight: 800;
+      }
+
+      .focus-conversation .tab {
+        min-width: 30px;
+        height: 29px;
+      }
+
+      .tab.active {
+        border-color: #7b68ff;
+        background: var(--blue-soft);
+        color: #4d3fd1;
+      }
+
+      .quick-prompts {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 6px;
+        padding: 7px 10px 0;
+      }
+
+      .prompt-btn {
+        overflow: hidden;
+        min-height: 34px;
+        padding: 5px 8px;
+        border-radius: 10px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .prompt-btn.accent {
+        border-color: #e1aa8c;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-weight: 800;
+      }
+
+      .composer {
+        padding: 8px 10px 10px;
+        background: rgba(255, 255, 255, 0.92);
+      }
+
+      .input-box {
+        position: relative;
+        min-height: 126px;
+        border: 1px solid #e8d4c3;
+        border-radius: 20px;
+        background: var(--panel-strong);
+      }
+
+      .focus-input {
+        min-height: 100px;
+      }
+
+      .zen-input {
+        min-height: 86px;
+      }
+
+      .placeholder {
+        padding: 14px;
+        color: var(--faint);
+        font-size: 14px;
+      }
+
+      .input-tools {
+        position: absolute;
+        right: 10px;
+        bottom: 9px;
+        left: 10px;
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+
+      .input-tools .spacer {
+        flex: 1;
+      }
+
+      .inline-tool {
+        border: 0;
+        background: transparent;
+        color: #776b60;
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      .send {
+        display: grid;
+        place-items: center;
+        width: 34px;
+        height: 34px;
+        border: 0;
+        border-radius: 12px;
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+        font-size: 19px;
+        font-weight: 900;
+      }
+
+      .composer-footer {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 34px;
+        padding: 6px 3px 0;
+        color: var(--muted);
+        font:
+          11px/18px ui-monospace,
+          monospace;
+        white-space: nowrap;
+      }
+
+      .composer-footer .spacer {
+        flex: 1;
+      }
+
+      .model-state {
+        overflow: hidden;
+        max-width: 235px;
+        padding: 3px 8px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--accent-strong);
+        cursor: pointer;
+        font: 800 12px/18px inherit;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .zen-composer {
+        padding-top: 5px;
+      }
+
+      .menu {
+        position: absolute;
+        z-index: 20;
+        display: none;
+        width: 230px;
+        padding: 7px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 14px 38px rgba(61, 44, 29, 0.22);
+      }
+
+      .menu.open {
+        display: block;
+      }
+
+      .header-menu {
+        top: 49px;
+        right: 9px;
+      }
+
+      .conversation-menu {
+        right: 9px;
+        bottom: 144px;
+      }
+
+      .plus-menu {
+        bottom: 58px;
+        left: 12px;
+      }
+
+      .menu-title {
+        padding: 6px 8px 3px;
+        color: var(--faint);
+        font-size: 10px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+      }
+
+      .menu-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+      }
+
+      .menu button {
+        min-height: 34px;
+        padding: 6px 8px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .menu button:hover {
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+      }
+
+      .current-only,
+      .focus-only,
+      .zen-only {
+        display: none;
+      }
+
+      .chat[data-mode="current"] .current-only,
+      .chat[data-mode="focus"] .focus-only,
+      .chat[data-mode="zen"] .zen-only {
+        display: flex;
+      }
+
+      .chat[data-mode="current"] .current-only.block,
+      .chat[data-mode="focus"] .focus-only.block,
+      .chat[data-mode="zen"] .zen-only.block {
+        display: block;
+      }
+
+      .chat[data-mode="zen"] .messages {
+        padding-top: 18px;
+      }
+
+      .design-notes {
+        display: grid;
+        gap: 14px;
+      }
+
+      .note-card {
+        padding: 16px 17px;
+        border: 1px solid rgba(117, 84, 53, 0.17);
+        border-radius: var(--radius);
+        background: rgba(255, 255, 255, 0.76);
+        box-shadow: 0 9px 28px rgba(75, 55, 35, 0.07);
+      }
+
+      .note-card h2,
+      .note-card h3 {
+        margin: 0 0 8px;
+      }
+
+      .note-card h2 {
+        font-size: 18px;
+      }
+
+      .note-card h3 {
+        color: var(--accent-strong);
+        font-size: 14px;
+      }
+
+      .note-card p,
+      .note-card li {
+        color: #6c6055;
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .note-card ul {
+        margin: 8px 0 0;
+        padding-left: 20px;
+      }
+
+      .mapping {
+        display: grid;
+        grid-template-columns: 92px minmax(0, 1fr);
+        gap: 7px 12px;
+        margin-top: 12px;
+        font-size: 12px;
+      }
+
+      .mapping strong {
+        color: var(--text);
+      }
+
+      .mapping span {
+        color: #776a5f;
+      }
+
+      .principle {
+        display: flex;
+        gap: 10px;
+        align-items: flex-start;
+      }
+
+      .principle + .principle {
+        margin-top: 10px;
+      }
+
+      .principle-index {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 25px;
+        height: 25px;
+        border-radius: 8px;
+        background: var(--accent-soft);
+        color: var(--accent-strong);
+        font-size: 12px;
+        font-weight: 900;
+      }
+
+      .principle p {
+        margin: 1px 0 0;
+      }
+
+      @media (max-width: 850px) {
+        .intro {
+          grid-template-columns: 1fr;
+          align-items: start;
+        }
+
+        .layout {
+          grid-template-columns: minmax(0, 548px);
+          justify-content: center;
+        }
+
+        .design-notes {
+          grid-row: 1;
+        }
+      }
+
+      @media (max-width: 500px) {
+        .page {
+          width: 100%;
+          padding: 0;
+        }
+
+        .intro,
+        .design-notes {
+          margin: 14px;
+        }
+
+        .mode-picker {
+          width: 100%;
+        }
+
+        .mode-picker button {
+          min-width: 0;
+          flex: 1;
+        }
+
+        .prototype-frame {
+          border-right: 0;
+          border-left: 0;
+          border-radius: 0;
+        }
+
+        .layout {
+          display: block;
+        }
+
+        .design-notes {
+          display: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="intro">
+        <div>
+          <p class="eyebrow">Interaction proposal</p>
+          <h1>AI 对话「专注布局」HTML 原型</h1>
+          <p class="subtitle">
+            不删除功能，只调整显隐层级。默认推荐“专注布局”：常用状态留在表面，低频动作进入明确的菜单，给消息和输入留出更连续的空间。
+          </p>
+        </div>
+        <nav class="mode-picker" aria-label="切换布局原型">
+          <button type="button" data-mode="current" aria-pressed="false">
+            当前布局
+          </button>
+          <button type="button" data-mode="focus" aria-pressed="true">
+            专注布局
+          </button>
+          <button type="button" data-mode="zen" aria-pressed="false">
+            极简布局
+          </button>
+        </nav>
+      </header>
+
+      <section class="layout">
+        <div class="prototype-frame">
+          <div class="prototype-caption">
+            <strong id="mode-title">专注布局 · 推荐</strong>
+            <span class="recommended" id="mode-badge">日常使用</span>
+          </div>
+
+          <section class="chat" data-mode="focus" aria-label="AI 对话布局原型">
+            <header class="toolbar current-only block">
+              <div class="toolbar-row">
+                <span class="toolbar-title">AI 对话</span>
+                <select class="preset" aria-label="当前预设">
+                  <option>GPT (openai)</option>
+                </select>
+                <button class="ui-btn" type="button">复制MD</button>
+                <button class="ui-btn" type="button">清空</button>
+                <button class="icon-btn" type="button">»</button>
+              </div>
+              <div class="toolbar-row">
+                <button class="ui-btn" type="button">关闭笔记</button>
+                <button class="ui-btn" type="button">沉浸</button>
+                <button class="ui-btn" type="button">设置</button>
+                <button class="icon-btn" type="button">☷</button>
+                <span>调试</span>
+                <span class="switch" aria-hidden="true"></span>
+              </div>
+            </header>
+
+            <header class="toolbar focus-toolbar focus-only">
+              <span class="toolbar-title">AI 对话</span>
+              <select class="preset" aria-label="当前预设">
+                <option>GPT (openai)</option>
+              </select>
+              <button
+                class="icon-btn menu-trigger"
+                type="button"
+                data-menu="header-menu"
+                title="更多功能"
+              >
+                ⋯
+              </button>
+              <button class="icon-btn" type="button" title="隐藏 AI 对话列">
+                »
+              </button>
+            </header>
+
+            <header class="zen-toolbar zen-only">
+              <strong>AI</strong>
+              <span class="model-name">GPT (openai) · gpt-5.6-luna</span>
+              <button
+                class="icon-btn menu-trigger"
+                type="button"
+                data-menu="header-menu"
+                title="更多功能"
+              >
+                ⋯
+              </button>
+            </header>
+
+            <section class="context-card current-only block">
+              <div class="context-title">
+                Enhancing End-to-End Autonomous Driving with Latent World Model
+              </div>
+              <div class="context-meta">
+                Item ID: 1572　<span class="badge">LaTeX 源</span>
+              </div>
+            </section>
+
+            <section class="context-card focus-context focus-only">
+              <div class="context-title">
+                Enhancing End-to-End Autonomous Driving with Latent World Model
+              </div>
+              <span class="badge">原文</span>
+            </section>
+
+            <section class="messages">
+              <p class="thought">⌄ 思考过程</p>
+              <div class="thinking">
+                Calling tools and outlining sections<br />Preparing rendering
+                requirements
+              </div>
+              <article class="answer">
+                <p>已重新生成并渲染当前论文的「全文总览」。</p>
+                <p>重点阅读顺序：</p>
+                <ol>
+                  <li><code>4.1 Latent World Model</code>：理解核心机制。</li>
+                  <li>
+                    <code>4.2 Perception-free Framework</code
+                    >：理解无显式感知标注的规划。
+                  </li>
+                  <li>
+                    <code>4.3 Perception-based Framework</code>：查看
+                    BEV、运动预测和地图构建如何接入。
+                  </li>
+                  <li><code>5.3 Comparison</code>：查看整体性能提升。</li>
+                </ol>
+                <p>
+                  网络拓扑图展示了输入、表示构建、特征融合、预测头与最终输出之间的完整计算路径。
+                </p>
+              </article>
+            </section>
+
+            <div class="conversation-bar current-only">
+              <div class="tabs">
+                <button class="tab active" type="button">1</button>
+                <button class="tab" type="button">2</button>
+              </div>
+              <div class="conversation-actions">
+                <button class="ui-btn" type="button">1轮</button>
+                <button class="icon-btn" type="button">＋</button>
+                <button class="icon-btn" type="button">×</button>
+              </div>
+            </div>
+
+            <div class="conversation-bar focus-conversation focus-only">
+              <div class="tabs">
+                <button class="tab active" type="button">1</button>
+                <button class="tab" type="button">2</button>
+              </div>
+              <button
+                class="icon-btn menu-trigger"
+                type="button"
+                data-menu="conversation-menu"
+                title="对话管理"
+              >
+                ⋯
+              </button>
+            </div>
+
+            <div class="conversation-bar focus-conversation zen-only">
+              <button class="ui-btn" type="button">对话 1⌄</button>
+              <button class="icon-btn" type="button" title="新建对话">
+                ＋
+              </button>
+            </div>
+
+            <div class="current-only block">
+              <div class="quick-prompts">
+                <button class="prompt-btn" type="button">总结论文</button>
+                <button class="prompt-btn" type="button">全文重点</button>
+                <button class="prompt-btn" type="button">解释选区</button>
+                <button class="prompt-btn accent" type="button">未读 4</button>
+              </div>
+              <div class="composer">
+                <div class="input-box">
+                  <div class="placeholder">
+                    问点什么…（Enter 发送，Shift+Enter 换行）
+                  </div>
+                  <div class="input-tools">
+                    <button class="inline-tool" type="button">＋ 联网</button>
+                    <button class="inline-tool" type="button">▤ 原文</button>
+                    <span class="spacer"></span>
+                    <button class="send" type="button">↑</button>
+                  </div>
+                </div>
+                <div class="composer-footer">
+                  <span>Ln 1, Col 1</span><span class="spacer"></span
+                  ><span>截图</span><span>图片</span
+                  ><strong>gpt-5.6-luna</strong><strong>Low</strong
+                  ><strong>YOLO</strong>
+                </div>
+              </div>
+            </div>
+
+            <div class="focus-only block">
+              <div class="composer">
+                <div class="input-box focus-input">
+                  <div class="placeholder">问点什么…（Enter 发送）</div>
+                  <div class="input-tools">
+                    <button
+                      class="icon-btn menu-trigger"
+                      type="button"
+                      data-menu="plus-menu"
+                      title="添加上下文"
+                    >
+                      ＋
+                    </button>
+                    <button class="inline-tool" type="button">▤ 原文</button>
+                    <span class="spacer"></span>
+                    <button class="send" type="button">↑</button>
+                  </div>
+                </div>
+                <div class="composer-footer">
+                  <span>Ln 1, Col 1</span>
+                  <span class="spacer"></span>
+                  <button
+                    class="model-state"
+                    type="button"
+                    title="模型、推理等级与权限"
+                  >
+                    gpt-5.6-luna · Low · YOLO
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div class="zen-only block">
+              <div class="composer zen-composer">
+                <div class="input-box zen-input">
+                  <div class="placeholder">问点什么…</div>
+                  <div class="input-tools">
+                    <button
+                      class="icon-btn menu-trigger"
+                      type="button"
+                      data-menu="plus-menu"
+                      title="添加上下文"
+                    >
+                      ＋
+                    </button>
+                    <button class="model-state" type="button">
+                      luna · Low
+                    </button>
+                    <span class="spacer"></span>
+                    <button class="send" type="button">↑</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="menu header-menu" id="header-menu">
+              <div class="menu-title">对话</div>
+              <div class="menu-grid">
+                <button type="button">复制 MD</button
+                ><button type="button">清空对话</button>
+              </div>
+              <div class="menu-title">阅读与笔记</div>
+              <div class="menu-grid">
+                <button type="button">打开笔记</button
+                ><button type="button">沉浸阅读</button>
+              </div>
+              <div class="menu-title">界面</div>
+              <div class="menu-grid">
+                <button type="button">字号</button
+                ><button type="button">设置</button>
+                <button type="button">调试上下文</button
+                ><button type="button">退出专注</button>
+              </div>
+            </div>
+
+            <div class="menu conversation-menu" id="conversation-menu">
+              <div class="menu-title">对话管理</div>
+              <div class="menu-grid">
+                <button type="button">＋ 新建对话</button
+                ><button type="button">删除当前对话</button>
+                <button type="button">历史：无</button
+                ><button type="button">历史：1轮</button>
+                <button type="button">历史：全部</button>
+              </div>
+            </div>
+
+            <div class="menu plus-menu" id="plus-menu">
+              <div class="menu-title">添加到本轮</div>
+              <div class="menu-grid">
+                <button type="button">🌐 联网</button
+                ><button type="button">▤ 论文原文</button>
+                <button type="button">▧ 截图</button
+                ><button type="button">▣ 图片</button>
+              </div>
+            </div>
+          </section>
+        </div>
+
+        <aside class="design-notes">
+          <section class="note-card">
+            <h2 id="note-title">推荐：专注布局</h2>
+            <p id="note-copy">
+              让高频操作直接可见，将低频操作收进三个语义明确的入口；不牺牲功能，也不让用户猜按钮去了哪里。
+            </p>
+            <div class="mapping" id="mode-mapping">
+              <strong>顶部</strong
+              ><span
+                >预设常驻；复制、清空、笔记、沉浸、设置、调试进入“⋯”。</span
+              >
+              <strong>对话栏</strong
+              ><span>只显示分页；历史范围、新建和删除进入对话菜单。</span>
+              <strong>输入区</strong
+              ><span
+                >“＋”统一承载联网、原文、截图和图片；模型、推理与权限合并为状态胶囊。</span
+              >
+            </div>
+          </section>
+
+          <section class="note-card">
+            <h3>设计原则</h3>
+            <div class="principle">
+              <span class="principle-index">1</span>
+              <p>
+                <strong>发送主路径不增加点击。</strong>
+                输入、原文状态和发送按钮始终直接可见。
+              </p>
+            </div>
+            <div class="principle">
+              <span class="principle-index">2</span>
+              <p>
+                <strong>状态与动作分开。</strong>
+                当前模型等状态可以紧凑显示，修改时再展开菜单。
+              </p>
+            </div>
+            <div class="principle">
+              <span class="principle-index">3</span>
+              <p>
+                <strong>模式应持久化。</strong>
+                用户选择专注布局后，切换论文和重启 Zotero 都保持该选择。
+              </p>
+            </div>
+          </section>
+
+          <section class="note-card">
+            <h3>建议的入口名称</h3>
+            <p>
+              使用“专注布局”或“简洁布局”，不要叫“沉浸模式”，因为当前界面已经有一个“沉浸阅读”功能，重名会造成误解。
+            </p>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script>
+      const chat = document.querySelector(".chat");
+      const pickerButtons = [
+        ...document.querySelectorAll(".mode-picker button"),
+      ];
+      const modeTitle = document.querySelector("#mode-title");
+      const modeBadge = document.querySelector("#mode-badge");
+      const noteTitle = document.querySelector("#note-title");
+      const noteCopy = document.querySelector("#note-copy");
+      const mapping = document.querySelector("#mode-mapping");
+
+      const modes = {
+        current: {
+          title: "当前布局 · 对照",
+          badge: "功能全展开",
+          noteTitle: "当前布局",
+          noteCopy:
+            "所有动作都直接显示，发现性最好，但低频按钮持续占用顶部、分页栏和输入底栏。",
+          mapping: [
+            ["顶部", "两行工具栏，所有内容动作直接显示。"],
+            ["对话栏", "分页、历史范围、新建和删除同时显示。"],
+            ["输入区", "快捷提示与全部附件、模型状态分别展示。"],
+          ],
+        },
+        focus: {
+          title: "专注布局 · 推荐",
+          badge: "日常使用",
+          noteTitle: "推荐：专注布局",
+          noteCopy:
+            "让高频操作直接可见，将低频操作收进三个语义明确的入口；不牺牲功能，也不让用户猜按钮去了哪里。",
+          mapping: [
+            ["顶部", "预设常驻；复制、清空、笔记、沉浸、设置、调试进入“⋯”。"],
+            ["对话栏", "只显示分页；历史范围、新建和删除进入对话菜单。"],
+            [
+              "输入区",
+              "“＋”统一承载联网、原文、截图和图片；模型、推理与权限合并为状态胶囊。",
+            ],
+          ],
+        },
+        zen: {
+          title: "极简布局 · 最大空间",
+          badge: "临时阅读",
+          noteTitle: "极简布局",
+          noteCopy:
+            "只留下模型身份、对话入口和发送主路径。空间最大，适合临时专注阅读，但不建议作为默认布局。",
+          mapping: [
+            ["顶部", "仅保留模型身份和“⋯”入口。"],
+            ["对话栏", "合并成“对话 1”菜单，新建按钮继续直达。"],
+            ["输入区", "去掉独立状态栏，模型状态直接放进输入框。"],
+          ],
+        },
+      };
+
+      function closeMenus() {
+        document
+          .querySelectorAll(".menu.open")
+          .forEach((menu) => menu.classList.remove("open"));
+      }
+
+      function setMode(mode) {
+        const config = modes[mode];
+        if (!config) return;
+        closeMenus();
+        chat.dataset.mode = mode;
+        pickerButtons.forEach((button) =>
+          button.setAttribute(
+            "aria-pressed",
+            String(button.dataset.mode === mode),
+          ),
+        );
+        modeTitle.textContent = config.title;
+        modeBadge.textContent = config.badge;
+        noteTitle.textContent = config.noteTitle;
+        noteCopy.textContent = config.noteCopy;
+        mapping.replaceChildren();
+        config.mapping.forEach(([label, detail]) => {
+          const strong = document.createElement("strong");
+          const span = document.createElement("span");
+          strong.textContent = label;
+          span.textContent = detail;
+          mapping.append(strong, span);
+        });
+      }
+
+      pickerButtons.forEach((button) =>
+        button.addEventListener("click", () => setMode(button.dataset.mode)),
+      );
+
+      document.querySelectorAll(".menu-trigger").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const target = document.querySelector(`#${button.dataset.menu}`);
+          const willOpen = !target.classList.contains("open");
+          closeMenus();
+          if (willOpen) target.classList.add("open");
+        });
+      });
+
+      document.addEventListener("click", closeMenus);
+      document
+        .querySelectorAll(".menu")
+        .forEach((menu) =>
+          menu.addEventListener("click", (event) => event.stopPropagation()),
+        );
+    </script>
+  </body>
+</html>

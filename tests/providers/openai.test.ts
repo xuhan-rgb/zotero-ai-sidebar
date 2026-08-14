@@ -15,6 +15,7 @@ const requestLog = vi.hoisted(() => ({
     reasoning?: unknown;
     prompt_cache_key?: string;
     prompt_cache_retention?: string;
+    parallel_tool_calls?: boolean;
     headers?: Record<string, string>;
   }>,
   chatRequests: [] as Array<{ model?: string }>,
@@ -22,6 +23,7 @@ const requestLog = vi.hoisted(() => ({
   // then succeeds. Lets tests exercise the relay-routing retry loop without
   // depending on a live relay.
   retry5xxRemaining: 0,
+  retry5xxRequestNumbers: [] as number[],
   incompleteResponsesRemaining: 0,
   unterminatedResponsesRemaining: 0,
 }));
@@ -61,6 +63,19 @@ vi.mock("openai", async (importOriginal) => {
               : JSON.parse(JSON.stringify(params.input)),
           headers: options?.headers,
         });
+        const requestNumber = requestLog.requests.length;
+        if (requestLog.retry5xxRequestNumbers.includes(requestNumber)) {
+          requestLog.retry5xxRequestNumbers =
+            requestLog.retry5xxRequestNumbers.filter(
+              (candidate) => candidate !== requestNumber,
+            );
+          throw new actual.APIError(
+            500,
+            { message: "Network connection failed" },
+            undefined,
+            new Headers(),
+          );
+        }
         if (requestLog.retry5xxRemaining > 0) {
           requestLog.retry5xxRemaining -= 1;
           throw new actual.APIError(
@@ -232,6 +247,7 @@ describe("OpenAIProvider", () => {
     requestLog.requests = [];
     requestLog.chatRequests = [];
     requestLog.retry5xxRemaining = 0;
+    requestLog.retry5xxRequestNumbers = [];
     requestLog.incompleteResponsesRemaining = 0;
     requestLog.unterminatedResponsesRemaining = 0;
     relayRoutingStore = "{}";
@@ -386,6 +402,7 @@ describe("OpenAIProvider", () => {
     }
 
     expect(requestLog.requests).toHaveLength(2);
+    expect(requestLog.requests[0].parallel_tool_calls).toBe(false);
     for (const request of requestLog.requests) {
       expect(request.prompt_cache_key).toBe(
         "zai:openai:preset-1:gpt-5_5:item-3",
@@ -394,6 +411,75 @@ describe("OpenAIProvider", () => {
         session_id: "zai:openai:preset-1:gpt-5_5:item-3",
       });
     }
+  });
+
+  it("allows parallel tool planning only when explicitly requested", async () => {
+    const p = new OpenAIProvider();
+
+    for await (const _ of p.stream(
+      [{ role: "user", content: "分析网络结构" }],
+      "be helpful",
+      preset,
+      new AbortController().signal,
+      {
+        tools: [
+          {
+            name: "zotero_get_full_pdf",
+            description: "Read the current PDF.",
+            parameters: { type: "object", properties: {} },
+            execute: async () => ({ output: "paper" }),
+          },
+        ],
+        maxToolIterations: 1,
+        parallelToolCalls: true,
+      },
+    )) {
+      // Drain the stream so the request is issued.
+    }
+
+    expect(requestLog.requests[0].parallel_tool_calls).toBe(true);
+  });
+
+  it("retries a relay 5xx on a later Responses tool-loop request", async () => {
+    requestLog.retry5xxRequestNumbers = [2];
+    const p = new OpenAIProvider();
+    const chunks: StreamChunk[] = [];
+
+    for await (const chunk of p.stream(
+      [{ role: "user", content: "总结当前论文" }],
+      "be helpful",
+      {
+        ...preset,
+        baseUrl: "https://relay.example/openai",
+      },
+      new AbortController().signal,
+      {
+        promptCacheKey: "zai:openai:preset-1:gpt-5.5:item-3",
+        tools: [
+          {
+            name: "zotero_get_full_pdf",
+            description: "Read the current PDF.",
+            parameters: { type: "object", properties: {} },
+            execute: async () => ({ output: "FULL PAPER" }),
+          },
+        ],
+        maxToolIterations: 2,
+      },
+    )) {
+      chunks.push(chunk);
+    }
+
+    expect(chunks.some((chunk) => chunk.type === "error")).toBe(false);
+    expect(chunks).toContainEqual({
+      type: "text_delta",
+      text: "Summary from tool output",
+    });
+    expect(requestLog.requests).toHaveLength(3);
+    expect(requestLog.requests.map((request) => request.headers)).toEqual([
+      { session_id: "zai:openai:preset-1:gpt-5_5:item-3" },
+      { session_id: "zai:openai:preset-1:gpt-5_5:item-3" },
+      { session_id: "zai:openai:preset-1:gpt-5_5:item-3:s1" },
+    ]);
   });
 
   it("does not send relay cache keys after cache test disables the preset", async () => {

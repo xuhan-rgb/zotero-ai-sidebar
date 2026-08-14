@@ -279,6 +279,7 @@ import {
 } from "./reading-route-reference";
 import { renderMindmapBlock } from "./mindmap-render";
 import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
+import { renderNetworkDiagramAnalysisCard } from "./network-diagram-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import {
   openOverviewInBrowser,
@@ -420,11 +421,9 @@ import {
   isMessagesNearBottom,
   lockMessagesScroll,
   preserveMessagesScroll,
+  preserveStreamingMessagesScroll,
   restoreMessagesScroll,
-  restoreSavedMessagesScroll,
   scheduleMessagesScrollRestore,
-  scrollMessagesToBottom,
-  syncMessagesScrollState,
 } from "./message-scroll";
 import {
   COLUMN_ID,
@@ -473,6 +472,29 @@ import {
 } from "./sidebar-state";
 import { appendLocalPath } from "../utils/local-path";
 import { loadOverview, saveOverview } from "../context/overview-store";
+import {
+  buildNetworkDiagramUserPrompt,
+  runNetworkDiagramAgent,
+} from "../context/network-diagram-agent";
+import { parsePublicGitHubRepositoryURL } from "../context/github-repository";
+import {
+  appendNetworkDiagramRevision,
+  clearNetworkDiagramMessages,
+  loadNetworkDiagramWorkspace,
+  restoreLatestNetworkDiagramRevision,
+  saveNetworkDiagramWorkspace,
+  undoNetworkDiagramRevision,
+} from "../context/network-diagram-store";
+import {
+  currentNetworkDiagramRevision,
+  detailedNetworkGraphToMindmap,
+  type DetailedNetworkNode,
+  type EvidenceReference,
+  type NetworkDiagramAnalysisProgress,
+  type NetworkDiagramAgentResult,
+  type NetworkDiagramMessage,
+  type NetworkDiagramWorkspace,
+} from "../context/network-diagram-types";
 import { loadReading, saveReading } from "../context/reading-store";
 import type { OverviewData, OverviewSection } from "../context/overview-types";
 import { clonePlainRecord, finiteNumber } from "./plain-utils";
@@ -555,12 +577,51 @@ const quickAskControllers = new WeakMap<
 >();
 const quickAskOpenRequests = new WeakMap<WindowSidebarState, symbol>();
 
+interface DockedSidebarLayout {
+  mainWindow: Window;
+  columnWidth: number;
+  noteColumnWidth: number;
+  dockedColumnWidth: number;
+  dockedNoteColumnWidth: number;
+  columnPersistence: string | null;
+  noteColumnPersistence: string | null;
+  columnParent: Node;
+  columnNextSibling: Node | null;
+  splitterDragCleanup?: () => void;
+  noteSplitterDragCleanup?: () => void;
+  frameCleanup?: () => void;
+}
+
+const dockedSidebarLayouts = new WeakMap<
+  WindowSidebarState,
+  DockedSidebarLayout
+>();
+const DOCKED_AI_SPLITTER_WIDTH = 4;
+const DOCKED_NOTE_SPLITTER_WIDTH = 4;
+const MIN_ZOTERO_DOCKED_CONTENT_WIDTH = 720;
+
 interface PreparedFullTranslationRun {
   controller: AbortController;
   translator: FullDocumentTranslator;
 }
 
 let readerSelectionHandler: ((event: unknown) => void) | null = null;
+
+function hostWindowForSidebar(sidebar: WindowSidebarState): Window | null {
+  for (const win of mountedWindows) {
+    if (windowSidebars.get(win) === sidebar) return win;
+  }
+  return null;
+}
+
+function hostWindowForMount(mount: HTMLElement): Window | null {
+  const sidebar = findSidebarStateByMount(mount);
+  return (
+    (sidebar ? hostWindowForSidebar(sidebar) : null) ??
+    mount.ownerDocument?.defaultView ??
+    null
+  );
+}
 // Entry point per Zotero item selection.
 // Two paths:
 //   - itemID changed (or first render): allocate fresh PanelState and
@@ -627,15 +688,14 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
 
 function renderPanel(mount: HTMLElement, state: PanelState) {
   const doc = mount.ownerDocument!;
+  const sidebar = findSidebarStateByMount(mount);
   capturePanelState(mount, state);
   try {
-    const sidebar = doc.defaultView
-      ? windowSidebars.get(doc.defaultView)
-      : undefined;
+    const hostWindow = hostWindowForMount(mount);
     if (sidebar?.fullTranslationActive) {
       refreshFullTranslationSelection(sidebar, state.itemID, false);
     } else {
-      refreshActiveReaderSelection(doc.defaultView, state.itemID, false);
+      refreshActiveReaderSelection(hostWindow, state.itemID, false);
     }
   } catch (err) {
     debugZai("sidebar.selection-refresh.failed", { error: errorMessage(err) });
@@ -649,7 +709,16 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
     });
     applyChatAppearance(panel, state.uiSettings, state.localUiSettings);
     panel.append(renderToolbar(doc, mount, state));
-    panel.append(renderContextCard(doc, state.itemID));
+    panel.append(
+      renderContextCard(
+        doc,
+        state.itemID,
+        state.networkDiagramTarget ||
+          sidebar?.overviewNav?.activeView === "network"
+          ? sidebar?.networkDiagramDraftRepositoryURL
+          : undefined,
+      ),
+    );
     panel.append(renderMessages(doc, mount, state));
     panel.append(renderInput(doc, mount, state));
   } catch (err) {
@@ -670,6 +739,18 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
   state.scrollToBottom = false;
   state.focusInput = false;
   afterRender(mount, () => {
+    if (state.networkDiagramTarget) {
+      const messages = mount.querySelector<HTMLElement>(".messages");
+      if (messages) {
+        const follow =
+          !!shouldScroll || state.networkDiagramAutoFollowMessages !== false;
+        messages.scrollTop = follow
+          ? messages.scrollHeight
+          : (state.networkDiagramMessagesScrollTop ?? 0);
+      }
+      restoreChatInput(mount, state, !!shouldFocus);
+      return;
+    }
     const lockedScroll = activeMessagesScrollLock(state);
     if (lockedScroll) {
       scheduleMessagesScrollRestore(mount, lockedScroll);
@@ -764,6 +845,12 @@ function capturePanelState(mount: HTMLElement, state: PanelState) {
 
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (messages) {
+    if (messages.dataset.conversationKind === "network") {
+      state.networkDiagramMessagesScrollTop = messages.scrollTop;
+      state.networkDiagramAutoFollowMessages =
+        isMessagesElementNearBottom(messages);
+      return;
+    }
     const lockedScroll = activeMessagesScrollLock(state);
     if (lockedScroll) {
       state.messagesScrollTop = lockedScroll.top;
@@ -774,7 +861,206 @@ function capturePanelState(mount: HTMLElement, state: PanelState) {
   }
 }
 
+const compactMenuOutsideClickDocuments = new WeakSet<Document>();
+
+function installCompactMenuOutsideClick(doc: Document): void {
+  if (compactMenuOutsideClickDocuments.has(doc)) return;
+  compactMenuOutsideClickDocuments.add(doc);
+  doc.addEventListener(
+    "click",
+    (event) => {
+      const target = event.target as Node | null;
+      const path = event.composedPath?.() ?? [];
+      const menus = Array.from(
+        doc.querySelectorAll("details.zai-compact-menu[open]"),
+      ) as HTMLElement[];
+      const insideMenu = menus.some(
+        (menu) =>
+          path.includes(menu) || (target != null && menu.contains(target)),
+      );
+      if (insideMenu) return;
+
+      for (const menu of menus) {
+        for (const choice of menu.querySelectorAll(
+          ".header-layout-choice[open]",
+        )) {
+          choice.removeAttribute("open");
+        }
+        menu.removeAttribute("open");
+      }
+    },
+    true,
+  );
+}
+
+function compactMenu(
+  doc: Document,
+  className: string,
+  label: string,
+  title: string,
+): { menu: HTMLElement; content: HTMLElement } {
+  installCompactMenuOutsideClick(doc);
+  const menu = doc.createElement("details");
+  menu.className = `zai-compact-menu ${className}`;
+  menu.setAttribute("data-zai-menu-key", className);
+  const summary = doc.createElement("summary");
+  summary.textContent = label;
+  summary.title = title;
+  summary.setAttribute("aria-label", title);
+  summary.addEventListener("click", (event) => {
+    // Zotero's mixed XUL/XHTML documents do not consistently perform the
+    // native <summary> toggle, so control the open state explicitly.
+    event.preventDefault();
+    if (menu.hasAttribute("open")) {
+      for (const choice of menu.querySelectorAll(
+        ".header-layout-choice[open]",
+      )) {
+        choice.removeAttribute("open");
+      }
+    }
+    menu.toggleAttribute("open");
+  });
+  const content = el(doc, "div", "zai-compact-menu-content");
+  menu.append(summary, content);
+  return { menu, content };
+}
+
+function renderPanelPreservingOpenMenus(
+  mount: HTMLElement,
+  state: PanelState,
+): void {
+  const openMenuKeys = Array.from(
+    mount.querySelectorAll("details.zai-compact-menu[open]"),
+  ) as HTMLElement[];
+  const menuKeys = openMenuKeys
+    .map((menu) => menu.getAttribute("data-zai-menu-key"))
+    .filter((key): key is string => Boolean(key));
+  renderPanel(mount, state);
+  for (const menu of mount.querySelectorAll("details.zai-compact-menu")) {
+    if (menuKeys.includes(menu.getAttribute("data-zai-menu-key") ?? "")) {
+      menu.setAttribute("open", "");
+    }
+  }
+}
+
+function applySidebarDisplayMode(
+  mount: HTMLElement,
+  state: PanelState,
+  selectedMode: unknown,
+): void {
+  const previousMode = state.localUiSettings.sidebarDisplayMode;
+  const next = normalizeLocalUiSettings({
+    ...state.localUiSettings,
+    sidebarDisplayMode: selectedMode,
+  });
+  state.localUiSettings = next;
+  saveLocalUiSettings(zoteroPrefs(), next);
+
+  const sidebar = findSidebarStateByMount(mount);
+  const hostWindow = hostWindowForMount(mount);
+  if (sidebar && hostWindow) {
+    reconcileSidebarDisplayMode(hostWindow, sidebar, next, previousMode);
+  }
+  renderPanelPreservingOpenMenus(mount, state);
+}
+
+function renderLayoutChoice(
+  doc: Document,
+  selectedValue: string,
+  choices: ReadonlyArray<readonly [string, string]>,
+  onSelect: (value: string) => void,
+): HTMLElement {
+  const control = el(doc, "div", "header-layout-choice");
+  const selectedLabel =
+    choices.find(([value]) => value === selectedValue)?.[1] ?? choices[0]?.[1];
+  const trigger = buttonEl(doc, selectedLabel ?? "");
+  trigger.className = "header-layout-choice-trigger";
+  trigger.setAttribute("aria-haspopup", "listbox");
+  trigger.setAttribute("aria-expanded", "false");
+  trigger.addEventListener("click", () => {
+    const opening = !control.hasAttribute("open");
+    for (const sibling of control.parentElement?.querySelectorAll(
+      ".header-layout-choice[open]",
+    ) ?? []) {
+      sibling.removeAttribute("open");
+      sibling
+        .querySelector(".header-layout-choice-trigger")
+        ?.setAttribute("aria-expanded", "false");
+    }
+    control.toggleAttribute("open", opening);
+    trigger.setAttribute("aria-expanded", opening ? "true" : "false");
+  });
+
+  const options = el(doc, "div", "header-layout-choice-options");
+  options.setAttribute("role", "listbox");
+  for (const [value, label] of choices) {
+    const option = buttonEl(doc, label);
+    option.className = "header-layout-choice-option";
+    option.setAttribute("role", "option");
+    option.setAttribute(
+      "aria-selected",
+      value === selectedValue ? "true" : "false",
+    );
+    option.classList.toggle("active", value === selectedValue);
+    option.addEventListener("click", () => onSelect(value));
+    options.append(option);
+  }
+  control.append(trigger, options);
+  return control;
+}
+
+function renderLayoutMenu(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement {
+  const { menu, content } = compactMenu(
+    doc,
+    "header-layout-menu",
+    "模式",
+    "切换对话排版和侧栏显示方式",
+  );
+  const layoutField = el(doc, "div", "header-layout-field");
+  layoutField.append(el(doc, "span", "", "对话排版"));
+  layoutField.append(
+    renderLayoutChoice(
+      doc,
+      state.localUiSettings.chatLayout,
+      [
+        ["classic", "原始排版"],
+        ["compact", "专注模式"],
+      ],
+      (value) => {
+        const next = normalizeLocalUiSettings({
+          ...state.localUiSettings,
+          chatLayout: value,
+        });
+        state.localUiSettings = next;
+        saveLocalUiSettings(zoteroPrefs(), next);
+        renderPanelPreservingOpenMenus(mount, state);
+      },
+    ),
+  );
+
+  const displayField = el(doc, "div", "header-layout-field");
+  displayField.append(el(doc, "span", "", "显示方式"));
+  displayField.append(
+    renderLayoutChoice(
+      doc,
+      state.localUiSettings.sidebarDisplayMode,
+      [
+        ["embedded", "阅读器侧栏"],
+        ["docked", "右侧并排"],
+      ],
+      (value) => applySidebarDisplayMode(mount, state, value),
+    ),
+  );
+  content.append(layoutField, displayField);
+  return menu;
+}
+
 function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
+  const sidebar = findSidebarStateByMount(mount);
   const toolbarPresets = configuredPresets(state);
   const selectedForToolbar = selectedChatPreset(state);
   const bar = el(
@@ -790,6 +1076,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   );
   const title = el(doc, "strong", "", "AI 对话");
   topRow.append(title);
+  const layoutMenu = renderLayoutMenu(doc, mount, state);
 
   if (toolbarPresets.length === 0) {
     topRow.append(el(doc, "span", "", "未配置模型"));
@@ -797,7 +1084,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     button.addEventListener("click", () => {
       openAddonPreferences(doc);
     });
-    bottomRow.append(button);
+    bottomRow.append(button, layoutMenu);
     bar.append(topRow, bottomRow);
     return bar;
   }
@@ -817,7 +1104,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
       selectedChatPreset(state) ?? selectedPreset(state),
     );
     void persistPanelConversations(state);
-    renderPanel(mount, state);
+    renderPanelPreservingOpenMenus(mount, state);
   });
   topRow.append(select);
 
@@ -831,21 +1118,40 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   copyAll.addEventListener("click", () => {
     void copyCurrentConversation(doc, state, copyAll);
   });
-  topRow.append(copyAll);
-
   const clear = buttonEl(doc, "清空");
-  clear.disabled = state.sending || state.messages.length === 0;
-  clear.title =
-    state.messages.length === 0
+  const visibleMessageCount = state.networkDiagramTarget
+    ? (sidebar?.networkDiagramMessages?.length ?? 0)
+    : state.messages.length;
+  const visibleConversationBusy = state.networkDiagramTarget
+    ? sidebar?.networkDiagramBusy === true
+    : state.sending;
+  clear.disabled = visibleConversationBusy || visibleMessageCount === 0;
+  clear.title = visibleConversationBusy
+    ? state.networkDiagramTarget
+      ? "请先停止网络图分析，再清空网络图对话"
+      : "请先停止当前回答，再清空对话"
+    : visibleMessageCount === 0
       ? "当前对话还没有可清空的消息"
-      : "清空当前对话的全部消息";
+      : state.networkDiagramTarget
+        ? "只清空网络图对话；保留网络图、版本和仓库关联"
+        : "清空当前对话的全部消息";
   clear.addEventListener("click", () => {
+    if (state.networkDiagramTarget) {
+      if (
+        doc.defaultView?.confirm &&
+        !doc.defaultView.confirm(
+          "确定清空当前网络图对话吗？网络图、版本记录、代码证据和 GitHub 仓库关联都会保留。",
+        )
+      ) {
+        return;
+      }
+      if (sidebar) void clearNetworkDiagramConversation(sidebar, state);
+      return;
+    }
     state.messages = [];
     void persistPanelConversations(state);
     renderPanel(mount, state);
   });
-  topRow.append(clear);
-
   const settings = buttonEl(doc, "设置");
   settings.addEventListener("click", () => {
     openAddonPreferences(doc);
@@ -856,7 +1162,6 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   collapse.className = "zai-collapse-btn";
   collapse.title = "隐藏 AI 对话列（收起面板）";
   collapse.addEventListener("click", () => hideCurrentSidebar(mount));
-  topRow.append(collapse);
   const noteWindowOpen = isNoteWindowOpenForMount(mount);
   const openNote = buttonEl(doc, noteWindowOpen ? "关闭笔记" : "打开笔记");
   openNote.className = "open-note-button";
@@ -871,7 +1176,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
       void openCurrentItemNote(doc, state.itemID, openNote);
     }
   });
-  const win = mount.ownerDocument!.defaultView!;
+  const win = hostWindowForMount(mount)!;
   const translateBtn = buttonEl(doc, "译");
   translateBtn.className = "zai-sidebar-translate-button";
   translateBtn.title = "逐句翻译模式（点击切换开关）";
@@ -890,15 +1195,61 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   // Content actions, then 设置 (opens full preferences), the 字号 menu (🎚 icon
   // → font-size popup) and the 调试 (copy-debug context) toggle.
   settings.title = "打开 AI 对话完整设置";
-  bottomRow.append(openNote);
-  // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留，去掉这行注释即可恢复）。
-  // bottomRow.append(translateBtn);
-  bottomRow.append(askBtn);
-  bottomRow.append(settings);
-  bottomRow.append(renderFontIconMenu(doc, mount, state));
-  bottomRow.append(renderCopyDebugToggle(doc, mount, state));
-  bar.append(topRow, bottomRow);
+  if (state.localUiSettings.chatLayout === "compact") {
+    const { menu, content: menuContent } = compactMenu(
+      doc,
+      "header-actions-menu",
+      "⋯",
+      "更多对话功能",
+    );
+    menuContent.append(
+      copyAll,
+      clear,
+      openNote,
+      askBtn,
+      settings,
+      renderFontIconMenu(doc, mount, state),
+      renderCopyDebugToggle(doc, mount, state),
+    );
+    // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留）。
+    // menuContent.append(translateBtn);
+    topRow.append(layoutMenu, menu, collapse);
+    bar.append(topRow);
+  } else {
+    topRow.append(copyAll, clear, collapse);
+    bottomRow.append(
+      openNote,
+      askBtn,
+      settings,
+      layoutMenu,
+      renderFontIconMenu(doc, mount, state),
+      renderCopyDebugToggle(doc, mount, state),
+    );
+    // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留）。
+    // bottomRow.append(translateBtn);
+    bar.append(topRow, bottomRow);
+  }
   return bar;
+}
+
+async function clearNetworkDiagramConversation(
+  sidebar: WindowSidebarState,
+  state: PanelState,
+): Promise<void> {
+  if (sidebar.networkDiagramBusy) return;
+  const itemKey = resolveItemKeyForCache(state.itemID);
+  if (!itemKey) return;
+  const stored = await loadNetworkDiagramWorkspace(itemKey);
+  if (stored?.workspace) {
+    await saveNetworkDiagramWorkspace(
+      itemKey,
+      clearNetworkDiagramMessages(stored.workspace),
+    );
+  }
+  sidebar.networkDiagramMessages = [];
+  state.networkDiagramMessagesScrollTop = 0;
+  state.networkDiagramAutoFollowMessages = true;
+  renderPanel(sidebar.mount, state);
 }
 
 function renderConversationSwitcher(
@@ -936,7 +1287,6 @@ function renderConversationSwitcher(
   add.disabled = conversationBusy || !state.historyLoaded;
   add.addEventListener("click", () => addConversation(mount, state));
 
-  const controls = el(doc, "div", "conversation-controls");
   const historyLabel = el(doc, "label", "conversation-history-control");
   const historySelect = doc.createElement("select");
   const historyOptions: Array<[ConversationHistoryMode, string]> = [
@@ -984,8 +1334,21 @@ function renderConversationSwitcher(
   remove.addEventListener("click", () =>
     deleteActiveConversation(mount, state),
   );
-  controls.append(historyLabel, add, remove);
-  wrap.append(tabs, controls);
+  if (state.localUiSettings.chatLayout === "compact") {
+    const quickPrompts = renderQuickPrompts(doc, mount, state);
+    const { menu, content: menuContent } = compactMenu(
+      doc,
+      "conversation-actions-menu",
+      "⋯",
+      "对话管理与快捷操作",
+    );
+    menuContent.append(historyLabel, add, remove, quickPrompts);
+    wrap.append(tabs, menu);
+  } else {
+    const controls = el(doc, "div", "conversation-controls");
+    controls.append(historyLabel, add, remove);
+    wrap.append(tabs, controls);
+  }
   return wrap;
 }
 
@@ -1305,7 +1668,7 @@ function renderCopyDebugToggle(
   input.checked = state.copyDebugContext;
   input.addEventListener("change", () => {
     state.copyDebugContext = input.checked;
-    renderPanel(mount, state);
+    renderPanelPreservingOpenMenus(mount, state);
   });
   label.append(
     el(doc, "span", "yolo-toggle-text", "调试"),
@@ -1334,7 +1697,14 @@ export function refreshSidebarPreferences(): void {
       selectedChatPreset(state) ?? selectedPreset(state),
     );
     state.uiSettings = loadUiSettings(zoteroPrefs());
+    const previousDisplayMode = state.localUiSettings.sidebarDisplayMode;
     state.localUiSettings = loadLocalUiSettings(zoteroPrefs());
+    reconcileSidebarDisplayMode(
+      win,
+      sidebar,
+      state.localUiSettings,
+      previousDisplayMode,
+    );
     renderPanel(sidebar.mount, state);
   }
 }
@@ -1375,14 +1745,43 @@ function openAddonPreferences(doc: Document): void {
   );
 }
 
-function renderContextCard(doc: Document, itemID: number | null) {
+export function renderContextCard(
+  doc: Document,
+  itemID: number | null,
+  repositoryURL?: string,
+) {
   const item = safeGetItem(itemID);
   const title =
     item && typeof item.getField === "function"
       ? item.getField("title") || "未选择条目"
       : "未选择条目";
   const card = el(doc, "div", "ctx-card");
-  const metaRow = el(doc, "div", "ctx-meta", `Item ID: ${itemID ?? "none"}`);
+  const metaRow = el(doc, "div", "ctx-meta");
+  const canonicalRepositoryURL = (() => {
+    if (!repositoryURL?.trim()) return undefined;
+    try {
+      const { owner, repo } = parsePublicGitHubRepositoryURL(repositoryURL);
+      return {
+        url: `https://github.com/${owner}/${repo}`,
+        label: `GitHub：${owner}/${repo}`,
+      };
+    } catch {
+      return undefined;
+    }
+  })();
+  if (canonicalRepositoryURL) {
+    const repository = doc.createElement("a");
+    repository.className = "ctx-github-repository";
+    repository.href = canonicalRepositoryURL.url;
+    repository.target = "_blank";
+    repository.rel = "noreferrer";
+    repository.textContent = canonicalRepositoryURL.label;
+    repository.title = canonicalRepositoryURL.url;
+    metaRow.append(repository);
+  }
+  metaRow.append(
+    el(doc, "span", "ctx-item-id", `Item ID: ${itemID ?? "none"}`),
+  );
   card.append(el(doc, "div", "ctx-title", title), metaRow);
   const arxivId = resolveArxivIdForItemID(itemID);
   if (arxivId) {
@@ -1916,7 +2315,7 @@ async function jumpToPdfSelection(
   state: PanelState,
   locator: PdfSelectionLocator,
 ) {
-  const win = mount.ownerDocument?.defaultView;
+  const win = hostWindowForMount(mount);
   const activeReader = getActiveReader(win);
   const activeConversationID = win ? activeReaderConversationItemID(win) : null;
   const reader =
@@ -2081,7 +2480,17 @@ function fullTextHighlightDisabledReason(
 
 function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
   const messages = el(doc, "div", "messages");
+  const sidebar = findSidebarStateByMount(mount);
+  messages.dataset.conversationKind = state.networkDiagramTarget
+    ? "network"
+    : "normal";
   messages.addEventListener("scroll", () => {
+    if (state.networkDiagramTarget) {
+      state.networkDiagramMessagesScrollTop = messages.scrollTop;
+      state.networkDiagramAutoFollowMessages =
+        isMessagesElementNearBottom(messages);
+      return;
+    }
     const lockedScroll = activeMessagesScrollLock(state);
     if (lockedScroll) {
       scheduleMessagesScrollRestore(mount, lockedScroll);
@@ -2090,7 +2499,26 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
     state.messagesScrollTop = messages.scrollTop;
     state.autoFollowMessages = isMessagesElementNearBottom(messages);
   });
-  if (state.messages.length === 0) {
+  if (state.networkDiagramTarget) {
+    const networkMessages = sidebar?.networkDiagramMessages ?? [];
+    if (networkMessages.length === 0) {
+      const hint = el(doc, "div", "bubble bubble-assistant bubble-hint");
+      hint.append(
+        el(doc, "div", "bubble-role", "AI"),
+        el(
+          doc,
+          "div",
+          "bubble-body",
+          "这是独立的网络图对话。可直接描述要展开、简化或校正的节点。",
+        ),
+      );
+      messages.append(hint);
+    } else {
+      networkMessages.forEach((message) =>
+        messages.append(renderNetworkDiagramMessage(doc, message)),
+      );
+    }
+  } else if (state.messages.length === 0) {
     const hint = el(doc, "div", "bubble bubble-assistant bubble-hint");
     hint.append(
       el(doc, "div", "bubble-role", "AI"),
@@ -2102,34 +2530,152 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
       ),
     );
     messages.append(hint);
-    return messages;
+  } else {
+    state.messages.forEach((message, index) =>
+      messages.append(bubble(doc, mount, state, message, index)),
+    );
   }
 
-  state.messages.forEach((message, index) =>
-    messages.append(bubble(doc, mount, state, message, index)),
-  );
+  const taskMatchesItem =
+    sidebar?.networkDiagramItemKey ===
+    (resolveItemKeyForCache(state.itemID) ?? undefined);
+  if (
+    sidebar &&
+    state.networkDiagramTarget &&
+    taskMatchesItem &&
+    (sidebar.networkDiagramProgress ||
+      sidebar.networkDiagramBusy ||
+      sidebar.networkDiagramError)
+  ) {
+    messages.append(
+      renderNetworkDiagramAnalysisCard(
+        doc,
+        {
+          progress: sidebar.networkDiagramProgress ?? null,
+          busy: sidebar.networkDiagramBusy === true,
+          error: sidebar.networkDiagramError,
+        },
+        { onCancel: () => cancelNetworkDiagramAnalysis(sidebar) },
+      ),
+    );
+  }
   return messages;
+}
+
+function renderNetworkDiagramMessage(
+  doc: Document,
+  message: NetworkDiagramMessage,
+): HTMLElement {
+  const item = el(
+    doc,
+    "div",
+    `bubble bubble-${message.role} network-diagram-conversation-message`,
+  );
+  item.append(
+    el(
+      doc,
+      "div",
+      "bubble-role",
+      message.role === "user" ? "YOU · 网络图指令" : "AI · 网络图结果",
+    ),
+    el(doc, "div", "bubble-body", message.content),
+  );
+  return item;
+}
+
+function renderNetworkDiagramTargetChip(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement | null {
+  if (!state.networkDiagramTarget) return null;
+  const sidebar = findSidebarStateByMount(mount);
+  const chip = el(doc, "div", "network-diagram-target-chip");
+  chip.append(el(doc, "span", "network-diagram-target-label", "📐 网络图"));
+
+  const repositoryURL = sidebar?.networkDiagramDraftRepositoryURL?.trim();
+  if (repositoryURL) {
+    const repository = doc.createElement("a");
+    repository.className = "network-diagram-target-repository";
+    repository.href = repositoryURL;
+    repository.target = "_blank";
+    repository.rel = "noreferrer";
+    repository.textContent = repositoryURL.replace(
+      /^https:\/\/github\.com\//i,
+      "GitHub：",
+    );
+    repository.title = repositoryURL;
+    chip.append(repository);
+  }
+
+  const generate = buttonEl(doc, "生成网络图");
+  generate.className = "network-diagram-official-prompt";
+  generate.disabled = sidebar?.networkDiagramBusy === true;
+  generate.title = "填入官方网络图生成提示词，确认后再发送";
+  generate.addEventListener("click", () => {
+    state.draftText = networkDiagramOfficialPrompt(sidebar);
+    state.draftSelectionStart = state.draftText.length;
+    state.draftSelectionEnd = state.draftText.length;
+    state.skipNextDraftCapture = true;
+    state.focusInput = true;
+    renderPanel(mount, state);
+  });
+  chip.append(generate);
+
+  if (sidebar?.networkDiagramSelectedNode) {
+    const selected = el(
+      doc,
+      "span",
+      "network-diagram-selected-node",
+      `当前节点：${sidebar.networkDiagramSelectedNode.label}`,
+    );
+    selected.title = "后续指令会自动携带此节点的 shape、说明和代码依据";
+    chip.append(selected);
+  }
+
+  const close = buttonEl(doc, "×");
+  close.className = "network-diagram-target-close";
+  close.title = "退出网络图对话，恢复普通对话草稿";
+  close.addEventListener("click", () => {
+    deactivateNetworkDiagramTarget(mount, state);
+  });
+  chip.append(close);
+  return chip;
 }
 
 function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   const composer = el(doc, "div", "composer");
   const row = el(doc, "div", "input-row");
+  if (state.localUiSettings.chatLayout === "compact") {
+    row.classList.add("input-row-compact");
+  }
   const input = doc.createElement("textarea");
   input.rows = 3;
   const status = el(doc, "div", "composer-status");
 
   const preset = selectedChatPreset(state);
+  const sidebar = findSidebarStateByMount(mount);
+  const networkDiagramBusy = sidebar?.networkDiagramBusy === true;
   const queueAllowed = queueWhileSendingEnabled(state);
   const canSubmit =
-    !!preset?.apiKey && !!preset.model && (!state.sending || queueAllowed);
+    !!preset?.apiKey &&
+    !!preset.model &&
+    (state.networkDiagramTarget
+      ? !state.sending && !networkDiagramBusy
+      : !state.sending || queueAllowed);
   input.placeholder = preset
-    ? state.sending
-      ? queueAllowed
-        ? "AI 回答中…当前回复结束后将按顺序执行队列里的消息"
-        : "AI 回答中…等待结束后再发送（设置可开启发送中排队）"
-      : "问点什么... (Enter 发送，Shift+Enter 换行)"
+    ? state.networkDiagramTarget
+      ? networkDiagramBusy
+        ? "网络图分析中…可在上方任务卡停止"
+        : "输入网络图优化要求…（Enter 发送，Shift+Enter 换行）"
+      : state.sending
+        ? queueAllowed
+          ? "AI 回答中…当前回复结束后将按顺序执行队列里的消息"
+          : "AI 回答中…等待结束后再发送（设置可开启发送中排队）"
+        : "问点什么... (Enter 发送，Shift+Enter 换行)"
     : "先添加一个模型预设。";
-  input.disabled = !preset;
+  input.disabled =
+    !preset || (state.networkDiagramTarget === true && networkDiagramBusy);
   input.value = state.draftText;
   input.style.height = "auto";
   const slashMenu = el(doc, "div", "slash-command-menu");
@@ -2193,19 +2739,18 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     // to false, so messages run strictly one-at-a-time after the current
     // task completes.
     const shouldSend =
-      (!state.sending || queueWhileSendingEnabled(state)) &&
+      (state.networkDiagramTarget
+        ? !state.sending && !networkDiagramBusy
+        : !state.sending || queueWhileSendingEnabled(state)) &&
       event.key === "Enter" &&
       !event.isComposing &&
       (!event.shiftKey || event.ctrlKey || event.metaKey);
     if (shouldSend) {
       event.preventDefault();
-      void sendMessage(
+      void sendComposerMessage(
         mount,
         state,
         composerMessageContent(input.value, state),
-        {
-          fromComposer: true,
-        },
       );
     }
   });
@@ -2213,14 +2758,16 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   input.addEventListener("input", () => {
     resetComposerPromptHistory(state);
     updateStatus();
-    scheduleDraftConversationSave(mount, state);
+    if (!state.networkDiagramTarget) {
+      scheduleDraftConversationSave(mount, state);
+    }
   });
   for (const event of ["select", "click", "keyup", "focus"]) {
     input.addEventListener(event, () => updateStatus());
   }
   input.addEventListener("paste", (event: ClipboardEvent) => {
     const imageFiles = pastedImageFiles(event);
-    if (imageFiles.length > 0) {
+    if (!state.networkDiagramTarget && imageFiles.length > 0) {
       event.preventDefault();
       resetComposerPromptHistory(state);
       void addDraftImages(input.ownerDocument!, state, imageFiles, input).then(
@@ -2242,17 +2789,22 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   afterRender(mount, () => updateStatus(false));
 
   const inputStack = el(doc, "div", "input-stack");
-  inputStack.append(
-    renderDraftImages(doc, mount, state, input, { renderPanel }),
-    slashMenu,
-    input,
-  );
-  const composerSwitchers = el(doc, "div", "composer-switchers");
-  composerSwitchers.append(renderWebSearchSwitcher(doc, mount, state));
-  if (!getStoredSelectedText(state.itemID)) {
-    composerSwitchers.append(renderPaperPinSwitcher(doc, mount, state));
+  if (!state.networkDiagramTarget) {
+    inputStack.append(
+      renderDraftImages(doc, mount, state, input, { renderPanel }),
+    );
   }
-  row.append(inputStack, composerSwitchers);
+  inputStack.append(slashMenu, input);
+  const composerSwitchers = el(doc, "div", "composer-switchers");
+  if (!state.networkDiagramTarget) {
+    composerSwitchers.append(renderWebSearchSwitcher(doc, mount, state));
+    if (!getStoredSelectedText(state.itemID)) {
+      composerSwitchers.append(renderPaperPinSwitcher(doc, mount, state));
+    }
+    row.append(inputStack, composerSwitchers);
+  } else {
+    row.append(inputStack);
+  }
   const imageAttach = renderImageAttachButton(
     doc,
     mount,
@@ -2270,6 +2822,15 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     status,
     { selectedChatPreset, renderPanel },
   );
+  if (
+    !state.networkDiagramTarget &&
+    state.localUiSettings.chatLayout === "compact"
+  ) {
+    const { menu: attachmentMenu, content: attachmentMenuContent } =
+      compactMenu(doc, "composer-attachment-menu", "＋", "添加截图或图片");
+    attachmentMenuContent.append(screenshotAttach, imageAttach);
+    row.append(attachmentMenu);
+  }
 
   const send = buttonEl(doc, state.sending ? "↑ 排队" : "↑");
   send.className = state.sending ? "send-btn send-queue-btn" : "send-btn";
@@ -2285,11 +2846,10 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   send.addEventListener(
     "click",
     () =>
-      void sendMessage(
+      void sendComposerMessage(
         mount,
         state,
         composerMessageContent(input.value, state),
-        { fromComposer: true },
       ),
   );
   row.append(send);
@@ -2301,12 +2861,25 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     });
     row.append(stop);
   }
-  const selectionChip = renderSelectionChip(doc, mount, state);
-  if (selectionChip) row.prepend(selectionChip);
+  if (!state.networkDiagramTarget) {
+    const selectionChip = renderSelectionChip(doc, mount, state);
+    if (selectionChip) row.prepend(selectionChip);
+  }
+  const networkTargetChip = renderNetworkDiagramTargetChip(doc, mount, state);
+  if (networkTargetChip) row.prepend(networkTargetChip);
+  if (!state.networkDiagramTarget) {
+    composer.append(renderConversationSwitcher(doc, mount, state));
+  }
+  if (
+    !state.networkDiagramTarget &&
+    state.localUiSettings.chatLayout === "classic"
+  ) {
+    composer.append(renderQuickPrompts(doc, mount, state));
+  }
+  if (!state.networkDiagramTarget) {
+    composer.append(renderTaskQueue(doc, mount, state));
+  }
   composer.append(
-    renderConversationSwitcher(doc, mount, state),
-    renderQuickPrompts(doc, mount, state),
-    renderTaskQueue(doc, mount, state),
     row,
     renderComposerFooter(
       doc,
@@ -2322,6 +2895,84 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
 
 function composerMessageContent(raw: string, state: PanelState): string {
   return expandSlashCommandMessage(expandPasteMarkers(raw, state));
+}
+
+async function sendComposerMessage(
+  mount: HTMLElement,
+  state: PanelState,
+  text: string,
+): Promise<void> {
+  if (!state.networkDiagramTarget) {
+    await sendMessage(mount, state, text, { fromComposer: true });
+    return;
+  }
+  const instruction = text.trim();
+  const sidebar = findSidebarStateByMount(mount);
+  if (!instruction || !sidebar || sidebar.networkDiagramBusy) return;
+
+  state.draftText = "";
+  state.draftSelectionStart = 0;
+  state.draftSelectionEnd = 0;
+  state.draftHadFocus = true;
+  state.skipNextDraftCapture = true;
+  state.focusInput = true;
+  state.networkDiagramAutoFollowMessages = true;
+  state.scrollToBottom = true;
+  renderPanel(mount, state);
+  await runNetworkDiagramRequest(sidebar, "", instruction, "refine");
+}
+
+function activateNetworkDiagramTarget(
+  mount: HTMLElement,
+  state: PanelState,
+  instruction?: string,
+): void {
+  if (!state.networkDiagramTarget) {
+    state.networkDiagramReturnDraft = {
+      text: state.draftText,
+      selectionStart: state.draftSelectionStart,
+      selectionEnd: state.draftSelectionEnd,
+    };
+    state.networkDiagramTarget = true;
+    state.draftText = "";
+    state.draftSelectionStart = 0;
+    state.draftSelectionEnd = 0;
+  }
+  if (instruction) {
+    state.draftText = instruction;
+    state.draftSelectionStart = instruction.length;
+    state.draftSelectionEnd = instruction.length;
+  }
+  state.skipNextDraftCapture = true;
+  state.focusInput = true;
+  state.networkDiagramAutoFollowMessages = true;
+  state.scrollToBottom = true;
+  renderPanel(mount, state);
+  const sidebar = findSidebarStateByMount(mount);
+  if (sidebar?.overviewActive) void showOverviewWindow(sidebar);
+}
+
+function deactivateNetworkDiagramTarget(
+  mount: HTMLElement,
+  state: PanelState,
+): void {
+  state.networkDiagramTarget = false;
+  const previous = state.networkDiagramReturnDraft;
+  state.networkDiagramReturnDraft = undefined;
+  if (previous) {
+    state.draftText = previous.text;
+    state.draftSelectionStart = previous.selectionStart;
+    state.draftSelectionEnd = previous.selectionEnd;
+  } else {
+    state.draftText = "";
+    state.draftSelectionStart = 0;
+    state.draftSelectionEnd = 0;
+  }
+  state.skipNextDraftCapture = true;
+  state.focusInput = true;
+  renderPanel(mount, state);
+  const sidebar = findSidebarStateByMount(mount);
+  if (sidebar?.overviewActive) void showOverviewWindow(sidebar);
 }
 
 function queueWhileSendingEnabled(state: PanelState): boolean {
@@ -2591,9 +3242,13 @@ function renderComposerFooter(
   const left = el(doc, "div", "composer-footer-left");
   const actions = el(doc, "div", "composer-footer-actions");
   left.append(status);
+  if (
+    !state.networkDiagramTarget &&
+    state.localUiSettings.chatLayout === "classic"
+  ) {
+    actions.append(screenshotAttach, imageAttach);
+  }
   actions.append(
-    screenshotAttach,
-    imageAttach,
     renderModelSwitcher(doc, mount, state),
     renderReasoningSwitcher(doc, mount, state),
     renderYoloToggle(doc, mount, state),
@@ -3519,7 +4174,7 @@ function renderActiveQuickAsk(
   focusInput = false,
 ): void {
   if (quickAskControllers.get(sidebar) !== controller) return;
-  const doc = sidebar.mount.ownerDocument!;
+  const doc = controller.root.ownerDocument!;
   const previousScroll = controller.root.querySelector<HTMLElement>(
     ".zai-quick-ask-scroll",
   );
@@ -3739,7 +4394,7 @@ async function sendQuickAsk(
       error: "请先配置可用的 AI 模型。",
     };
     renderActiveQuickAsk(sidebar, controller);
-    openAddonPreferences(sidebar.mount.ownerDocument!);
+    openAddonPreferences(controller.root.ownerDocument!);
     return;
   }
 
@@ -3770,7 +4425,7 @@ async function sendQuickAsk(
   const assistantMessage: Message = { role: "assistant", content: "" };
   const conversation = [...controller.state.messages, userMessage];
 
-  const win = sidebar.mount.ownerDocument!.defaultView!;
+  const win = hostWindowForSidebar(sidebar)!;
   const abort = new win.AbortController();
   controller.abort = abort;
   let toolSession: ZoteroAgentToolSession | null = null;
@@ -3884,7 +4539,7 @@ async function copyQuickAskAnswer(
 ): Promise<void> {
   const answer = latestQuickAskAnswer(controller.state);
   if (!answer || quickAskControllers.get(sidebar) !== controller) return;
-  const doc = sidebar.mount.ownerDocument!;
+  const doc = controller.root.ownerDocument!;
   await copyToClipboard(
     doc,
     answer,
@@ -3940,7 +4595,8 @@ async function transferQuickAskToResearch(
   await persistPanelConversations(state);
   state.autoFollowMessages = true;
   state.scrollToBottom = true;
-  setColumnCollapsed(sidebar.mount.ownerDocument!.defaultView!, sidebar, false);
+  const hostWindow = hostWindowForSidebar(sidebar);
+  if (hostWindow) setColumnCollapsed(hostWindow, sidebar, false);
   closeQuickAsk(sidebar);
   renderPanel(sidebar.mount, state);
 }
@@ -4114,10 +4770,7 @@ async function streamAssistant(
         ? (text, meta) => saveDebugFrontBlockForState(state, text, meta.source)
         : undefined,
       getActiveReader: () =>
-        getReaderForCurrentSelection(
-          mount.ownerDocument!.defaultView,
-          state.itemID,
-        ),
+        getReaderForCurrentSelection(hostWindowForMount(mount), state.itemID),
       // Curry the live document and itemID so the model writes to whatever
       // is selected at call time (not at session-creation time). Refresh
       // the visible note panel after the write so the user sees the
@@ -4132,13 +4785,28 @@ async function streamAssistant(
         // middle-column view (showOverviewWindow).
         const itemKey = resolveItemKeyForCache(state.itemID);
         const sb = findSidebarStateByDocument(mount.ownerDocument!);
-        const saved = itemKey ? saveOverview(itemKey, data) : Promise.resolve();
-        // Default behavior: also store the overview as an HTML attachment on the
-        // item (so it rides Zotero's official sync). Fire-and-forget, best-effort.
-        void writeOverviewAttachment(mount.ownerDocument!, state.itemID, data);
-        void saved.then(() => {
+        void (async () => {
+          const workspace = itemKey
+            ? (await loadNetworkDiagramWorkspace(itemKey))?.workspace
+            : undefined;
+          const revision = currentNetworkDiagramRevision(workspace);
+          const nextData = revision
+            ? {
+                ...data,
+                networkTopology: detailedNetworkGraphToMindmap(revision.graph),
+              }
+            : data;
+          if (itemKey) await saveOverview(itemKey, nextData);
+          // Keep the code-derived graph in the synced HTML attachment when a
+          // later overview refresh replaces the outline. The overview model
+          // itself never produces networkTopology.
+          void writeOverviewAttachment(
+            mount.ownerDocument!,
+            state.itemID,
+            nextData,
+          );
           if (sb?.overviewActive) void showOverviewWindow(sb);
-        });
+        })();
       },
       appendToChildNote: async (content) => {
         const noteScroll = captureVisibleNoteScrollForDocument(
@@ -4821,7 +5489,7 @@ async function getSelectedTextForPrompt(
   if (translationSidebar) {
     return refreshFullTranslationSelection(translationSidebar, itemID, false);
   }
-  const win = mount.ownerDocument?.defaultView;
+  const win = hostWindowForMount(mount);
   const reader = getActiveReader(win);
   const ids = readerItemIDs(reader, itemID);
   const draft = firstUsableStoredSelectionAnnotation(ids);
@@ -4897,8 +5565,7 @@ function refreshActiveReaderSelection(
 function fullTranslationSidebarForMount(
   mount: HTMLElement,
 ): WindowSidebarState | null {
-  const win = mount.ownerDocument?.defaultView;
-  const sidebar = win ? windowSidebars.get(win) : undefined;
+  const sidebar = findSidebarStateByMount(mount);
   return sidebar?.mount === mount && sidebar.fullTranslationActive
     ? sidebar
     : null;
@@ -4909,7 +5576,7 @@ function refreshFullTranslationSelection(
   itemID: number | null,
   clearWhenEmpty: boolean,
 ): string {
-  const win = sidebar.mount.ownerDocument?.defaultView;
+  const win = hostWindowForSidebar(sidebar);
   const ids = readerItemIDs(getActiveReader(win), itemID);
   const session = fullTranslationSessions.get(sidebar);
   const host = fullTranslationHosts.get(sidebar);
@@ -5255,7 +5922,8 @@ function ignoreSelectedTextForPrompt(
   mount: HTMLElement,
   itemID: number | null,
 ) {
-  const reader = getActiveReader(mount.ownerDocument?.defaultView);
+  const hostWindow = hostWindowForMount(mount);
+  const reader = getActiveReader(hostWindow);
   const ids = readerItemIDs(reader, itemID);
   const text = firstStoredSelectedText(ids);
   for (const id of ids) {
@@ -5264,7 +5932,7 @@ function ignoreSelectedTextForPrompt(
     selectedAnnotationByItem.delete(id);
   }
   if (fullTranslationSidebarForMount(mount)) {
-    mount.ownerDocument?.defaultView?.getSelection()?.removeAllRanges();
+    hostWindow?.getSelection()?.removeAllRanges();
     return;
   }
   clearReaderTransientPdfState(reader, {
@@ -5332,30 +6000,26 @@ function updateMessageBubble(
   const state = states.get(mount);
   const shouldStickToBottom =
     state?.autoFollowMessages ?? isMessagesNearBottom(mount);
-  if (state) {
-    updateAssistantProgress(
-      root,
-      body,
-      assistantProgressFor(state, index, message),
-    );
-  }
+  preserveStreamingMessagesScroll(mount, shouldStickToBottom, () => {
+    if (state) {
+      updateAssistantProgress(
+        root,
+        body,
+        assistantProgressFor(state, index, message),
+      );
+    }
 
-  if (message.thinking) {
-    renderMarkdownInto(ensureThinkingBody(root, body), message.thinking);
-  }
-  renderMarkdownInto(
-    body,
-    message.content || (state?.activeAssistantIndex === index ? " " : ""),
-  );
-  if (state) {
-    scheduleAssistantPdfQuoteLinks(body, mount, state, message, index);
-  }
-  if (shouldStickToBottom) {
-    scrollMessagesToBottom(mount);
-  } else {
-    restoreSavedMessagesScroll(mount);
-  }
-  syncMessagesScrollState(mount);
+    if (message.thinking) {
+      renderMarkdownInto(ensureThinkingBody(root, body), message.thinking);
+    }
+    renderMarkdownInto(
+      body,
+      message.content || (state?.activeAssistantIndex === index ? " " : ""),
+    );
+    if (state) {
+      scheduleAssistantPdfQuoteLinks(body, mount, state, message, index);
+    }
+  });
 }
 
 function updateAssistantProgress(
@@ -5996,7 +6660,7 @@ function buildNoteSeg(
   });
 
   const overviewBtn = makeSeg("总览", view === "overview");
-  overviewBtn.title = "全文总览：章节骨架 + 结构图纸";
+  overviewBtn.title = "全文总览：章节目录 + 逻辑结构图 + 可选网络拓扑图";
   overviewBtn.addEventListener("click", () => {
     if (view !== "overview") void showOverviewWindow(sidebar);
   });
@@ -6167,8 +6831,8 @@ async function summarizeReadingFromNoteSwitcher(
   sidebar: WindowSidebarState,
   button: HTMLButtonElement,
 ): Promise<void> {
-  const doc = sidebar.mount.ownerDocument!;
-  const mainWin = doc.defaultView ?? null;
+  const doc = button.ownerDocument!;
+  const mainWin = hostWindowForSidebar(sidebar);
   const itemID = mainWin ? safeSelectedItemID(mainWin) : null;
   const original = button.textContent ?? "对话总结";
   const restoreTitle = "用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记";
@@ -6355,11 +7019,535 @@ const OVERVIEW_PROMPT = [
   "  · narrative：2–4 句中文核心讲述，结尾点出本文贡献；",
   "  · 每个章节：一句话 gist（中文，≤30 字）；phase（motivation｜method｜validation）；emphasis（innovation｜result｜normal｜background）。emphasis=innovation 的章节，其 gist 必须写清“新在哪”（本文贡献）；结果/SOTA 章节用 result；相关工作/总结等背景章节用 background。",
   "  · flowchart：问题→方法→结果及关键依赖的逻辑图；把本文新提出的部分节点 type 设为 innovation 并把 sectionNo 设为对应章节号，效果/SOTA 节点用 result，其余用 section/point。",
-  "第三步：调用 render_paper_overview，把 narrative、sections（含 gist/charStart/charEnd/anchors/phase/emphasis）与 flowchart 一起渲染。",
+  "第三步：调用 render_paper_overview，把 narrative、sections（含 gist/charStart/charEnd/anchors/phase/emphasis）与 flowchart 一起渲染。网络图由关联的 GitHub 代码单独生成，不要在全文总览中生成网络图。",
   "重要：narrative 必填；每个 section 都必须带 phase 和 emphasis 两个字段，用英文值（phase: motivation|method|validation；emphasis: innovation|result|normal|background）。不要把“新：/创新：”写进 gist——改用 emphasis=innovation 表达。",
-  '示例：render_paper_overview({ "narrative":"……结尾点出贡献", "sections":[ {"no":"1","title":"Introduction","gist":"动机…","phase":"motivation","emphasis":"background"}, {"no":"5","title":"Estimator Initialization","gist":"……（新在哪）","phase":"method","emphasis":"innovation"}, {"no":"9","title":"Experiments","gist":"……","phase":"validation","emphasis":"result"} ], "flowchart":{…} })',
+  '示例：render_paper_overview({ "narrative":"……结尾点出贡献", "sections":[ {"no":"1","title":"Introduction","gist":"动机…","phase":"motivation","emphasis":"background"}, {"no":"5","title":"Estimator Initialization","gist":"……（新在哪）","phase":"method","emphasis":"innovation"}, {"no":"9","title":"Experiments","gist":"……","phase":"validation","emphasis":"result"} ], "flowchart":{…} })。',
   "必须调用 render_paper_overview 完成渲染，不要只用文字回答。",
 ].join("\n");
+
+function networkDiagramOfficialPrompt(
+  sidebar: WindowSidebarState | null | undefined,
+  repositoryURL?: string,
+  paperTitle?: string,
+): string {
+  const explicitRepositoryURL = repositoryURL?.trim();
+  const currentRepositoryURL =
+    sidebar?.networkDiagramDraftRepositoryURL?.trim();
+  return buildNetworkDiagramUserPrompt({
+    repositoryURL:
+      explicitRepositoryURL || currentRepositoryURL || "当前已关联仓库",
+    commitSHA:
+      !explicitRepositoryURL || explicitRepositoryURL === currentRepositoryURL
+        ? sidebar?.networkDiagramCommitSHA
+        : undefined,
+    paperTitle: paperTitle ?? sidebar?.networkDiagramPaperTitle,
+  });
+}
+
+function networkDiagramInstructionWithSelection(
+  sidebar: WindowSidebarState,
+  instruction: string,
+): string {
+  const node: DetailedNetworkNode | undefined =
+    sidebar.networkDiagramSelectedNode;
+  if (!node) return instruction;
+  return [
+    "[当前选中的网络图节点]",
+    `id: ${node.id}`,
+    `label: ${node.label}`,
+    `stage: ${node.stage}`,
+    node.tensorShape ? `tensorShape: ${node.tensorShape}` : "",
+    `description: ${node.description}`,
+    node.notes ? `parameters: ${node.notes.parameters}` : "",
+    node.notes ? `dataFlow: ${node.notes.dataFlow}` : "",
+    node.notes ? `objective: ${node.notes.objective}` : "",
+    node.notes ? `attribution: ${node.notes.attribution}` : "",
+    node.notes ? `implementation: ${node.notes.implementation}` : "",
+    node.evidenceIDs.length
+      ? `evidenceIDs: ${node.evidenceIDs.join(", ")}`
+      : "",
+    "[用户要求]",
+    instruction,
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+function networkDiagramPaperEvidence(data: OverviewData): EvidenceReference[] {
+  return data.sections
+    .filter((section) => section.phase === "method")
+    .map((section) => ({
+      id: `paper:section:${section.no}`,
+      kind: "paper" as const,
+      label: `§${section.no} ${section.title}`,
+      sectionNo: section.no,
+    }));
+}
+
+function networkDiagramPaperContext(data: OverviewData): string {
+  return JSON.stringify(
+    {
+      title: data.title,
+      narrative: data.narrative,
+      methodSections: data.sections
+        .filter((section) => section.phase === "method")
+        .map((section) => ({
+          no: section.no,
+          title: section.title,
+          gist: section.gist,
+          charStart: section.charStart,
+          charEnd: section.charEnd,
+          anchors: section.anchors,
+          emphasis: section.emphasis,
+        })),
+    },
+    null,
+    2,
+  );
+}
+
+function emptyNetworkDiagramWorkspace(
+  itemKey: string,
+): NetworkDiagramWorkspace {
+  return {
+    itemKey,
+    revisions: [],
+    messages: [],
+    evidenceIndex: [],
+  };
+}
+
+function canonicalNetworkDiagramRepositoryURL(repositoryURL: string): string {
+  const { owner, repo } = parsePublicGitHubRepositoryURL(repositoryURL);
+  return `https://github.com/${owner}/${repo}`;
+}
+
+async function saveNetworkDiagramRepositoryLink(
+  sidebar: WindowSidebarState,
+  itemKey: string,
+  repositoryURL: string,
+): Promise<void> {
+  const canonicalURL = canonicalNetworkDiagramRepositoryURL(repositoryURL);
+  const stored = await loadNetworkDiagramWorkspace(itemKey);
+  const workspace = stored?.workspace ?? emptyNetworkDiagramWorkspace(itemKey);
+  const previousURL =
+    workspace.linkedRepositoryURL ?? workspace.repository?.url ?? "";
+  if (workspace.linkedRepositoryURL !== canonicalURL) {
+    await saveNetworkDiagramWorkspace(itemKey, {
+      ...workspace,
+      linkedRepositoryURL: canonicalURL,
+    });
+  }
+  sidebar.networkDiagramDraftRepositoryURL = canonicalURL;
+  if (previousURL && previousURL !== canonicalURL) {
+    sidebar.networkDiagramCommitSHA = undefined;
+  }
+  sidebar.networkDiagramError = undefined;
+  if (sidebar.overviewActive) await showOverviewWindow(sidebar);
+}
+
+function nextNetworkDiagramRevisionID(
+  workspace: NetworkDiagramWorkspace,
+): string {
+  const numbers = workspace.revisions
+    .map((revision) => /^v(\d+)$/.exec(revision.id)?.[1])
+    .filter((value): value is string => !!value)
+    .map(Number)
+    .filter(Number.isFinite);
+  return `v${(numbers.length ? Math.max(...numbers) : 0) + 1}`;
+}
+
+function networkDiagramMessageID(role: "user" | "assistant"): string {
+  return `network-${role}-${Date.now().toString(36)}-${Math.random()
+    .toString(36)
+    .slice(2, 7)}`;
+}
+
+function mergeNetworkDiagramEvidence(
+  existing: EvidenceReference[],
+  incoming: EvidenceReference[],
+): EvidenceReference[] {
+  const merged = new Map(existing.map((item) => [item.id, item]));
+  for (const item of incoming) merged.set(item.id, item);
+  return [...merged.values()];
+}
+
+async function persistNetworkDiagramResult(
+  sidebar: WindowSidebarState,
+  itemKey: string,
+  overview: OverviewData,
+  workspace: NetworkDiagramWorkspace,
+  result: NetworkDiagramAgentResult,
+  instruction: string,
+  mode: "initial" | "refine",
+): Promise<void> {
+  const revisionID = nextNetworkDiagramRevisionID(workspace);
+  const parentID = workspace.currentRevisionID;
+  let next = appendNetworkDiagramRevision(workspace, {
+    id: revisionID,
+    parentID,
+    createdAt: Date.now(),
+    userInstruction: instruction,
+    assistantSummary: result.assistantSummary,
+    usage: result.usage,
+    repository: result.repository,
+    graph: result.graph,
+    coverage: result.coverage,
+    evidenceIDs: Array.from(
+      new Set(result.graph.nodes.flatMap((node) => node.evidenceIDs)),
+    ),
+    changedNodeIDs: result.changedNodeIDs,
+  });
+  const now = Date.now();
+  const messages = [...next.messages];
+  messages.push({
+    id: networkDiagramMessageID("user"),
+    role: "user",
+    content: instruction,
+    createdAt: now,
+  });
+  messages.push({
+    id: networkDiagramMessageID("assistant"),
+    role: "assistant",
+    content: result.assistantSummary,
+    createdAt: now + 1,
+  });
+  next = {
+    ...next,
+    linkedRepositoryURL: result.repository.url,
+    repository: result.repository,
+    messages,
+    evidenceIndex: mergeNetworkDiagramEvidence(
+      next.evidenceIndex,
+      result.evidence,
+    ),
+  };
+  sidebar.networkDiagramMessages = next.messages;
+  sidebar.networkDiagramSelectedNode = sidebar.networkDiagramSelectedNode
+    ? result.graph.nodes.find(
+        (node) => node.id === sidebar.networkDiagramSelectedNode?.id,
+      )
+    : undefined;
+  const nextOverview: OverviewData = {
+    ...overview,
+    networkTopology: detailedNetworkGraphToMindmap(result.graph),
+  };
+
+  // The candidate has already passed the detail/evidence gate. Keep it out of
+  // the visible view until both stores have accepted the complete snapshot.
+  await Promise.all([
+    saveNetworkDiagramWorkspace(itemKey, next),
+    saveOverview(itemKey, nextOverview),
+  ]);
+  const panelState = states.get(sidebar.mount);
+  if (panelState?.networkDiagramTarget) {
+    panelState.scrollToBottom = true;
+    renderPanel(sidebar.mount, panelState);
+  }
+  void writeOverviewAttachment(
+    sidebar.noteMount.ownerDocument!,
+    panelState?.itemID ?? null,
+    nextOverview,
+  );
+}
+
+function initialNetworkDiagramProgress(): NetworkDiagramAnalysisProgress {
+  return {
+    status: "selecting-code",
+    currentDetail: "正在准备论文方法上下文与仓库代码树",
+    completedSteps: [],
+    readFiles: [],
+    readPaperSections: [],
+    toolActivities: [],
+    coverage: {
+      "inputs-preprocess": "missing",
+      "backbone-features": "missing",
+      "core-innovations": "missing",
+      "branches-fusion": "missing",
+      "inference-path": "missing",
+      "training-path": "missing",
+      "parameters-tensors": "missing",
+      outputs: "missing",
+    },
+  };
+}
+
+function refreshNetworkDiagramTaskCard(sidebar: WindowSidebarState): void {
+  const panelState = states.get(sidebar.mount);
+  const messages = sidebar.mount.querySelector<HTMLElement>(".messages");
+  if (!panelState || !messages) return;
+  const previous = messages.querySelector<HTMLElement>(
+    ".network-diagram-task-card",
+  );
+  if (!panelState.networkDiagramTarget) {
+    previous?.remove();
+    return;
+  }
+  if (
+    sidebar.networkDiagramItemKey !==
+    (resolveItemKeyForCache(panelState.itemID) ?? undefined)
+  ) {
+    previous?.remove();
+    return;
+  }
+  if (
+    !sidebar.networkDiagramProgress &&
+    !sidebar.networkDiagramBusy &&
+    !sidebar.networkDiagramError
+  ) {
+    previous?.remove();
+    return;
+  }
+  const card = renderNetworkDiagramAnalysisCard(
+    messages.ownerDocument!,
+    {
+      progress: sidebar.networkDiagramProgress ?? null,
+      busy: sidebar.networkDiagramBusy === true,
+      error: sidebar.networkDiagramError,
+    },
+    { onCancel: () => cancelNetworkDiagramAnalysis(sidebar) },
+  );
+  if (previous) previous.replaceWith(card);
+  else messages.append(card);
+  if (panelState.networkDiagramAutoFollowMessages !== false) {
+    messages.scrollTop = messages.scrollHeight;
+  }
+}
+
+function cancelNetworkDiagramAnalysis(sidebar: WindowSidebarState): void {
+  const abort = sidebar.networkDiagramAbort;
+  if (!abort || !sidebar.networkDiagramBusy) return;
+  sidebar.networkDiagramAbort = undefined;
+  sidebar.networkDiagramBusy = false;
+  if (sidebar.networkDiagramProgress) {
+    sidebar.networkDiagramProgress = {
+      ...sidebar.networkDiagramProgress,
+      status: "cancelled",
+      currentDetail: "分析已由用户停止；当前网络图和已统计 Token 均已保留",
+    };
+  }
+  abort.abort();
+  refreshNetworkDiagramTaskCard(sidebar);
+  if (sidebar.overviewActive) void showOverviewWindow(sidebar);
+}
+
+async function runNetworkDiagramRequest(
+  sidebar: WindowSidebarState,
+  repositoryURL: string,
+  instruction: string,
+  mode: "initial" | "refine",
+): Promise<void> {
+  const panelState = states.get(sidebar.mount);
+  const preset = panelState ? selectedChatPreset(panelState) : null;
+  const itemKey = resolveItemKeyForCache(panelState?.itemID ?? null);
+  if (!panelState || !preset || !itemKey) {
+    sidebar.networkDiagramError =
+      "请先选择论文，并配置一个可用的 AI 模型预设。";
+    refreshNetworkDiagramTaskCard(sidebar);
+    if (sidebar.overviewActive) await showOverviewWindow(sidebar);
+    return;
+  }
+  if (sidebar.networkDiagramBusy) return;
+
+  const [storedOverview, storedWorkspace] = await Promise.all([
+    loadOverview(itemKey),
+    loadNetworkDiagramWorkspace(itemKey),
+  ]);
+  if (!storedOverview?.data) {
+    sidebar.networkDiagramError = "请先生成全文总览，再分析代码网络图。";
+    refreshNetworkDiagramTaskCard(sidebar);
+    if (sidebar.overviewActive) await showOverviewWindow(sidebar);
+    return;
+  }
+  let workspace =
+    storedWorkspace?.workspace ?? emptyNetworkDiagramWorkspace(itemKey);
+  sidebar.networkDiagramMessages = workspace.messages;
+  const currentRevision = currentNetworkDiagramRevision(workspace);
+  const currentRepository = currentRevision?.repository ?? workspace.repository;
+  let targetURL =
+    mode === "refine" ? (currentRepository?.url ?? "") : repositoryURL.trim();
+  if (mode === "refine" && (!currentRepository || !currentRevision)) {
+    sidebar.networkDiagramError = "当前还没有可优化的 GitHub 网络图。";
+    refreshNetworkDiagramTaskCard(sidebar);
+    if (sidebar.overviewActive) await showOverviewWindow(sidebar);
+    return;
+  }
+  if (mode === "initial") {
+    try {
+      targetURL = canonicalNetworkDiagramRepositoryURL(targetURL);
+    } catch (error) {
+      sidebar.networkDiagramError = errorMessage(error);
+      refreshNetworkDiagramTaskCard(sidebar);
+      if (sidebar.overviewActive) await showOverviewWindow(sidebar);
+      return;
+    }
+    if (workspace.linkedRepositoryURL !== targetURL) {
+      workspace = { ...workspace, linkedRepositoryURL: targetURL };
+      await saveNetworkDiagramWorkspace(itemKey, workspace);
+    }
+  }
+
+  sidebar.networkDiagramMessages = [
+    ...workspace.messages,
+    {
+      id: networkDiagramMessageID("user"),
+      role: "user",
+      content: instruction,
+      createdAt: Date.now(),
+    },
+  ];
+  panelState.networkDiagramAutoFollowMessages = true;
+  if (panelState.networkDiagramTarget) {
+    panelState.scrollToBottom = true;
+    renderPanel(sidebar.mount, panelState);
+  }
+
+  sidebar.networkDiagramAbort?.abort();
+  const AbortControllerCtor =
+    sidebar.noteMount.ownerDocument!.defaultView?.AbortController ??
+    AbortController;
+  const controller = new AbortControllerCtor();
+  sidebar.networkDiagramAbort = controller;
+  sidebar.networkDiagramBusy = true;
+  sidebar.networkDiagramError = undefined;
+  sidebar.networkDiagramProgress = initialNetworkDiagramProgress();
+  sidebar.networkDiagramDraftRepositoryURL = targetURL;
+  sidebar.networkDiagramCommitSHA =
+    mode === "refine" ? currentRepository?.commitSHA : undefined;
+  sidebar.networkDiagramPaperTitle = storedOverview.data.title;
+  sidebar.overviewNav ??= { history: [], locked: false };
+  sidebar.overviewNav.activeView = "network";
+  if (sidebar.overviewActive) await showOverviewWindow(sidebar);
+  refreshNetworkDiagramTaskCard(sidebar);
+
+  let paperToolSession: ZoteroAgentToolSession | null = null;
+  try {
+    const hasLatexSource =
+      panelState.itemID != null
+        ? await ensureArxivSourceForItem(panelState.itemID)
+        : false;
+    paperToolSession = createZoteroAgentToolSession({
+      source: zoteroContextSource,
+      itemID: panelState.itemID,
+      policy: contextPolicy,
+      getActiveReader: () =>
+        getReaderForCurrentSelection(
+          hostWindowForMount(sidebar.mount),
+          panelState.itemID,
+        ),
+    });
+    const result = await runNetworkDiagramAgent({
+      repositoryURL: targetURL,
+      provider: getProvider(preset),
+      preset,
+      signal: controller.signal,
+      paperContext: networkDiagramPaperContext(storedOverview.data),
+      paperEvidence: networkDiagramPaperEvidence(storedOverview.data),
+      paperSourceMode: hasLatexSource ? "latex" : "pdf",
+      paperTools: quickAskReadOnlyTools(paperToolSession.tools).filter((tool) =>
+        [
+          "zotero_search_pdf",
+          "zotero_read_pdf_range",
+          "zotero_get_full_pdf",
+          "arxiv_list_sections",
+          "arxiv_get_section",
+          "arxiv_get_equation",
+          "arxiv_get_figure",
+          "arxiv_get_table",
+        ].includes(tool.name),
+      ),
+      existingEvidence: mode === "refine" ? workspace.evidenceIndex : undefined,
+      currentGraph: mode === "refine" ? currentRevision?.graph : undefined,
+      mode,
+      userInstruction: networkDiagramInstructionWithSelection(
+        sidebar,
+        instruction,
+      ),
+      pinnedRepository: mode === "refine" ? currentRepository : undefined,
+      conversationContext:
+        mode === "refine"
+          ? JSON.stringify(workspace.messages.slice(-8))
+          : undefined,
+      promptCacheKey: buildPromptCacheKey(preset, panelState.itemID),
+      relayRoutingItemKey: itemKey,
+      toolSettings: loadToolSettings(zoteroPrefs()),
+      onProgress: (progress) => {
+        if (
+          controller.signal.aborted ||
+          sidebar.networkDiagramAbort !== controller
+        )
+          return;
+        sidebar.networkDiagramProgress = progress;
+        refreshNetworkDiagramTaskCard(sidebar);
+      },
+    });
+    if (controller.signal.aborted || sidebar.networkDiagramAbort !== controller)
+      return;
+    await persistNetworkDiagramResult(
+      sidebar,
+      itemKey,
+      storedOverview.data,
+      workspace,
+      result,
+      instruction,
+      mode,
+    );
+    sidebar.networkDiagramDraftRepositoryURL = result.repository.url;
+    sidebar.networkDiagramCommitSHA = result.repository.commitSHA;
+  } catch (error) {
+    if (!controller.signal.aborted) {
+      sidebar.networkDiagramError = errorMessage(error);
+      refreshNetworkDiagramTaskCard(sidebar);
+    }
+  } finally {
+    paperToolSession?.dispose();
+    if (sidebar.networkDiagramAbort === controller) {
+      sidebar.networkDiagramAbort = undefined;
+      sidebar.networkDiagramBusy = false;
+      if (sidebar.overviewActive) await showOverviewWindow(sidebar);
+      refreshNetworkDiagramTaskCard(sidebar);
+    }
+  }
+}
+
+async function switchNetworkDiagramRevision(
+  sidebar: WindowSidebarState,
+  target: "undo" | "latest",
+): Promise<void> {
+  const panelState = states.get(sidebar.mount);
+  const itemKey = resolveItemKeyForCache(panelState?.itemID ?? null);
+  if (!itemKey || sidebar.networkDiagramBusy) return;
+  const [storedOverview, storedWorkspace] = await Promise.all([
+    loadOverview(itemKey),
+    loadNetworkDiagramWorkspace(itemKey),
+  ]);
+  if (!storedOverview?.data || !storedWorkspace?.workspace) return;
+  const next =
+    target === "undo"
+      ? undoNetworkDiagramRevision(storedWorkspace.workspace)
+      : restoreLatestNetworkDiagramRevision(storedWorkspace.workspace);
+  const revision = currentNetworkDiagramRevision(next);
+  if (!revision) return;
+  sidebar.networkDiagramSelectedNode = sidebar.networkDiagramSelectedNode
+    ? revision.graph.nodes.find(
+        (node) => node.id === sidebar.networkDiagramSelectedNode?.id,
+      )
+    : undefined;
+  const nextOverview: OverviewData = {
+    ...storedOverview.data,
+    networkTopology: detailedNetworkGraphToMindmap(revision.graph),
+  };
+  await Promise.all([
+    saveNetworkDiagramWorkspace(itemKey, next),
+    saveOverview(itemKey, nextOverview),
+  ]);
+  void writeOverviewAttachment(
+    sidebar.noteMount.ownerDocument!,
+    panelState?.itemID ?? null,
+    nextOverview,
+  );
+  if (sidebar.overviewActive) await showOverviewWindow(sidebar);
+}
 
 // Collect the plugin's own stylesheet rules so the browser export looks the
 // same outside Zotero. Skips unreadable (cross-origin) sheets.
@@ -6375,13 +7563,50 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   const panelState = states.get(sidebar.mount);
   const itemID = panelState?.itemID ?? null;
   const itemKey = resolveItemKeyForCache(itemID);
-  const stored = itemKey ? await loadOverview(itemKey) : null;
+  if (sidebar.networkDiagramItemKey !== (itemKey ?? undefined)) {
+    sidebar.networkDiagramAbort?.abort();
+    sidebar.networkDiagramAbort = undefined;
+    sidebar.networkDiagramBusy = false;
+    sidebar.networkDiagramProgress = undefined;
+    sidebar.networkDiagramMessages = undefined;
+    sidebar.networkDiagramSelectedNode = undefined;
+    sidebar.networkDiagramError = undefined;
+    sidebar.networkDiagramDraftRepositoryURL = undefined;
+    sidebar.networkDiagramCommitSHA = undefined;
+    sidebar.networkDiagramPaperTitle = undefined;
+    sidebar.networkDiagramItemKey = itemKey ?? undefined;
+  }
+  const [stored, storedNetworkDiagram] = itemKey
+    ? await Promise.all([
+        loadOverview(itemKey),
+        loadNetworkDiagramWorkspace(itemKey),
+      ])
+    : [null, null];
   // The user may have switched away while the async load was in flight.
   if (!sidebar.overviewActive) return;
+  if (!sidebar.networkDiagramBusy) {
+    sidebar.networkDiagramMessages =
+      storedNetworkDiagram?.workspace.messages ?? [];
+    const loadedWorkspace = storedNetworkDiagram?.workspace;
+    const loadedRevision = loadedWorkspace
+      ? currentNetworkDiagramRevision(loadedWorkspace)
+      : undefined;
+    const loadedRepositoryURL =
+      loadedWorkspace?.linkedRepositoryURL ??
+      loadedRevision?.repository?.url ??
+      loadedWorkspace?.repository?.url;
+    if (loadedRepositoryURL) {
+      sidebar.networkDiagramDraftRepositoryURL = loadedRepositoryURL;
+    }
+    sidebar.networkDiagramCommitSHA =
+      loadedRevision?.repository?.commitSHA ??
+      loadedWorkspace?.repository?.commitSHA;
+    sidebar.networkDiagramPaperTitle = stored?.data?.title;
+  }
 
   // Restore this item's persisted 在读 anchor (survives restart + syncs across
   // machines). The back stack / lock stay ephemeral.
-  if (stored?.data && itemKey) {
+  if (stored?.data && itemKey && sidebar.overviewNavItemKey !== itemKey) {
     const rec = await loadReading(itemKey);
     if (!sidebar.overviewActive) return;
     sidebar.overviewNav = {
@@ -6389,6 +7614,7 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
       locked: false,
       readingNo: rec?.readingNo,
     };
+    sidebar.overviewNavItemKey = itemKey;
   }
 
   sidebar.noteMount.replaceChildren();
@@ -6448,6 +7674,83 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
             }
           : undefined,
         onOpenInBrowser: () => void openOverviewInBrowser(sidebar),
+        onViewChange: (view) => {
+          if (view !== "network" && panelState?.networkDiagramTarget) {
+            deactivateNetworkDiagramTarget(sidebar.mount, panelState);
+          } else if (panelState) renderPanel(sidebar.mount, panelState);
+        },
+        networkDiagram:
+          panelState && itemKey
+            ? {
+                state: {
+                  workspace: storedNetworkDiagram?.workspace ?? null,
+                  progress: sidebar.networkDiagramProgress ?? null,
+                  busy: sidebar.networkDiagramBusy === true,
+                  error: sidebar.networkDiagramError,
+                  draftRepositoryURL: sidebar.networkDiagramDraftRepositoryURL,
+                  targetActive: panelState.networkDiagramTarget === true,
+                },
+                handlers: {
+                  onAnalyze: (repositoryURL) => {
+                    const currentURL =
+                      storedNetworkDiagram?.workspace.linkedRepositoryURL ??
+                      storedNetworkDiagram?.workspace.repository?.url;
+                    if (
+                      currentURL &&
+                      repositoryURL.trim() !== currentURL &&
+                      doc.defaultView?.confirm &&
+                      !doc.defaultView.confirm(
+                        "要更换 GitHub 仓库吗？当前网络图版本仍会保留，可通过版本记录查看。",
+                      )
+                    ) {
+                      return;
+                    }
+                    activateNetworkDiagramTarget(sidebar.mount, panelState);
+                    void runNetworkDiagramRequest(
+                      sidebar,
+                      repositoryURL,
+                      networkDiagramOfficialPrompt(
+                        sidebar,
+                        repositoryURL,
+                        stored.data.title,
+                      ),
+                      "initial",
+                    );
+                  },
+                  onSaveRepository: (repositoryURL) =>
+                    saveNetworkDiagramRepositoryLink(
+                      sidebar,
+                      itemKey,
+                      repositoryURL,
+                    ),
+                  onAskNetwork: (instruction) => {
+                    if (!instruction && panelState.networkDiagramTarget) {
+                      deactivateNetworkDiagramTarget(sidebar.mount, panelState);
+                    } else {
+                      activateNetworkDiagramTarget(
+                        sidebar.mount,
+                        panelState,
+                        instruction,
+                      );
+                    }
+                  },
+                  onSelectNode: (node) => {
+                    sidebar.networkDiagramSelectedNode = node;
+                    if (panelState.networkDiagramTarget) {
+                      renderPanel(sidebar.mount, panelState);
+                    }
+                  },
+                  onOptimizeNode: (node) => {
+                    sidebar.networkDiagramSelectedNode = node;
+                    activateNetworkDiagramTarget(sidebar.mount, panelState);
+                  },
+                  onUndo: () =>
+                    void switchNetworkDiagramRevision(sidebar, "undo"),
+                  onRestoreLatest: () =>
+                    void switchNetworkDiagramRevision(sidebar, "latest"),
+                },
+              }
+            : undefined,
       }),
     );
   } else {
@@ -6539,7 +7842,7 @@ async function showFullTranslation(sidebar: WindowSidebarState): Promise<void> {
 }
 
 function activeReaderTabID(sidebar: WindowSidebarState): string | null {
-  const win = sidebar.mount.ownerDocument?.defaultView;
+  const win = hostWindowForSidebar(sidebar);
   const tabID = (win as any)?.Zotero_Tabs?.selectedID;
   return typeof tabID === "string" && getActiveReader(win) ? tabID : null;
 }
@@ -6555,8 +7858,10 @@ function ensureFullTranslationHost(
     return previous;
   }
   if (previous) unmountFullTranslationHost(previous);
+  const hostWindow = hostWindowForSidebar(sidebar);
+  if (!hostWindow) return null;
   const host = mountFullTranslationHost(
-    sidebar.mount.ownerDocument!,
+    hostWindow.document,
     tabID,
     [],
     sidebar.splitter,
@@ -6576,7 +7881,8 @@ async function loadFullTranslationAssets(
   session: FullTranslationSession,
   request: symbol,
 ): Promise<void> {
-  const doc = sidebar.mount.ownerDocument!;
+  const doc = hostWindowForSidebar(sidebar)?.document;
+  if (!doc) return;
   try {
     session.assets = await loadFullTranslationAssetPreviews(
       session.document,
@@ -7621,12 +8927,18 @@ function setNoteColumnVisible(state: WindowSidebarState, visible: boolean) {
     state.noteColumn.removeAttribute("hidden");
     state.noteSplitter.removeAttribute("hidden");
     applyLastNoteWidth(state);
+    syncDockedWorkspaceLayout(state);
+    const docked = dockedSidebarLayouts.get(state);
+    if (docked) fitDockedWorkspaceToWindow(docked, state);
     return;
   }
   noteColumn.collapsed = true;
   state.noteColumn.setAttribute("collapsed", "true");
   state.noteColumn.setAttribute("hidden", "true");
   state.noteSplitter.setAttribute("hidden", "true");
+  syncDockedWorkspaceLayout(state);
+  const docked = dockedSidebarLayouts.get(state);
+  if (docked) fitDockedWorkspaceToWindow(docked, state);
 }
 
 function refreshVisibleNoteWindow(
@@ -7986,11 +9298,11 @@ async function saveTextAnnotationDraftFromBubble(
   refreshAnnotationSuggestion(mount, index, scrollSnapshot);
   try {
     const reader = getActiveReaderForItem(
-      mount.ownerDocument?.defaultView,
+      hostWindowForMount(mount),
       state.itemID,
     );
     const readerForSelection = getReaderForAttachmentOrItem(
-      mount.ownerDocument?.defaultView,
+      hostWindowForMount(mount),
       state.itemID,
       draft.snapshot.attachmentID,
     );
@@ -8178,6 +9490,406 @@ function renderToolTrace(
   root.append(box);
 }
 
+function fitDockedWorkspaceToWindow(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+): void {
+  const { mainWindow } = entry;
+  const desiredDockWidth = entry.dockedColumnWidth;
+  const noteVisible = isNoteColumnVisible(sidebar);
+  const desiredNoteWidth = noteVisible ? entry.dockedNoteColumnWidth : 0;
+  const splitterWidth =
+    DOCKED_AI_SPLITTER_WIDTH + (noteVisible ? DOCKED_NOTE_SPLITTER_WIDTH : 0);
+  const minimumWorkspaceWidth =
+    MIN_AI_COLUMN_WIDTH + (noteVisible ? MIN_NOTE_COLUMN_WIDTH : 0);
+  const desiredWorkspaceWidth = desiredDockWidth + desiredNoteWidth;
+  const availableWorkspaceWidth = Math.max(
+    minimumWorkspaceWidth,
+    Math.min(
+      desiredWorkspaceWidth,
+      mainWindow.innerWidth - MIN_ZOTERO_DOCKED_CONTENT_WIDTH - splitterWidth,
+    ),
+  );
+  const dockedWidth = Math.min(
+    desiredDockWidth,
+    Math.max(
+      MIN_AI_COLUMN_WIDTH,
+      availableWorkspaceWidth - (noteVisible ? MIN_NOTE_COLUMN_WIDTH : 0),
+    ),
+  );
+  const dockedNoteWidth = noteVisible
+    ? Math.min(
+        desiredNoteWidth,
+        Math.max(MIN_NOTE_COLUMN_WIDTH, availableWorkspaceWidth - dockedWidth),
+      )
+    : 0;
+  setDockedColumnWidth(entry, sidebar, dockedWidth, false);
+  if (noteVisible) {
+    setDockedNoteColumnWidth(entry, sidebar, dockedNoteWidth, false);
+  }
+}
+
+function setDockedColumnWidth(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+  width: number,
+  remember = true,
+): void {
+  const clamped = Math.max(
+    MIN_AI_COLUMN_WIDTH,
+    Math.min(MAX_AI_COLUMN_WIDTH, Math.round(width)),
+  );
+  if (remember) entry.dockedColumnWidth = clamped;
+  setAiColumnWidth(sidebar, clamped);
+  syncDockedWorkspaceLayout(sidebar);
+}
+
+function setDockedNoteColumnWidth(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+  width: number,
+  remember = true,
+): void {
+  const clamped = Math.max(
+    MIN_NOTE_COLUMN_WIDTH,
+    Math.min(MAX_NOTE_COLUMN_WIDTH, Math.round(width)),
+  );
+  if (remember) entry.dockedNoteColumnWidth = clamped;
+  setColumnWidth(sidebar.noteColumn, clamped);
+  syncDockedWorkspaceLayout(sidebar);
+}
+
+function syncDockedWorkspaceLayout(sidebar: WindowSidebarState): void {
+  const entry = dockedSidebarLayouts.get(sidebar);
+  if (!entry) return;
+  const root = entry.mainWindow.document.documentElement as HTMLElement | null;
+  if (!root) return;
+  const aiWidth =
+    measuredElementWidth(sidebar.column) ?? entry.dockedColumnWidth;
+  const noteVisible = isNoteColumnVisible(sidebar);
+  const noteWidth = noteVisible
+    ? (measuredElementWidth(sidebar.noteColumn) ?? entry.dockedNoteColumnWidth)
+    : 0;
+  const totalWidth =
+    aiWidth +
+    DOCKED_AI_SPLITTER_WIDTH +
+    noteWidth +
+    (noteVisible ? DOCKED_NOTE_SPLITTER_WIDTH : 0);
+  root.classList.toggle("zai-docked-note-visible", noteVisible);
+  root.style.setProperty("--zai-docked-width", `${aiWidth}px`);
+  root.style.setProperty("--zai-docked-note-width", `${noteWidth}px`);
+  root.style.setProperty("--zai-docked-total-width", `${totalWidth}px`);
+}
+
+function installDockedSplitterDrag(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+): () => void {
+  const { mainWindow } = entry;
+  let removeActiveDrag: (() => void) | undefined;
+  const onMouseDown = (event: Event) => {
+    const mouseEvent = event as MouseEvent;
+    if (mouseEvent.button !== 0) return;
+    mouseEvent.preventDefault();
+    mouseEvent.stopPropagation();
+
+    const onMouseMove = (moveEvent: Event) => {
+      const pointer = moveEvent as MouseEvent;
+      setDockedColumnWidth(
+        entry,
+        sidebar,
+        mainWindow.innerWidth - pointer.clientX,
+      );
+      fitDockedWorkspaceToWindow(entry, sidebar);
+    };
+    const onMouseUp = () => removeActiveDrag?.();
+    removeActiveDrag = () => {
+      mainWindow.removeEventListener("mousemove", onMouseMove, true);
+      mainWindow.removeEventListener("mouseup", onMouseUp, true);
+      removeActiveDrag = undefined;
+    };
+    mainWindow.addEventListener("mousemove", onMouseMove, true);
+    mainWindow.addEventListener("mouseup", onMouseUp, true);
+  };
+  sidebar.splitter.addEventListener("mousedown", onMouseDown, true);
+  return () => {
+    removeActiveDrag?.();
+    sidebar.splitter.removeEventListener("mousedown", onMouseDown, true);
+  };
+}
+
+function installDockedNoteSplitterDrag(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+): () => void {
+  const { mainWindow } = entry;
+  let removeActiveDrag: (() => void) | undefined;
+  const onMouseDown = (event: Event) => {
+    const mouseEvent = event as MouseEvent;
+    if (mouseEvent.button !== 0 || !isNoteColumnVisible(sidebar)) return;
+    mouseEvent.preventDefault();
+    mouseEvent.stopPropagation();
+
+    const onMouseMove = (moveEvent: Event) => {
+      const pointer = moveEvent as MouseEvent;
+      const aiWidth =
+        measuredElementWidth(sidebar.column) ?? entry.dockedColumnWidth;
+      setDockedNoteColumnWidth(
+        entry,
+        sidebar,
+        mainWindow.innerWidth -
+          pointer.clientX -
+          aiWidth -
+          DOCKED_AI_SPLITTER_WIDTH -
+          DOCKED_NOTE_SPLITTER_WIDTH,
+      );
+      fitDockedWorkspaceToWindow(entry, sidebar);
+    };
+    const onMouseUp = () => removeActiveDrag?.();
+    removeActiveDrag = () => {
+      mainWindow.removeEventListener("mousemove", onMouseMove, true);
+      mainWindow.removeEventListener("mouseup", onMouseUp, true);
+      removeActiveDrag = undefined;
+    };
+    mainWindow.addEventListener("mousemove", onMouseMove, true);
+    mainWindow.addEventListener("mouseup", onMouseUp, true);
+  };
+  sidebar.noteSplitter.addEventListener("mousedown", onMouseDown, true);
+  return () => {
+    removeActiveDrag?.();
+    sidebar.noteSplitter.removeEventListener("mousedown", onMouseDown, true);
+  };
+}
+
+function mountDockedColumn(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+): void {
+  const root = entry.mainWindow.document.documentElement;
+  if (!root) return;
+  root.append(
+    sidebar.noteSplitter,
+    sidebar.noteColumn,
+    sidebar.splitter,
+    sidebar.column,
+  );
+}
+
+function restoreEmbeddedColumn(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+): void {
+  const anchor =
+    entry.columnNextSibling?.parentNode === entry.columnParent
+      ? entry.columnNextSibling
+      : null;
+  entry.columnParent.insertBefore(sidebar.noteSplitter, anchor);
+  entry.columnParent.insertBefore(sidebar.noteColumn, anchor);
+  entry.columnParent.insertBefore(sidebar.splitter, anchor);
+  entry.columnParent.insertBefore(sidebar.column, anchor);
+}
+
+function alignDockedColumnToWindow(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+): void {
+  const { mainWindow } = entry;
+  const elements = [
+    sidebar.noteColumn,
+    sidebar.noteSplitter,
+    sidebar.column,
+    sidebar.splitter,
+  ] as HTMLElement[];
+  for (const element of elements) {
+    element.style.removeProperty("transform");
+    element.style.height = `${mainWindow.innerHeight}px`;
+  }
+  const topOffset = Math.max(
+    0,
+    (sidebar.column as HTMLElement).getBoundingClientRect().top,
+  );
+  if (topOffset > 0) {
+    const transform = `translateY(-${topOffset}px)`;
+    for (const element of elements) element.style.transform = transform;
+  }
+  syncDockedWorkspaceLayout(sidebar);
+}
+
+function installDockedFrameSync(
+  entry: DockedSidebarLayout,
+  sidebar: WindowSidebarState,
+): () => void {
+  const sync = () => {
+    alignDockedColumnToWindow(entry, sidebar);
+    fitDockedWorkspaceToWindow(entry, sidebar);
+  };
+  entry.mainWindow.addEventListener("resize", sync);
+  const frame = entry.mainWindow.requestAnimationFrame?.(sync) ?? 0;
+  return () => {
+    entry.mainWindow.removeEventListener("resize", sync);
+    if (frame) entry.mainWindow.cancelAnimationFrame?.(frame);
+    for (const element of [
+      sidebar.noteColumn,
+      sidebar.noteSplitter,
+      sidebar.column,
+      sidebar.splitter,
+    ] as HTMLElement[]) {
+      element.style.removeProperty("transform");
+      element.style.removeProperty("height");
+    }
+  };
+}
+
+function closeSidebarNoteColumn(sidebar: WindowSidebarState): void {
+  sidebar.noteItemID = undefined;
+  sidebar.noteEditorCleanup?.();
+  sidebar.noteEditorCleanup = undefined;
+  sidebar.noteMount.replaceChildren();
+  setNoteColumnVisible(sidebar, false);
+}
+
+function collapseEmbeddedSidebar(sidebar: WindowSidebarState): void {
+  const column = sidebar.column as Element & {
+    collapsed?: boolean;
+    hidden?: boolean;
+  };
+  const splitter = sidebar.splitter as Element & { hidden?: boolean };
+  column.collapsed = true;
+  column.hidden = false;
+  splitter.hidden = true;
+  sidebar.column.setAttribute("collapsed", "true");
+  sidebar.column.removeAttribute("hidden");
+  sidebar.splitter.setAttribute("hidden", "true");
+  closeSidebarNoteColumn(sidebar);
+}
+
+function expandEmbeddedSidebar(sidebar: WindowSidebarState): void {
+  const column = sidebar.column as Element & {
+    collapsed?: boolean;
+    hidden?: boolean;
+  };
+  const splitter = sidebar.splitter as Element & { hidden?: boolean };
+  column.collapsed = false;
+  column.hidden = false;
+  splitter.hidden = false;
+  sidebar.column.removeAttribute("collapsed");
+  sidebar.column.removeAttribute("hidden");
+  sidebar.splitter.removeAttribute("hidden");
+  sidebar.splitter.removeAttribute("state");
+  if (!sidebar.column.getAttribute("width")) {
+    sidebar.column.setAttribute("width", String(DEFAULT_AI_COLUMN_WIDTH));
+  }
+}
+
+function setAiColumnWidth(sidebar: WindowSidebarState, width: number): void {
+  const clamped = Math.max(
+    MIN_AI_COLUMN_WIDTH,
+    Math.min(MAX_AI_COLUMN_WIDTH, Math.round(width)),
+  );
+  const column = sidebar.column as HTMLElement;
+  column.removeAttribute("flex");
+  column.setAttribute("width", String(clamped));
+  column.style.width = `${clamped}px`;
+  column.style.minWidth = `${MIN_AI_COLUMN_WIDTH}px`;
+  column.style.maxWidth = `${MAX_AI_COLUMN_WIDTH}px`;
+}
+
+function leaveDockedSidebarLayout(
+  sidebar: WindowSidebarState,
+  showEmbedded: boolean,
+): void {
+  const entry = dockedSidebarLayouts.get(sidebar);
+  if (entry) {
+    dockedSidebarLayouts.delete(sidebar);
+    entry.splitterDragCleanup?.();
+    entry.noteSplitterDragCleanup?.();
+    entry.frameCleanup?.();
+    const root = entry.mainWindow.document
+      .documentElement as HTMLElement | null;
+    root?.classList.remove("zai-docked-window");
+    root?.classList.remove("zai-docked-note-visible");
+    root?.style.removeProperty("--zai-docked-width");
+    root?.style.removeProperty("--zai-docked-note-width");
+    root?.style.removeProperty("--zai-docked-total-width");
+    restoreEmbeddedColumn(entry, sidebar);
+    sidebar.mount.classList.remove("zai-root-docked");
+    setAiColumnWidth(sidebar, entry.columnWidth);
+    setColumnWidth(sidebar.noteColumn, entry.noteColumnWidth);
+    if (entry.columnPersistence) {
+      sidebar.column.setAttribute("zotero-persist", entry.columnPersistence);
+    }
+    if (entry.noteColumnPersistence) {
+      sidebar.noteColumn.setAttribute(
+        "zotero-persist",
+        entry.noteColumnPersistence,
+      );
+    }
+  }
+  if (showEmbedded) expandEmbeddedSidebar(sidebar);
+  else collapseEmbeddedSidebar(sidebar);
+  updateToggleButton(sidebar);
+}
+
+function enterDockedSidebarLayout(
+  mainWindow: Window,
+  sidebar: WindowSidebarState,
+): void {
+  const existing = dockedSidebarLayouts.get(sidebar);
+  if (existing) {
+    expandEmbeddedSidebar(sidebar);
+    mountDockedColumn(existing, sidebar);
+    alignDockedColumnToWindow(existing, sidebar);
+    fitDockedWorkspaceToWindow(existing, sidebar);
+    mainWindow.focus();
+    return;
+  }
+  const columnParent = sidebar.column.parentNode;
+  if (!columnParent) return;
+  const entry: DockedSidebarLayout = {
+    mainWindow,
+    columnWidth:
+      measuredElementWidth(sidebar.column) ?? DEFAULT_AI_COLUMN_WIDTH,
+    noteColumnWidth:
+      measuredElementWidth(sidebar.noteColumn) ?? DEFAULT_NOTE_COLUMN_WIDTH,
+    dockedColumnWidth: 480,
+    dockedNoteColumnWidth:
+      loadReaderLayoutPrefs().noteWidth ?? DEFAULT_NOTE_COLUMN_WIDTH,
+    columnPersistence: sidebar.column.getAttribute("zotero-persist"),
+    noteColumnPersistence: sidebar.noteColumn.getAttribute("zotero-persist"),
+    columnParent,
+    columnNextSibling: sidebar.column.nextSibling,
+  };
+  dockedSidebarLayouts.set(sidebar, entry);
+  sidebar.column.removeAttribute("zotero-persist");
+  sidebar.noteColumn.removeAttribute("zotero-persist");
+  expandEmbeddedSidebar(sidebar);
+  const root = mainWindow.document.documentElement as HTMLElement | null;
+  root?.classList.add("zai-docked-window");
+  mountDockedColumn(entry, sidebar);
+  sidebar.mount.classList.add("zai-root-docked");
+  entry.splitterDragCleanup = installDockedSplitterDrag(entry, sidebar);
+  entry.noteSplitterDragCleanup = installDockedNoteSplitterDrag(entry, sidebar);
+  entry.frameCleanup = installDockedFrameSync(entry, sidebar);
+  alignDockedColumnToWindow(entry, sidebar);
+  fitDockedWorkspaceToWindow(entry, sidebar);
+  updateToggleButton(sidebar);
+}
+
+function reconcileSidebarDisplayMode(
+  mainWindow: Window,
+  sidebar: WindowSidebarState,
+  localSettings: LocalUiSettings,
+  previousMode?: LocalUiSettings["sidebarDisplayMode"],
+): void {
+  if (localSettings.sidebarDisplayMode === "docked") {
+    enterDockedSidebarLayout(mainWindow, sidebar);
+    return;
+  }
+  if (previousMode === "docked" || dockedSidebarLayouts.has(sidebar)) {
+    leaveDockedSidebarLayout(sidebar, true);
+  }
+}
+
 // Plugin lifecycle entry.
 // `registerSidebar` runs once on bootstrap; `registerSidebarForWindow`
 // runs for each Zotero main window (Zotero supports multiple windows).
@@ -8317,6 +10029,10 @@ export function registerSidebarForWindow(win: Window) {
   installSidebarSelectionMenu(win, state);
   installReaderPromptShortcutHandler(win, state);
   renderWindowSidebar(win);
+  const panelState = states.get(state.mount);
+  if (panelState) {
+    reconcileSidebarDisplayMode(win, state, panelState.localUiSettings);
+  }
   scheduleInitialSidebarRefresh(win, state);
 }
 
@@ -9250,6 +10966,7 @@ export function unregisterSidebarForWindow(win: Window) {
   const state = windowSidebars.get(win);
   if (!state) return;
 
+  leaveDockedSidebarLayout(state, false);
   closeQuickAsk(state);
   state.fullTranslationAbort?.abort();
   state.fullTranslationAbort = undefined;
@@ -9448,6 +11165,16 @@ function setColumnCollapsed(
   state: WindowSidebarState,
   collapsed: boolean,
 ) {
+  const panelState = states.get(state.mount);
+  if (panelState?.localUiSettings.sidebarDisplayMode === "docked") {
+    if (collapsed) {
+      leaveDockedSidebarLayout(state, false);
+    } else {
+      enterDockedSidebarLayout(win, state);
+    }
+    updateToggleButton(state);
+    return;
+  }
   const column = state.column as Element & { collapsed?: boolean };
   const splitter = state.splitter as Element & { hidden?: boolean };
   if (collapsed) {
@@ -9458,11 +11185,7 @@ function setColumnCollapsed(
     splitter.hidden = true;
     state.column.setAttribute("collapsed", "true");
     state.splitter.setAttribute("hidden", "true");
-    state.noteItemID = undefined;
-    state.noteEditorCleanup?.();
-    state.noteEditorCleanup = undefined;
-    state.noteMount.replaceChildren();
-    setNoteColumnVisible(state, false);
+    closeSidebarNoteColumn(state);
   } else {
     column.collapsed = false;
     splitter.hidden = false;
@@ -9654,6 +11377,10 @@ function disableTranslateMode(win: Window): void {
 
 function syncTranslateButtons(win: Window): void {
   const docs = [win.document];
+  const sidebarDocument = windowSidebars.get(win)?.mount.ownerDocument;
+  if (sidebarDocument && sidebarDocument !== win.document) {
+    docs.push(sidebarDocument);
+  }
   const reader = getActiveReader(win) as any;
   for (const readerWin of activeReaderWindows(reader))
     docs.push(readerWin.document);
@@ -9753,12 +11480,19 @@ function disableAskMode(win: Window): void {
 
 function syncAskButtons(win: Window): void {
   const enabled = askControllers.get(win)?.isEnabled() ?? false;
-  const buttons = Array.from(
-    win.document.querySelectorAll(".zai-sidebar-ask-button"),
-  ) as HTMLElement[];
-  for (const button of buttons) {
-    button.classList.toggle("zai-toolbar-icon--active", enabled);
-    setAskButtonLabel(button, enabled);
+  const docs = [win.document];
+  const sidebarDocument = windowSidebars.get(win)?.mount.ownerDocument;
+  if (sidebarDocument && sidebarDocument !== win.document) {
+    docs.push(sidebarDocument);
+  }
+  for (const doc of docs) {
+    const buttons = Array.from(
+      doc.querySelectorAll(".zai-sidebar-ask-button"),
+    ) as HTMLElement[];
+    for (const button of buttons) {
+      button.classList.toggle("zai-toolbar-icon--active", enabled);
+      setAskButtonLabel(button, enabled);
+    }
   }
 }
 

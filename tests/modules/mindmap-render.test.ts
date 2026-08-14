@@ -1,5 +1,10 @@
-import { describe, expect, it } from "vitest";
-import { parseMermaidMindmap } from "../../src/modules/mindmap-render";
+import { describe, expect, it, vi } from "vitest";
+import {
+  parseMermaidMindmap,
+  renderMindmapBlock,
+  renderMindmapSvg,
+} from "../../src/modules/mindmap-render";
+import { detailedNetworkGraphToMindmap } from "../../src/context/network-diagram-types";
 
 describe("parseMermaidMindmap", () => {
   it("returns null for non-mindmap diagrams", () => {
@@ -16,11 +21,16 @@ describe("parseMermaidMindmap", () => {
 
   it("parses (label) as section type", () => {
     const result = parseMermaidMindmap("mindmap\n  root\n    (Section A)");
-    expect(result!.nodes[1]).toMatchObject({ label: "Section A", type: "section" });
+    expect(result!.nodes[1]).toMatchObject({
+      label: "Section A",
+      type: "section",
+    });
   });
 
   it("parses plain text as point type", () => {
-    const result = parseMermaidMindmap("mindmap\n  root\n    section\n      detail");
+    const result = parseMermaidMindmap(
+      "mindmap\n  root\n    section\n      detail",
+    );
     expect(result!.nodes[2]).toMatchObject({ label: "detail", type: "point" });
   });
 
@@ -39,9 +49,18 @@ describe("parseMermaidMindmap", () => {
     ]);
     // Root→Child A, Child A→Grandchild, Root→Child B
     expect(result.edges).toHaveLength(3);
-    expect(result.edges[0]).toMatchObject({ source: result.nodes[0].id, target: result.nodes[1].id });
-    expect(result.edges[1]).toMatchObject({ source: result.nodes[1].id, target: result.nodes[2].id });
-    expect(result.edges[2]).toMatchObject({ source: result.nodes[0].id, target: result.nodes[3].id });
+    expect(result.edges[0]).toMatchObject({
+      source: result.nodes[0].id,
+      target: result.nodes[1].id,
+    });
+    expect(result.edges[1]).toMatchObject({
+      source: result.nodes[1].id,
+      target: result.nodes[2].id,
+    });
+    expect(result.edges[2]).toMatchObject({
+      source: result.nodes[0].id,
+      target: result.nodes[3].id,
+    });
   });
 
   it("handles the SAMURAI mindmap structure", () => {
@@ -67,5 +86,174 @@ describe("parseMermaidMindmap", () => {
     const result = parseMermaidMindmap("mindmap\n  MyRoot\n    Child");
     expect(result!.nodes[0]).toMatchObject({ label: "MyRoot", type: "root" });
     expect(result!.nodes[1]).toMatchObject({ type: "point" });
+  });
+});
+
+describe("renderMindmapSvg", () => {
+  it("lays a cached network model out from top input to bottom output", () => {
+    const svg = renderMindmapSvg(
+      document,
+      detailedNetworkGraphToMindmap({
+        rankdir: "LR",
+        nodes: [
+          {
+            id: "input",
+            label: "输入",
+            type: "root",
+            stage: "inputs-preprocess",
+            description: "输入张量",
+            evidenceIDs: [],
+          },
+          {
+            id: "encoder",
+            label: "编码器",
+            type: "innovation",
+            stage: "core-innovations",
+            description: "编码特征",
+            evidenceIDs: [],
+          },
+          {
+            id: "output",
+            label: "模型预测 + metrics",
+            type: "result",
+            stage: "outputs",
+            description: "模型预测",
+            evidenceIDs: [],
+          },
+          {
+            id: "state",
+            label: "Inference state manager",
+            type: "point",
+            stage: "inference-path",
+            description: "运行时缓存",
+            evidenceIDs: [],
+          },
+        ],
+        edges: [
+          { source: "input", target: "encoder" },
+          { source: "encoder", target: "output" },
+        ],
+      }),
+    );
+    const centerY = (id: string) => {
+      const rect = svg.querySelector<SVGRectElement>(
+        `[data-node-id="${id}"] rect`,
+      )!;
+      return (
+        Number(rect.getAttribute("y")) + Number(rect.getAttribute("height")) / 2
+      );
+    };
+
+    expect(svg.querySelector('[data-node-id="state"]')).toBeNull();
+    expect(centerY("encoder")).toBeGreaterThan(centerY("input"));
+    expect(centerY("output")).toBeGreaterThan(centerY("encoder"));
+  });
+
+  it("keeps its natural size so a wide diagram is not squeezed unreadably", () => {
+    const svg = renderMindmapSvg(document, {
+      rankdir: "LR",
+      nodes: [
+        { id: "a", label: "Start", type: "root" },
+        { id: "b", label: "A wide intermediate node", type: "section" },
+        { id: "c", label: "Result", type: "result" },
+      ],
+      edges: [
+        { source: "a", target: "b" },
+        { source: "b", target: "c" },
+      ],
+    });
+
+    expect(svg.getAttribute("width")).toBe(svg.dataset.naturalW);
+    expect(svg.getAttribute("height")).toBe(svg.dataset.naturalH);
+  });
+
+  it("offers fit, zoom, and focus controls for a diagram workspace", () => {
+    const block = renderMindmapBlock(
+      document,
+      {
+        nodes: [
+          { id: "input", label: "Input", type: "root" },
+          { id: "output", label: "Output", type: "result" },
+        ],
+        edges: [{ source: "input", target: "output" }],
+      },
+      { viewportControls: true },
+    );
+    const zoom = block.querySelector<HTMLElement>(".mindmap-zoom-value")!;
+    expect(zoom.textContent).toBe("100%");
+    block.querySelector<HTMLButtonElement>(".mindmap-zoom-in")!.click();
+    expect(zoom.textContent).toBe("118%");
+    block.querySelector<HTMLButtonElement>(".mindmap-fit")!.click();
+    expect(zoom.textContent).toBe("100%");
+  });
+
+  it("allows a diagram to opt into a 25% minimum wheel zoom", () => {
+    const block = renderMindmapBlock(
+      document,
+      {
+        nodes: [
+          { id: "input", label: "Input", type: "root" },
+          { id: "output", label: "Output", type: "result" },
+        ],
+        edges: [{ source: "input", target: "output" }],
+      },
+      { viewportControls: true, minimumZoom: 0.25 },
+    );
+    const svg = block.querySelector<SVGSVGElement>(".zai-mm-svg")!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 600,
+      bottom: 300,
+      width: 600,
+      height: 300,
+      toJSON: () => ({}),
+    });
+
+    for (let index = 0; index < 20; index += 1) {
+      svg.dispatchEvent(
+        new WheelEvent("wheel", {
+          cancelable: true,
+          clientX: 300,
+          clientY: 150,
+          deltaY: 1,
+        }),
+      );
+    }
+
+    expect(block.querySelector(".mindmap-zoom-value")?.textContent).toBe("25%");
+  });
+
+  it("moves image copying into a context menu for a compact graph toolbar", () => {
+    const block = renderMindmapBlock(
+      document,
+      {
+        nodes: [{ id: "input", label: "Input", type: "root" }],
+        edges: [],
+      },
+      {
+        viewportControls: true,
+        sourceTab: false,
+        copyButton: false,
+        contextMenuCopy: true,
+      },
+    );
+
+    expect(block.querySelector(".mindmap-source-tab")).toBeNull();
+    expect(block.querySelector(".mindmap-copy-btn")).toBeNull();
+    const svgWrap = block.querySelector<HTMLElement>(".mindmap-svg-wrap")!;
+    svgWrap.dispatchEvent(
+      new MouseEvent("contextmenu", {
+        bubbles: true,
+        cancelable: true,
+        clientX: 24,
+        clientY: 32,
+      }),
+    );
+    const menu = block.querySelector<HTMLElement>(".mindmap-context-menu")!;
+    expect(menu.hidden).toBe(false);
+    expect(menu.textContent).toContain("复制图片");
   });
 });

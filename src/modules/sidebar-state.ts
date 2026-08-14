@@ -28,6 +28,11 @@ import type {
   NoteScrollSnapshot,
 } from "./note-editor-restore";
 import type { OverviewNavState } from "./overview-view";
+import type {
+  DetailedNetworkNode,
+  NetworkDiagramAnalysisProgress,
+  NetworkDiagramMessage,
+} from "../context/network-diagram-types";
 
 export const translateControllers = new WeakMap<
   Window,
@@ -100,6 +105,17 @@ export interface WindowSidebarState {
   // Reading navigation for the overview map (在读 anchor / browse cursor / back
   // stack / lock). Session-scoped: survives view switches, resets on restart.
   overviewNav?: OverviewNavState;
+  overviewNavItemKey?: string;
+  networkDiagramProgress?: NetworkDiagramAnalysisProgress;
+  networkDiagramMessages?: NetworkDiagramMessage[];
+  networkDiagramSelectedNode?: DetailedNetworkNode;
+  networkDiagramBusy?: boolean;
+  networkDiagramError?: string;
+  networkDiagramDraftRepositoryURL?: string;
+  networkDiagramCommitSHA?: string;
+  networkDiagramPaperTitle?: string;
+  networkDiagramAbort?: AbortController;
+  networkDiagramItemKey?: string;
   noteAutosaveTimer?: number;
   noteAutosavePromise?: Promise<void>;
   noteEditorCleanup?: () => void;
@@ -169,6 +185,14 @@ export interface PanelState {
   sending: boolean;
   scrollToBottom?: boolean;
   focusInput?: boolean;
+  networkDiagramTarget?: boolean;
+  networkDiagramReturnDraft?: {
+    text: string;
+    selectionStart: number;
+    selectionEnd: number;
+  };
+  networkDiagramMessagesScrollTop?: number;
+  networkDiagramAutoFollowMessages?: boolean;
   draftText: string;
   draftSelectionStart: number;
   draftSelectionEnd: number;

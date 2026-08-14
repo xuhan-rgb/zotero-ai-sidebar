@@ -4,6 +4,11 @@ import type {
   OverviewSection,
 } from "../context/overview-types";
 import { renderMindmapBlock } from "./mindmap-render";
+import {
+  renderNetworkDiagramWorkspace,
+  type NetworkDiagramWorkspaceViewHandlers,
+  type NetworkDiagramWorkspaceViewState,
+} from "./network-diagram-view";
 
 // Read-only renderer for the whole-paper overview (lean redesign):
 //   核心讲述 → ✦-标注的章节骨架（三阶段 · gist · 创新/效果/淡）→ 折叠的结构图纸
@@ -19,6 +24,7 @@ export interface OverviewNavState {
   browseNo?: string; // dashed browse cursor — only meaningful while locked
   history: string[]; // back stack of positions left behind (capped by maxBack)
   locked: boolean; // 🔒 pin the anchor: clicks jump only, never move 在读
+  activeView?: "outline" | "structure" | "network";
 }
 
 export interface OverviewViewHandlers {
@@ -26,10 +32,15 @@ export interface OverviewViewHandlers {
   onJumpToSection?: (section: OverviewSection) => void;
   // When provided, a header button exports + opens the overview in a browser.
   onOpenInBrowser?: () => void;
+  onViewChange?: (view: OverviewNavState["activeView"]) => void;
   // Session-scoped nav state (anchor / browse cursor / back stack / lock).
   nav?: OverviewNavState;
   // Back-stack cap (policy constant). Defaults to 10.
   maxBack?: number;
+  networkDiagram?: {
+    state: NetworkDiagramWorkspaceViewState;
+    handlers: NetworkDiagramWorkspaceViewHandlers;
+  };
 }
 
 const PHASES: Array<{ key: OverviewPhase; badge: string; name: string }> = [
@@ -98,7 +109,8 @@ function emphasisClass(emphasis: OverviewSection["emphasis"]): string {
 function effectiveEmphasis(node: SectionNode): OverviewSection["emphasis"] {
   const own = node.section.emphasis;
   if (own && own !== "normal") return own;
-  if (node.children.some((c) => c.emphasis === "innovation")) return "innovation";
+  if (node.children.some((c) => c.emphasis === "innovation"))
+    return "innovation";
   return own;
 }
 
@@ -114,6 +126,16 @@ export function renderOverviewBlock(
   const maxBack = handlers.maxBack ?? 10;
   const canJump = !!handlers.onJumpToSection;
   const rowMap = new Map<string, HTMLElement>();
+  const hasStructureView = !!data.flowchart?.nodes.length;
+  const hasNetworkView =
+    !!handlers.networkDiagram || !!data.networkTopology?.nodes.length;
+  const requestedView = nav.activeView;
+  const initialView =
+    requestedView === "structure" && hasStructureView
+      ? "structure"
+      : requestedView === "network" && hasNetworkView
+        ? "network"
+        : "outline";
   const sectionByNo = (no?: string): OverviewSection | undefined =>
     no == null ? undefined : data.sections.find((s) => s.no === no);
 
@@ -123,6 +145,45 @@ export function renderOverviewBlock(
   const title = doc.createElement("span");
   title.className = "overview-title";
   title.textContent = "📍 全文总览";
+
+  const viewTabs = doc.createElement("span");
+  viewTabs.className = "overview-view-tabs";
+  const viewButtons: HTMLButtonElement[] = [];
+  const viewPanes: HTMLElement[] = [];
+  const addView = (
+    key: string,
+    label: string,
+    pane: HTMLElement,
+    active = false,
+  ): void => {
+    const button = doc.createElement("button");
+    button.className = "overview-view-tab";
+    button.textContent = label;
+    button.dataset.overviewView = key;
+    pane.classList.add("overview-view-pane");
+    pane.dataset.overviewPane = key;
+    if (active) {
+      button.classList.add("active");
+      pane.classList.add("active");
+    }
+    button.addEventListener("click", () => {
+      const shouldClose = button.classList.contains("active");
+      viewButtons.forEach((item) => item.classList.remove("active"));
+      viewPanes.forEach((item) => item.classList.remove("active"));
+      if (!shouldClose) {
+        button.classList.add("active");
+        pane.classList.add("active");
+        nav.activeView = key as OverviewNavState["activeView"];
+      } else {
+        nav.activeView = undefined;
+      }
+      handlers.onViewChange?.(nav.activeView);
+    });
+    viewButtons.push(button);
+    viewPanes.push(pane);
+    viewTabs.append(button);
+    wrap.append(pane);
+  };
 
   const right = doc.createElement("span");
   right.className = "overview-head-right";
@@ -153,7 +214,8 @@ export function renderOverviewBlock(
   lockBtn.className = "overview-lock";
   readingCtl.append(readingLabel, lockBtn);
   right.append(meta, backBtn, readingCtl);
-  header.append(title, right);
+  header.append(title, viewTabs);
+  header.append(right);
   wrap.append(header);
 
   // ── nav controller (mutates `nav` in place; updates DOM live) ──
@@ -166,7 +228,7 @@ export function renderOverviewBlock(
   };
   // Where a click currently "is": the browse cursor while locked, else 在读.
   const cur = (): string | undefined =>
-    nav.locked ? nav.browseNo ?? nav.readingNo : nav.readingNo;
+    nav.locked ? (nav.browseNo ?? nav.readingNo) : nav.readingNo;
   const setCur = (no: string): void => {
     if (nav.locked) nav.browseNo = no === nav.readingNo ? undefined : no;
     else {
@@ -250,6 +312,12 @@ export function renderOverviewBlock(
     jump,
   };
 
+  const outline = doc.createElement("section");
+  outline.className = "overview-outline";
+  const outlineBody = doc.createElement("div");
+  outlineBody.className = "overview-outline-body";
+  outline.append(outlineBody);
+
   if (data.narrative) {
     const nar = doc.createElement("div");
     nar.className = "overview-narrative";
@@ -259,8 +327,11 @@ export function renderOverviewBlock(
     const body = doc.createElement("div");
     body.className = "overview-narrative-body";
     body.textContent = data.narrative;
+    body.style.setProperty("-moz-user-select", "text", "important");
+    body.style.setProperty("user-select", "text", "important");
+    body.style.cursor = "text";
     nar.append(lab, body);
-    wrap.append(nar);
+    outlineBody.append(nar);
   }
 
   // Skeleton grouped by phase (document order; emit a band when phase changes).
@@ -273,16 +344,45 @@ export function renderOverviewBlock(
     if (!started || phase !== prevPhase) {
       started = true;
       prevPhase = phase;
-      wrap.append(phaseBand(doc, phase));
+      outlineBody.append(phaseBand(doc, phase));
       list = doc.createElement("ul");
       list.className = "overview-skeleton";
-      wrap.append(list);
+      outlineBody.append(list);
     }
     list!.append(renderSectionItem(doc, node, ctx));
   }
+  addView("outline", "目录", outline, initialView === "outline");
 
   if (data.flowchart && data.flowchart.nodes.length) {
-    wrap.append(renderFlowchart(doc, data, ctx));
+    addView(
+      "structure",
+      "结构图",
+      renderFlowchart(doc, data, ctx, data.flowchart, "📐 结构图纸", 0.25),
+      initialView === "structure",
+    );
+  }
+  if (handlers.networkDiagram) {
+    addView(
+      "network",
+      "网络图",
+      renderNetworkDiagramWorkspace(
+        doc,
+        {
+          ...handlers.networkDiagram.state,
+          fallbackGraph:
+            handlers.networkDiagram.state.fallbackGraph ?? data.networkTopology,
+        },
+        handlers.networkDiagram.handlers,
+      ),
+      initialView === "network",
+    );
+  } else if (data.networkTopology && data.networkTopology.nodes.length) {
+    addView(
+      "network",
+      "网络图",
+      renderFlowchart(doc, data, ctx, data.networkTopology, "◫ 网络拓扑图"),
+      initialView === "network",
+    );
   }
 
   applyMarkers();
@@ -447,6 +547,9 @@ function renderFlowchart(
   doc: Document,
   data: OverviewData,
   ctx: RowCtx,
+  graph: NonNullable<OverviewData["flowchart"]>,
+  title: string,
+  minimumZoom = 0.625,
 ): HTMLElement {
   const card = doc.createElement("div");
   card.className = "overview-fig";
@@ -458,7 +561,7 @@ function renderFlowchart(
   caret.textContent = "▸";
   const figTitle = doc.createElement("span");
   figTitle.className = "overview-fig-title";
-  figTitle.textContent = "📐 结构图纸";
+  figTitle.textContent = title;
   const hint = doc.createElement("span");
   hint.className = "overview-fig-hint";
   hint.textContent = "点击展开 · 点节点看解释 · 滚轮缩放/拖动";
@@ -468,7 +571,15 @@ function renderFlowchart(
 
   const body = doc.createElement("div");
   body.className = "overview-fig-body";
-  const block = renderMindmapBlock(doc, { ...data.flowchart!, title: "" });
+  const block = renderMindmapBlock(
+    doc,
+    {
+      ...graph,
+      rankdir: "TB",
+      title: "",
+    },
+    { minimumZoom },
+  );
   body.append(block);
 
   const detail = doc.createElement("div");

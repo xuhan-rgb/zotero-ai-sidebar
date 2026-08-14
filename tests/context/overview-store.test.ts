@@ -69,6 +69,11 @@ describe("overview-store", () => {
           nodes: [{ id: "a", label: "A", type: "innovation", sectionNo: "5" }],
           edges: [],
         },
+        networkTopology: {
+          rankdir: "TB",
+          nodes: [{ id: "input", label: "Input", type: "root" }],
+          edges: [],
+        },
       },
       100,
     );
@@ -78,6 +83,7 @@ describe("overview-store", () => {
     expect(got?.data.sections[0].emphasis).toBe("innovation");
     expect(got?.data.flowchart?.nodes[0].type).toBe("innovation");
     expect(got?.data.flowchart?.nodes[0].sectionNo).toBe("5");
+    expect(got?.data.networkTopology?.nodes[0].label).toBe("Input");
   });
 
   it("merges last-write-wins by updatedAt", async () => {

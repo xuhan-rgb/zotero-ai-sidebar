@@ -49,9 +49,7 @@ function displayLabel(node: MindmapNode): string {
 // WHY per-char: a single ASCII px-per-char constant badly under-measures Chinese
 // (no spaces to wrap on, ~2× wider), so nodes were mis-sized and overlapped.
 function charWidthPx(ch: string): number {
-  return /[⺀-鿿　-〿＀-￯]/.test(ch)
-    ? FONT_SIZE * 1.02
-    : FONT_SIZE * 0.55;
+  return /[⺀-鿿　-〿＀-￯]/.test(ch) ? FONT_SIZE * 1.02 : FONT_SIZE * 0.55;
 }
 
 function textWidthPx(text: string): number {
@@ -192,7 +190,11 @@ export function renderMindmapSvg(
         edge.source,
         edge.target,
         edge.label
-          ? { label: edge.label, width: textWidthPx(edge.label) + 8, height: 14 }
+          ? {
+              label: edge.label,
+              width: textWidthPx(edge.label) + 8,
+              height: 14,
+            }
           : {},
       );
     }
@@ -208,7 +210,8 @@ export function renderMindmapSvg(
 
   const svg = doc.createElementNS(SVG_NS, "svg") as unknown as SVGSVGElement;
   svg.setAttribute("viewBox", `0 0 ${svgW} ${svgH}`);
-  svg.setAttribute("width", "100%");
+  svg.setAttribute("width", String(svgW));
+  svg.setAttribute("height", String(svgH));
   svg.setAttribute("data-natural-w", String(svgW));
   svg.setAttribute("data-natural-h", String(svgH));
   svg.setAttribute("class", "zai-mm-svg");
@@ -270,6 +273,7 @@ export function renderMindmapSvg(
 
     const grp = doc.createElementNS(SVG_NS, "g");
     grp.setAttribute("class", `zai-mm-node zai-mm-node-${type}`);
+    grp.setAttribute("data-node-id", id);
     if (orig?.sectionNo) grp.setAttribute("data-section-no", orig.sectionNo);
 
     const rect = doc.createElementNS(SVG_NS, "rect");
@@ -481,13 +485,40 @@ function copySvgAsImage(
 // the SVG viewBox — lets users magnify a dense flowchart to read it. A drag
 // past a small threshold suppresses the trailing click so panning doesn't also
 // select a node.
-function enablePanZoom(svg: SVGSVGElement): void {
+interface MindmapViewportController {
+  fit(): void;
+  zoomIn(): void;
+  zoomOut(): void;
+}
+
+function enablePanZoom(
+  svg: SVGSVGElement,
+  onZoomChange?: (percentage: number) => void,
+  minimumZoom = 0.625,
+): MindmapViewportController | null {
   const W = parseFloat(svg.getAttribute("data-natural-w") || "0");
   const H = parseFloat(svg.getAttribute("data-natural-h") || "0");
-  if (!W || !H) return;
+  if (!W || !H) return null;
   let vb = { x: 0, y: 0, w: W, h: H };
-  const apply = () =>
+  const apply = () => {
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+    onZoomChange?.(Math.round((W / vb.w) * 100));
+  };
+  const zoom = (factor: number, px = 0.5, py = 0.5) => {
+    const nw = Math.max(W * 0.25, Math.min(vb.w * factor, W / minimumZoom));
+    const nh = Math.max(H * 0.25, Math.min(vb.h * factor, H / minimumZoom));
+    vb = {
+      x: vb.x + (vb.w - nw) * px,
+      y: vb.y + (vb.h - nh) * py,
+      w: nw,
+      h: nh,
+    };
+    apply();
+  };
+  const fit = () => {
+    vb = { x: 0, y: 0, w: W, h: H };
+    apply();
+  };
   svg.style.cursor = "grab";
   svg.style.touchAction = "none";
 
@@ -500,15 +531,7 @@ function enablePanZoom(svg: SVGSVGElement): void {
       const px = (e.clientX - rect.left) / rect.width;
       const py = (e.clientY - rect.top) / rect.height;
       const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85;
-      const nw = Math.max(W * 0.25, Math.min(vb.w * factor, W * 1.6));
-      const nh = Math.max(H * 0.25, Math.min(vb.h * factor, H * 1.6));
-      vb = {
-        x: vb.x + (vb.w - nw) * px,
-        y: vb.y + (vb.h - nh) * py,
-        w: nw,
-        h: nh,
-      };
-      apply();
+      zoom(factor, px, py);
     },
     { passive: false },
   );
@@ -559,14 +582,30 @@ function enablePanZoom(svg: SVGSVGElement): void {
   );
   svg.addEventListener("dblclick", (e: MouseEvent) => {
     e.preventDefault();
-    vb = { x: 0, y: 0, w: W, h: H };
-    apply();
+    fit();
   });
+  apply();
+  return {
+    fit,
+    zoomIn: () => zoom(0.85),
+    zoomOut: () => zoom(1 / 0.85),
+  };
+}
+
+export interface MindmapBlockOptions {
+  header?: boolean;
+  viewportControls?: boolean;
+  minimumZoom?: number;
+  focusToggle?: boolean;
+  sourceTab?: boolean;
+  copyButton?: boolean;
+  contextMenuCopy?: boolean;
 }
 
 export function renderMindmapBlock(
   doc: Document,
   data: MindmapData,
+  options: MindmapBlockOptions = {},
 ): HTMLElement {
   const source = data.source ?? toMermaidSource(data);
   const wrap = doc.createElement("div");
@@ -581,6 +620,46 @@ export function renderMindmapBlock(
   titleSpan.textContent = data.title ?? "结构图";
   header.append(titleSpan);
 
+  let viewportController: MindmapViewportController | null = null;
+  const zoomValue = doc.createElement("span");
+  zoomValue.className = "mindmap-zoom-value";
+  zoomValue.textContent = "100%";
+  if (options.viewportControls) {
+    const controls = doc.createElement("div");
+    controls.className = "mindmap-viewport-controls";
+    const fit = doc.createElement("button");
+    fit.type = "button";
+    fit.className = "mindmap-fit";
+    fit.textContent = "适应";
+    fit.title = "显示完整网络图";
+    fit.addEventListener("click", () => viewportController?.fit());
+    const zoomOut = doc.createElement("button");
+    zoomOut.type = "button";
+    zoomOut.className = "mindmap-zoom-out";
+    zoomOut.textContent = "−";
+    zoomOut.title = "缩小";
+    zoomOut.addEventListener("click", () => viewportController?.zoomOut());
+    const zoomIn = doc.createElement("button");
+    zoomIn.type = "button";
+    zoomIn.className = "mindmap-zoom-in";
+    zoomIn.textContent = "+";
+    zoomIn.title = "放大";
+    zoomIn.addEventListener("click", () => viewportController?.zoomIn());
+    const focus = doc.createElement("button");
+    focus.type = "button";
+    focus.className = "mindmap-focus-toggle";
+    focus.textContent = "全屏";
+    focus.title = "进入专注画布";
+    focus.addEventListener("click", () => {
+      const active = wrap.classList.toggle("mindmap-focus-mode");
+      focus.textContent = active ? "退出全屏" : "全屏";
+      focus.title = active ? "退出专注画布" : "进入专注画布";
+    });
+    controls.append(fit, zoomOut, zoomValue, zoomIn);
+    if (options.focusToggle !== false) controls.append(focus);
+    header.append(controls);
+  }
+
   const tabs = doc.createElement("div");
   tabs.className = "mindmap-tabs";
 
@@ -589,10 +668,11 @@ export function renderMindmapBlock(
   previewTab.textContent = "渲染";
 
   const codeTab = doc.createElement("button");
-  codeTab.className = "mindmap-tab";
+  codeTab.className = "mindmap-tab mindmap-source-tab";
   codeTab.textContent = "原格式";
 
-  tabs.append(previewTab, codeTab);
+  tabs.append(previewTab);
+  if (options.sourceTab !== false) tabs.append(codeTab);
   header.append(tabs);
 
   let svgEl: SVGSVGElement | null = null;
@@ -608,15 +688,17 @@ export function renderMindmapBlock(
       if (!win) return;
       void win.navigator.clipboard.writeText(source).then(() => {
         copyBtn.textContent = "已复制";
-        win.setTimeout(() => { copyBtn.textContent = "复制代码"; }, 1600);
+        win.setTimeout(() => {
+          copyBtn.textContent = "复制代码";
+        }, 1600);
       });
     } else {
       if (svgEl) copySvgAsImage(svgEl, doc, copyBtn);
     }
   });
-  header.append(copyBtn);
+  if (options.copyButton !== false) header.append(copyBtn);
 
-  wrap.append(header);
+  if (options.header !== false) wrap.append(header);
 
   // Preview pane
   const svgWrap = doc.createElement("div");
@@ -624,10 +706,22 @@ export function renderMindmapBlock(
   try {
     svgEl = renderMindmapSvg(doc, data);
     svgWrap.append(svgEl);
-    enablePanZoom(svgEl);
+    viewportController = enablePanZoom(
+      svgEl,
+      (percentage) => {
+        zoomValue.textContent = `${percentage}%`;
+      },
+      options.minimumZoom,
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    try { (globalThis as { Zotero?: { debug?: (s: string) => void } }).Zotero?.debug?.(`[zai-mindmap] render error: ${msg}`); } catch { /* ignore */ }
+    try {
+      (
+        globalThis as { Zotero?: { debug?: (s: string) => void } }
+      ).Zotero?.debug?.(`[zai-mindmap] render error: ${msg}`);
+    } catch {
+      /* ignore */
+    }
     const errEl = doc.createElement("div");
     errEl.className = "mindmap-error";
     errEl.textContent = `无法渲染结构图: ${msg}`;
@@ -641,6 +735,34 @@ export function renderMindmapBlock(
   codePre.style.display = "none";
 
   wrap.append(svgWrap, codePre);
+
+  if (options.contextMenuCopy) {
+    const menu = doc.createElement("div");
+    menu.className = "mindmap-context-menu";
+    menu.hidden = true;
+    const copy = doc.createElement("button");
+    copy.type = "button";
+    copy.textContent = "复制图片";
+    copy.addEventListener("click", (event) => {
+      event.stopPropagation();
+      if (svgEl) copySvgAsImage(svgEl, doc, copy);
+      menu.hidden = true;
+    });
+    menu.append(copy);
+    wrap.append(menu);
+    svgWrap.addEventListener("contextmenu", (event: MouseEvent) => {
+      event.preventDefault();
+      const rect = wrap.getBoundingClientRect();
+      menu.style.left = `${Math.max(4, event.clientX - rect.left)}px`;
+      menu.style.top = `${Math.max(4, event.clientY - rect.top)}px`;
+      menu.hidden = false;
+      const close = (clickEvent: MouseEvent) => {
+        if (!menu.contains(clickEvent.target as Node)) menu.hidden = true;
+        doc.removeEventListener("click", close, true);
+      };
+      doc.addEventListener("click", close, true);
+    });
+  }
 
   // Tab switching
   previewTab.addEventListener("click", () => {

@@ -1,6 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderOverviewBlock } from "../../src/modules/overview-view";
 import type { OverviewData } from "../../src/context/overview-types";
+import type { NetworkDiagramWorkspace } from "../../src/context/network-diagram-types";
 
 const data: OverviewData = {
   title: "T",
@@ -8,10 +9,46 @@ const data: OverviewData = {
   coverage: "headings",
   narrative: "一句话核心讲述，结尾点出贡献。",
   sections: [
-    { no: "1", level: 1, title: "Intro", gist: "动机", charStart: 0, charEnd: 5, phase: "motivation", emphasis: "background" },
-    { no: "3", level: 1, title: "Method", gist: "新方法", charStart: 5, charEnd: 9, phase: "method", emphasis: "innovation", anchors: ["Fig.1"] },
-    { no: "3.1", level: 2, title: "Sub", gist: "子节", charStart: 5, charEnd: 7, phase: "method" },
-    { no: "9", level: 1, title: "Exp", gist: "结果", charStart: 9, charEnd: 12, phase: "validation", emphasis: "result" },
+    {
+      no: "1",
+      level: 1,
+      title: "Intro",
+      gist: "动机",
+      charStart: 0,
+      charEnd: 5,
+      phase: "motivation",
+      emphasis: "background",
+    },
+    {
+      no: "3",
+      level: 1,
+      title: "Method",
+      gist: "新方法",
+      charStart: 5,
+      charEnd: 9,
+      phase: "method",
+      emphasis: "innovation",
+      anchors: ["Fig.1"],
+    },
+    {
+      no: "3.1",
+      level: 2,
+      title: "Sub",
+      gist: "子节",
+      charStart: 5,
+      charEnd: 7,
+      phase: "method",
+    },
+    {
+      no: "9",
+      level: 1,
+      title: "Exp",
+      gist: "结果",
+      charStart: 9,
+      charEnd: 12,
+      phase: "validation",
+      emphasis: "result",
+    },
   ],
   flowchart: {
     rankdir: "TB",
@@ -21,6 +58,160 @@ const data: OverviewData = {
 };
 
 describe("renderOverviewBlock (lean redesign)", () => {
+  it("shows the interactive network workspace before a graph exists and preserves its tab", () => {
+    const nav = { history: [] as string[], locked: false };
+    const handlers = {
+      nav,
+      networkDiagram: {
+        state: { workspace: null, progress: null, busy: false },
+        handlers: { onAnalyze: () => undefined },
+      },
+    };
+    const first = renderOverviewBlock(document, data, handlers);
+    const networkTab = first.querySelector<HTMLElement>(
+      '[data-overview-view="network"]',
+    )!;
+    networkTab.click();
+    expect(nav.activeView).toBe("network");
+    expect(
+      first.querySelector('[data-overview-pane="network"].active'),
+    ).toBeTruthy();
+    expect(
+      first.querySelector(".network-diagram-repository-input"),
+    ).toBeTruthy();
+
+    const rerendered = renderOverviewBlock(document, data, handlers);
+    expect(
+      rerendered.querySelector('[data-overview-pane="network"].active'),
+    ).toBeTruthy();
+  });
+
+  it("does not expose a network regeneration action", () => {
+    const workspace: NetworkDiagramWorkspace = {
+      itemKey: "ITEM",
+      repository: {
+        url: "https://github.com/owner/repo",
+        owner: "owner",
+        repo: "repo",
+        defaultBranch: "main",
+        commitSHA: "abc123",
+        analyzedAt: 1,
+      },
+      revisions: [],
+      messages: [],
+      evidenceIndex: [],
+    };
+    const block = renderOverviewBlock(document, data, {
+      networkDiagram: {
+        state: { workspace, progress: null, busy: false },
+        handlers: { onAnalyze: () => undefined },
+      },
+    });
+
+    expect(block.querySelector(".overview-network-regenerate")).toBeNull();
+    expect(block.querySelector(".network-diagram-regenerate")).toBeNull();
+  });
+
+  it("keeps selectable core narrative inside the outline view only", () => {
+    const block = renderOverviewBlock(document, data, {});
+    const outline = block.querySelector<HTMLElement>(
+      '[data-overview-pane="outline"]',
+    )!;
+    const narrative = outline.querySelector<HTMLElement>(
+      ".overview-narrative-body",
+    )!;
+
+    expect(narrative.textContent).toContain("贡献");
+    expect(narrative.style.getPropertyValue("user-select")).toBe("text");
+    expect(narrative.style.getPropertyPriority("user-select")).toBe(
+      "important",
+    );
+    expect(
+      block.querySelector(
+        '[data-overview-pane="structure"] .overview-narrative',
+      ),
+    ).toBeNull();
+  });
+
+  it("renders the overview structure graph vertically even from an LR cache", () => {
+    const block = renderOverviewBlock(
+      document,
+      {
+        ...data,
+        flowchart: {
+          rankdir: "LR",
+          nodes: [
+            { id: "a", label: "Problem", type: "root" },
+            { id: "b", label: "Method", type: "innovation" },
+            { id: "c", label: "Result", type: "result" },
+          ],
+          edges: [
+            { source: "a", target: "b" },
+            { source: "b", target: "c" },
+          ],
+        },
+      },
+      {},
+    );
+    const rects = block.querySelectorAll<SVGRectElement>(
+      '[data-overview-pane="structure"] .zai-mm-node rect',
+    );
+    const centers = [...rects].map((rect) => ({
+      x:
+        Number(rect.getAttribute("x")) + Number(rect.getAttribute("width")) / 2,
+      y:
+        Number(rect.getAttribute("y")) +
+        Number(rect.getAttribute("height")) / 2,
+    }));
+
+    expect(centers[1].y).toBeGreaterThan(centers[0].y);
+    expect(centers[2].y).toBeGreaterThan(centers[1].y);
+    expect(centers[1].x).toBeCloseTo(centers[0].x, 5);
+  });
+
+  it("switches and folds the header views, including an optional network graph", () => {
+    const onViewChange = vi.fn();
+    const block = renderOverviewBlock(
+      document,
+      {
+        ...data,
+        networkTopology: {
+          rankdir: "TB",
+          nodes: [
+            { id: "input", label: "Input", type: "root" },
+            { id: "encoder", label: "Encoder", type: "innovation" },
+          ],
+          edges: [{ source: "input", target: "encoder" }],
+        },
+      },
+      { onViewChange },
+    );
+    const tabs = block.querySelectorAll<HTMLElement>(".overview-view-tab");
+    const panes = block.querySelectorAll<HTMLElement>(".overview-view-pane");
+
+    expect([...tabs].map((tab) => tab.textContent)).toEqual([
+      "目录",
+      "结构图",
+      "网络图",
+    ]);
+    expect(tabs[0].classList.contains("active")).toBe(true);
+    expect(panes[0].classList.contains("active")).toBe(true);
+    expect(panes[0].querySelectorAll(".overview-phase").length).toBe(3);
+
+    tabs[1].click();
+    expect(panes[0].classList.contains("active")).toBe(false);
+    expect(panes[1].classList.contains("active")).toBe(true);
+    tabs[1].click();
+    expect(block.querySelector(".overview-view-pane.active")).toBeNull();
+
+    tabs[2].click();
+    expect(panes[2].classList.contains("active")).toBe(true);
+    expect(panes[2].querySelector(".zai-mm-svg")).toBeTruthy();
+    expect(onViewChange).toHaveBeenLastCalledWith("network");
+    tabs[2].click();
+    expect(onViewChange).toHaveBeenLastCalledWith(undefined);
+  });
+
   it("renders narrative, phased emphasis skeleton, subsections, folded flowchart", () => {
     const jumped: string[] = [];
     const block = renderOverviewBlock(document, data, {
@@ -49,6 +240,38 @@ describe("renderOverviewBlock (lean redesign)", () => {
     const intro = block.querySelectorAll(".overview-sec")[0];
     (intro.querySelector(".overview-sec-title") as HTMLElement).click();
     expect(jumped).toContain("1");
+  });
+
+  it("lets the structural overview shrink to 25% with the mouse wheel", () => {
+    const block = renderOverviewBlock(document, data, {});
+    const svg = block.querySelector<SVGSVGElement>(
+      '[data-overview-pane="structure"] .zai-mm-svg',
+    )!;
+    vi.spyOn(svg, "getBoundingClientRect").mockReturnValue({
+      x: 0,
+      y: 0,
+      left: 0,
+      top: 0,
+      right: 600,
+      bottom: 300,
+      width: 600,
+      height: 300,
+      toJSON: () => ({}),
+    });
+
+    for (let index = 0; index < 20; index += 1) {
+      svg.dispatchEvent(
+        new WheelEvent("wheel", {
+          cancelable: true,
+          clientX: 300,
+          clientY: 150,
+          deltaY: 1,
+        }),
+      );
+    }
+
+    const viewBoxWidth = Number(svg.getAttribute("viewBox")?.split(" ")[2]);
+    expect(viewBoxWidth).toBe(Number(svg.dataset.naturalW) * 4);
   });
 
   it("marks nav.readingNo as 在读; a jump moves the anchor + pushes history", () => {
@@ -86,9 +309,9 @@ describe("renderOverviewBlock (lean redesign)", () => {
       onJumpToSection: (s) => jumped.push(s.no),
       nav,
     });
-    expect((block.querySelector(".overview-meta") as HTMLElement).style.display).toBe(
-      "none",
-    );
+    expect(
+      (block.querySelector(".overview-meta") as HTMLElement).style.display,
+    ).toBe("none");
     const label = block.querySelector(".overview-reading-label") as HTMLElement;
     expect(label.textContent).toContain("3.1");
     label.click();
@@ -130,9 +353,11 @@ describe("renderOverviewBlock (lean redesign)", () => {
     });
     const back = block.querySelector(".overview-back") as HTMLElement;
     expect(back.style.display).toBe("none");
-    (block.querySelectorAll(".overview-sec")[2].querySelector(
-      ".overview-sec-main",
-    ) as HTMLElement).click(); // → 9, history [1]
+    (
+      block
+        .querySelectorAll(".overview-sec")[2]
+        .querySelector(".overview-sec-main") as HTMLElement
+    ).click(); // → 9, history [1]
     (block.querySelector(".overview-kid") as HTMLElement).click(); // → 3.1, history [1,9]
     expect(nav.history).toEqual(["1", "9"]);
     expect(back.style.display).not.toBe("none");
@@ -152,11 +377,39 @@ describe("renderOverviewBlock (lean redesign)", () => {
       source: "pdf",
       coverage: "headings",
       sections: [
-        { no: "4", level: 1, title: "Methods", charStart: 0, charEnd: 1, phase: "method" },
+        {
+          no: "4",
+          level: 1,
+          title: "Methods",
+          charStart: 0,
+          charEnd: 1,
+          phase: "method",
+        },
         // model returned level:1 for these dotted subsections — number wins
-        { no: "4.1", level: 1, title: "Sub A", charStart: 1, charEnd: 2, phase: "method" },
-        { no: "4.2", level: 1, title: "Sub B", charStart: 2, charEnd: 3, phase: "method" },
-        { no: "5", level: 1, title: "Exp", charStart: 3, charEnd: 4, phase: "validation" },
+        {
+          no: "4.1",
+          level: 1,
+          title: "Sub A",
+          charStart: 1,
+          charEnd: 2,
+          phase: "method",
+        },
+        {
+          no: "4.2",
+          level: 1,
+          title: "Sub B",
+          charStart: 2,
+          charEnd: 3,
+          phase: "method",
+        },
+        {
+          no: "5",
+          level: 1,
+          title: "Exp",
+          charStart: 3,
+          charEnd: 4,
+          phase: "validation",
+        },
       ],
     };
     const block = renderOverviewBlock(document, d, {});
@@ -174,17 +427,49 @@ describe("renderOverviewBlock (lean redesign)", () => {
       coverage: "headings",
       sections: [
         // §4 itself is NOT marked innovation, but its subsections are
-        { no: "4", level: 1, title: "Recipe", charStart: 0, charEnd: 1, phase: "method" },
-        { no: "4.1", level: 2, title: "Arch", charStart: 1, charEnd: 2, phase: "method", emphasis: "innovation" },
-        { no: "4.2", level: 2, title: "Misc", charStart: 2, charEnd: 3, phase: "method" },
+        {
+          no: "4",
+          level: 1,
+          title: "Recipe",
+          charStart: 0,
+          charEnd: 1,
+          phase: "method",
+        },
+        {
+          no: "4.1",
+          level: 2,
+          title: "Arch",
+          charStart: 1,
+          charEnd: 2,
+          phase: "method",
+          emphasis: "innovation",
+        },
+        {
+          no: "4.2",
+          level: 2,
+          title: "Misc",
+          charStart: 2,
+          charEnd: 3,
+          phase: "method",
+        },
         // a plain leaf with no innovation children stays neutral
-        { no: "2", level: 1, title: "Related", charStart: 3, charEnd: 4, phase: "motivation", emphasis: "background" },
+        {
+          no: "2",
+          level: 1,
+          title: "Related",
+          charStart: 3,
+          charEnd: 4,
+          phase: "motivation",
+          emphasis: "background",
+        },
       ],
     };
     const block = renderOverviewBlock(document, d, {});
     const recipe = block.querySelectorAll(".overview-sec")[0];
     expect(recipe.classList.contains("is-innovation")).toBe(true);
-    expect(recipe.querySelector(".overview-sec-head")?.textContent).toContain("创新");
+    expect(recipe.querySelector(".overview-sec-head")?.textContent).toContain(
+      "创新",
+    );
     // §2 (background, no innovation kids) must NOT become innovation
     const related = block.querySelectorAll(".overview-sec")[1];
     expect(related.classList.contains("is-innovation")).toBe(false);
@@ -199,5 +484,6 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(block.querySelector(".overview-narrative")).toBeNull();
     expect(block.querySelector(".overview-fig")).toBeNull();
     expect(block.querySelectorAll(".overview-sec").length).toBe(3);
+    expect(block.querySelectorAll(".overview-view-tab").length).toBe(1);
   });
 });

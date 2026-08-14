@@ -2,8 +2,13 @@ import type { PrefsStore } from './storage';
 
 export interface LocalUiSettings {
   chatFontSizePx: number;
+  chatLayout: ChatLayout;
+  sidebarDisplayMode: SidebarDisplayMode;
   fullTranslationReading: FullTranslationReadingSettings;
 }
+
+export type ChatLayout = 'classic' | 'compact';
+export type SidebarDisplayMode = 'embedded' | 'docked';
 
 export type FullTranslationLanguageMode =
   | 'bilingual'
@@ -33,18 +38,21 @@ export interface FullTranslationReadingSettings {
   lineBreakMode: FullTranslationLineBreakMode;
 }
 
-export const DEFAULT_FULL_TRANSLATION_READING_SETTINGS: FullTranslationReadingSettings = {
-  languageMode: 'bilingual',
-  layout: 'parallel',
-  markerStyle: 'slashes',
-  customMarker: '//',
-  markerColorMode: 'palette',
-  markerColor: '#a65a3a',
-  lineBreakMode: 'continuous',
-};
+export const DEFAULT_FULL_TRANSLATION_READING_SETTINGS: FullTranslationReadingSettings =
+  {
+    languageMode: 'bilingual',
+    layout: 'parallel',
+    markerStyle: 'slashes',
+    customMarker: '//',
+    markerColorMode: 'palette',
+    markerColor: '#a65a3a',
+    lineBreakMode: 'continuous',
+  };
 
 export const DEFAULT_LOCAL_UI_SETTINGS: LocalUiSettings = {
   chatFontSizePx: 13,
+  chatLayout: 'classic',
+  sidebarDisplayMode: 'embedded',
   fullTranslationReading: DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
 };
 
@@ -70,23 +78,36 @@ export function saveLocalUiSettings(
 }
 
 export function normalizeLocalUiSettings(value: unknown): LocalUiSettings {
-  const input = value && typeof value === 'object'
-    ? (value as Partial<LocalUiSettings>)
-    : {};
+  const input =
+    value && typeof value === 'object'
+      ? (value as Partial<LocalUiSettings>)
+      : {};
   return {
     chatFontSizePx: normalizeChatFontSize(input.chatFontSizePx),
+    chatLayout: oneOf(
+      input.chatLayout,
+      ['classic', 'compact'] as const,
+      DEFAULT_LOCAL_UI_SETTINGS.chatLayout,
+    ),
+    sidebarDisplayMode: normalizeSidebarDisplayMode(input.sidebarDisplayMode),
     fullTranslationReading: normalizeFullTranslationReadingSettings(
       input.fullTranslationReading,
     ),
   };
 }
 
+function normalizeSidebarDisplayMode(value: unknown): SidebarDisplayMode {
+  if (value === 'docked' || value === 'companion') return 'docked';
+  return DEFAULT_LOCAL_UI_SETTINGS.sidebarDisplayMode;
+}
+
 export function normalizeFullTranslationReadingSettings(
   value: unknown,
 ): FullTranslationReadingSettings {
-  const input = value && typeof value === 'object'
-    ? (value as Partial<FullTranslationReadingSettings>)
-    : {};
+  const input =
+    value && typeof value === 'object'
+      ? (value as Partial<FullTranslationReadingSettings>)
+      : {};
   return {
     languageMode: oneOf(
       input.languageMode,
@@ -124,7 +145,8 @@ export function normalizeFullTranslationReadingSettings(
 
 function normalizeChatFontSize(value: unknown): number {
   const numeric = typeof value === 'number' ? value : Number(value);
-  if (!Number.isFinite(numeric)) return DEFAULT_LOCAL_UI_SETTINGS.chatFontSizePx;
+  if (!Number.isFinite(numeric))
+    return DEFAULT_LOCAL_UI_SETTINGS.chatFontSizePx;
   return Math.max(
     MIN_CHAT_FONT_SIZE,
     Math.min(MAX_CHAT_FONT_SIZE, Math.round(numeric)),

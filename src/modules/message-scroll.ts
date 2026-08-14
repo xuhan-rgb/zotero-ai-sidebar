@@ -132,6 +132,33 @@ export function preserveMessagesScroll(
   scheduleMessagesScrollRestore(mount, snapshot);
 }
 
+// Streaming repeatedly rebuilds the active bubble. Firefox can synchronously
+// collapse the parent list to scrollTop=0 during replaceChildren(), and the
+// scroll listener then persists that transient zero. Capture before the DOM
+// mutation and restore immediately; the single guarded animation-frame retry
+// covers a delayed layout collapse without continually fighting a user's
+// deliberate scroll while tokens are arriving.
+export function preserveStreamingMessagesScroll(
+  mount: HTMLElement,
+  followBottom: boolean,
+  mutate: () => void,
+) {
+  const snapshot = captureMessagesScrollSnapshot(mount);
+  mutate();
+  if (!snapshot) return;
+  const intended = followBottom ? { ...snapshot, atBottom: true } : snapshot;
+  restoreMessagesScrollSnapshot(mount, intended);
+  const win = mount.ownerDocument?.defaultView;
+  if (!win) return;
+  win.requestAnimationFrame(() => {
+    const messages = mount.querySelector(".messages") as HTMLElement | null;
+    if (!messages) return;
+    if (followBottom || (snapshot.top > 0 && messages.scrollTop === 0)) {
+      restoreMessagesScrollSnapshot(mount, intended);
+    }
+  });
+}
+
 export function isMessagesNearBottom(mount: HTMLElement): boolean {
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!messages) return true;

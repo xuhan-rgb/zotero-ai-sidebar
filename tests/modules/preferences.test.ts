@@ -166,6 +166,20 @@ describe("preference save controls", () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 
+  it("offers classic embedded defaults with optional compact and docked layouts", () => {
+    expect(preferenceMarkup).toContain('id="zai-ui-chat-layout"');
+    expect(preferenceMarkup).toContain(
+      '<html:option value="classic">原始排版（默认）</html:option>',
+    );
+    expect(preferenceMarkup).toContain('value="compact">专注模式');
+    expect(preferenceMarkup).toContain('id="zai-ui-sidebar-display"');
+    expect(preferenceMarkup).toContain(
+      '<html:option value="embedded">阅读器侧栏（默认）</html:option>',
+    );
+    expect(preferenceMarkup).toContain('value="docked">右侧并排（同一主窗口）');
+    expect(preferenceMarkup).not.toContain('value="companion"');
+  });
+
   it("uses a flat account picker instead of an account select", () => {
     expect(preferenceMarkup).toContain('id="zai-preset-picker"');
     expect(preferenceMarkup).toContain('role="listbox"');

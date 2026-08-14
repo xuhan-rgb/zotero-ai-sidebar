@@ -133,10 +133,10 @@
       "▸"; flex: 0 0 auto; color: #777; } #zotero-ai-sidebar-tool-settings
       details[open] > .zai-preset-summary::before { content: "▾"; }
       #zotero-ai-sidebar-tool-settings .zai-preset-summary-main { display: flex;
-      min-width: 0; flex: 1; align-items: center; } #zotero-ai-sidebar-tool-settings
-      .zai-preset-status-dot { width: 8px; height: 8px; border-radius: 50%;
-      background: #ccc; display: inline-block; flex-shrink: 0; }
-      #zotero-ai-sidebar-tool-settings .zai-dot-ok {
+      min-width: 0; flex: 1; align-items: center; }
+      #zotero-ai-sidebar-tool-settings .zai-preset-status-dot { width: 8px;
+      height: 8px; border-radius: 50%; background: #ccc; display: inline-block;
+      flex-shrink: 0; } #zotero-ai-sidebar-tool-settings .zai-dot-ok {
       background: #3c9e5f; } #zotero-ai-sidebar-tool-settings .zai-dot-fail {
       background: #d94f4f; } #zotero-ai-sidebar-tool-settings
       .zai-preset-test-msg { display: block; margin: 6px 10px 8px; font-size:
@@ -146,22 +146,21 @@
       rgba(60,158,95,0.10); color: #2f7046; } #zotero-ai-sidebar-tool-settings
       .zai-test-fail { background: rgba(217,79,79,0.10); color: #b03030; }
       #zotero-ai-sidebar-tool-settings .zai-cache-test-row { display: grid;
-      grid-template-columns: auto
-      minmax(150px, 220px) minmax(180px, 1fr) auto; gap: 8px; align-items:
-      center; margin-top: 12px; padding-top: 12px; border-top: 1px solid
-      rgba(80,70,55,0.14); } #zotero-ai-sidebar-tool-settings
-      .zai-cache-test-label { font-weight: 700; white-space: nowrap; }
-      #zotero-ai-sidebar-tool-settings .zai-cache-test-target { min-width: 0;
-      overflow: hidden; color: #666; font-size: 12px; text-overflow: ellipsis;
+      grid-template-columns: auto minmax(150px, 220px) minmax(180px, 1fr) auto;
+      gap: 8px; align-items: center; margin-top: 12px; padding-top: 12px;
+      border-top: 1px solid rgba(80,70,55,0.14); }
+      #zotero-ai-sidebar-tool-settings .zai-cache-test-label { font-weight: 700;
       white-space: nowrap; } #zotero-ai-sidebar-tool-settings
-      .zai-cache-test-status { display: block; margin-top: 8px; }
-      #zotero-ai-sidebar-tool-settings .preset-flags-control { display: flex;
-      flex-direction: column; gap: 4px; } #zotero-ai-sidebar-tool-settings
-      .preset-flags { display: flex; flex-wrap: wrap; gap: 6px; }
-      #zotero-ai-sidebar-tool-settings .preset-flag { display: inline-flex;
-      align-items: center; border: 1px solid rgba(80,70,55,0.18); border-radius:
-      999px; padding: 2px 8px; font-size: 11px; font-weight: 700; line-height:
-      1.5; background: rgba(246,246,246,0.95); color: #666; }
+      .zai-cache-test-target { min-width: 0; overflow: hidden; color: #666;
+      font-size: 12px; text-overflow: ellipsis; white-space: nowrap; }
+      #zotero-ai-sidebar-tool-settings .zai-cache-test-status { display: block;
+      margin-top: 8px; } #zotero-ai-sidebar-tool-settings .preset-flags-control
+      { display: flex; flex-direction: column; gap: 4px; }
+      #zotero-ai-sidebar-tool-settings .preset-flags { display: flex; flex-wrap:
+      wrap; gap: 6px; } #zotero-ai-sidebar-tool-settings .preset-flag { display:
+      inline-flex; align-items: center; border: 1px solid rgba(80,70,55,0.18);
+      border-radius: 999px; padding: 2px 8px; font-size: 11px; font-weight: 700;
+      line-height: 1.5; background: rgba(246,246,246,0.95); color: #666; }
       #zotero-ai-sidebar-tool-settings .preset-flag-ok { border-color:
       rgba(60,158,95,0.30); background: rgba(60,158,95,0.10); color: #2f7046; }
       #zotero-ai-sidebar-tool-settings .preset-flag-warn { border-color:
@@ -261,114 +260,101 @@
       #zotero-ai-sidebar-tool-settings .zai-save-bar { align-items: stretch;
       flex-direction: column; } #zotero-ai-sidebar-tool-settings
       .zai-save-actions { justify-content: flex-end; } }
-      #zotero-ai-sidebar-tool-settings {
-      --zai-pref-border-card: rgba(80,70,55,0.18);
-      --zai-pref-border-subcard: rgba(80,70,55,0.14);
-      --zai-pref-border-control: rgba(80,70,55,0.18);
-      --zai-pref-border-divider: rgba(80,70,55,0.12);
-      --zai-pref-card-background: rgba(255,255,255,0.44);
-      --zai-pref-subcard-background: rgba(255,255,255,0.60);
-      }
+      #zotero-ai-sidebar-tool-settings { --zai-pref-border-card:
+      rgba(80,70,55,0.18); --zai-pref-border-subcard: rgba(80,70,55,0.14);
+      --zai-pref-border-control: rgba(80,70,55,0.18); --zai-pref-border-divider:
+      rgba(80,70,55,0.12); --zai-pref-card-background: rgba(255,255,255,0.44);
+      --zai-pref-subcard-background: rgba(255,255,255,0.60); }
       #zotero-ai-sidebar-tool-settings[data-border-style="clear"] {
-      --zai-pref-border-card: rgba(45,55,50,0.48);
-      --zai-pref-border-subcard: rgba(45,55,50,0.42);
-      --zai-pref-border-control: rgba(45,55,50,0.52);
+      --zai-pref-border-card: rgba(45,55,50,0.48); --zai-pref-border-subcard:
+      rgba(45,55,50,0.42); --zai-pref-border-control: rgba(45,55,50,0.52);
       --zai-pref-border-divider: rgba(45,55,50,0.34);
       --zai-pref-card-background: rgba(255,255,255,0.95);
-      --zai-pref-subcard-background: rgba(255,255,255,0.98);
-      }
+      --zai-pref-subcard-background: rgba(255,255,255,0.98); }
       #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
-      input[type="text"], #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
+      input[type="text"],
+      #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
       input[type="password"],
       #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
-      input[type="number"], #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
-      select, #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
-      textarea, #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
-      button { border-color: var(--zai-pref-border-control); }
+      input[type="number"],
+      #zotero-ai-sidebar-tool-settings[data-border-style="clear"] select,
+      #zotero-ai-sidebar-tool-settings[data-border-style="clear"] textarea,
+      #zotero-ai-sidebar-tool-settings[data-border-style="clear"] button {
+      border-color: var(--zai-pref-border-control); }
       #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
-      .zai-model-selected, #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
+      .zai-model-selected,
+      #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
       .zai-model-chip:not([data-test-selected="true"]),
       #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
       .zai-prompt-option { border-color: var(--zai-pref-border-control); }
       #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
       .zai-pref-status:not(:empty) { border: 1px solid
-      var(--zai-pref-border-divider); }
-      #zotero-ai-sidebar-tool-settings .zai-pref-card { border-color:
-      var(--zai-pref-border-card); background: var(--zai-pref-card-background); }
-      #zotero-ai-sidebar-tool-settings .zai-grid-section,
-      #zotero-ai-sidebar-tool-settings .zai-card-section,
+      var(--zai-pref-border-divider); } #zotero-ai-sidebar-tool-settings
+      .zai-pref-card { border-color: var(--zai-pref-border-card); background:
+      var(--zai-pref-card-background); } #zotero-ai-sidebar-tool-settings
+      .zai-grid-section, #zotero-ai-sidebar-tool-settings .zai-card-section,
       #zotero-ai-sidebar-tool-settings .zai-inline-details,
       #zotero-ai-sidebar-tool-settings .zai-sync-mode,
       #zotero-ai-sidebar-tool-settings .zai-cache-test-row { border-color:
-      var(--zai-pref-border-divider); }
-      #zotero-ai-sidebar-tool-settings .zai-subcard { border-color:
-      var(--zai-pref-border-subcard); background: var(--zai-pref-subcard-background); }
-      #zotero-ai-sidebar-tool-settings .zai-preset-list-head { display: flex;
-      align-items: center; justify-content: space-between; gap: 10px;
-      margin: 10px 0 8px; }
+      var(--zai-pref-border-divider); } #zotero-ai-sidebar-tool-settings
+      .zai-subcard { border-color: var(--zai-pref-border-subcard); background:
+      var(--zai-pref-subcard-background); } #zotero-ai-sidebar-tool-settings
+      .zai-preset-list-head { display: flex; align-items: center;
+      justify-content: space-between; gap: 10px; margin: 10px 0 8px; }
       #zotero-ai-sidebar-tool-settings .zai-preset-list-actions { display: flex;
-      align-items: center; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }
-      #zotero-ai-sidebar-tool-settings .zai-border-style-control { display:
+      align-items: center; flex-wrap: wrap; gap: 8px; justify-content: flex-end;
+      } #zotero-ai-sidebar-tool-settings .zai-border-style-control { display:
       inline-flex; align-items: center; gap: 6px; color: #4f5b53; font-size:
       12px; font-weight: 700; white-space: nowrap; }
-      #zotero-ai-sidebar-tool-settings .zai-border-style-control select {
-      width: auto; min-width: 150px; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-add-actions { display: flex;
-      flex-wrap: wrap; gap: 6px; justify-content: flex-end; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-picker { display: grid;
-      gap: 6px; margin-bottom: 12px; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-picker[hidden] { display: none;
-      }
-      #zotero-ai-sidebar-tool-settings .zai-preset-picker-item { box-sizing:
-      border-box; display: grid; grid-template-columns: auto minmax(0,1fr) auto;
-      align-items: center; gap: 10px; width: 100%; padding: 9px 11px;
-      border: 1px solid var(--zai-pref-border-subcard); border-radius: 8px;
-      background: var(--zai-pref-subcard-background); color: inherit;
-      font: inherit; text-align: left; cursor: pointer; appearance: none;
-      -moz-appearance: none; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-picker-item:hover {
-      border-color: var(--zai-pref-border-control); background:
-      rgba(255,255,255,0.96); }
-      #zotero-ai-sidebar-tool-settings .zai-preset-picker-item[aria-selected="true"] {
-      border-color: rgba(63,132,88,0.58); background: rgba(63,132,88,0.08);
-      box-shadow: inset 3px 0 0 rgba(63,132,88,0.82); }
-      #zotero-ai-sidebar-tool-settings .zai-preset-picker-copy { display: grid;
-      gap: 2px; min-width: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-border-style-control select { width:
+      auto; min-width: 150px; } #zotero-ai-sidebar-tool-settings
+      .zai-preset-add-actions { display: flex; flex-wrap: wrap; gap: 6px;
+      justify-content: flex-end; } #zotero-ai-sidebar-tool-settings
+      .zai-preset-picker { display: grid; gap: 6px; margin-bottom: 12px; }
+      #zotero-ai-sidebar-tool-settings .zai-preset-picker[hidden] { display:
+      none; } #zotero-ai-sidebar-tool-settings .zai-preset-picker-item {
+      box-sizing: border-box; display: grid; grid-template-columns: auto
+      minmax(0,1fr) auto; align-items: center; gap: 10px; width: 100%; padding:
+      9px 11px; border: 1px solid var(--zai-pref-border-subcard); border-radius:
+      8px; background: var(--zai-pref-subcard-background); color: inherit; font:
+      inherit; text-align: left; cursor: pointer; appearance: none;
+      -moz-appearance: none; } #zotero-ai-sidebar-tool-settings
+      .zai-preset-picker-item:hover { border-color:
+      var(--zai-pref-border-control); background: rgba(255,255,255,0.96); }
+      #zotero-ai-sidebar-tool-settings
+      .zai-preset-picker-item[aria-selected="true"] { border-color:
+      rgba(63,132,88,0.58); background: rgba(63,132,88,0.08); box-shadow: inset
+      3px 0 0 rgba(63,132,88,0.82); } #zotero-ai-sidebar-tool-settings
+      .zai-preset-picker-copy { display: grid; gap: 2px; min-width: 0; }
       #zotero-ai-sidebar-tool-settings .zai-preset-picker-title { display: flex;
       align-items: center; flex-wrap: wrap; gap: 7px; min-width: 0; }
       #zotero-ai-sidebar-tool-settings .zai-preset-picker-meta { overflow:
       hidden; color: #666; font-size: 12px; font-weight: 400; text-overflow:
-      ellipsis; white-space: nowrap; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-provider-badge,
-      #zotero-ai-sidebar-tool-settings .zai-preset-dialog-badge { border: 1px
-      solid var(--zai-pref-border-control); border-radius: 999px; padding: 1px
-      7px; color: #666; font-size: 11px; font-weight: 700; white-space: nowrap; }
+      ellipsis; white-space: nowrap; } #zotero-ai-sidebar-tool-settings
+      .zai-preset-provider-badge, #zotero-ai-sidebar-tool-settings
+      .zai-preset-dialog-badge { border: 1px solid
+      var(--zai-pref-border-control); border-radius: 999px; padding: 1px 7px;
+      color: #666; font-size: 11px; font-weight: 700; white-space: nowrap; }
       #zotero-ai-sidebar-tool-settings .zai-preset-dialog-badge { border-color:
       rgba(63,132,88,0.34); background: rgba(63,132,88,0.10); color: #2f7046; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-row { padding: 0;
-      overflow: hidden; border-color: var(--zai-pref-border-subcard);
-      background: var(--zai-pref-subcard-background); box-shadow: 0 1px 4px
-      rgba(35,45,38,0.05); }
-      #zotero-ai-sidebar-tool-settings .zai-preset-row > .zai-preset-summary {
-      margin: 0; padding: 12px 14px; }
+      #zotero-ai-sidebar-tool-settings .zai-preset-row { padding: 0; overflow:
+      hidden; border-color: var(--zai-pref-border-subcard); background:
+      var(--zai-pref-subcard-background); box-shadow: 0 1px 4px
+      rgba(35,45,38,0.05); } #zotero-ai-sidebar-tool-settings .zai-preset-row >
+      .zai-preset-summary { margin: 0; padding: 12px 14px; }
       #zotero-ai-sidebar-tool-settings .zai-preset-row > .zai-pref-grid {
-      padding: 14px; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-row-active {
+      padding: 14px; } #zotero-ai-sidebar-tool-settings .zai-preset-row-active {
       border-color: var(--zai-pref-border-control); }
       #zotero-ai-sidebar-tool-settings[data-border-style="clear"]
-      .zai-preset-row-active { border-color: rgba(63,132,88,0.52);
-      box-shadow: 0 2px 8px rgba(35,45,38,0.10); }
-      #zotero-ai-sidebar-tool-settings .zai-model-selected,
-      #zotero-ai-sidebar-tool-settings .zai-model-chip { border-color:
-      var(--zai-pref-border-control); }
-      @media (max-width: 760px) {
-      #zotero-ai-sidebar-tool-settings .zai-preset-list-head { align-items:
-      flex-start; flex-direction: column; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-list-actions { justify-content:
-      flex-start; }
-      #zotero-ai-sidebar-tool-settings .zai-preset-add-actions { justify-content:
-      flex-start; }
-      }
+      .zai-preset-row-active { border-color: rgba(63,132,88,0.52); box-shadow: 0
+      2px 8px rgba(35,45,38,0.10); } #zotero-ai-sidebar-tool-settings
+      .zai-model-selected, #zotero-ai-sidebar-tool-settings .zai-model-chip {
+      border-color: var(--zai-pref-border-control); } @media (max-width: 760px)
+      { #zotero-ai-sidebar-tool-settings .zai-preset-list-head { align-items:
+      flex-start; flex-direction: column; } #zotero-ai-sidebar-tool-settings
+      .zai-preset-list-actions { justify-content: flex-start; }
+      #zotero-ai-sidebar-tool-settings .zai-preset-add-actions {
+      justify-content: flex-start; } }
     </html:style>
 
     <html:div id="zai-save-bar" class="zai-save-bar" hidden="hidden">
@@ -657,6 +643,16 @@
           type="text"
           placeholder="留空用默认；例如：LXGW WenKai, Noto Serif CJK SC, serif"
         />
+        <html:label for="zai-ui-chat-layout">对话排版</html:label>
+        <html:select id="zai-ui-chat-layout">
+          <html:option value="classic">原始排版（默认）</html:option>
+          <html:option value="compact">专注模式</html:option>
+        </html:select>
+        <html:label for="zai-ui-sidebar-display">侧栏显示方式</html:label>
+        <html:select id="zai-ui-sidebar-display">
+          <html:option value="embedded">阅读器侧栏（默认）</html:option>
+          <html:option value="docked">右侧并排（同一主窗口）</html:option>
+        </html:select>
         <html:label for="zai-ui-actions-position">消息按钮位置</html:label>
         <html:select id="zai-ui-actions-position">
           <html:option value="top-right">右上角</html:option>

@@ -276,6 +276,7 @@ export function createZoteroAgentToolSession(
         const topK = numberArg(parsed, "topK") ?? policy.searchCandidateCount;
         const passages = searchPdfPassages(pdfText, query, topK, policy);
         return {
+          isError: passages.length === 0,
           output: passages.length
             ? `[Retrieved PDF passages]\n${formatRetrievedPassages(passages)}`
             : `No PDF passages matched the model-provided query: ${query}`,
@@ -688,7 +689,7 @@ export function createZoteroAgentToolSession(
     {
       name: "render_paper_overview",
       description:
-        "Render the whole-paper overview map into the note panel's 总览 view. Call AFTER zotero_outline_pdf. Provide: 'narrative' = a 2–4 sentence Chinese 核心讲述 (what the paper does and its contribution); 'sections' in document order, each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors, 'phase' (motivation|method|validation) and 'emphasis' (innovation|result|normal|background) — for emphasis='innovation' the gist MUST say what is NEW; and a 'flowchart' (nodes id/label/type[root|section|point|result|innovation]/optional sectionNo + edges source/target/optional label). Mark THIS paper's contributions as type='innovation' with sectionNo set to the matching section number; 'result' marks effect/SOTA nodes.",
+        "Render the whole-paper overview map into the note panel's 总览 view. Call AFTER zotero_outline_pdf. Provide: 'narrative' = a 2–4 sentence Chinese 核心讲述 (what the paper does and its contribution); 'sections' in document order, each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors, 'phase' (motivation|method|validation) and 'emphasis' (innovation|result|normal|background) — for emphasis='innovation' the gist MUST say what is NEW; and a 'flowchart' (nodes id/label/type[root|section|point|result|innovation]/optional sectionNo + edges source/target/optional label). Mark THIS paper's contributions as type='innovation' with sectionNo set to the matching section number; 'result' marks effect/SOTA nodes. Network diagrams are generated separately from linked source code and must not be included here.",
       parameters: objectSchema(
         {
           title: stringSchema("Paper title."),
@@ -779,15 +780,22 @@ export function createZoteroAgentToolSession(
           else if (node.type === "result") resultNos.add(node.sectionNo);
         }
         for (const section of data.sections) {
-          if (!section.phase) section.phase = inferPhaseFromTitle(section.title);
+          if (!section.phase)
+            section.phase = inferPhaseFromTitle(section.title);
           if (!section.emphasis) {
             if (innovationNos.has(section.no)) section.emphasis = "innovation";
             else if (resultNos.has(section.no)) section.emphasis = "result";
-            else if (section.gist && /^(新|创新|本文)\s*[:：]/.test(section.gist.trim()))
+            else if (
+              section.gist &&
+              /^(新|创新|本文)\s*[:：]/.test(section.gist.trim())
+            )
               section.emphasis = "innovation";
           }
           if (section.emphasis === "innovation" && section.gist) {
-            section.gist = section.gist.replace(/^(新|创新|本文)\s*[:：]\s*/, "");
+            section.gist = section.gist.replace(
+              /^(新|创新|本文)\s*[:：]\s*/,
+              "",
+            );
           }
         }
         options.onOverviewReady?.(data);
@@ -1540,7 +1548,7 @@ function zoteroSourceFromMetadata(
 }
 
 function errorResult(output: string): ToolExecutionResult {
-  return { output, summary: output };
+  return { output, summary: output, isError: true };
 }
 
 function overviewPhaseArg(value: unknown): OverviewPhase | undefined {
@@ -1559,7 +1567,8 @@ function overviewEmphasisArg(value: unknown): OverviewEmphasis | undefined {
   if (v === "innovation" || v === "创新" || v === "贡献") return "innovation";
   if (v === "result" || v === "效果" || v === "结果" || v === "sota")
     return "result";
-  if (v === "background" || v === "背景" || v === "相关工作") return "background";
+  if (v === "background" || v === "背景" || v === "相关工作")
+    return "background";
   if (v === "normal" || v === "普通") return "normal";
   return undefined;
 }
@@ -2314,12 +2323,13 @@ export async function findSentenceAnnotation(
   if (!attachment || typeof attachment.getAnnotations !== "function") {
     return null;
   }
-  const sentenceRects = rects.filter(
-    (r) => Array.isArray(r) && r.length >= 4,
-  );
+  const sentenceRects = rects.filter((r) => Array.isArray(r) && r.length >= 4);
   if (!sentenceRects.length) return null;
-  let best: { ann: ZoteroAnnotationItem; ratio: number; rects: number[][] } | null =
-    null;
+  let best: {
+    ann: ZoteroAnnotationItem;
+    ratio: number;
+    rects: number[][];
+  } | null = null;
   for (const ann of attachment.getAnnotations(false)) {
     const type = stringValue(ann.annotationType);
     if (type !== "highlight" && type !== "underline") continue;
@@ -2389,7 +2399,10 @@ function rectIntersectionArea(a: number[], b: number[]): number {
 }
 
 // Fraction of the sentence's total rect area covered by the annotation's rects.
-function rectCoverageRatio(sentenceRects: number[][], annRects: number[][]): number {
+function rectCoverageRatio(
+  sentenceRects: number[][],
+  annRects: number[][],
+): number {
   let area = 0;
   let inter = 0;
   for (const s of sentenceRects) {

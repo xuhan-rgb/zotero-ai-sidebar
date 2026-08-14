@@ -103,6 +103,9 @@ export interface MessageImage {
 export interface ToolExecutionResult {
   output: string;
   summary?: string;
+  // Structured failure: callers may retry/fall back, but must not register
+  // this response as successful evidence.
+  isError?: boolean;
   context?: MessageContext;
   // Raw paper full text a tool wants pinned as the front block for the rest
   // of this turn's tool loop. Set by zotero_get_full_pdf.
@@ -125,6 +128,9 @@ export interface AgentTool {
 
 export interface ProviderStreamOptions {
   tools?: AgentTool[];
+  // Let the model request several independent tools in one response. Local
+  // tool execution remains ordered; callers must opt in explicitly.
+  parallelToolCalls?: boolean;
   maxToolIterations?: number;
   permissionMode?: AgentPermissionMode;
   toolSettings?: ToolSettings;

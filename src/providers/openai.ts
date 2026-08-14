@@ -50,10 +50,10 @@ const OUTPUT_CONTINUATION_PROMPT =
 //    broke the moment a turn had `store:false` (no persisted ID).
 //    REF: CLAUDE.md "Development Lessons", Codex `responses/streaming.rs`.
 //
-// 2. INVARIANT: `parallel_tool_calls: false`. Tools run strictly sequentially
-//    so each tool's output is in the input list before the next call is
-//    issued. WHY: lets later calls see earlier passages/ranges in the same
-//    turn (the typical Codex "search → read range" pattern).
+// 2. `parallel_tool_calls` defaults to false. A specialized read-only agent
+//    may opt in so the model can plan several independent reads in one model
+//    response. Tool execution below remains ordered, so later mutations never
+//    race and ordinary chat keeps the existing sequential behavior.
 //
 // 3. `maxToolIterations` is a SAFETY FUSE, not routing logic. We do not
 //    branch behavior on iteration count; we only stop the loop when the
@@ -292,7 +292,7 @@ export class OpenAIProvider implements Provider {
               ? {
                   tools: chatTools,
                   tool_choice: "auto",
-                  parallel_tool_calls: false,
+                  parallel_tool_calls: options.parallelToolCalls === true,
                 }
               : {}),
             ...chatCompletionReasoningParam(preset),
@@ -447,22 +447,21 @@ export class OpenAIProvider implements Provider {
       options.maxToolIterations ?? DEFAULT_CONTEXT_POLICY.maxToolIterations;
 
     // Relay-routing salt state: load any previously-known healthy salt for
-    // this (preset, model, itemKey) tuple. Retry is allowed ONLY on the
-    // first iteration before any content chunk has been emitted; later
-    // iterations or mid-stream failures fall through to the existing
-    // error path so the user does not see partial answers wiped out.
+    // this (preset, model, itemKey) tuple. Every Responses request in the
+    // tool loop may retry a synchronous 5xx because no event from that
+    // request has been emitted yet. Mid-stream failures still fall through
+    // to the existing error path so visible partial output is never replayed.
     const useRelayRouting = shouldUseRelayRouting(preset, options);
     const routingItemKey = options.relayRoutingItemKey ?? null;
     let salt = useRelayRouting
       ? await loadRelaySalt(preset.id, preset.model, routingItemKey)
       : 0;
-    let saltPersisted = false;
+    let persistedSalt: number | null = null;
     let outputContinuations = 0;
 
     for (let iteration = 0; iteration <= maxIterations; iteration++) {
       let stream: AsyncIterable<unknown> | null = null;
-      const retryLimit =
-        iteration === 0 && useRelayRouting ? MAX_RELAY_RETRY : 0;
+      const retryLimit = useRelayRouting ? MAX_RELAY_RETRY : 0;
       let lastErr: unknown = null;
       for (let attempt = 0; attempt <= retryLimit; attempt++) {
         try {
@@ -479,7 +478,7 @@ export class OpenAIProvider implements Provider {
               ...responsesReasoningParam(preset),
               tools: openAITools,
               tool_choice: "auto",
-              parallel_tool_calls: false,
+              parallel_tool_calls: options.parallelToolCalls === true,
               stream: true,
               store: false,
             } as never,
@@ -527,13 +526,13 @@ export class OpenAIProvider implements Provider {
             case "response.created":
               yield {
                 type: "status",
-                message: "OpenAI 已接收请求，等待模型开始处理",
+                message: `OpenAI 已接收第 ${iteration + 1} 轮请求，等待模型开始处理`,
               };
               break;
             case "response.in_progress":
               yield {
                 type: "status",
-                message: hostedToolsStatus(options.toolSettings),
+                message: `${hostedToolsStatus(options.toolSettings)} · 第 ${iteration + 1} 轮`,
               };
               break;
             case "response.output_text.delta":
@@ -642,13 +641,13 @@ export class OpenAIProvider implements Provider {
       // through the continuation path below unless a terminal event arrived.
       if (!terminalEvent && calls.length > 0) terminalEvent = true;
 
-      // Persist the salt that just produced a successful first-stream-pass.
+      // Persist any salt that just produced a successful stream pass.
       // Subsequent chats for the same paper start from this salt, keeping
       // them pinned to the same (now-known-healthy) relay backend account
       // so long-prefix prompt cache hits accumulate. Fire-and-forget; the
       // write is queued behind any in-flight relay-routing writes.
-      if (useRelayRouting && !saltPersisted && iteration === 0) {
-        saltPersisted = true;
+      if (useRelayRouting && persistedSalt !== salt) {
+        persistedSalt = salt;
         // Fire-and-forget: the JSON write is best-effort. Any failure (disk
         // full, permission) gets swallowed so an unhandled rejection cannot
         // leak into Zotero's event loop. Next chat for this paper would

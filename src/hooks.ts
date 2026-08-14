@@ -111,6 +111,12 @@ import {
   saveUiSettings,
   type UiSettings,
 } from './settings/ui-settings';
+import {
+  loadLocalUiSettings,
+  normalizeLocalUiSettings,
+  saveLocalUiSettings,
+  type LocalUiSettings,
+} from './settings/local-ui-settings';
 import { pullFromCloud, pushToCloud, testSyncConnection } from './sync';
 import {
   loadSyncAccount,
@@ -562,6 +568,11 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
     '#zai-ui-user-label, #zai-ui-user-avatar, #zai-ui-assistant-label, #zai-ui-assistant-avatar, #zai-ui-chat-font, #zai-ui-actions-position, #zai-ui-actions-layout, #zai-ui-preference-border-style, #zai-ui-composer-queue',
     () => saveUiSettingsControls(doc),
   );
+  bindAutoSaveControls(
+    doc,
+    '#zai-ui-chat-layout, #zai-ui-sidebar-display',
+    () => saveLocalUiSettingsControls(doc),
+  );
   bindAutoSaveControls(doc, '#zai-tool-web-search', () =>
     saveWebSearchControl(doc),
   );
@@ -596,7 +607,9 @@ function bindAutoSaveControls(
 function bindCompoundDirtyTracking(doc: Document, root: HTMLElement): void {
   const refresh = (event: Event) => {
     const target = event.target as Element | null;
-    const container = target?.closest('[data-save-section]') as HTMLElement | null;
+    const container = target?.closest(
+      '[data-save-section]',
+    ) as HTMLElement | null;
     const section = container?.dataset.saveSection;
     if (!isPreferenceSaveSection(section)) return;
     refreshPreferenceDirtySection(doc, section);
@@ -1471,6 +1484,7 @@ function translateTriggerValue(value: unknown): TranslateTriggerMode {
 
 function renderUiSettings(doc: Document): void {
   const settings = loadUiSettings(zoteroPrefs());
+  const localSettings = loadLocalUiSettings(zoteroPrefs());
   setInputValue(doc, 'zai-ui-user-label', settings.userProfile.label);
   setInputValue(doc, 'zai-ui-user-avatar', settings.userProfile.avatar);
   setInputValue(doc, 'zai-ui-assistant-label', settings.assistantProfile.label);
@@ -1492,7 +1506,29 @@ function renderUiSettings(doc: Document): void {
   applyPreferenceBorderStyle(doc, settings.preferenceBorderStyle);
   const queue = byID<HTMLInputElement>(doc, 'zai-ui-composer-queue');
   if (queue) queue.checked = settings.composerQueueWhileSending;
+  const chatLayout = byID<HTMLSelectElement>(doc, 'zai-ui-chat-layout');
+  if (chatLayout) chatLayout.value = localSettings.chatLayout;
+  const sidebarDisplay = byID<HTMLSelectElement>(doc, 'zai-ui-sidebar-display');
+  if (sidebarDisplay) {
+    sidebarDisplay.value = localSettings.sidebarDisplayMode;
+  }
   setStatus(doc, 'zai-ui-status', '已加载显示设置。');
+}
+
+function readLocalUiSettingsControls(doc: Document): LocalUiSettings {
+  const current = loadLocalUiSettings(zoteroPrefs());
+  return normalizeLocalUiSettings({
+    ...current,
+    chatLayout: byID<HTMLSelectElement>(doc, 'zai-ui-chat-layout')?.value,
+    sidebarDisplayMode: byID<HTMLSelectElement>(doc, 'zai-ui-sidebar-display')
+      ?.value,
+  });
+}
+
+function saveLocalUiSettingsControls(doc: Document): void {
+  saveLocalUiSettings(zoteroPrefs(), readLocalUiSettingsControls(doc));
+  refreshSidebarPreferences();
+  setStatus(doc, 'zai-ui-status', '本机排版设置已保存，侧边栏已刷新。');
 }
 
 function readUiSettingsControls(doc: Document): UiSettings {
@@ -1644,16 +1680,16 @@ function renderPresetRows(
     return;
   }
   const requestedSelection = dialogPresetId ?? previousSelection;
-  const selectedId = presets.some(
-    (preset) => preset.id === requestedSelection,
-  )
+  const selectedId = presets.some((preset) => preset.id === requestedSelection)
     ? requestedSelection
     : presets[0].id;
   if (picker) {
     picker.removeAttribute('hidden');
     const activeDialogId = picker.dataset.dialogPresetId ?? '';
     for (const preset of presets) {
-      picker.append(presetPickerItem(doc, preset, preset.id === activeDialogId));
+      picker.append(
+        presetPickerItem(doc, preset, preset.id === activeDialogId),
+      );
     }
   }
   for (const preset of presets) list.append(presetRow(doc, preset));
@@ -1724,10 +1760,7 @@ function presetPickerItem(
   return item;
 }
 
-function refreshPresetPickerItem(
-  doc: Document,
-  preset: ModelPreset,
-): void {
+function refreshPresetPickerItem(doc: Document, preset: ModelPreset): void {
   const item = doc.querySelector<HTMLElement>(
     `.zai-preset-picker-item[data-id="${cssEscape(preset.id)}"]`,
   );
@@ -1848,9 +1881,9 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   const inferredNameGroup = inferModelSuggestionGroupFromName(preset.label);
   const initialGroup: ModelSuggestionGroup =
     preset.provider === 'openai'
-      ? preset.extras?.modelSuggestionGroup ??
+      ? (preset.extras?.modelSuggestionGroup ??
         (automaticKey === 'custom' ? inferredNameGroup : undefined) ??
-        'auto'
+        'auto')
       : 'auto';
   const initialKey =
     initialGroup === 'auto'
@@ -1858,7 +1891,9 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
       : resolveModelSuggestionKey(
           preset.provider,
           preset.baseUrl,
-          (preset.models?.length ? preset.models : [preset.model]).filter(Boolean),
+          (preset.models?.length ? preset.models : [preset.model]).filter(
+            Boolean,
+          ),
           initialVendor,
           initialGroup,
         );
@@ -1927,7 +1962,7 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
             selectedGroup,
           )
         : kind === 'openai' && automaticKey === 'custom'
-          ? inferModelSuggestionGroupFromName(label.value) ?? automaticKey
+          ? (inferModelSuggestionGroupFromName(label.value) ?? automaticKey)
           : automaticKey;
     modelList.setSuggestionKey(nextKey);
   };

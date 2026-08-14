@@ -1,0 +1,465 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>网络图目标模式 · 交互设计图</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --paper: #fffdf9;
+      --panel: #fffaf4;
+      --line: #e6d8c8;
+      --line-strong: #d9c4ad;
+      --ink: #28231f;
+      --muted: #8f8173;
+      --accent: #bf5a2c;
+      --accent-soft: #fff0e7;
+      --blue: #28789e;
+      --blue-soft: #eef8fc;
+      --green: #31864a;
+      --green-soft: #eef8ef;
+      --shadow: 0 18px 55px rgba(80, 55, 30, .13);
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      min-width: 980px;
+      background: #f3eee6;
+      color: var(--ink);
+      font: 14px/1.5 system-ui, -apple-system, "Segoe UI", sans-serif;
+    }
+    button, textarea { font: inherit; }
+    button { cursor: pointer; }
+    .board {
+      width: min(1460px, calc(100vw - 40px));
+      margin: 20px auto;
+    }
+    .board-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 24px;
+      margin-bottom: 12px;
+    }
+    .board-head h1 { margin: 0; font-size: 18px; }
+    .board-head p { margin: 2px 0 0; color: var(--muted); font-size: 12px; }
+    .legend { display: flex; gap: 8px; }
+    .legend span {
+      padding: 5px 9px;
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      background: var(--paper);
+      color: var(--muted);
+      font-size: 11px;
+    }
+    .app {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(390px, .75fr);
+      height: 860px;
+      overflow: hidden;
+      border: 1px solid var(--line-strong);
+      border-radius: 16px;
+      background: var(--paper);
+      box-shadow: var(--shadow);
+    }
+    .overview, .chat { min-width: 0; background: var(--paper); }
+    .overview { border-right: 4px solid #ded4c8; }
+    .topbar, .chat-head, .overview-head {
+      display: flex;
+      align-items: center;
+      min-height: 54px;
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .topbar { justify-content: space-between; }
+    .primary-tabs, .view-tabs, .actions, .chat-title { display: flex; align-items: center; gap: 6px; }
+    .tab, .btn, .mini-btn, .context-chip {
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      color: #66594d;
+    }
+    .tab { padding: 6px 15px; font-weight: 650; }
+    .tab.active { color: var(--accent); background: var(--paper); box-shadow: 0 2px 7px rgba(75,45,20,.1); }
+    .btn { padding: 7px 11px; }
+    .mini-btn { padding: 4px 9px; font-size: 11px; }
+    .overview-body { height: calc(100% - 54px); padding: 14px; overflow: auto; }
+    .overview-card {
+      min-height: 100%;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: #fff;
+    }
+    .overview-head { justify-content: space-between; }
+    .overview-title { display: flex; align-items: center; gap: 8px; font-size: 16px; font-weight: 750; }
+    .pin { color: #f04c3d; }
+    .view-tab {
+      padding: 4px 10px;
+      border: 0;
+      border-radius: 6px;
+      background: transparent;
+      color: #7d6e61;
+    }
+    .view-tab.active { color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+    .repo {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      margin: 12px;
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--panel);
+    }
+    .repo strong { display: block; }
+    .repo small { color: var(--muted); }
+    .graph {
+      position: relative;
+      height: 645px;
+      margin: 0 12px 12px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background-color: #fffdfa;
+      background-image: radial-gradient(#e9ded2 1px, transparent 1px);
+      background-size: 16px 16px;
+    }
+    .graph-tools {
+      position: absolute;
+      top: 9px;
+      right: 9px;
+      display: flex;
+      gap: 5px;
+    }
+    .flow {
+      position: absolute;
+      inset: 60px 60px 30px;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: repeat(5, 78px);
+      align-content: space-around;
+      gap: 28px 70px;
+    }
+    .node {
+      position: relative;
+      display: grid;
+      place-items: center;
+      padding: 10px;
+      border: 2px solid #cf6c3a;
+      border-radius: 10px;
+      background: #fffaf4;
+      text-align: center;
+      font-size: 12px;
+    }
+    .node.green { border-color: #489956; background: var(--green-soft); color: #276d35; }
+    .node.blue { border-color: #4a91c7; background: #eef6ff; color: #2c6d9e; }
+    .node.full { grid-column: 1 / -1; justify-self: center; width: 48%; }
+    .node:not(.last)::after {
+      position: absolute;
+      top: calc(100% + 2px);
+      left: 50%;
+      width: 2px;
+      height: 28px;
+      background: #d7c5b2;
+      content: "";
+    }
+    .empty-network {
+      display: none;
+      min-height: 650px;
+      margin: 12px;
+      place-items: center;
+      border: 1px dashed var(--line-strong);
+      border-radius: 10px;
+      color: var(--muted);
+      text-align: center;
+    }
+    .empty-network strong { display: block; margin-bottom: 8px; color: var(--ink); font-size: 16px; }
+    .chat { display: grid; grid-template-rows: auto auto 1fr auto; }
+    .chat-head { gap: 9px; }
+    .chat-head strong { white-space: nowrap; }
+    .model {
+      flex: 1;
+      min-width: 0;
+      padding: 8px 10px;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 8px;
+      background: #fff;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .paper-meta {
+      padding: 9px 14px;
+      border-bottom: 1px solid var(--line);
+    }
+    .paper-meta strong {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .paper-meta small { color: var(--muted); }
+    .messages { padding: 16px; overflow: auto; }
+    .scope-note {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-bottom: 16px;
+      padding: 9px 11px;
+      border-left: 3px solid var(--blue);
+      border-radius: 7px;
+      background: var(--blue-soft);
+      color: #266b8b;
+      font-size: 12px;
+    }
+    .scope-note[hidden] { display: none; }
+    .bubble {
+      max-width: 86%;
+      margin-bottom: 15px;
+      padding: 11px 13px;
+      border-radius: 13px;
+      background: #f5f1eb;
+      line-height: 1.65;
+    }
+    .bubble.user { margin-left: auto; background: #eaf6fb; }
+    .bubble small { display: block; margin-bottom: 4px; color: var(--muted); font-weight: 700; }
+    .network-thread[hidden], .paper-thread[hidden] { display: none; }
+    .composer {
+      padding: 10px 12px 13px;
+      border-top: 2px solid #a88cff;
+      background: var(--paper);
+    }
+    .composer textarea {
+      display: block;
+      width: 100%;
+      height: 118px;
+      padding: 12px;
+      resize: none;
+      border: 1px solid var(--line-strong);
+      border-radius: 14px;
+      outline: none;
+      background: #fff;
+    }
+    .composer-foot {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 10px;
+      margin-top: 8px;
+    }
+    .contexts { display: flex; align-items: center; gap: 6px; }
+    .context-chip { padding: 5px 9px; font-size: 12px; }
+    .context-chip.network {
+      border-color: #e3a783;
+      background: var(--accent-soft);
+      color: var(--accent);
+      font-weight: 700;
+    }
+    .context-chip.network.inactive { border-color: var(--line); background: #fff; color: #77695c; font-weight: 500; }
+    .send {
+      width: 38px;
+      height: 38px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      font-size: 20px;
+    }
+    .notes {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 10px;
+      margin-top: 12px;
+    }
+    .note {
+      padding: 10px 12px;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      background: var(--paper);
+      color: var(--muted);
+      font-size: 12px;
+    }
+    .note strong { display: block; margin-bottom: 3px; color: var(--ink); }
+  </style>
+</head>
+<body>
+  <main class="board">
+    <header class="board-head">
+      <div>
+        <h1>单对话 + 网络图目标标签</h1>
+        <p>点击左侧栏目和右侧“网络图”标签，查看普通对话与网络图指令之间的切换。</p>
+      </div>
+      <div class="legend">
+        <span>不增加第二个对话窗口</span>
+        <span>历史与草稿底层隔离</span>
+        <span>总览不自动生成网络图</span>
+      </div>
+    </header>
+
+    <section class="app" aria-label="Zotero AI 网络图目标模式原型">
+      <section class="overview">
+        <div class="topbar">
+          <div class="primary-tabs">
+            <button class="tab">笔记</button>
+            <button class="tab">路线</button>
+            <button class="tab active">总览</button>
+          </div>
+          <div class="actions">
+            <button class="btn" id="emptyToggle">演示未生成网络图</button>
+            <button class="btn">↻ 更新总览</button>
+          </div>
+        </div>
+        <div class="overview-body">
+          <article class="overview-card">
+            <header class="overview-head">
+              <div class="overview-title"><span class="pin">📍</span> 全文总览</div>
+              <nav class="view-tabs" aria-label="总览栏目">
+                <button class="view-tab" data-view="outline">目录</button>
+                <button class="view-tab" data-view="structure">结构图</button>
+                <button class="view-tab active" data-view="network">网络图</button>
+              </nav>
+              <button class="mini-btn">↗ 浏览器</button>
+            </header>
+
+            <div id="networkReady">
+              <section class="repo">
+                <div>
+                  <strong>graspnet/graspnet-baseline</strong>
+                  <small>commit 280c215129f7 · 8 个代码文件 · Token 151,114</small>
+                </div>
+                <div class="actions">
+                  <button class="mini-btn">日志</button>
+                  <button class="mini-btn">更换仓库</button>
+                  <button class="mini-btn">↻ 重新生成</button>
+                </div>
+              </section>
+              <section class="graph">
+                <div class="graph-tools">
+                  <button class="mini-btn">适应</button>
+                  <button class="mini-btn">−</button>
+                  <button class="mini-btn">63%</button>
+                  <button class="mini-btn">＋</button>
+                  <button class="mini-btn">全屏</button>
+                </div>
+                <div class="flow">
+                  <div class="node full">点云输入 · point_clouds [B,N,3]</div>
+                  <div class="node full">PointNet++ 主干 · 多尺度点特征</div>
+                  <div class="node green">接近方向分支<br>fp2_features → objectness</div>
+                  <div class="node green">局部区域裁剪<br>seed_xyz + grasp_top_view_rot</div>
+                  <div class="node green">容差预测头<br>vp_features → tolerance</div>
+                  <div class="node green">抓取得分头<br>vp_features → score</div>
+                  <div class="node full">角度与深度选择 · grasp_score_pred</div>
+                  <div class="node blue full last">抓取预测输出 · pose / width / score</div>
+                </div>
+              </section>
+            </div>
+
+            <section class="empty-network" id="networkEmpty">
+              <div>
+                <strong>网络图尚未生成</strong>
+                <p>“更新总览”只生成目录、核心讲述和结构图。<br>提供公开 GitHub 仓库后，才开始代码网络分析。</p>
+                <button class="btn">关联 GitHub 仓库</button>
+              </div>
+            </section>
+          </article>
+        </div>
+      </section>
+
+      <aside class="chat">
+        <header class="chat-head">
+          <strong>AI 对话</strong>
+          <div class="model">GPT (openai)</div>
+          <button class="btn">···</button>
+          <button class="btn">»</button>
+        </header>
+        <section class="paper-meta">
+          <strong>GraspNet: A Large-Scale Clustered and Densely Annotated Dataset</strong>
+          <small>Item ID: 1494 · LaTeX 源 · 原文已固定</small>
+        </section>
+
+        <section class="messages">
+          <div class="scope-note" id="scopeNote">
+            <span>📐 当前消息目标：网络图 v1 · graspnet/graspnet-baseline</span>
+            <span>代码证据 8 个文件</span>
+          </div>
+
+          <div class="network-thread" id="networkThread">
+            <div class="bubble user"><small>YOU · 网络图指令</small>把局部区域裁剪之后的预测头展开，并补充每个分支的 Shape。</div>
+            <div class="bubble"><small>AI · 网络图工作区</small>已沿 <code>GraspNet.forward</code> 和 <code>CloudCrop.forward</code> 重新核对。下一版会保留 PointNet++ 主干，将视角特征、容差分支、抓取得分分支和角度/深度选择分别展开。</div>
+          </div>
+
+          <div class="paper-thread" id="paperThread" hidden>
+            <div class="bubble user"><small>YOU</small>这篇论文的数据标注有什么创新？</div>
+            <div class="bubble"><small>AI</small>论文的关键并不只是增加样本量，而是为抓取候选提供稠密姿态、碰撞和质量相关标注，使模型能够学习从场景点云到可执行抓取姿态的映射。</div>
+          </div>
+        </section>
+
+        <section class="composer">
+          <textarea id="composer" placeholder="例如：展开特征融合，并标注每个节点的输入输出 Shape"></textarea>
+          <div class="composer-foot">
+            <div class="contexts">
+              <button class="context-chip">＋ 联网</button>
+              <button class="context-chip">📄 原文</button>
+              <button class="context-chip network" id="networkChip">📐 网络图　×</button>
+            </div>
+            <button class="send" aria-label="发送">↑</button>
+          </div>
+        </section>
+      </aside>
+    </section>
+
+    <section class="notes">
+      <div class="note"><strong>点击“网络图”</strong>自动附加网络图目标，并切换到该论文的网络图指令历史。</div>
+      <div class="note"><strong>点击标签上的 ×</strong>左侧网络图保持不变，右侧立即恢复普通论文对话和原来的草稿。</div>
+      <div class="note"><strong>再次点击“＋ 网络图”</strong>重新附加目标，不创建新对话编号，也不丢失之前的网络图指令。</div>
+    </section>
+  </main>
+
+  <script>
+    const networkChip = document.querySelector("#networkChip");
+    const scopeNote = document.querySelector("#scopeNote");
+    const networkThread = document.querySelector("#networkThread");
+    const paperThread = document.querySelector("#paperThread");
+    const composer = document.querySelector("#composer");
+    const viewTabs = [...document.querySelectorAll(".view-tab")];
+    let networkTarget = true;
+    let emptyNetwork = false;
+
+    function renderTarget() {
+      scopeNote.hidden = !networkTarget;
+      networkThread.hidden = !networkTarget;
+      paperThread.hidden = networkTarget;
+      networkChip.textContent = networkTarget ? "📐 网络图　×" : "＋ 网络图";
+      networkChip.classList.toggle("inactive", !networkTarget);
+      composer.placeholder = networkTarget
+        ? "例如：展开特征融合，并标注每个节点的输入输出 Shape"
+        : "问点什么…（普通论文对话）";
+    }
+
+    networkChip.addEventListener("click", () => {
+      networkTarget = !networkTarget;
+      renderTarget();
+      composer.focus();
+    });
+
+    viewTabs.forEach((button) => {
+      button.addEventListener("click", () => {
+        viewTabs.forEach((item) => item.classList.toggle("active", item === button));
+        networkTarget = button.dataset.view === "network";
+        renderTarget();
+      });
+    });
+
+    document.querySelector("#emptyToggle").addEventListener("click", (event) => {
+      emptyNetwork = !emptyNetwork;
+      document.querySelector("#networkReady").style.display = emptyNetwork ? "none" : "block";
+      document.querySelector("#networkEmpty").style.display = emptyNetwork ? "grid" : "none";
+      event.currentTarget.textContent = emptyNetwork ? "演示已有网络图" : "演示未生成网络图";
+    });
+  </script>
+</body>
+</html>

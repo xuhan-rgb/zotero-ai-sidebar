@@ -204,6 +204,7 @@ function normalizeOverviewData(raw: unknown): OverviewData | null {
     narrative: typeof r.narrative === "string" ? r.narrative : undefined,
     sections,
     flowchart: normalizeStoredFlowchart(r.flowchart),
+    networkTopology: normalizeStoredFlowchart(r.networkTopology),
   };
 }
 

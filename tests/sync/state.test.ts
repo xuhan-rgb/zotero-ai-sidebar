@@ -34,6 +34,10 @@ import {
   setCachedTranslation,
   translateCachePath,
 } from '../../src/translate/cache';
+import {
+  loadNetworkDiagramWorkspace,
+  saveNetworkDiagramWorkspace,
+} from '../../src/context/network-diagram-store';
 
 function memPrefs(): PrefsStore {
   const map = new Map<string, string>();
@@ -191,6 +195,7 @@ describe('sync snapshot round trip', () => {
     expect(snapshot.translateCache?.entries['translate-key']?.text).toBe(
       '你好。',
     );
+    expect(snapshot.networkDiagrams?.entries).toEqual({});
     expect(snapshot.annotations).toEqual([]);
   });
 
@@ -497,5 +502,43 @@ describe('sync snapshot round trip', () => {
     expect(snap.translateSettings).toBeUndefined();
     expect(snap.threads).toEqual([]);
     expect(snap.translateCache?.entries).toEqual({});
+    expect(snap.networkDiagrams?.entries).toEqual({});
+  });
+
+  it('syncs network diagram revisions and conversation without source bodies', async () => {
+    await saveNetworkDiagramWorkspace('AAAA1111', {
+      itemKey: 'AAAA1111',
+      repository: {
+        url: 'https://github.com/owner/repo',
+        owner: 'owner',
+        repo: 'repo',
+        defaultBranch: 'main',
+        commitSHA: 'abc',
+        analyzedAt: 1,
+      },
+      revisions: [],
+      messages: [
+        { id: 'm1', role: 'user', content: '展开模块', createdAt: 2 },
+      ],
+      evidenceIndex: [
+        {
+          id: 'code:abc:models/net.py',
+          kind: 'code',
+          label: 'models/net.py',
+          path: 'models/net.py',
+          commitSHA: 'abc',
+        },
+      ],
+    });
+    const snapshot = await buildSyncSnapshot(memPrefs());
+    expect(JSON.stringify(snapshot.networkDiagrams)).not.toContain('class Net');
+
+    files = new Map();
+    const result = await applySyncSnapshot(memPrefs(), snapshot);
+    expect(result.networkDiagrams.imported).toBe(1);
+    expect(
+      (await loadNetworkDiagramWorkspace('AAAA1111'))?.workspace.messages[0]
+        .content,
+    ).toBe('展开模块');
   });
 });

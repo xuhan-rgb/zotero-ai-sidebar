@@ -548,6 +548,24 @@ describe("createZoteroAgentTools", () => {
     ).toBe(true);
   });
 
+  it("marks a zero-hit PDF search as non-evidence", async () => {
+    const session = createZoteroAgentToolSession({
+      source: {
+        ...source,
+        getFullText: async () => "encoder backbone feature extraction",
+      },
+      itemID: 1,
+    });
+    const search = session.tools.find(
+      (candidate) => candidate.name === "zotero_search_pdf",
+    );
+
+    const result = await search!.execute({ query: "unmatched-objective-term" });
+
+    expect(result.output).toContain("No PDF passages matched");
+    expect(result.isError).toBe(true);
+  });
+
   it("exposes full PDF truncation metadata", async () => {
     const session = createZoteroAgentToolSession({
       source: {
@@ -1448,16 +1466,32 @@ describe("render_paper_overview", () => {
       source: "pdf",
       coverage: "headings",
       sections: [
-        { no: "1", level: 1, title: "Intro", gist: "g", charStart: 0, charEnd: 10 },
+        {
+          no: "1",
+          level: 1,
+          title: "Intro",
+          gist: "g",
+          charStart: 0,
+          charEnd: 10,
+        },
       ],
       flowchart: {
         rankdir: "TB",
         nodes: [{ id: "a", label: "A", type: "root" }],
         edges: [],
       },
+      networkTopology: {
+        rankdir: "TB",
+        nodes: [{ id: "legacy", label: "Must be ignored" }],
+        edges: [],
+      },
     });
     expect(received!.sections[0].title).toBe("Intro");
     expect(received!.flowchart!.nodes.length).toBe(1);
+    expect(received!.networkTopology).toBeUndefined();
+    expect(
+      (tool.parameters.properties as Record<string, unknown>).networkTopology,
+    ).toBeUndefined();
     expect(res.context?.planMode).toBe("overview");
   });
 });
@@ -1500,9 +1534,7 @@ describe("findSentenceAnnotation", () => {
   });
 
   it("matches a full-coverage highlight on the same page", async () => {
-    mockAttachmentWithAnnotations([
-      highlight("A", 7, [[100, 700, 300, 712]]),
-    ]);
+    mockAttachmentWithAnnotations([highlight("A", 7, [[100, 700, 300, 712]])]);
     const found = await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]]);
     expect(found?.key).toBe("A");
     expect(found?.comment).toBe("comment-A");
@@ -1511,24 +1543,26 @@ describe("findSentenceAnnotation", () => {
   });
 
   it("returns null when the click is on a different page", async () => {
-    mockAttachmentWithAnnotations([
-      highlight("A", 7, [[100, 700, 300, 712]]),
-    ]);
-    expect(await findSentenceAnnotation(42, 8, [[100, 700, 300, 712]])).toBeNull();
+    mockAttachmentWithAnnotations([highlight("A", 7, [[100, 700, 300, 712]])]);
+    expect(
+      await findSentenceAnnotation(42, 8, [[100, 700, 300, 712]]),
+    ).toBeNull();
   });
 
   it("returns null when there is no spatial overlap", async () => {
-    mockAttachmentWithAnnotations([
-      highlight("A", 7, [[100, 600, 300, 612]]),
-    ]);
-    expect(await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]])).toBeNull();
+    mockAttachmentWithAnnotations([highlight("A", 7, [[100, 600, 300, 612]])]);
+    expect(
+      await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]]),
+    ).toBeNull();
   });
 
   it("ignores non-highlight/underline annotations (e.g. note/text)", async () => {
     mockAttachmentWithAnnotations([
       highlight("N", 7, [[100, 700, 300, 712]], { annotationType: "note" }),
     ]);
-    expect(await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]])).toBeNull();
+    expect(
+      await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]]),
+    ).toBeNull();
   });
 
   it("picks the highlight with the largest coverage", async () => {
@@ -1547,6 +1581,8 @@ describe("findSentenceAnnotation", () => {
       // ~25% of the sentence box
       highlight("SMALL", 7, [[100, 700, 150, 712]]),
     ]);
-    expect(await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]])).toBeNull();
+    expect(
+      await findSentenceAnnotation(42, 7, [[100, 700, 300, 712]]),
+    ).toBeNull();
   });
 });

@@ -62,6 +62,33 @@ Selected PDF text is explicit UI context, not an inferred semantic intent. When
 present, it is attached directly to the current user message and recorded as
 `selected_text` in the visible trace.
 
+## GitHub Network Diagram Loop
+
+The network-diagram workspace uses an independent model conversation while
+reusing the selected model preset. Its read-only harness follows the same
+model-driven rule as Zotero context retrieval:
+
+- the harness fixes a public `github.com/{owner}/{repo}` repository to one
+  commit SHA and obtains its complete file tree;
+- `github_list_paths` lets the model inspect real candidate paths;
+- `github_read_files` lets the model choose exact paths, symbols or line ranges,
+  a selection reason, and the missing diagram-detail category each read covers;
+- every requested path must be a blob in the fixed commit tree, and raw content
+  is read through the fixed SHA rather than a moving branch;
+- there is no file-count completion rule. Aggregate text, request, tool-loop and
+  time budgets are safety fuses; the eight structured detail categories decide
+  whether the candidate is complete;
+- `submit_network_diagram` validates evidence IDs, required stages, a continuous
+  input-to-output path and category coverage before the candidate can replace
+  the current graph. Rejected candidates remain inside the tool loop and never
+  create a revision;
+- this is static source analysis, not runtime tracing. Repository code is never
+  executed and dependency/install scripts are never run.
+
+Repository source bodies are transient tool output. Sync stores only the fixed
+repository reference, graph revisions, independent conversation and evidence
+pointers, so WebDAV never becomes a source-code mirror.
+
 ## Policy
 
 All size and count limits live in `src/context/policy.ts`. Runtime logic should

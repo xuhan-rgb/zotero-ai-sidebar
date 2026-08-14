@@ -61,6 +61,13 @@ import {
   type ImportReadingResult,
   type ReadingStoreSnapshot,
 } from '../context/reading-store';
+import {
+  exportNetworkDiagramWorkspaces,
+  importNetworkDiagramWorkspaces,
+  normalizeNetworkDiagramStore,
+  type ImportNetworkDiagramWorkspacesResult,
+  type NetworkDiagramStoreSnapshot,
+} from '../context/network-diagram-store';
 
 // Sync snapshot: the on-the-wire JSON we push to / pull from the cloud.
 //
@@ -96,6 +103,9 @@ export interface SyncSnapshot {
   // Per-item reading positions ("在读" anchor); optional on the wire for
   // payloads uploaded before reading-position sync existed.
   readingPositions?: ReadingStoreSnapshot;
+  // Network diagram repository source, revisions, evidence pointers and its
+  // independent optimization conversation. Source file bodies are excluded.
+  networkDiagrams?: NetworkDiagramStoreSnapshot;
 }
 
 export interface ApplySnapshotResult {
@@ -104,18 +114,26 @@ export interface ApplySnapshotResult {
   translateCache: ImportTranslateCacheResult;
   overviews: ImportOverviewsResult;
   readingPositions: ImportReadingResult;
+  networkDiagrams: ImportNetworkDiagramWorkspacesResult;
 }
 
 export async function buildSyncSnapshot(
   prefs: PrefsStore,
 ): Promise<SyncSnapshot> {
-  const [annotations, threads, translateCache, overviews, readingPositions] =
-    await Promise.all([
+  const [
+    annotations,
+    threads,
+    translateCache,
+    overviews,
+    readingPositions,
+    networkDiagrams,
+  ] = await Promise.all([
       exportAllAnnotations(),
       exportAllThreads(),
       exportTranslateCache(),
       exportOverviews(),
       exportReadingStore(),
+      exportNetworkDiagramWorkspaces(),
     ]);
   return {
     schema: SYNC_SCHEMA,
@@ -130,6 +148,7 @@ export async function buildSyncSnapshot(
     translateCache,
     overviews,
     readingPositions,
+    networkDiagrams,
   };
 }
 
@@ -164,6 +183,7 @@ export function parseSyncSnapshot(raw: string): SyncSnapshot {
     translateCache: normalizeTranslateCache(parsed.translateCache),
     overviews: normalizeOverviewStore(parsed.overviews),
     readingPositions: normalizeReadingStore(parsed.readingPositions),
+    networkDiagrams: normalizeNetworkDiagramStore(parsed.networkDiagrams),
   };
 }
 
@@ -177,15 +197,29 @@ export async function applySyncSnapshot(
   saveToolSettings(prefs, snapshot.toolSettings);
   if (snapshot.translateSettings)
     saveTranslateSettings(prefs, snapshot.translateSettings);
-  const [annotations, threads, translateCache, overviews, readingPositions] =
-    await Promise.all([
+  const [
+    annotations,
+    threads,
+    translateCache,
+    overviews,
+    readingPositions,
+    networkDiagrams,
+  ] = await Promise.all([
       importAllAnnotations(snapshot.annotations),
       importAllThreads(snapshot.threads ?? []),
       importTranslateCache(snapshot.translateCache),
       importOverviews(snapshot.overviews),
       importReadingStore(snapshot.readingPositions),
+      importNetworkDiagramWorkspaces(snapshot.networkDiagrams),
     ]);
-  return { annotations, threads, translateCache, overviews, readingPositions };
+  return {
+    annotations,
+    threads,
+    translateCache,
+    overviews,
+    readingPositions,
+    networkDiagrams,
+  };
 }
 
 function normalizePortableThreads(value: unknown): PortableThread[] {

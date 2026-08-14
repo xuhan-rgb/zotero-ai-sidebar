@@ -43,4 +43,5 @@ export interface OverviewData {
   narrative?: string; // 核心讲述: 2–4 sentence whole-paper synthesis
   sections: OverviewSection[];
   flowchart?: MindmapData;
+  networkTopology?: MindmapData; // optional model architecture: input → modules → output
 }

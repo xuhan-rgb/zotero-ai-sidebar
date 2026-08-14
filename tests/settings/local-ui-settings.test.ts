@@ -44,6 +44,42 @@ describe('local UI settings storage', () => {
     expect(loadLocalUiSettings(prefs).chatFontSizePx).toBe(11);
   });
 
+  it('defaults to the classic embedded layout and persists explicit alternatives', () => {
+    const prefs = memPrefs();
+    expect(loadLocalUiSettings(prefs)).toMatchObject({
+      chatLayout: 'classic',
+      sidebarDisplayMode: 'embedded',
+    });
+
+    saveLocalUiSettings(prefs, {
+      ...DEFAULT_LOCAL_UI_SETTINGS,
+      chatLayout: 'compact',
+      sidebarDisplayMode: 'docked',
+    });
+    expect(loadLocalUiSettings(prefs)).toMatchObject({
+      chatLayout: 'compact',
+      sidebarDisplayMode: 'docked',
+    });
+
+    prefs.set(
+      'extensions.zotero-ai-sidebar.localUiSettings',
+      JSON.stringify({ sidebarDisplayMode: 'companion' }),
+    );
+    expect(loadLocalUiSettings(prefs).sidebarDisplayMode).toBe('docked');
+
+    prefs.set(
+      'extensions.zotero-ai-sidebar.localUiSettings',
+      JSON.stringify({
+        chatLayout: 'unknown',
+        sidebarDisplayMode: 'floating',
+      }),
+    );
+    expect(loadLocalUiSettings(prefs)).toMatchObject({
+      chatLayout: 'classic',
+      sidebarDisplayMode: 'embedded',
+    });
+  });
+
   it('persists full-translation reading preferences', () => {
     const prefs = memPrefs();
     const reading = {

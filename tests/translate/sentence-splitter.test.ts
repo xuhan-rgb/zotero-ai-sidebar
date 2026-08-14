@@ -44,6 +44,15 @@ describe('splitSentences', () => {
     const result = splitSentences('foo.bar. Next sentence.');
     expect(result.map((r) => r.text)).toEqual(['foo.bar.', 'Next sentence.']);
   });
+
+  it('does not split mathematical ellipses inside a formula', () => {
+    const result = splitSentences(
+      '完整集合记为 A_t = {a_t^1, a_t^2, . . . , a_t^L}，其中 L 表示特征向量的数量。',
+    );
+    expect(result.map((r) => r.text)).toEqual([
+      '完整集合记为 A_t = {a_t^1, a_t^2, . . . , a_t^L}，其中 L 表示特征向量的数量。',
+    ]);
+  });
 });
 
 describe('sentenceAt', () => {

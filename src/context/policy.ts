@@ -40,6 +40,36 @@ export interface ContextPolicy {
   // navigation). Pure hygiene cap on a list you basically never fill — no UI.
   overviewBackStackMax: number;
 
+  // --- Public GitHub network-diagram analysis ---------------------------
+  // Maximum text returned from one repository file read. Source bodies enter
+  // the model only through exact line ranges; small config/docs may be whole.
+  githubMaxFileChars: number;
+  // Maximum inclusive line span for one source-evidence read. Navigation may
+  // inspect a whole symbol outline, but bodies enter the model in small ranges.
+  githubMaxRangeLines: number;
+  // Aggregate source text returned to the diagram agent during one run.
+  // There is deliberately NO file-count limit: repositories split modules at
+  // very different granularities, so completion is driven by evidence/detail.
+  githubAnalysisCharBudget: number;
+  // Maximum directory-manifest text included in one model/tool response.
+  githubTreeManifestCharBudget: number;
+  // Smaller path preview repeated in every network-diagram model round. The
+  // full bounded manifest remains available through github_list_paths.
+  githubPromptTreeManifestCharBudget: number;
+  // Network safety fuses. These bound remote work without turning a number of
+  // files into analysis routing or an early-completion condition.
+  githubRequestBudget: number;
+  // Fixed-commit tarballs are cached only for the network-diagram analyzer.
+  // Per-file and aggregate limits prevent a repository from expanding without
+  // bound inside the Zotero data directory.
+  githubSnapshotMaxFileBytes: number;
+  githubSnapshotMaxBytes: number;
+  githubAnalysisTimeoutMs: number;
+  // Network-diagram research has a large fixed tool schema and therefore a
+  // tighter runaway-loop fuse than ordinary conversation. Completion is still
+  // decided by graph/evidence validation, never by this count.
+  githubMaxToolIterations: number;
+
   // --- Annotation handling ----------------------------------------------
   // Cap on annotations returned by `zotero_get_annotations` so a heavily
   // marked-up paper (hundreds of highlights) cannot flood the prompt.
@@ -109,6 +139,16 @@ export const DEFAULT_CONTEXT_POLICY: ContextPolicy = {
   maxOutlineEntries: 40,
   outlineFallbackWindows: 6,
   overviewBackStackMax: 10,
+  githubMaxFileChars: 16_000,
+  githubMaxRangeLines: 160,
+  githubAnalysisCharBudget: 160_000,
+  githubTreeManifestCharBudget: 24_000,
+  githubPromptTreeManifestCharBudget: 8_000,
+  githubRequestBudget: 200,
+  githubSnapshotMaxFileBytes: 4_000_000,
+  githubSnapshotMaxBytes: 100_000_000,
+  githubAnalysisTimeoutMs: 420_000,
+  githubMaxToolIterations: 12,
   maxAnnotations: 80,
   retainedContextTurnCount: 4,
   retainedContextCharBudget: 8000,

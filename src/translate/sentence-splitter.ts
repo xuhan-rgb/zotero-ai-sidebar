@@ -16,6 +16,21 @@ function isWhitespace(ch: string): boolean {
   return /\s/.test(ch);
 }
 
+function isEllipsisPeriod(text: string, dotIndex: number): boolean {
+  let start = dotIndex;
+  while (
+    start > 0 &&
+    (text[start - 1] === '.' || isWhitespace(text[start - 1]!))
+  ) {
+    start--;
+  }
+  let end = dotIndex + 1;
+  while (end < text.length && (text[end] === '.' || isWhitespace(text[end]!))) {
+    end++;
+  }
+  return (text.slice(start, end).match(/\./g)?.length ?? 0) >= 3;
+}
+
 function endsWithAbbreviation(text: string, dotIndex: number): boolean {
   const chunk = text.slice(0, dotIndex + 1);
   const tokens = chunk.split(/\s+/);
@@ -44,6 +59,7 @@ export function splitSentences(text: string): SentenceSpan[] {
     if (!DIVIDERS.has(ch)) continue;
 
     if (ch === '.') {
+      if (isEllipsisPeriod(text, i)) continue;
       const next = text[i + 1];
       if (next !== undefined && !isWhitespace(next)) continue;
       if (endsWithAbbreviation(text, i)) continue;

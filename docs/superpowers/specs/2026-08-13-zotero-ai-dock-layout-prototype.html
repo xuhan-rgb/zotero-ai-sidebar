@@ -1,0 +1,929 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero AI 伴随窗口 · 全高外挂原型</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --ink: #26221e;
+        --muted: #80766c;
+        --faint: #b1a79d;
+        --line: #ddd5ca;
+        --paper: #fffefa;
+        --chrome: #f4f3f1;
+        --accent: #c8673e;
+        --accent-dark: #a14728;
+        --accent-soft: #fff0e7;
+        --blue: #5f57ee;
+        --blue-soft: #efedff;
+        --teal: #00cfc5;
+        --ai-width: 62%;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 13% 0%, #fffaf0 0, transparent 32%),
+          linear-gradient(145deg, #e9e3dc, #f6f3ed 50%, #e7e4df);
+        color: var(--ink);
+        font-family:
+          Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      button,
+      select {
+        font: inherit;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      .page {
+        width: min(1320px, calc(100% - 28px));
+        margin: 0 auto;
+        padding: 22px 0 36px;
+      }
+
+      .intro {
+        display: flex;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 20px;
+        margin-bottom: 16px;
+      }
+
+      .eyebrow {
+        margin: 0 0 5px;
+        color: var(--accent-dark);
+        font-size: 11px;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(22px, 3vw, 35px);
+        line-height: 1.18;
+      }
+
+      .intro p:last-child {
+        max-width: 760px;
+        margin: 8px 0 0;
+        color: #70665d;
+        font-size: 13px;
+        line-height: 1.6;
+      }
+
+      .zotero-window {
+        position: relative;
+        overflow: hidden;
+        min-width: 0;
+        height: min(760px, calc(100vh - 176px));
+        min-height: 610px;
+        border: 1px solid rgba(77, 58, 40, 0.28);
+        border-radius: 15px;
+        background: var(--paper);
+        box-shadow: 0 24px 65px rgba(63, 45, 29, 0.17);
+      }
+
+      .native-zone {
+        position: relative;
+        width: calc(100% - var(--ai-width) - 7px);
+        height: 88px;
+        background: var(--chrome);
+      }
+
+      .native-label,
+      .xpi-label {
+        position: absolute;
+        z-index: 8;
+        padding: 3px 8px;
+        border-radius: 999px;
+        font-size: 10px;
+        font-weight: 900;
+        pointer-events: none;
+      }
+
+      .native-label {
+        top: 6px;
+        left: 10px;
+        border: 1px solid #bbb3aa;
+        background: rgba(255, 255, 255, 0.88);
+        color: #746b62;
+      }
+
+      .titlebar {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        height: 34px;
+        padding: 0 10px;
+        border-bottom: 1px solid #dfddda;
+      }
+
+      .window-controls {
+        display: flex;
+        gap: 23px;
+        font-size: 15px;
+      }
+
+      .tabbar {
+        display: flex;
+        align-items: end;
+        gap: 3px;
+        height: 54px;
+        padding: 8px 10px 0;
+        border-bottom: 1px solid #d5d2ce;
+        background: #fafafa;
+      }
+
+      .tab {
+        display: flex;
+        align-items: center;
+        min-width: 0;
+        max-width: 275px;
+        height: 39px;
+        padding: 0 11px;
+        border: 1px solid #d7d4d0;
+        border-bottom: 0;
+        border-radius: 10px 10px 0 0;
+        background: #eeece9;
+        color: #5e5750;
+        font-size: 13px;
+      }
+
+      .tab.active {
+        background: white;
+        color: var(--ink);
+      }
+
+      .tab span {
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .tabbar-spacer {
+        flex: 1;
+      }
+
+      .tab-icon {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 34px;
+        height: 34px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        font-size: 18px;
+      }
+
+      .dock-zone {
+        position: relative;
+        display: flex;
+        height: calc(100% - 88px);
+        min-width: 0;
+        overflow: visible;
+      }
+
+      .xpi-label {
+        top: -80px;
+        right: 14px;
+        border: 1px solid rgba(0, 168, 159, 0.45);
+        background: rgba(226, 255, 252, 0.92);
+        color: #007e77;
+      }
+
+      .reader-pane {
+        position: relative;
+        display: flex;
+        min-width: 320px;
+        width: calc(100% - var(--ai-width) - 7px);
+        height: 100%;
+        overflow: hidden;
+        flex: 0 0 calc(100% - var(--ai-width) - 7px);
+        background: #e8e6e1;
+      }
+
+      .reader-tools {
+        display: flex;
+        flex: 0 0 48px;
+        flex-direction: column;
+        align-items: center;
+        gap: 15px;
+        padding-top: 15px;
+        border-right: 1px solid #d6d2cc;
+        background: #f8f7f4;
+        color: #81786f;
+      }
+
+      .reader-canvas {
+        min-width: 0;
+        overflow: auto;
+        flex: 1;
+        padding: 30px 7%;
+      }
+
+      .paper {
+        width: min(650px, 100%);
+        min-height: 710px;
+        margin: 0 auto;
+        padding: 48px 8%;
+        background: white;
+        box-shadow: 0 4px 18px rgba(42, 39, 35, 0.13);
+      }
+
+      .paper h2 {
+        margin: 0 0 16px;
+        font:
+          700 clamp(17px, 2vw, 25px) / 1.35 Georgia,
+          serif;
+        text-align: center;
+      }
+
+      .paper .authors {
+        margin-bottom: 28px;
+        color: #716a64;
+        font:
+          12px/1.5 Georgia,
+          serif;
+        text-align: center;
+      }
+
+      .paper h3 {
+        margin: 24px 0 8px;
+        font:
+          700 16px Georgia,
+          serif;
+      }
+
+      .paper p {
+        color: #4f4a45;
+        font:
+          12px/1.72 Georgia,
+          serif;
+        text-align: justify;
+      }
+
+      .splitter {
+        position: absolute;
+        top: -88px;
+        right: var(--ai-width);
+        bottom: 0;
+        z-index: 5;
+        width: 7px;
+        cursor: ew-resize;
+        background: linear-gradient(
+          90deg,
+          transparent 0 2px,
+          #d9cabb 2px 4px,
+          transparent 4px 7px
+        );
+      }
+
+      .splitter:hover,
+      .splitter.dragging {
+        background: linear-gradient(
+          90deg,
+          transparent 0 2px,
+          var(--teal) 2px 5px,
+          transparent 5px 7px
+        );
+      }
+
+      .splitter::after {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 17px;
+        height: 44px;
+        border: 1px solid #d3c4b4;
+        border-radius: 999px;
+        background: white;
+        box-shadow: 0 3px 10px rgba(63, 45, 29, 0.11);
+        content: "";
+        transform: translate(-50%, -50%);
+      }
+
+      .ai-pane {
+        position: absolute;
+        top: -88px;
+        right: 0;
+        bottom: 0;
+        z-index: 6;
+        display: flex;
+        min-width: 320px;
+        width: var(--ai-width);
+        height: auto;
+        max-width: calc(100% - 327px);
+        flex-direction: column;
+        overflow: hidden;
+        border-left: 1px solid #eadfd3;
+        box-shadow: -8px 0 24px rgba(63, 45, 29, 0.08);
+        background:
+          linear-gradient(rgba(255, 253, 249, 0.95), rgba(255, 253, 249, 0.95)),
+          repeating-linear-gradient(
+            -35deg,
+            transparent 0 34px,
+            rgba(166, 126, 88, 0.04) 35px 36px
+          );
+      }
+
+      .ai-header {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 51px;
+        padding: 8px 9px;
+        border-bottom: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.88);
+      }
+
+      .ai-title {
+        flex: 0 0 auto;
+        font-weight: 850;
+      }
+
+      .preset {
+        min-width: 0;
+        height: 33px;
+        flex: 1;
+        padding: 0 9px;
+        border: 1px solid var(--line);
+        border-radius: 10px;
+        background: white;
+      }
+
+      .icon-button,
+      .text-button,
+      .mode-action {
+        border: 1px solid var(--line);
+        background: white;
+        cursor: pointer;
+      }
+
+      .icon-button {
+        display: grid;
+        place-items: center;
+        flex: 0 0 auto;
+        width: 33px;
+        height: 33px;
+        padding: 0;
+        border-radius: 10px;
+        font-weight: 900;
+      }
+
+      .icon-button.active {
+        border-color: #df9d7a;
+        background: var(--accent-soft);
+        color: var(--accent-dark);
+      }
+
+      .context {
+        min-height: 42px;
+        padding: 7px 10px;
+        border-bottom: 1px solid var(--line);
+      }
+
+      .context strong {
+        display: block;
+        overflow: hidden;
+        font-size: 12px;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .context span {
+        color: var(--muted);
+        font:
+          10px/1.4 ui-monospace,
+          monospace;
+      }
+
+      .chat-messages {
+        min-height: 0;
+        overflow: auto;
+        flex: 1;
+        padding: 16px 17px;
+      }
+
+      .thinking {
+        margin-bottom: 15px;
+        color: #24748a;
+        font-size: 12px;
+        font-weight: 850;
+      }
+
+      .assistant-message {
+        color: #3f3934;
+        font-size: 13px;
+        line-height: 1.65;
+      }
+
+      .assistant-message ol {
+        padding-left: 23px;
+      }
+
+      .assistant-message li {
+        margin: 7px 0;
+      }
+
+      .assistant-message code {
+        padding: 2px 5px;
+        border: 1px solid #ecd5c6;
+        border-radius: 6px;
+        background: #fff7f2;
+        color: var(--accent-dark);
+      }
+
+      .conversation-row {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        min-height: 39px;
+        padding: 5px 9px;
+        border-top: 1px solid #7e70ff;
+        background: white;
+      }
+
+      .conversation-row > div {
+        display: flex;
+        gap: 5px;
+      }
+
+      .conversation-row button {
+        min-width: 30px;
+        height: 29px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        background: white;
+      }
+
+      .conversation-row .active-tab {
+        border-color: var(--blue);
+        background: var(--blue-soft);
+        color: #493ed2;
+        font-weight: 850;
+      }
+
+      .composer {
+        padding: 8px 10px 10px;
+        background: rgba(255, 255, 255, 0.94);
+      }
+
+      .input {
+        position: relative;
+        min-height: 102px;
+        border: 1px solid #e6d2c1;
+        border-radius: 18px;
+        background: white;
+      }
+
+      .placeholder {
+        padding: 13px;
+        color: var(--faint);
+        font-size: 13px;
+      }
+
+      .input-footer {
+        position: absolute;
+        right: 9px;
+        bottom: 8px;
+        left: 9px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+
+      .text-button {
+        padding: 5px 8px;
+        border-color: transparent;
+        border-radius: 8px;
+        background: transparent;
+        color: #71665c;
+        font-size: 11px;
+        font-weight: 750;
+      }
+
+      .input-footer .spacer {
+        flex: 1;
+      }
+
+      .send {
+        display: grid;
+        place-items: center;
+        width: 33px;
+        height: 33px;
+        border: 0;
+        border-radius: 11px;
+        background: var(--accent);
+        color: white;
+        font-size: 19px;
+        font-weight: 900;
+      }
+
+      .status {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 27px;
+        padding: 4px 3px 0;
+        color: var(--muted);
+        font:
+          10px/17px ui-monospace,
+          monospace;
+        white-space: nowrap;
+      }
+
+      .status .spacer {
+        flex: 1;
+      }
+
+      .status strong {
+        overflow: hidden;
+        color: var(--accent-dark);
+        text-overflow: ellipsis;
+      }
+
+      .menu {
+        position: absolute;
+        z-index: 20;
+        display: none;
+        width: 230px;
+        padding: 7px;
+        border: 1px solid var(--line);
+        border-radius: 12px;
+        background: rgba(255, 255, 255, 0.98);
+        box-shadow: 0 14px 38px rgba(61, 44, 29, 0.22);
+      }
+
+      .menu.open {
+        display: block;
+      }
+
+      .header-menu {
+        top: 47px;
+        right: 9px;
+      }
+
+      .conversation-menu {
+        right: 9px;
+        bottom: 147px;
+      }
+
+      .plus-menu {
+        bottom: 56px;
+        left: 11px;
+      }
+
+      .menu-title {
+        padding: 6px 8px 3px;
+        color: var(--faint);
+        font-size: 10px;
+        font-weight: 850;
+        letter-spacing: 0.08em;
+      }
+
+      .menu-grid {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 4px;
+      }
+
+      .menu button {
+        min-height: 34px;
+        padding: 6px 8px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        cursor: pointer;
+        text-align: left;
+      }
+
+      .menu button:hover {
+        background: var(--accent-soft);
+        color: var(--accent-dark);
+      }
+
+      @media (max-width: 880px) {
+        .intro {
+          align-items: flex-start;
+          flex-direction: column;
+        }
+      }
+
+      @media (max-width: 600px) {
+        .page {
+          width: 100%;
+          padding-top: 0;
+        }
+
+        .intro {
+          margin-right: 12px;
+          margin-left: 12px;
+        }
+
+        .zotero-window {
+          border-right: 0;
+          border-left: 0;
+          border-radius: 0;
+        }
+
+        .tab:nth-of-type(1),
+        .tab:nth-of-type(2) {
+          display: none;
+        }
+
+        .reader-pane {
+          min-width: 230px;
+        }
+
+        .ai-pane {
+          min-width: 280px;
+          max-width: calc(100% - 237px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="intro">
+        <div>
+          <p class="eyebrow">Attached AI companion window</p>
+          <h1>Zotero + AI 全高伴随窗口方案</h1>
+          <p>
+            AI 作为贴靠在 Zotero 右侧的伴随面板，从窗口顶部延伸到底部；Zotero
+            原生标题栏、标签和窗口控制区收在它左侧，不移动也不覆盖。界面只有这一种布局，分割线负责调整宽度；AI
+            内部采用精简工具栏，把低频按钮收入菜单。
+          </p>
+        </div>
+      </header>
+
+      <section class="zotero-window">
+        <div class="native-zone">
+          <span class="native-label">Zotero 主窗口 · 原生控制区</span>
+          <div class="titlebar">
+            <div class="window-controls">
+              <span>−</span><span>□</span><span>×</span>
+            </div>
+          </div>
+          <div class="tabbar">
+            <div class="tab"><span>WorldDyn: World Model…</span></div>
+            <div class="tab active">
+              <span>Enhancing End-to-End Autonomous Driving…</span>
+            </div>
+            <div class="tab"><span>LAW 深度研究：模型训练…</span></div>
+            <span class="tabbar-spacer"></span>
+            <button class="tab-icon" type="button">⌄</button>
+            <button class="tab-icon" type="button">↻</button>
+          </div>
+        </div>
+
+        <div class="dock-zone">
+          <span class="xpi-label">AI 伴随窗口 · XPI 管理</span>
+
+          <section class="reader-pane">
+            <aside class="reader-tools">
+              <span>◉</span><span>⌕</span><span>▤</span><span>✎</span>
+            </aside>
+            <div class="reader-canvas">
+              <article class="paper">
+                <h2>
+                  Enhancing End-to-End Autonomous Driving with Latent World
+                  Model
+                </h2>
+                <div class="authors">Research paper · PDF Reader</div>
+                <h3>Abstract</h3>
+                <p>
+                  End-to-end autonomous driving models learn a direct mapping
+                  from sensor observations to planning outputs. This document
+                  area remains visible when the AI panel enters wide mode, so
+                  the reader can compare the paper and the conversation side by
+                  side.
+                </p>
+                <h3>1. Introduction</h3>
+                <p>
+                  The proposed docked layout treats the AI interface as a
+                  sibling of the Reader rather than an overlay. Moving the
+                  divider changes the available width of both panes without
+                  covering text or intercepting PDF interactions.
+                </p>
+              </article>
+            </div>
+          </section>
+
+          <div
+            class="splitter"
+            role="separator"
+            aria-label="拖动调整 AI 面板宽度"
+            aria-orientation="vertical"
+          ></div>
+
+          <aside class="ai-pane">
+            <header class="ai-header">
+              <span class="ai-title">AI 对话</span>
+              <select class="preset" aria-label="当前模型预设">
+                <option>GPT (openai)</option>
+              </select>
+              <button
+                class="icon-button menu-trigger"
+                type="button"
+                data-menu="header-menu"
+                title="更多功能"
+              >
+                ⋯
+              </button>
+            </header>
+
+            <div class="context">
+              <strong
+                >Enhancing End-to-End Autonomous Driving with Latent World
+                Model</strong
+              >
+              <span>Item ID: 1572 · LaTeX 源 · 原文已固定</span>
+            </div>
+
+            <div class="chat-messages">
+              <div class="thinking">⌄ 思考与上下文 · 已随本轮发送论文内容</div>
+              <article class="assistant-message">
+                <p>已重新生成当前论文的网络结构图。建议按以下顺序阅读：</p>
+                <ol>
+                  <li><code>4.1 Latent World Model</code>：理解核心机制。</li>
+                  <li>
+                    <code>4.2 Perception-free Framework</code
+                    >：理解无显式感知标注的规划。
+                  </li>
+                  <li>
+                    <code>4.3 Perception-based Framework</code
+                    >：查看特征融合与预测头。
+                  </li>
+                  <li>
+                    <code>5.4 Ablation Study</code>：确认各模块的实际贡献。
+                  </li>
+                </ol>
+                <p>
+                  AI 伴随窗口从顶部到底部独立占据右侧空间；Zotero
+                  原生窗口控制和标签全部保留在左侧主窗口中。
+                </p>
+              </article>
+            </div>
+
+            <div class="conversation-row">
+              <div>
+                <button class="active-tab" type="button">1</button
+                ><button type="button">2</button>
+              </div>
+              <button
+                class="menu-trigger"
+                type="button"
+                data-menu="conversation-menu"
+                title="对话管理"
+              >
+                ⋯
+              </button>
+            </div>
+
+            <div class="composer">
+              <div class="input">
+                <div class="placeholder">问点什么…（Enter 发送）</div>
+                <div class="input-footer">
+                  <button
+                    class="icon-button menu-trigger"
+                    type="button"
+                    data-menu="plus-menu"
+                    title="添加到本轮"
+                  >
+                    ＋
+                  </button>
+                  <button class="text-button" type="button">▤ 原文</button>
+                  <span class="spacer"></span>
+                  <button class="send" type="button">↑</button>
+                </div>
+              </div>
+              <div class="status">
+                <span>Ln 1, Col 1</span><span class="spacer"></span
+                ><strong>gpt-5.6-luna · Low · YOLO</strong>
+              </div>
+            </div>
+
+            <div class="menu header-menu" id="header-menu">
+              <div class="menu-title">对话与阅读</div>
+              <div class="menu-grid">
+                <button type="button">复制 MD</button>
+                <button type="button">清空对话</button>
+                <button type="button">打开笔记</button>
+                <button type="button">沉浸阅读</button>
+              </div>
+              <div class="menu-title">界面</div>
+              <div class="menu-grid">
+                <button type="button">设置</button>
+                <button type="button">调试上下文</button>
+              </div>
+            </div>
+
+            <div class="menu conversation-menu" id="conversation-menu">
+              <div class="menu-title">对话管理</div>
+              <div class="menu-grid">
+                <button type="button">＋ 新建对话</button>
+                <button type="button">删除当前对话</button>
+                <button type="button">历史：1 轮</button>
+                <button type="button">历史：全部</button>
+              </div>
+            </div>
+
+            <div class="menu plus-menu" id="plus-menu">
+              <div class="menu-title">添加到本轮</div>
+              <div class="menu-grid">
+                <button type="button">🌐 联网</button>
+                <button type="button">▤ 论文原文</button>
+                <button type="button">▧ 截图</button>
+                <button type="button">▣ 图片</button>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const app = document.querySelector(".zotero-window");
+      const dockZone = document.querySelector(".dock-zone");
+      const splitter = document.querySelector(".splitter");
+      let widthRatio = 0.62;
+
+      function limits() {
+        const total = dockZone.getBoundingClientRect().width;
+        return {
+          min: Math.min(320, total),
+          max: Math.max(320, total - 320),
+          total,
+        };
+      }
+
+      function setWidth(width) {
+        const { min, max, total } = limits();
+        const currentWidth = Math.round(Math.max(min, Math.min(max, width)));
+        widthRatio = total > 0 ? currentWidth / total : widthRatio;
+        app.style.setProperty("--ai-width", `${currentWidth}px`);
+      }
+
+      splitter.addEventListener("pointerdown", (event) => {
+        splitter.classList.add("dragging");
+        splitter.setPointerCapture(event.pointerId);
+      });
+
+      splitter.addEventListener("pointermove", (event) => {
+        if (!splitter.hasPointerCapture(event.pointerId)) return;
+        const rect = dockZone.getBoundingClientRect();
+        setWidth(rect.right - event.clientX);
+      });
+
+      function endDrag(event) {
+        splitter.classList.remove("dragging");
+        if (splitter.hasPointerCapture(event.pointerId))
+          splitter.releasePointerCapture(event.pointerId);
+      }
+
+      splitter.addEventListener("pointerup", endDrag);
+      splitter.addEventListener("pointercancel", endDrag);
+      window.addEventListener("resize", () =>
+        setWidth(dockZone.getBoundingClientRect().width * widthRatio),
+      );
+
+      function closeMenus() {
+        document
+          .querySelectorAll(".menu.open")
+          .forEach((menu) => menu.classList.remove("open"));
+      }
+
+      document.querySelectorAll(".menu-trigger").forEach((button) => {
+        button.addEventListener("click", (event) => {
+          event.stopPropagation();
+          const target = document.querySelector(`#${button.dataset.menu}`);
+          const willOpen = !target.classList.contains("open");
+          closeMenus();
+          if (willOpen) target.classList.add("open");
+        });
+      });
+
+      document.addEventListener("click", closeMenus);
+      document
+        .querySelectorAll(".menu")
+        .forEach((menu) =>
+          menu.addEventListener("click", (event) => event.stopPropagation()),
+        );
+
+      setWidth(dockZone.getBoundingClientRect().width * widthRatio);
+    </script>
+  </body>
+</html>
