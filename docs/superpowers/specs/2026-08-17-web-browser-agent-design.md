@@ -36,7 +36,8 @@ The Web Agent is installed under
 `~/.local/share/zotero-ai-sidebar/web-agent`. Its browser profile is separate
 from the user's daily Chrome profile. Zotero starts the agent on demand and
 communicates through `127.0.0.1` using a random bearer token stored in a
-user-readable configuration file.
+user-readable configuration file. Automatic callbacks share the Prompt Hub
+POST endpoint and are distinguished from manual imports by that token.
 
 Provider-specific DOM rules live in separate adapters. A provider page update
 must not require changes to Zotero conversation handling.
@@ -57,8 +58,9 @@ manual steps and the composer becomes available, the task resumes automatically.
 
 ## Task Flow
 
-Task states are `queued`, `starting_browser`, `needs_login`, `submitting`,
-`generating`, `completed`, `failed`, and `cancelled`.
+Task states are `queued`, `starting_browser`, `needs_login`,
+`uploading_attachment`, `submitting`, `generating`, `completed`, `failed`, and
+`cancelled`.
 
 For each provider, the Web Agent runs one active task and queues later tasks.
 ChatGPT and DeepSeek may each have one active task. Before submission, the
@@ -76,6 +78,29 @@ even if another item or conversation is currently visible.
 
 Pending status text is presentation only. It must never be included in the
 prompt's conversation history.
+
+## Paper Material
+
+Every WEB paper task includes the best canonical paper URL in its prompt:
+the arXiv abstract URL first, then a DOI URL, then the Zotero item URL.
+
+The sidebar resolves at most one local attachment. A cached, cleaned arXiv
+main LaTeX file has priority. When no usable LaTeX cache exists, the first
+local PDF attachment is used. When neither file is available, the task still
+sends the canonical URL and states that no local paper file was attached.
+
+The localhost task protocol carries the paper URL plus attachment path, name,
+media type, and material kind. On Linux/X11, the Web Agent temporarily places
+the local file URI on the system clipboard, focuses the composer, and presses
+`Ctrl+V` without clicking the provider's attachment button. It restores the
+previous text clipboard immediately after the paste event, waits until the
+attachment is visible and stable, and only then submits the prompt. If
+attachment paste or upload fails, the task fails before submission and Zotero
+retains the prompt for manual handling.
+
+The WEB prompt describes only material actually included in the task. It must
+not claim that the model cannot read a PDF when a PDF is attached. The API
+prompt and API request path remain unchanged.
 
 ## Sidebar UI
 
