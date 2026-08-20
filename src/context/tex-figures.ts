@@ -19,6 +19,7 @@ const FIGURE_ENV_RE =
   /\\begin\{(figure\*?|wrapfigure|floatingfigure|center)\}(?:\[[^\]]*\])?([\s\S]*?)\\end\{\1\}/g;
 const FIGURE_TYPE_SETUP_RE =
   /\\captionsetup(?:\s*\[[^\]]*\])?\s*\{[^{}]*\btype\s*=\s*figure\b[^{}]*\}/;
+const FIGURE_CAPTION_OF_RE = /\\captionof\s*\{\s*figure\s*\}/;
 const INCLUDE_GRAPHICS_RE = /\\includegraphics(?:\[[^\]]*\])?\{([^}]+)\}/g;
 const LABEL_RE = /\\label\{([^}]+)\}/;
 const FIGURE_COUNTER_RE =
@@ -35,7 +36,13 @@ export function parseFigures(text: string): TexFigure[] {
     const [, env, body] = match;
     const start = match.index;
     const end = start + match[0].length;
-    if (env === "center" && !FIGURE_TYPE_SETUP_RE.test(body)) continue;
+    if (
+      env === "center" &&
+      !FIGURE_TYPE_SETUP_RE.test(body) &&
+      !FIGURE_CAPTION_OF_RE.test(body)
+    ) {
+      continue;
+    }
     nextNumber = applyFigureCounterUpdates(
       text.slice(cursor, start),
       nextNumber,

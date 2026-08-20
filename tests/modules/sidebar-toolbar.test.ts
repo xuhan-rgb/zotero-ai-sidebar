@@ -19,6 +19,18 @@ const conversationSource = sidebarSource.slice(
   sidebarSource.indexOf("function renderConversationSwitcher("),
   sidebarSource.indexOf("async function copyCurrentConversation("),
 );
+const conversationMutationSource = sidebarSource.slice(
+  sidebarSource.indexOf("function switchConversation("),
+  sidebarSource.indexOf("function nextConversationTitle("),
+);
+const switchConversationSource = sidebarSource.slice(
+  sidebarSource.indexOf("function switchConversation("),
+  sidebarSource.indexOf("function addConversation("),
+);
+const addConversationSource = sidebarSource.slice(
+  sidebarSource.indexOf("function addConversation("),
+  sidebarSource.indexOf("function branchConversationFromMessage("),
+);
 const inputSource = sidebarSource.slice(
   sidebarSource.indexOf("function renderInput("),
   sidebarSource.indexOf("function composerMessageContent("),
@@ -39,12 +51,26 @@ const copyDebugToggleSource = sidebarSource.slice(
   sidebarSource.indexOf("function renderCopyDebugToggle("),
   sidebarSource.indexOf("export function refreshSidebarPreferences("),
 );
+const bubbleSource = sidebarSource.slice(
+  sidebarSource.indexOf("function bubble("),
+  sidebarSource.indexOf("function renderMessageUsage("),
+);
 const sidebarCSS = readFileSync(
   resolve(process.cwd(), "addon/content/sidebar.css"),
   "utf8",
 );
 
 describe("AI dialog toolbar", () => {
+  it("keeps the visible toolbar row draggable in a docked window", () => {
+    expect(sidebarCSS).toContain(
+      ":root.zai-docked-window .zai-root-docked .preset-switcher-bottom {",
+    );
+    expect(sidebarCSS).toContain("-moz-window-dragging: drag;");
+    expect(sidebarCSS).toContain(
+      ":root.zai-docked-window .zai-root-docked .preset-switcher-bottom button",
+    );
+  });
+
   it("keeps the original toolbar as the default layout", () => {
     expect(toolbarSource).toContain(
       "copyAll.disabled = state.messages.length === 0",
@@ -55,8 +81,7 @@ describe("AI dialog toolbar", () => {
     expect(toolbarSource).toContain(
       'state.localUiSettings.chatLayout === "compact"',
     );
-    expect(toolbarSource).toContain("topRow.append(copyAll, clear, collapse)");
-    expect(toolbarSource).toContain("bar.append(topRow, bottomRow)");
+    expect(toolbarSource).toContain("bar.append(bottomRow)");
     expect(toolbarSource).not.toContain("if (state.messages.length > 0)");
   });
 
@@ -67,7 +92,7 @@ describe("AI dialog toolbar", () => {
     expect(sidebarSource).toContain("clearNetworkDiagramMessages");
   });
 
-  it("offers compact menus without removing the original controls", () => {
+  it("keeps conversation controls beside the compact actions menu", () => {
     expect(toolbarSource).toContain('"header-actions-menu"');
     expect(toolbarSource).toContain("menuContent.append(");
     expect(toolbarSource).toContain("copyAll,");
@@ -76,18 +101,133 @@ describe("AI dialog toolbar", () => {
     expect(conversationSource).toContain(
       "renderQuickPrompts(doc, mount, state)",
     );
+    expect(conversationSource).toContain("menuContent.append(quickPrompts)");
     expect(conversationSource).toContain(
-      "menuContent.append(historyLabel, add, remove, quickPrompts)",
+      "controls.append(historyLabel, add, remove, copyAll, clear, menu)",
+    );
+    expect(conversationSource).toMatch(
+      /historyLabel\.prepend\(\s*el\(doc, "span", "conversation-history-label", "上下文"\)/,
     );
     expect(inputSource).toContain('"composer-attachment-menu"');
     expect(inputSource).toContain(
       "attachmentMenuContent.append(screenshotAttach, imageAttach)",
     );
     expect(conversationSource).toContain(
-      "controls.append(historyLabel, add, remove)",
+      "controls.append(historyLabel, add, remove, copyAll, clear)",
     );
-    expect(inputSource).toContain(
-      'state.localUiSettings.chatLayout === "classic"',
+    expect(composerFooterSource).not.toContain(
+      "actions.append(screenshotAttach, imageAttach)",
+    );
+  });
+
+  it("does not expose DeepSeek or ChatGPT web mode selectors in the composer", () => {
+    expect(composerFooterSource).not.toContain(
+      "renderDeepSeekModeSwitcher",
+    );
+    expect(composerFooterSource).not.toContain(
+      "renderChatGPTReasoningSwitcher",
+    );
+    expect(sidebarSource).not.toContain("composer-deepseek-mode-select");
+    expect(sidebarSource).not.toContain(
+      "composer-chatgpt-reasoning-select",
+    );
+    expect(sidebarCSS).not.toContain(".composer-deepseek-mode-select");
+    expect(sidebarCSS).not.toContain(".composer-chatgpt-reasoning-select");
+    expect(composerFooterSource).not.toContain("renderDeepSeekOptionToggle");
+    expect(sidebarSource).not.toContain("composer-deepseek-option-toggle");
+  });
+
+  it("does not reserve a footer control for an empty composer status", () => {
+    expect(composerFooterSource).toContain("left.hidden = status.hidden");
+    expect(sidebarSource).toContain("status.hidden = parts.length === 0");
+    expect(sidebarSource).toContain(
+      'container?.classList.contains("composer-footer-left")',
+    );
+    expect(sidebarSource).toContain("container.hidden = status.hidden");
+  });
+
+  it("keeps the default conversation delete action disabled", () => {
+    expect(conversationSource).toContain(
+      'activeConversation(state)?.id === "default"',
+    );
+    expect(conversationMutationSource).toContain('current.id === "default"');
+    expect(sidebarCSS).toContain(".conversation-icon:hover:not(:disabled)");
+    expect(sidebarCSS).toContain(".conversation-delete:disabled");
+    expect(conversationMutationSource).toContain(
+      "state.uiSettings.confirmConversationDeletion",
+    );
+    expect(conversationMutationSource).toContain(
+      "state.conversations[currentIndex] ??",
+    );
+    expect(conversationMutationSource).toContain(
+      "state.conversations[currentIndex - 1]",
+    );
+  });
+
+  it("allows creating and switching conversations while an answer is running", () => {
+    expect(conversationSource).toContain("tab.disabled = !state.historyLoaded");
+    expect(conversationSource).toContain("add.disabled = !state.historyLoaded");
+    expect(switchConversationSource).not.toContain("state.sending");
+    expect(addConversationSource).not.toContain("state.sending");
+  });
+
+  it("keeps a background answer bound to its source conversation", () => {
+    expect(sidebarSource).toContain(
+      "const taskMessages = options.messages ?? state.messages",
+    );
+    expect(sidebarSource).toContain(
+      "const runtime = conversationRuntime(state, taskConversationID)",
+    );
+    expect(sidebarSource).toContain("firstQueuedChatTaskAcrossConversations(");
+  });
+
+  it("runs different conversations in parallel while keeping each conversation serial", () => {
+    expect(sidebarSource).toContain(
+      "conversationRuntime(state, taskConversationID)",
+    );
+    expect(sidebarSource).toContain("activeConversationTaskCount(state)");
+    expect(sidebarSource).toContain(
+      "state.uiSettings.maxParallelConversations",
+    );
+    expect(sidebarSource).toContain(
+      "conversationIsSending(state, state.activeConversationID)",
+    );
+    expect(sidebarSource).toContain("excludedConversationIDs");
+  });
+
+  it("shows completed background conversations as unread until opened", () => {
+    expect(conversationSource).toContain("conversationHasUnreadAnswer(");
+    expect(conversationSource).toContain('"conversation-tab-unread"');
+    expect(switchConversationSource).toContain("markAllChatTasksRead(state)");
+    expect(sidebarCSS).toContain(".conversation-tab-unread");
+  });
+
+  it("offers a full-context branch action on each message", () => {
+    expect(bubbleSource).toContain('buttonEl(doc, "分支")');
+    expect(bubbleSource).toContain(
+      "branchConversationFromMessage(mount, state, index)",
+    );
+    expect(conversationMutationSource).toContain("createBranchedConversation(");
+    expect(conversationMutationSource).toContain(
+      "state.conversations.push(conversation)",
+    );
+    expect(messagesSource).toContain("renderConversationBranchOrigin");
+    expect(sidebarCSS).toContain(".conversation-branch-origin");
+  });
+
+  it("marks branch conversation tabs with their source conversation", () => {
+    expect(conversationSource).toContain("conversation.branchOrigin");
+    expect(conversationSource).toContain('"conversation-tab-branch-origin"');
+    expect(conversationSource).toContain("branchOriginConversationLabel(");
+    expect(sidebarCSS).toContain(".conversation-tab-branch-origin");
+    expect(sidebarCSS).toContain(
+      ".conversation-tab.is-active .conversation-tab-branch-origin",
+    );
+    expect(sidebarCSS).toContain(
+      ".conversation-tab.has-branch-origin:not(.is-active)",
+    );
+    expect(sidebarCSS).toMatch(
+      /\.conversation-tab\.has-branch-origin:not\(\.is-active\)\s*\{[^}]*border-style:\s*dashed/s,
     );
   });
 
@@ -134,16 +274,18 @@ describe("AI dialog toolbar", () => {
       "const layoutMenu = renderLayoutMenu(doc, mount, state)",
     );
     expect(toolbarSource).toContain(
-      "topRow.append(layoutMenu, openNote, askBtn, menu, collapse)",
+      "bottomRow.append(openNote, layoutMenu, askBtn, menu, collapse)",
     );
-    expect(toolbarSource).toContain("settings,\n      layoutMenu,");
+    expect(toolbarSource).toContain(
+      "layoutMenu,\n      askBtn,\n      settings,",
+    );
     expect(sidebarSource).toContain('"header-layout-menu"');
     expect(sidebarSource).toContain('"模式"');
   });
 
   it("keeps note and immersive controls beside mode in compact layout", () => {
     expect(toolbarSource).toContain(
-      "topRow.append(layoutMenu, openNote, askBtn, menu, collapse)",
+      "bottomRow.append(openNote, layoutMenu, askBtn, menu, collapse)",
     );
     expect(toolbarSource).toMatch(
       /menuContent\.append\(\s*copyAll,\s*clear,\s*settings,/s,
@@ -194,12 +336,24 @@ describe("AI dialog toolbar", () => {
     );
   });
 
-  it("keeps the composer cursor status on one compact line", () => {
+  it("keeps the send mode at the far left of the composer footer", () => {
     expect(sidebarCSS).toMatch(
       /\.zai-compact-menu:not\(\[open\]\)[^{]*\{[^}]*display:\s*none;/s,
     );
     expect(sidebarCSS).toMatch(
-      /\.composer-footer-left\s*\{[^}]*flex:\s*0 0 auto;/s,
+      /\.composer-footer\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) minmax\(0, 120px\);/s,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.composer-footer\s*\{[^}]*width:\s*calc\(100% \+ 20px\);[^}]*margin-left:\s*-10px;/s,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.composer-footer-left:empty\s*\{[^}]*display:\s*none;/s,
+    );
+    expect(composerFooterSource).toContain(
+      'footer.classList.toggle("composer-footer-status-empty", Boolean(left.hidden))',
+    );
+    expect(sidebarCSS).toMatch(
+      /\.composer-footer\.composer-footer-status-empty\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\);/s,
     );
     expect(sidebarCSS).toMatch(
       /\.composer-status\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*white-space:\s*nowrap;/s,
@@ -212,11 +366,32 @@ describe("AI dialog toolbar", () => {
     );
   });
 
-  it("keeps model, reasoning, and YOLO controls inline in compact mode", () => {
+  it("keeps third-party Web configuration in the WEB footer only", () => {
+    expect(sidebarSource).toContain("renderCustomWebProviderButton(doc, mount, state)");
+    expect(sidebarSource).toContain("state.localUiSettings.customWebProviders");
+    expect(sidebarSource).toContain("customWebProviderFor(state, provider)");
+    expect(sidebarCSS).toContain(".composer-web-provider-settings-button");
+    expect(sidebarSource).toContain("ChatGPT 网页模式风险提示");
+    expect(sidebarSource).toContain("账号风控");
+  });
+
+  it("keeps model and YOLO controls inline without a reasoning selector", () => {
     expect(composerFooterSource).not.toContain('"composer-model-menu"');
     expect(composerFooterSource).not.toContain('"模型设置"');
-    expect(composerFooterSource).toContain(
-      "renderModelSwitcher(doc, mount, state),\n    renderReasoningSwitcher(doc, mount, state),\n    renderYoloToggle(doc, mount, state)",
+    expect(composerFooterSource).toMatch(
+      /renderModelSwitcher\(doc, mount, state\),\s*renderYoloToggle\(doc, mount, state\)/s,
     );
+    expect(composerFooterSource).not.toContain("renderReasoningSwitcher");
+    expect(sidebarSource).not.toContain('className = "reasoning-switcher-trigger"');
+    expect(composerFooterSource).toContain("renderSendTargetSwitcher");
+    expect(composerFooterSource).toContain(
+      'state.localUiSettings.chatSendMode === "api"',
+    );
+    expect(composerFooterSource).toContain("renderWebPromptProviderSwitcher");
+    expect(composerFooterSource).toContain(
+      "footer.append(sendMode, actions, left)",
+    );
+    expect(sidebarSource).not.toContain("Ln ${cursor.line}, Col ${cursor.column}");
+    expect(sidebarSource).not.toContain("function cursorPosition(");
   });
 });

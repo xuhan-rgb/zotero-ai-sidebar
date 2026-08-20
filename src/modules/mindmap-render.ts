@@ -215,6 +215,11 @@ export function renderMindmapSvg(
   svg.setAttribute("data-natural-w", String(svgW));
   svg.setAttribute("data-natural-h", String(svgH));
   svg.setAttribute("class", "zai-mm-svg");
+  svg.setAttribute("role", "img");
+  svg.setAttribute(
+    "aria-label",
+    "流程图；Ctrl 加滚轮缩放，拖拽平移，双击恢复完整视图",
+  );
 
   const defs = doc.createElementNS(SVG_NS, "defs");
   defs.append(buildArrowMarker(doc, markerId));
@@ -494,13 +499,22 @@ interface MindmapViewportController {
 function enablePanZoom(
   svg: SVGSVGElement,
   onZoomChange?: (percentage: number) => void,
-  minimumZoom = 0.625,
+  minimumZoom = 1,
 ): MindmapViewportController | null {
   const W = parseFloat(svg.getAttribute("data-natural-w") || "0");
   const H = parseFloat(svg.getAttribute("data-natural-h") || "0");
   if (!W || !H) return null;
   let vb = { x: 0, y: 0, w: W, h: H };
+  const clampAxis = (position: number, viewport: number, natural: number) =>
+    viewport >= natural
+      ? (natural - viewport) / 2
+      : Math.max(0, Math.min(position, natural - viewport));
+  const constrain = () => {
+    vb.x = clampAxis(vb.x, vb.w, W);
+    vb.y = clampAxis(vb.y, vb.h, H);
+  };
   const apply = () => {
+    constrain();
     svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
     onZoomChange?.(Math.round((W / vb.w) * 100));
   };
@@ -525,15 +539,31 @@ function enablePanZoom(
   svg.addEventListener(
     "wheel",
     (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
       const rect = svg.getBoundingClientRect();
       if (!rect.width || !rect.height) return;
       e.preventDefault();
-      const px = (e.clientX - rect.left) / rect.width;
-      const py = (e.clientY - rect.top) / rect.height;
-      const factor = e.deltaY < 0 ? 0.85 : 1 / 0.85;
+      e.stopPropagation();
+      const px = Number.isFinite(e.clientX)
+        ? Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width))
+        : 0.5;
+      const py = Number.isFinite(e.clientY)
+        ? Math.max(0, Math.min(1, (e.clientY - rect.top) / rect.height))
+        : 0.5;
+      // A trackpad emits many small delta values. Scaling continuously avoids
+      // treating every tiny movement as a full 15% zoom step.
+      const deltaUnit =
+        e.deltaMode === 1
+          ? 40
+          : e.deltaMode === 2
+            ? rect.height
+            : 1;
+      const normalizedDelta = e.deltaY * deltaUnit;
+      const boundedDelta = Math.max(-240, Math.min(240, normalizedDelta));
+      const factor = Math.exp(boundedDelta * 0.0015);
       zoom(factor, px, py);
     },
-    { passive: false },
+    { passive: false, capture: true },
   );
 
   let dragging = false;
@@ -600,6 +630,7 @@ export interface MindmapBlockOptions {
   sourceTab?: boolean;
   copyButton?: boolean;
   contextMenuCopy?: boolean;
+  sourceName?: string;
 }
 
 export function renderMindmapBlock(
@@ -779,7 +810,7 @@ export function renderMindmapBlock(
     svgWrap.style.display = "none";
     codePre.style.display = "";
     copyBtn.textContent = "复制代码";
-    copyBtn.title = "复制 Mermaid 源码";
+    copyBtn.title = `复制 ${options.sourceName ?? "Mermaid"} 源码`;
     codeTab.classList.add("mindmap-tab-active");
     previewTab.classList.remove("mindmap-tab-active");
   });

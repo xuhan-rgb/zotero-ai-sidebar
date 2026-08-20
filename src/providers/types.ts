@@ -2,6 +2,7 @@ import type { AgentPermissionMode, ModelPreset } from "../settings/types";
 import type { MessageContext } from "../context/types";
 import type { OverviewData } from "../context/overview-types";
 import type { ToolSettings } from "../settings/tool-settings";
+import type { WebPromptProvider } from "../settings/local-ui-settings";
 
 export type MessageRole = "user" | "assistant";
 
@@ -51,6 +52,15 @@ export type ChatTaskKind =
   | "full_text"
   | "reading_route";
 
+export type WebTaskStatus =
+  | "queued"
+  | "starting_browser"
+  | "needs_login"
+  | "uploading_attachment"
+  | "submitting"
+  | "generating"
+  | "processing_answer";
+
 export interface ChatTaskMeta {
   id: string;
   kind: ChatTaskKind;
@@ -62,6 +72,8 @@ export interface ChatTaskMeta {
   hiddenAt?: number;
   cancelledAt?: number;
   error?: string;
+  webProvider?: WebPromptProvider;
+  webStatus?: WebTaskStatus;
   pdfSelection?: PdfSelectionLocator;
 }
 

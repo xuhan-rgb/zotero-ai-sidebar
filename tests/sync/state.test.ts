@@ -128,6 +128,7 @@ describe('sync snapshot round trip', () => {
       userProfile: { label: 'me', avatar: '🙂' },
       assistantProfile: { label: 'ai', avatar: '🤖' },
       composerQueueWhileSending: true,
+      confirmConversationDeletion: false,
     });
     saveQuickPromptSettings(prefs, {
       builtIns: {
@@ -189,6 +190,7 @@ describe('sync snapshot round trip', () => {
     expect(snapshot.toolSettings.webSearchMode).toBe('live');
     expect(snapshot.toolSettings.textAnnotationFontSize).toBe(22);
     expect(snapshot.uiSettings.composerQueueWhileSending).toBe(true);
+    expect(snapshot.uiSettings.confirmConversationDeletion).toBe(false);
     expect(snapshot.threads).toHaveLength(1);
     expect(snapshot.threads?.[0].itemKey).toBe('AAAA1111');
     expect(JSON.stringify(snapshot)).toContain('hi there');
@@ -209,6 +211,7 @@ describe('sync snapshot round trip', () => {
       userProfile: { label: 'YOU', avatar: '' },
       assistantProfile: { label: 'AI', avatar: '' },
       composerQueueWhileSending: true,
+      confirmConversationDeletion: false,
     });
     saveToolSettings(sourcePrefs, {
       ...loadToolSettings(sourcePrefs),
@@ -235,6 +238,7 @@ describe('sync snapshot round trip', () => {
     expect(loadToolSettings(targetPrefs).webSearchMode).toBe('disabled');
     expect(loadToolSettings(targetPrefs).textAnnotationFontSize).toBe(24);
     expect(loadUiSettings(targetPrefs).composerQueueWhileSending).toBe(true);
+    expect(loadUiSettings(targetPrefs).confirmConversationDeletion).toBe(false);
   });
 
   it('rejects a snapshot with the wrong schema', () => {

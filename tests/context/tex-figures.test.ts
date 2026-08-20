@@ -145,6 +145,31 @@ describe("parseFigures", () => {
     );
   });
 
+  it("counts a captionof figure inside a centered teaser", () => {
+    const text = [
+      "\\begin{center}",
+      "\\includegraphics{figures/teaser.pdf}",
+      "\\captionof{figure}{Teaser}",
+      "\\end{center}",
+      "\\begin{figure*}",
+      "\\includegraphics{figures/framework.pdf}",
+      "\\caption{Framework}",
+      "\\label{fig:framework}",
+      "\\end{figure*}",
+      "\\begin{figure}",
+      "\\includegraphics{figures/tokenizer.pdf}",
+      "\\caption{Tokenizer}",
+      "\\label{fig:tokenizer}",
+      "\\end{figure}",
+    ].join("\n");
+
+    const figures = parseFigures(text);
+
+    expect(figures.map((figure) => figure.number)).toEqual([1, 2, 3]);
+    expect(findFigure(figures, { number: 2 })?.label).toBe("fig:framework");
+    expect(findFigure(figures, { number: 3 })?.label).toBe("fig:tokenizer");
+  });
+
   it("applies figure counter changes around captions in document order", () => {
     const text = [
       "\\addtocounter{figure}{2}",

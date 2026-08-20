@@ -32,6 +32,8 @@ describe('ui settings storage', () => {
       userProfile: { label: '我', avatar: '🙂' },
       assistantProfile: { label: '助手', avatar: 'https://example.test/ai.png' },
       composerQueueWhileSending: true,
+      confirmConversationDeletion: false,
+      maxParallelConversations: 6,
     });
 
     expect(loadUiSettings(prefs)).toEqual({
@@ -42,7 +44,34 @@ describe('ui settings storage', () => {
       userProfile: { label: '我', avatar: '🙂' },
       assistantProfile: { label: '助手', avatar: 'https://example.test/ai.png' },
       composerQueueWhileSending: true,
+      confirmConversationDeletion: false,
+      maxParallelConversations: 6,
     });
+  });
+
+  it('defaults to two parallel conversations and clamps the configured limit', () => {
+    expect(loadUiSettings(memPrefs()).maxParallelConversations).toBe(2);
+    const prefs = memPrefs();
+    prefs.set(
+      'extensions.zotero-ai-sidebar.uiSettings',
+      JSON.stringify({ maxParallelConversations: 99 }),
+    );
+    expect(loadUiSettings(prefs).maxParallelConversations).toBe(8);
+    prefs.set(
+      'extensions.zotero-ai-sidebar.uiSettings',
+      JSON.stringify({ maxParallelConversations: 0 }),
+    );
+    expect(loadUiSettings(prefs).maxParallelConversations).toBe(1);
+  });
+
+  it('deletes without confirmation by default and persists an explicit opt-in', () => {
+    expect(loadUiSettings(memPrefs()).confirmConversationDeletion).toBe(false);
+    const prefs = memPrefs();
+    saveUiSettings(prefs, {
+      ...DEFAULT_UI_SETTINGS,
+      confirmConversationDeletion: true,
+    });
+    expect(loadUiSettings(prefs).confirmConversationDeletion).toBe(true);
   });
 
   it('treats only an explicit `true` as enabling composerQueueWhileSending', () => {

@@ -131,6 +131,10 @@ import {
   normalizeTranslateSettings,
   saveTranslateSettings,
 } from "./translate/settings";
+import {
+  registerWebPromptHub,
+  unregisterWebPromptHub,
+} from "./modules/web-prompt-hub";
 
 const preferenceWatchWindows = new WeakSet<Window>();
 const preferenceWatchTimers: Array<{ win: Window; timer: number }> = [];
@@ -158,6 +162,7 @@ async function onStartup() {
   ]);
 
   initLocale();
+  registerWebPromptHub();
 
   // Per-window setup BEFORE the global `registerSidebar` so each window
   // has its FTL locale strings and ztoolkit ready by the time the column
@@ -194,6 +199,7 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 }
 
 function onShutdown(): void {
+  unregisterWebPromptHub();
   stopAutoSyncTimer();
   stopPreferenceWatchers();
   unregisterPreferences();
@@ -582,7 +588,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
   );
   bindAutoSaveControls(
     doc,
-    "#zai-ui-user-label, #zai-ui-user-avatar, #zai-ui-assistant-label, #zai-ui-assistant-avatar, #zai-ui-chat-font, #zai-ui-actions-position, #zai-ui-actions-layout, #zai-ui-preference-border-style, #zai-ui-composer-queue",
+    "#zai-ui-user-label, #zai-ui-user-avatar, #zai-ui-assistant-label, #zai-ui-assistant-avatar, #zai-ui-chat-font, #zai-ui-actions-position, #zai-ui-actions-layout, #zai-ui-preference-border-style, #zai-ui-composer-queue, #zai-ui-max-parallel-conversations, #zai-ui-confirm-conversation-deletion",
     () => saveUiSettingsControls(doc),
   );
   bindAutoSaveControls(
@@ -1523,6 +1529,18 @@ function renderUiSettings(doc: Document): void {
   applyPreferenceBorderStyle(doc, settings.preferenceBorderStyle);
   const queue = byID<HTMLInputElement>(doc, "zai-ui-composer-queue");
   if (queue) queue.checked = settings.composerQueueWhileSending;
+  setInputValue(
+    doc,
+    "zai-ui-max-parallel-conversations",
+    String(settings.maxParallelConversations),
+  );
+  const confirmConversationDeletion = byID<HTMLInputElement>(
+    doc,
+    "zai-ui-confirm-conversation-deletion",
+  );
+  if (confirmConversationDeletion) {
+    confirmConversationDeletion.checked = settings.confirmConversationDeletion;
+  }
   const chatLayout = byID<HTMLSelectElement>(doc, "zai-ui-chat-layout");
   if (chatLayout) chatLayout.value = localSettings.chatLayout;
   const sidebarDisplay = byID<HTMLSelectElement>(doc, "zai-ui-sidebar-display");
@@ -1570,6 +1588,12 @@ function readUiSettingsControls(doc: Document): UiSettings {
     preferenceBorderStyle: borderStyle?.value,
     composerQueueWhileSending:
       byID<HTMLInputElement>(doc, "zai-ui-composer-queue")?.checked === true,
+    maxParallelConversations: Number(
+      byID<HTMLInputElement>(doc, "zai-ui-max-parallel-conversations")?.value,
+    ),
+    confirmConversationDeletion:
+      byID<HTMLInputElement>(doc, "zai-ui-confirm-conversation-deletion")
+        ?.checked !== false,
   });
 }
 

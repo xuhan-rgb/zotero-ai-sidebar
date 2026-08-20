@@ -212,12 +212,19 @@ export interface PanelState {
   draftImages: DraftImage[];
   nextPasteID: number;
   localUiSettings: LocalUiSettings;
+  webAccountConfigured?: boolean;
+  webAccountNotice?: string;
+  // Prevent a second Web task while the first one is still preparing,
+  // uploading, generating, or importing its answer.
+  webPromptBusy?: boolean;
   abort?: AbortController;
   messagesScrollLock?: MessagesScrollLock;
   activeTaskID?: string;
+  activeTaskConversationID?: string;
   cancellingTaskID?: string;
   queueOpen?: boolean;
   processingQueuedTask?: boolean;
+  conversationTaskRuntimes: Map<string, ConversationTaskRuntime>;
   renderRecoveryAttempts?: number;
   // Mirrors the per-item "原文" toggle (paper-cache `pinned`). New items are
   // default-on; loadPersistedMessages later applies any explicit saved off
@@ -226,7 +233,24 @@ export interface PanelState {
   fullTextTurnMode?: "auto" | "force";
   fullTextTurnSelectionText?: string;
   turnContextSelectionPreviewOpen?: boolean;
+  chatSelectionQuote?: {
+    excerpt: string;
+    fullReply: string;
+    sourceConversationTitle: string;
+    sourceAssistantOrdinal: number;
+    sourceQuestionPreview: string;
+  };
+  chatSelectionPreviewOpen?: boolean;
   draftSaveTimer?: number;
+}
+
+export interface ConversationTaskRuntime {
+  abort?: AbortController;
+  activeAssistantIndex?: number;
+  activeAssistantStage?: AssistantProgressStage;
+  activeAssistantDetail?: string;
+  activeTaskID?: string;
+  cancellingTaskID?: string;
 }
 
 export interface MessagesScrollSnapshot {

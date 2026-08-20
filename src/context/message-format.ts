@@ -117,6 +117,17 @@ export function contextSummaryLine(message: Message): string {
   const context = message.context;
   if (!context) return "";
   if (context.selectedText) {
+    if (context.selectedTextOrigin === "chat") {
+      const fullReplyChars = context.quotedChatReply?.fullReply.length ?? 0;
+      return [
+        `已随本轮发送对话引用 ${context.selectedText.length} 字`,
+        fullReplyChars ? `完整回复 ${fullReplyChars} 字` : "",
+        "未携带其他聊天历史",
+        focusedPaperGuideSummary(context),
+      ]
+        .filter(Boolean)
+        .join("；");
+    }
     const passageChars =
       context.retrievedPassages?.reduce(
         (sum, passage) => sum + passage.text.length,
@@ -125,6 +136,7 @@ export function contextSummaryLine(message: Message): string {
     return [
       `已随本轮发送 PDF 选区 ${context.selectedText.length} 字`,
       passageChars ? `自动附带附近上下文 ${passageChars} 字` : "",
+      focusedPaperGuideSummary(context),
       retainedContextSuffix(context),
     ]
       .filter(Boolean)
@@ -256,7 +268,19 @@ export function formatContextMarkdown(message: Message): string[] {
     lines.push(`- 工具调用: ${formatToolTraceInline(context.toolCalls)}`, "");
   }
   if (context.selectedText) {
-    lines.push("### PDF 选区", "", context.selectedText, "");
+    if (context.selectedTextOrigin === "chat") {
+      lines.push("### 对话引用重点", "", context.selectedText, "");
+      if (context.quotedChatReply?.fullReply) {
+        lines.push(
+          `### 来源 AI 回复全文（${context.quotedChatReply.sourceConversationTitle}）`,
+          "",
+          context.quotedChatReply.fullReply,
+          "",
+        );
+      }
+    } else {
+      lines.push("### PDF 选区", "", context.selectedText, "");
+    }
   }
   if (context.retrievedPassages?.length) {
     lines.push(
@@ -425,11 +449,34 @@ function formatContextBlocks(
     blocks.push(...formatPromptLedgerBlock(context.promptCacheLedger), "");
   }
   if (context?.selectedText) {
-    blocks.push("[Selected PDF text]", context.selectedText, "");
+    const chatQuote = context.selectedTextOrigin === "chat";
+    if (chatQuote) {
+      if (includeTurnInstructions && context.quotedChatReply?.fullReply) {
+        blocks.push(
+          "[Referenced assistant reply — full]",
+          context.quotedChatReply.fullReply,
+          "",
+        );
+      }
+      blocks.push("[Focused excerpt]", context.selectedText, "");
+    } else {
+      blocks.push("[Selected PDF text]", context.selectedText, "");
+    }
     if (includeTurnInstructions) {
       blocks.push(
-        "[Selected text handling instruction]",
-        selectedTextHandlingInstruction(),
+        chatQuote
+          ? "[Quoted chat text handling instruction]"
+          : "[Selected text handling instruction]",
+        chatQuote
+          ? "Answer using the complete [Referenced assistant reply — full] as this turn's only chat history. Treat [Focused excerpt] as the exact part the user is asking about."
+          : selectedTextHandlingInstruction(),
+        "",
+      );
+      blocks.push(
+        "[Paper verification guidance]",
+        context.selectedTextOrigin === "chat"
+          ? "如果问题需要核对该回复是否符合论文原文，必须使用已提供的论文目录（若有）和读取工具取得原始证据，不要只依据被引用的 AI 回复。"
+          : "如果问题需要核对 PDF 选区在论文中的含义或依据，应使用已提供的论文目录（若有）和读取工具取得必要的原始证据；翻译、改写等只处理选区的任务除外。",
         "",
       );
     }
@@ -472,6 +519,13 @@ function formatContextBlocks(
     );
   }
   return blocks;
+}
+
+function focusedPaperGuideSummary(context: Message["context"]): string {
+  if (!context) return "";
+  return context.fullTextSource === "arxiv_toc" && context.fullTextChars
+    ? `arXiv 目录 ${context.fullTextChars} 字`
+    : "论文目录未发送，可按需读取论文";
 }
 
 // A concept-based rule, deliberately not keyed to the word 论据: the model

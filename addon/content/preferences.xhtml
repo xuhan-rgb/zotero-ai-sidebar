@@ -680,6 +680,33 @@
         开启后可在 AI 回答时插队新消息，当前回复结束后按提交顺序逐条执行；PDF
         选区以入队时为准。
       </html:p>
+      <html:div class="zai-pref-grid">
+        <html:label for="zai-ui-max-parallel-conversations"
+          >同时回答的对话数</html:label
+        >
+        <html:input
+          id="zai-ui-max-parallel-conversations"
+          type="number"
+          min="1"
+          max="8"
+          step="1"
+        />
+      </html:div>
+      <html:p class="zai-pref-help">
+        默认 2。不同对话可并行回答；同一对话中的消息始终按顺序执行。
+      </html:p>
+      <html:label class="zai-pref-checkbox-row">
+        <html:input
+          id="zai-ui-confirm-conversation-deletion"
+          type="checkbox"
+        />
+        <html:span class="zai-pref-checkbox-label"
+          >删除对话前显示确认</html:span
+        >
+      </html:label>
+      <html:p class="zai-pref-help">
+        关闭后，点击非默认对话的删除按钮会立即删除；默认“对话 1”始终不可删除。
+      </html:p>
       <html:div class="zai-pref-actions">
         <html:span id="zai-ui-status" class="zai-pref-status"></html:span>
       </html:div>

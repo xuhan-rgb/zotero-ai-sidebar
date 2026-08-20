@@ -1,0 +1,353 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero × ChatGPT Web Agent · 费用优化方案</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f4f0e8;
+        --card: rgba(255, 253, 249, 0.94);
+        --text: #29231e;
+        --muted: #74685e;
+        --border: #dfd4c6;
+        --orange: #bd5b32;
+        --orange-soft: #fff0e7;
+        --blue: #346c8d;
+        --blue-soft: #eaf5fb;
+        --green: #347557;
+        --green-soft: #eaf6ef;
+        --red: #a84d48;
+        --red-soft: #fbeeed;
+        --shadow: 0 18px 55px rgba(68, 50, 34, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 8% 4%, #fffaf1 0 13%, transparent 34%),
+          radial-gradient(circle at 90% 0%, #e8f3f3 0 10%, transparent 31%),
+          linear-gradient(145deg, #eee7dd, #f8f5ef 52%, #ece8e1);
+        color: var(--text);
+        font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      .page {
+        width: min(1180px, calc(100% - 28px));
+        margin: 0 auto;
+        padding: 34px 0 48px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: end;
+        margin-bottom: 22px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--orange);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+
+      h1 { margin: 0; font-size: clamp(27px, 4.5vw, 44px); line-height: 1.15; }
+      .lead { max-width: 800px; margin: 12px 0 0; color: var(--muted); line-height: 1.75; }
+
+      .goal {
+        min-width: 230px;
+        padding: 13px 16px;
+        border: 1px solid rgba(52, 117, 87, .28);
+        border-radius: 14px;
+        background: var(--green-soft);
+        color: var(--green);
+        font-size: 13px;
+        font-weight: 800;
+        line-height: 1.55;
+      }
+
+      .diagram,
+      .option,
+      .decision {
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--card);
+        box-shadow: var(--shadow);
+      }
+
+      .diagram { padding: 24px; }
+      .section-title { margin: 0 0 5px; font-size: 19px; }
+      .section-note { margin: 0 0 20px; color: var(--muted); font-size: 13px; }
+
+      .flow {
+        display: grid;
+        grid-template-columns: 1fr 54px 1.1fr 54px 1fr 54px 1fr;
+        align-items: stretch;
+        gap: 8px;
+      }
+
+      .node {
+        min-height: 142px;
+        padding: 17px;
+        border: 1px solid var(--border);
+        border-radius: 15px;
+        background: #fff;
+      }
+
+      .node.local { border-color: rgba(189, 91, 50, .30); background: var(--orange-soft); }
+      .node.web { border-color: rgba(52, 108, 141, .30); background: var(--blue-soft); }
+      .node.return { border-color: rgba(52, 117, 87, .30); background: var(--green-soft); }
+      .icon { font-size: 24px; }
+      .node h3 { margin: 7px 0 7px; font-size: 15px; }
+      .node p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.62; }
+
+      .arrow {
+        display: grid;
+        place-items: center;
+        color: #9b8d80;
+        font-size: 29px;
+        font-weight: 300;
+      }
+
+      .boundary {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 15px;
+      }
+
+      .boundary div {
+        padding: 10px 13px;
+        border-radius: 10px;
+        font-size: 12px;
+        line-height: 1.55;
+      }
+
+      .boundary .local-note { background: var(--orange-soft); color: #8f4427; }
+      .boundary .web-note { background: var(--blue-soft); color: var(--blue); }
+
+      .options {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .option { position: relative; padding: 22px; overflow: hidden; }
+      .option.recommended { border: 2px solid rgba(52, 117, 87, .56); }
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        padding: 5px 9px;
+        border-radius: 999px;
+        background: var(--green-soft);
+        color: var(--green);
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .option h2 { margin: 13px 0 7px; font-size: 21px; }
+      .option > p { margin: 0 0 18px; color: var(--muted); line-height: 1.65; }
+
+      .steps { display: grid; gap: 9px; margin: 0; padding: 0; list-style: none; }
+      .steps li {
+        display: grid;
+        grid-template-columns: 26px 1fr;
+        gap: 9px;
+        align-items: start;
+        padding: 10px 11px;
+        border: 1px solid rgba(111, 96, 82, .12);
+        border-radius: 11px;
+        background: rgba(255,255,255,.72);
+        font-size: 13px;
+        line-height: 1.5;
+      }
+
+      .num {
+        display: grid;
+        width: 23px;
+        height: 23px;
+        place-items: center;
+        border-radius: 50%;
+        background: #eee7df;
+        color: #6e6258;
+        font-size: 11px;
+        font-weight: 900;
+      }
+
+      .tradeoffs {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+        margin-top: 17px;
+      }
+
+      .metric { padding: 10px; border-radius: 10px; background: #f4f1ed; text-align: center; }
+      .metric b { display: block; margin-bottom: 3px; font-size: 12px; }
+      .metric span { color: var(--muted); font-size: 11px; }
+      .good { color: var(--green) !important; }
+      .warn { color: var(--orange) !important; }
+      .risk { color: var(--red) !important; }
+
+      .decision {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) minmax(300px, .75fr);
+        gap: 22px;
+        margin-top: 18px;
+        padding: 23px;
+      }
+
+      .decision h2 { margin: 0 0 8px; font-size: 20px; }
+      .decision p { margin: 0; color: var(--muted); line-height: 1.68; }
+      .decision-grid { display: grid; gap: 8px; }
+      .decision-row {
+        display: grid;
+        grid-template-columns: 105px 1fr;
+        gap: 10px;
+        padding: 9px 11px;
+        border-radius: 10px;
+        background: #f5f2ee;
+        font-size: 12px;
+      }
+      .decision-row b { color: #5f544b; }
+      .decision-row span { color: var(--muted); }
+
+      .warning {
+        margin-top: 18px;
+        padding: 13px 16px;
+        border: 1px solid rgba(168, 77, 72, .22);
+        border-radius: 12px;
+        background: var(--red-soft);
+        color: #84413e;
+        font-size: 12.5px;
+        line-height: 1.65;
+      }
+
+      @media (max-width: 930px) {
+        .hero, .decision { grid-template-columns: 1fr; }
+        .flow { grid-template-columns: 1fr; }
+        .arrow { min-height: 32px; transform: rotate(90deg); }
+        .options { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 560px) {
+        .page { width: min(100% - 18px, 1180px); padding-top: 18px; }
+        .diagram, .option, .decision { border-radius: 14px; padding: 16px; }
+        .boundary, .tradeoffs { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Zotero AI Sidebar · Web Agent</p>
+          <h1>把回答交给 ChatGPT 网页版，减少 API 按 token 计费</h1>
+          <p class="lead">
+            核心不是让模型少读 token，而是让 Zotero 只负责整理必要上下文，回答过程转移到已登录的
+            ChatGPT Web。下面比较稳定的半自动交接与体验更完整、但更脆弱的全自动网页代理。
+          </p>
+        </div>
+        <div class="goal">目标<br />保留 Zotero 论文上下文能力<br />降低 API token 费用</div>
+      </header>
+
+      <section class="diagram">
+        <h2 class="section-title">共同的数据流</h2>
+        <p class="section-note">只发送回答所需的选区、提问和精简论文线索，不默认搬运整篇 PDF 或全部聊天历史。</p>
+        <div class="flow">
+          <article class="node local">
+            <div class="icon">📚</div>
+            <h3>Zotero 本地上下文</h3>
+            <p>当前问题、PDF 选区、标题/摘要、必要章节与引用定位。原始 PDF 和笔记仍留在本地。</p>
+          </article>
+          <div class="arrow">→</div>
+          <article class="node">
+            <div class="icon">✂️</div>
+            <h3>上下文打包器</h3>
+            <p>生成一份可核对的 Web Prompt：任务说明 + 最小证据 + 来源标签，不重复发送无关历史。</p>
+          </article>
+          <div class="arrow">→</div>
+          <article class="node web">
+            <div class="icon">🌐</div>
+            <h3>ChatGPT Web</h3>
+            <p>在浏览器会话中完成推理、联网搜索和回答。费用从 API token 计费转为网页产品使用额度。</p>
+          </article>
+          <div class="arrow">→</div>
+          <article class="node return">
+            <div class="icon">↩️</div>
+            <h3>返回 Zotero</h3>
+            <p>把最终回答导回原对话；保留来源对话、问题和引用信息，之后可继续写入笔记。</p>
+          </article>
+        </div>
+        <div class="boundary">
+          <div class="local-note"><b>本地边界：</b>PDF 全文、Reader 状态、笔记写入和引用定位由 Zotero 插件管理。</div>
+          <div class="web-note"><b>网页边界：</b>只接收用户确认发送的文本；网页端不能直接调用 Zotero 本地工具。</div>
+        </div>
+      </section>
+
+      <section class="options">
+        <article class="option recommended">
+          <span class="badge">✓ 推荐第一阶段</span>
+          <h2>方案 A：半自动交接</h2>
+          <p>Zotero 生成上下文，用户一键复制/打开 ChatGPT，回答完成后再导回。自动化较少，但最稳定。</p>
+          <ol class="steps">
+            <li><span class="num">1</span><span>在 Zotero 点击“交给 ChatGPT Web”，预览即将发送的精简上下文。</span></li>
+            <li><span class="num">2</span><span>复制 Prompt 并打开指定 ChatGPT 对话；用户粘贴后发送。</span></li>
+            <li><span class="num">3</span><span>复制最终回答，回到 Zotero 点击“导入 Web 回答”。</span></li>
+            <li><span class="num">4</span><span>插件把回答记录到原对话，并允许继续写入笔记或创建分支。</span></li>
+          </ol>
+          <div class="tradeoffs">
+            <div class="metric"><b>稳定性</b><span class="good">高</span></div>
+            <div class="metric"><b>操作成本</b><span class="warn">两次复制</span></div>
+            <div class="metric"><b>维护成本</b><span class="good">低</span></div>
+          </div>
+        </article>
+
+        <article class="option">
+          <span class="badge" style="background:var(--blue-soft);color:var(--blue)">可选第二阶段</span>
+          <h2>方案 B：全自动 Web Agent</h2>
+          <p>由浏览器扩展或本地自动化桥接 ChatGPT 页面：自动提交 Prompt、等待回答并写回 Zotero。</p>
+          <ol class="steps">
+            <li><span class="num">1</span><span>Zotero 将任务写入本机桥接队列，并携带一次性任务 ID。</span></li>
+            <li><span class="num">2</span><span>浏览器扩展在已登录的 ChatGPT 页面创建或选择对话并发送。</span></li>
+            <li><span class="num">3</span><span>监听页面回答完成状态，提取最终回复与来源链接。</span></li>
+            <li><span class="num">4</span><span>通过本机桥接把结果送回 Zotero，并匹配原对话。</span></li>
+          </ol>
+          <div class="tradeoffs">
+            <div class="metric"><b>稳定性</b><span class="risk">较低</span></div>
+            <div class="metric"><b>操作成本</b><span class="good">最低</span></div>
+            <div class="metric"><b>维护成本</b><span class="risk">高</span></div>
+          </div>
+        </article>
+      </section>
+
+      <section class="decision">
+        <div>
+          <h2>推荐落地顺序</h2>
+          <p>
+            先实现方案 A，验证“精简上下文 → ChatGPT Web → 导回 Zotero”的质量和节费效果；只有当每天的复制操作确实成为主要负担，再增加方案 B 的浏览器扩展与本机桥接。两阶段共用同一个上下文打包格式，因此前期工作不会浪费。
+          </p>
+          <div class="warning">
+            <b>重要限制：</b>ChatGPT 网页不能直接读取 Zotero 本地 PDF、调用本地 arXiv/PDF 工具或写笔记；这些内容必须先由插件提取为文本。全自动方案还依赖网页 DOM、登录状态和页面行为，网页更新后可能需要维护。
+          </div>
+        </div>
+        <div class="decision-grid">
+          <div class="decision-row"><b>第一阶段</b><span>上下文预览、复制并打开网页、导入回答</span></div>
+          <div class="decision-row"><b>发送默认值</b><span>问题 + 显式选区 + 标题/摘要；全文按需</span></div>
+          <div class="decision-row"><b>历史策略</b><span>默认只携带上一轮；需要时切换完整上下文</span></div>
+          <div class="decision-row"><b>隐私策略</b><span>发送前可核对；不自动上传整个 PDF</span></div>
+          <div class="decision-row"><b>第二阶段</b><span>浏览器扩展 + localhost 任务桥接 + 结果回传</span></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

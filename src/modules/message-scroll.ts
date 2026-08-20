@@ -190,8 +190,10 @@ export function restoreMessagesScroll(
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!messages) return;
   if (scrollToBottom) {
-    messages.scrollTop = messages.scrollHeight;
-    state.messagesScrollTop = messages.scrollTop;
+    scheduleMessagesScrollRestore(mount, {
+      top: state.messagesScrollTop,
+      atBottom: true,
+    });
     return;
   }
   messages.scrollTop = state.messagesScrollTop;

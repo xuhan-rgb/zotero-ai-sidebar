@@ -8,6 +8,88 @@ function render(markdown: string): HTMLElement {
 }
 
 describe("renderMarkdownInto", () => {
+  it("renders fenced Graphviz DOT as an SVG chart", () => {
+    const source = [
+      "digraph Roadmap {",
+      "  rankdir=TB;",
+      '  Input [label="输入图像"];',
+      '  Encoder [label="视觉编码器"];',
+      "  Input -> Encoder;",
+      "}",
+    ].join("\n");
+    const root = render(`\`\`\`dot\n${source}\n\`\`\``);
+
+    expect(root.querySelector(".mindmap-block")).not.toBeNull();
+    expect(root.querySelector(".zai-mm-svg")).not.toBeNull();
+    expect(root.querySelector("pre code.language-dot")).toBeNull();
+    expect(root.querySelector(".mindmap-source")?.textContent).toBe(source);
+  });
+
+  it("repairs DeepSeek's detached DOT language label without treating code as math", () => {
+    const markdown = [
+      "### 方案一：Graphviz DOT 代码（推荐）",
+      "",
+      "dot",
+      "",
+      "```",
+      "digraph LAW {",
+      "  rankdir=TB;",
+      '  Pred [label="预测隐特征 \\\\hat{V}_{t+1}"];',
+      '  Loss [label="\\\\mathcal{L}_{\\\\text{latent}}"];',
+      "  Pred -> Loss;",
+      "}",
+      "```",
+    ].join("\n");
+    const root = render(markdown);
+
+    expect(root.querySelector(".mindmap-block")).not.toBeNull();
+    expect(root.querySelector(".math-display")).toBeNull();
+    expect(root.querySelector("p")?.textContent).not.toBe("dot");
+    expect(root.querySelector(".mindmap-source")?.textContent).toContain(
+      "digraph LAW",
+    );
+  });
+
+  it("turns bare web URLs into safe clickable links", () => {
+    const root = render(
+      "论文地址：https://arxiv.org/abs/2406.08481。",
+    );
+    const link = root.querySelector("a") as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.href).toContain("https://arxiv.org/abs/2406.08481");
+    expect(link?.textContent).toBe("https://arxiv.org/abs/2406.08481");
+    expect(link?.target).toBe("_blank");
+    expect(link?.rel).toBe("noreferrer");
+    expect(root.textContent).toContain("。");
+  });
+
+  it("keeps local generated-file links clickable", () => {
+    const root = render("[下载 PDF](file:///tmp/zai-downloads/flowchart.pdf)");
+    const link = root.querySelector("a") as HTMLAnchorElement | null;
+    expect(link).not.toBeNull();
+    expect(link?.href).toContain("file:///tmp/zai-downloads/flowchart.pdf");
+    expect(link?.textContent).toBe("下载 PDF");
+  });
+
+  it("keeps parentheses in generated-file URLs", () => {
+    const root = render(
+      "[流程图](file:///tmp/zai-downloads/flowchart_cn(5).pdf#zai-web-download)",
+    );
+    const link = root.querySelector("a") as HTMLAnchorElement | null;
+    expect(link?.href).toContain("flowchart_cn(5).pdf#zai-web-download");
+    expect(link?.textContent).toBe("流程图");
+  });
+
+  it("does not rewrite padded inline math or prose LaTeX commands", () => {
+    const root = render(
+      "and additionally learn an ego decoder $\\hat{p}^{T+1} = d_{ego}(\\hat{Z}^{T+1}_0) $ \\wrt the current frame.",
+    );
+
+    expect(root.querySelector(".math-inline")).toBeNull();
+    expect(root.textContent).toContain("$");
+    expect(root.textContent).toContain("\\wrt");
+  });
+
   it("renders GFM pipe tables as scrollable tables", () => {
     const root = render(
       [
@@ -235,9 +317,9 @@ describe("renderMarkdownInto", () => {
     expect(root.querySelector(".katex-error")).toBeNull();
     expect(root.textContent).not.toContain("\\mathbf");
     expect(root.textContent).not.toContain("$");
-    expect(
-      root.querySelectorAll(".math-inline").length,
-    ).toBeGreaterThanOrEqual(2);
+    expect(root.querySelectorAll(".math-inline").length).toBeGreaterThanOrEqual(
+      2,
+    );
   });
 
   it("renders whole-paragraph single-dollar math even when padded with spaces", () => {
@@ -273,9 +355,7 @@ describe("renderMarkdownInto", () => {
     expect(quote).not.toBeNull();
     expect(math).not.toBeNull();
     expect(math?.dataset.latex).toContain("\\mathbf{o}_t = [");
-    expect(quote?.textContent).not.toContain(
-      "\\mathbf{s}_t^{\\text{proprio}}",
-    );
+    expect(quote?.textContent).not.toContain("\\mathbf{s}_t^{\\text{proprio}}");
     expect(quote?.textContent).toContain(
       "consists of object segmentation masks and segmented depth images.",
     );
@@ -332,6 +412,17 @@ describe("renderMarkdownInto", () => {
     expect(quote?.textContent).not.toContain("&");
     expect(quote?.textContent).not.toContain("\\\\");
     expect(quote?.querySelector(".math-inline")).not.toBeNull();
+  });
+
+  it("does not turn a quoted LaTeX result row into an HTML table", () => {
+    const root = render(
+      "> “Copy\\&Paste & 3D-Occ & None & 66.38 & 14.91 & 10.54 & 8.52 & \\cellcolor{gray!30}11.33 & 62.29 & \\cellcolor{gray!30}20.52 & \\cellcolor{gray!30}-”",
+    );
+
+    const quote = root.querySelector("blockquote") as HTMLElement | null;
+    expect(quote?.querySelector("table.markdown-table")).toBeNull();
+    expect(quote?.textContent).toContain("Copy\\&Paste");
+    expect(quote?.textContent).toContain("\\cellcolor");
   });
 
   // `\footnote{…}` is tangential source metadata; inlined mid-sentence it

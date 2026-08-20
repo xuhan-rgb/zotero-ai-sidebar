@@ -1,6 +1,7 @@
-import { afterEach, describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   preserveStreamingMessagesScroll,
+  restoreMessagesScroll,
   syncMessagesScrollState,
 } from '../../src/modules/message-scroll';
 import {
@@ -10,7 +11,36 @@ import {
 
 describe('preserveStreamingMessagesScroll', () => {
   afterEach(() => {
+    vi.useRealTimers();
     document.body.replaceChildren();
+  });
+
+  it('re-applies a requested startup scroll after delayed layout collapse', () => {
+    vi.useFakeTimers();
+    const mount = document.createElement('div');
+    const messages = document.createElement('div');
+    messages.className = 'messages';
+    mount.append(messages);
+    document.body.append(mount);
+    let scrollHeight = 1200;
+    Object.defineProperties(messages, {
+      scrollHeight: { configurable: true, get: () => scrollHeight },
+      clientHeight: { configurable: true, value: 300 },
+    });
+    const state = {
+      messagesScrollTop: 0,
+      autoFollowMessages: true,
+    } as PanelState;
+    states.set(mount, state);
+
+    restoreMessagesScroll(mount, state, true);
+    scrollHeight = 1800;
+    messages.scrollTop = 0;
+    state.messagesScrollTop = 0;
+    vi.advanceTimersByTime(100);
+
+    expect(messages.scrollTop).toBe(1500);
+    expect(state.messagesScrollTop).toBe(1500);
   });
 
   it('restores a pinned chat when a bubble mutation collapses scrollTop to zero', () => {

@@ -147,7 +147,9 @@ export function presetSelectLabel(preset: ModelPreset): string {
 
 export function updateToolbarOption(mount: HTMLElement, preset: ModelPreset) {
   const option = Array.from(
-    mount.querySelectorAll(".preset-switcher option"),
+    mount.querySelectorAll(
+      ".preset-switcher option, .composer-preset-switcher option",
+    ),
   ).find((node) => (node as HTMLOptionElement).value === preset.id) as
     | HTMLOptionElement
     | undefined;

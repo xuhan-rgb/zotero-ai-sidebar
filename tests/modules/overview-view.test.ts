@@ -242,7 +242,7 @@ describe("renderOverviewBlock (lean redesign)", () => {
     expect(jumped).toContain("1");
   });
 
-  it("lets the structural overview shrink to 25% with the mouse wheel", () => {
+  it("lets the structural overview shrink to 25% with Ctrl + mouse wheel", () => {
     const block = renderOverviewBlock(document, data, {});
     const svg = block.querySelector<SVGSVGElement>(
       '[data-overview-pane="structure"] .zai-mm-svg',
@@ -260,14 +260,18 @@ describe("renderOverviewBlock (lean redesign)", () => {
     });
 
     for (let index = 0; index < 20; index += 1) {
-      svg.dispatchEvent(
-        new WheelEvent("wheel", {
-          cancelable: true,
-          clientX: 300,
-          clientY: 150,
-          deltaY: 1,
-        }),
-      );
+      const event = new WheelEvent("wheel", {
+        cancelable: true,
+        clientX: 300,
+        clientY: 150,
+        deltaY: 120,
+        ctrlKey: true,
+      });
+      // happy-dom does not initialize WheelEvent modifier fields.
+      if (!event.ctrlKey) {
+        Object.defineProperty(event, "ctrlKey", { value: true });
+      }
+      svg.dispatchEvent(event);
     }
 
     const viewBoxWidth = Number(svg.getAttribute("viewBox")?.split(" ")[2]);

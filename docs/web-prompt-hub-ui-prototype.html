@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero Web Prompt Hub · UI 原型</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #eee9e1;
+        --paper: #fffdf9;
+        --panel: #f8f5f0;
+        --text: #29231e;
+        --muted: #786d63;
+        --faint: #aaa096;
+        --border: #ded4c7;
+        --accent: #bd5d35;
+        --accent-soft: #fff0e7;
+        --purple: #6657ba;
+        --purple-soft: #f1efff;
+        --blue: #367193;
+        --blue-soft: #eaf5fb;
+        --green: #34775a;
+        --green-soft: #eaf6ef;
+        --red: #a44d48;
+        --red-soft: #fbeeed;
+        --shadow: 0 20px 60px rgba(65, 47, 31, .14);
+      }
+
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 8% 0%, #fffaf1 0 13%, transparent 35%),
+          radial-gradient(circle at 92% 0%, #e8f3f5 0 10%, transparent 30%),
+          linear-gradient(145deg, #ece5dc, #f8f5ef 52%, #e9e5df);
+        color: var(--text);
+        font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+      button, textarea, select { font: inherit; }
+      button { color: inherit; }
+
+      .page { width: min(1240px, calc(100% - 26px)); margin: 0 auto; padding: 24px 0 48px; }
+      .hero { display: flex; justify-content: space-between; gap: 22px; align-items: end; margin-bottom: 17px; }
+      .eyebrow { margin: 0 0 6px; color: var(--accent); font-size: 11px; font-weight: 900; letter-spacing: .13em; text-transform: uppercase; }
+      h1 { margin: 0; font-size: clamp(25px, 4vw, 39px); line-height: 1.16; }
+      .lead { max-width: 770px; margin: 8px 0 0; color: var(--muted); font-size: 13px; line-height: 1.65; }
+
+      .view-tabs { display: flex; flex-wrap: wrap; gap: 5px; padding: 5px; border: 1px solid var(--border); border-radius: 13px; background: rgba(255,255,255,.72); box-shadow: 0 8px 30px rgba(65,47,31,.08); }
+      .view-tab { border: 0; border-radius: 9px; padding: 8px 11px; background: transparent; color: var(--muted); font-size: 12px; font-weight: 800; cursor: pointer; }
+      .view-tab.active { background: var(--paper); color: var(--purple); box-shadow: 0 3px 12px rgba(65,47,31,.10); }
+
+      .prototype { min-height: 680px; border: 1px solid var(--border); border-radius: 20px; background: var(--paper); box-shadow: var(--shadow); overflow: hidden; }
+      .screen { display: none; min-height: 680px; }
+      .screen.active { display: grid; }
+
+      /* Zotero screen */
+      .zotero-screen { grid-template-columns: minmax(460px, 1.35fr) minmax(330px, .65fr); background: #f6f2eb; }
+      .paper-pane { position: relative; padding: 30px 35px; border-right: 4px solid #211e1b; background: #fcfbf8; overflow: hidden; }
+      .paper-title { margin: 0 0 20px; font: 800 20px/1.35 Georgia, serif; }
+      .paper-lines { display: grid; gap: 8px; }
+      .paper-lines span { display: block; height: 8px; border-radius: 4px; background: #dedbd5; }
+      .paper-lines span:nth-child(3n) { width: 86%; }
+      .paper-lines span:nth-child(5n) { width: 68%; }
+      .selection { margin: 20px 0; padding: 13px; border-left: 3px solid #d5a100; background: #fff4b8; font: 14px/1.7 Georgia, serif; }
+      .equation { margin: 25px auto; text-align: center; font: italic 18px Georgia, serif; }
+
+      .chat-pane { display: grid; grid-template-rows: auto 1fr auto; background: #fffdf9; min-width: 0; }
+      .chat-toolbar { display: flex; flex-wrap: wrap; gap: 7px; padding: 11px; border-bottom: 1px solid var(--border); }
+      .tool-button { border: 1px solid var(--border); border-radius: 9px; padding: 7px 10px; background: #fff; font-size: 11px; font-weight: 800; }
+      .tool-button.channel { border-color: rgba(101,87,186,.35); background: var(--purple-soft); color: var(--purple); }
+      .target-menu-wrap { position: relative; }
+      .target-menu {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        z-index: 5;
+        min-width: 170px;
+        padding: 6px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: #fff;
+        box-shadow: var(--shadow);
+        display: none;
+      }
+      .target-menu.show { display: block; }
+      .target-option {
+        width: 100%;
+        border: 0;
+        border-radius: 8px;
+        padding: 8px 9px;
+        background: #fff;
+        text-align: left;
+        color: var(--text);
+        font-size: 10px;
+        font-weight: 800;
+        cursor: pointer;
+      }
+      .target-option:hover { background: #f8f2e9; }
+      .target-option.active { background: var(--purple-soft); color: var(--purple); }
+      .chat-body { padding: 17px; overflow: auto; }
+      .message { max-width: 88%; margin-bottom: 16px; padding: 12px 13px; border-radius: 14px; font-size: 12px; line-height: 1.65; }
+      .message.user { margin-left: auto; border: 1px solid #cfe2ed; background: #eef8fd; }
+      .message.ai { border: 1px solid var(--border); background: #fff; }
+      .hub-task { margin: 14px 0; padding: 12px; border: 1px solid rgba(101,87,186,.30); border-radius: 12px; background: var(--purple-soft); }
+      .hub-task-head { display: flex; justify-content: space-between; gap: 10px; color: var(--purple); font-size: 11px; font-weight: 900; }
+      .hub-task p { margin: 8px 0 9px; color: #665d7a; font-size: 11px; line-height: 1.55; }
+      .inline-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+      .mini { border: 1px solid rgba(101,87,186,.27); border-radius: 8px; padding: 5px 8px; background: rgba(255,255,255,.75); color: #574aa9; font-size: 10px; font-weight: 800; }
+
+      .composer { padding: 11px; border-top: 1px solid var(--border); }
+      .context-chip { display: inline-flex; gap: 7px; align-items: center; margin-bottom: 8px; padding: 6px 9px; border: 1px solid #c9b976; border-radius: 999px; background: #fff9dc; color: #786923; font-size: 10px; font-weight: 800; }
+      .input-shell { display: grid; grid-template-columns: 1fr auto; gap: 9px; align-items: end; padding: 10px; border: 1px solid var(--border); border-radius: 15px; background: #fff; }
+      .input-shell textarea { width: 100%; min-height: 74px; resize: vertical; border: 0; outline: 0; color: var(--text); }
+      .send-web { display: grid; width: 40px; height: 40px; place-items: center; border: 0; border-radius: 12px; background: var(--purple); color: #fff; font-size: 19px; cursor: pointer; }
+      .composer-foot { display: flex; justify-content: space-between; gap: 10px; margin-top: 7px; color: var(--faint); font-size: 9.5px; }
+
+      /* Hub shared */
+      .hub-screen { grid-template-columns: 230px minmax(0, 1fr) 300px; }
+      .hub-sidebar { padding: 18px; border-right: 1px solid var(--border); background: #f3efe9; }
+      .hub-brand { display: flex; align-items: center; gap: 9px; margin-bottom: 22px; font-weight: 900; }
+      .hub-logo { display: grid; width: 33px; height: 33px; place-items: center; border-radius: 10px; background: var(--purple); color: #fff; }
+      .nav-title { margin: 16px 8px 7px; color: var(--faint); font-size: 9px; font-weight: 900; letter-spacing: .12em; }
+      .nav { padding: 9px 10px; border-radius: 9px; color: var(--muted); font-size: 11px; }
+      .nav.active { background: #fff; color: var(--purple); font-weight: 900; box-shadow: 0 4px 14px rgba(65,47,31,.08); }
+      .count { float: right; min-width: 18px; padding: 1px 5px; border-radius: 999px; background: var(--orange-soft); color: var(--accent); text-align: center; }
+
+      .hub-main { padding: 21px; min-width: 0; }
+      .hub-head { display: flex; justify-content: space-between; gap: 15px; align-items: start; margin-bottom: 16px; }
+      .hub-head h2 { margin: 0 0 5px; font-size: 19px; }
+      .hub-head p { margin: 0; color: var(--muted); font-size: 11px; }
+      .status { padding: 6px 9px; border-radius: 999px; font-size: 10px; font-weight: 900; white-space: nowrap; }
+      .status.waiting { background: var(--purple-soft); color: var(--purple); }
+      .status.import { background: var(--blue-soft); color: var(--blue); }
+
+      .stepper { display: grid; grid-template-columns: repeat(4, 1fr); gap: 7px; margin-bottom: 15px; }
+      .step { position: relative; padding: 10px; border: 1px solid var(--border); border-radius: 10px; background: #fff; color: var(--faint); font-size: 10px; font-weight: 800; text-align: center; }
+      .step.done { border-color: rgba(52,119,90,.25); background: var(--green-soft); color: var(--green); }
+      .step.current { border-color: rgba(101,87,186,.35); background: var(--purple-soft); color: var(--purple); }
+
+      .prompt-card, .answer-card { border: 1px solid var(--border); border-radius: 14px; background: #fff; overflow: hidden; }
+      .card-meta { display: flex; justify-content: space-between; gap: 12px; padding: 10px 12px; border-bottom: 1px solid var(--border); background: var(--panel); color: var(--muted); font-size: 10px; }
+      .prompt-text { min-height: 260px; padding: 14px; font: 11.5px/1.72 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #494139; white-space: pre-wrap; }
+      .answer-textarea { width: 100%; min-height: 300px; padding: 14px; resize: vertical; border: 0; outline: 0; color: var(--text); line-height: 1.65; }
+      .card-actions { display: flex; flex-wrap: wrap; gap: 7px; padding: 11px; border-top: 1px solid var(--border); }
+      .btn { border: 1px solid var(--border); border-radius: 9px; padding: 8px 10px; background: #fff; font-size: 11px; font-weight: 900; cursor: pointer; }
+      .btn.primary { border-color: var(--purple); background: var(--purple); color: #fff; }
+      .btn.blue { border-color: var(--blue); background: var(--blue); color: #fff; }
+      .btn.green { border-color: var(--green); background: var(--green); color: #fff; }
+      .btn.danger { color: var(--red); }
+
+      .hub-right { padding: 18px; border-left: 1px solid var(--border); background: #fbf9f5; }
+      .hub-right h3 { margin: 0 0 5px; font-size: 14px; }
+      .hub-right > p { margin: 0 0 13px; color: var(--muted); font-size: 10.5px; line-height: 1.5; }
+      .providers { display: grid; gap: 8px; }
+      .provider { display: grid; grid-template-columns: 34px 1fr auto; gap: 8px; align-items: center; padding: 10px; border: 1px solid var(--border); border-radius: 11px; background: #fff; cursor: pointer; }
+      .provider.selected { border-color: rgba(101,87,186,.55); box-shadow: 0 0 0 2px rgba(101,87,186,.10); }
+      .provider-logo { display: grid; width: 33px; height: 33px; place-items: center; border-radius: 9px; background: var(--panel); font-weight: 900; }
+      .provider b { display: block; font-size: 11px; }
+      .provider small { color: var(--muted); font-size: 9px; }
+      .tag { padding: 3px 6px; border-radius: 999px; background: var(--blue-soft); color: var(--blue); font-size: 8px; font-weight: 900; }
+      .help { margin-top: 13px; padding: 11px; border-radius: 10px; background: var(--orange-soft); color: #85462d; font-size: 10px; line-height: 1.55; }
+
+      /* Settings */
+      .settings-screen { grid-template-columns: 230px 1fr; }
+      .settings-main { padding: 22px; }
+      .settings-main h2 { margin: 0 0 5px; font-size: 19px; }
+      .settings-main > p { margin: 0 0 18px; color: var(--muted); font-size: 11px; }
+      .setting-section { max-width: 760px; margin-bottom: 15px; padding: 16px; border: 1px solid var(--border); border-radius: 13px; background: #fff; }
+      .setting-section h3 { margin: 0 0 12px; font-size: 14px; }
+      .setting-row { display: grid; grid-template-columns: 190px 1fr; gap: 12px; align-items: center; padding: 9px 0; border-top: 1px solid #eee8e0; }
+      .setting-row:first-of-type { border-top: 0; }
+      .setting-copy b { display: block; font-size: 11px; }
+      .setting-copy small { color: var(--muted); font-size: 9.5px; line-height: 1.4; }
+      .setting-control { justify-self: end; min-width: 190px; padding: 7px 9px; border: 1px solid var(--border); border-radius: 8px; background: var(--panel); color: #51483f; font-size: 10.5px; }
+      .switch { display: inline-flex; min-width: 62px; justify-content: center; background: var(--green-soft); color: var(--green); font-weight: 900; }
+
+      .design-notes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 17px; }
+      .note { padding: 16px; border: 1px solid var(--border); border-radius: 14px; background: rgba(255,253,249,.88); }
+      .note h3 { margin: 0 0 6px; font-size: 14px; }
+      .note p { margin: 0; color: var(--muted); font-size: 11px; line-height: 1.62; }
+
+      .toast { position: fixed; right: 18px; bottom: 18px; z-index: 5; max-width: 340px; padding: 11px 14px; border-radius: 11px; background: #2f2925; color: #fff; box-shadow: 0 12px 35px rgba(0,0,0,.22); font-size: 11px; line-height: 1.5; opacity: 0; transform: translateY(10px); pointer-events: none; transition: .2s ease; }
+      .toast.show { opacity: 1; transform: translateY(0); }
+
+      @media (max-width: 980px) {
+        .hero { display: block; }
+        .view-tabs { margin-top: 14px; }
+        .zotero-screen { grid-template-columns: 1fr; }
+        .paper-pane { display: none; }
+        .hub-screen { grid-template-columns: 190px 1fr; }
+        .hub-right { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0; }
+        .providers { grid-template-columns: repeat(2, 1fr); }
+        .design-notes { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 650px) {
+        .page { width: min(100% - 16px, 1240px); padding-top: 14px; }
+        .prototype { border-radius: 14px; }
+        .hub-screen, .settings-screen { display: block; }
+        .hub-sidebar { display: none; }
+        .hub-right { border-left: 0; }
+        .providers { grid-template-columns: 1fr; }
+        .stepper { grid-template-columns: 1fr 1fr; }
+        .setting-row { grid-template-columns: 1fr; }
+        .setting-control { justify-self: stretch; min-width: 0; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Interactive UI Prototype</p>
+          <h1>Web Prompt Hub 按钮与任务流</h1>
+          <p class="lead">点击右侧视图切换查看 Zotero 发送入口、Hub 发送页、回答导入页和设置页。原型只演示交互，不会打开真实模型网页。</p>
+        </div>
+        <nav class="view-tabs" aria-label="原型视图">
+          <button class="view-tab active" data-view="zotero">Zotero 侧栏</button>
+          <button class="view-tab" data-view="send">Hub · 发送</button>
+          <button class="view-tab" data-view="import">Hub · 导入</button>
+          <button class="view-tab" data-view="settings">设置</button>
+        </nav>
+      </header>
+
+      <section class="prototype">
+        <section class="screen zotero-screen active" data-screen="zotero">
+          <article class="paper-pane">
+            <h2 class="paper-title">Enhancing End-to-End Autonomous Driving with Latent World Model</h2>
+            <div class="paper-lines"><span></span><span></span><span></span><span></span><span></span><span></span></div>
+            <div class="selection">The action-aware latents integrate visual features with future waypoints and are then used as input to the latent world model.</div>
+            <div class="equation">aᵢₜ = MLP([vᵢₜ, wₜ])</div>
+            <div class="paper-lines"><span></span><span></span><span></span><span></span><span></span><span></span><span></span></div>
+          </article>
+
+          <article class="chat-pane">
+            <header class="chat-toolbar">
+              <div class="target-menu-wrap">
+                <button class="tool-button channel" id="targetToggle" aria-haspopup="true" aria-expanded="false" data-target="chatgpt">🌐 Web Hub · ChatGPT ▾</button>
+                <div class="target-menu" id="targetMenu">
+                  <button class="target-option active" role="menuitemradio" aria-checked="true" data-target="chatgpt">🌐 Web Hub · ChatGPT</button>
+                  <button class="target-option" role="menuitemradio" aria-checked="false" data-target="deepseek">🌐 Web Hub · DeepSeek</button>
+                </div>
+              </div>
+              <button class="tool-button">模型配置</button>
+              <button class="tool-button">打开笔记</button>
+              <button class="tool-button">⋯</button>
+            </header>
+            <div class="chat-body">
+              <div class="message user">解释这个选区，并说明它为什么需要 waypoint。</div>
+              <div class="hub-task">
+                <div class="hub-task-head"><span>已发送到 Prompt Hub</span><span>等待网页回答</span></div>
+                <p><span class="task-target">ChatGPT</span> Web · 对话 5 · 已携带当前 PDF 选区 172 字和上一轮上下文。</p>
+                <div class="inline-actions"><button class="mini" data-go="send">打开 Hub</button><button class="mini">重新复制 Prompt</button><button class="mini" data-go="import">导入回答</button><button class="mini">取消</button></div>
+              </div>
+              <div class="message ai">网页回答导入后会显示在这里，并继续支持“写入笔记”和创建分支。</div>
+            </div>
+            <footer class="composer">
+              <div class="context-chip">📄 PDF 选区 172 字 · 点开核对</div>
+              <div class="input-shell">
+                <textarea aria-label="消息输入">解释这个方法为什么要融合 waypoint</textarea>
+                <button class="send-web" title="发送到 Web Prompt Hub" data-go="send">↗</button>
+              </div>
+              <div class="composer-foot"><span class="composer-target">发送目标：Web Hub · ChatGPT</span><span class="composer-hint">↗ 只发送到 Hub，不直接控制网页</span></div>
+            </footer>
+          </article>
+        </section>
+
+        <section class="screen hub-screen" data-screen="send">
+          <aside class="hub-sidebar">
+            <div class="hub-brand"><span class="hub-logo">P</span><span>Prompt Hub</span></div>
+            <div class="nav-title">任务</div><div class="nav active">待发送 <span class="count">1</span></div><div class="nav">等待导入 <span class="count">2</span></div><div class="nav">已完成</div>
+            <div class="nav-title">来源</div><div class="nav">Zotero · 对话 5</div><div class="nav">当前 PDF 选区</div>
+          </aside>
+          <main class="hub-main">
+            <div class="hub-head"><div><h2>确认并发送 Prompt</h2><p>任务 #ZAI-018 · 来自 Zotero 对话 5</p></div><span class="status waiting">等待网页发送</span></div>
+            <div class="stepper"><div class="step done">1 · Zotero 已提交</div><div class="step current">2 · 网页发送</div><div class="step">3 · 复制回答</div><div class="step">4 · 导回 Zotero</div></div>
+            <article class="prompt-card">
+              <div class="card-meta"><span>当前选区 + 论文信息 + 上一轮</span><span>约 1,280 字</span></div>
+              <div class="prompt-text">任务：解释下面的方法设计，并说明 waypoint 在 action-aware latent 中的作用。
+
+论文：Enhancing End-to-End Autonomous Driving with Latent World Model
+
+选区：The action-aware latents integrate visual features with future waypoints...
+
+要求：先给一句话结论，再解释参数、数据流和训练目标；引用选区中的关键表达。</div>
+              <div class="card-actions"><button class="btn primary" data-action="copy-open">复制并打开 ChatGPT</button><button class="btn" data-action="copy">仅复制</button><button class="btn">编辑上下文</button><button class="btn danger">退回 Zotero</button></div>
+            </article>
+          </main>
+          <aside class="hub-right">
+            <h3>选择网页入口</h3><p>选择只决定复制后打开哪个网页，不会自动提交或读取回答。</p>
+            <div class="providers">
+              <div class="provider web-provider selected" data-target="chatgpt"><span class="provider-logo">G</span><span><b>ChatGPT</b><small>网页辅助 · 已保存对话链接</small></span><span class="tag">WEB</span></div>
+              <div class="provider web-provider" data-target="deepseek"><span class="provider-logo">D</span><span><b>DeepSeek</b><small>网页辅助 · 打开新对话</small></span><span class="tag">WEB</span></div>
+            </div>
+            <div class="help"><b>下一步：</b>网页打开后粘贴并发送。回答完成时点击网页自己的“复制”按钮，再回到 Hub 导入。</div>
+          </aside>
+        </section>
+
+        <section class="screen hub-screen" data-screen="import">
+          <aside class="hub-sidebar">
+            <div class="hub-brand"><span class="hub-logo">P</span><span>Prompt Hub</span></div>
+            <div class="nav-title">任务</div><div class="nav">待发送</div><div class="nav active">等待导入 <span class="count">2</span></div><div class="nav">已完成</div>
+            <div class="nav-title">当前任务</div><div class="nav">#ZAI-018</div><div class="nav import-task-provider">ChatGPT · 对话 5</div>
+          </aside>
+          <main class="hub-main">
+            <div class="hub-head"><div><h2>导入网页回答</h2><p class="import-note">请先在 ChatGPT 中点击回答下方的“复制”</p></div><span class="status import">等待用户复制</span></div>
+            <div class="stepper"><div class="step done">1 · Zotero 已提交</div><div class="step done">2 · 网页已发送</div><div class="step current">3 · 复制回答</div><div class="step">4 · 导回 Zotero</div></div>
+            <article class="answer-card">
+              <div class="card-meta"><span>回答预览</span><span>Markdown / 纯文本</span></div>
+              <textarea class="answer-textarea" aria-label="待导入回答">在这里粘贴从 ChatGPT 或 DeepSeek 网页复制的完整回答……</textarea>
+              <div class="card-actions"><button class="btn blue" data-action="paste">从剪贴板粘贴</button><button class="btn">检查格式</button><button class="btn green" data-action="import">导入 Zotero 对话 5</button><button class="btn danger">取消任务</button></div>
+            </article>
+          </main>
+          <aside class="hub-right">
+            <h3>导入后本地操作</h3><p>这些动作由 Zotero 执行，不需要网页访问本地 PDF。</p>
+            <div class="providers">
+              <div class="provider"><span class="provider-logo">↩</span><span><b>写回当前对话</b><small>默认开启</small></span><span class="tag">AUTO</span></div>
+              <div class="provider"><span class="provider-logo">📝</span><span><b>写入笔记</b><small>导入后手动点击</small></span><span class="tag">LOCAL</span></div>
+              <div class="provider"><span class="provider-logo">🖍</span><span><b>选区批注草稿</b><small>仅使用发送前保存的位置</small></span><span class="tag">LOCAL</span></div>
+            </div>
+            <div class="help"><b>隐私：</b>Hub 只在用户点击“从剪贴板粘贴”时读取剪贴板，不后台轮询。</div>
+          </aside>
+        </section>
+
+        <section class="screen settings-screen" data-screen="settings">
+          <aside class="hub-sidebar">
+            <div class="hub-brand"><span class="hub-logo">P</span><span>Prompt Hub</span></div>
+            <div class="nav-title">设置</div><div class="nav active">网页辅助</div><div class="nav">模型入口</div><div class="nav">Zotero 连接</div><div class="nav">隐私与数据</div>
+          </aside>
+          <main class="settings-main">
+            <h2>网页辅助设置</h2><p>设置默认入口和按钮行为；不会保存网站 Cookie 或自动读取网页内容。</p>
+            <section class="setting-section">
+              <h3>默认行为</h3>
+              <div class="setting-row"><span class="setting-copy"><b>默认网页模型</b><small>Zotero 新建 Web Hub 对话时使用</small></span><select class="setting-control"><option>ChatGPT</option><option>DeepSeek</option></select></div>
+              <div class="setting-row"><span class="setting-copy"><b>发送按钮动作</b><small>点击 Zotero 的 ↗ 后执行</small></span><select class="setting-control"><option>发送到 Hub 并打开</option><option>仅发送到 Hub</option></select></div>
+              <div class="setting-row"><span class="setting-copy"><b>复用网页对话链接</b><small>每个 Zotero 对话保存一个目标 URL</small></span><span class="setting-control switch">已开启</span></div>
+            </section>
+            <section class="setting-section">
+              <h3>上下文</h3>
+              <div class="setting-row"><span class="setting-copy"><b>默认聊天历史</b><small>控制发送到网页 Prompt 的历史范围</small></span><select class="setting-control"><option>上一轮</option><option>无</option><option>全部</option></select></div>
+              <div class="setting-row"><span class="setting-copy"><b>PDF 选区</b><small>发送前可在 Hub 中核对</small></span><span class="setting-control switch">自动附带</span></div>
+              <div class="setting-row"><span class="setting-copy"><b>整篇论文</b><small>避免无意上传大量正文</small></span><select class="setting-control"><option>仅手动开启</option><option>从不发送</option></select></div>
+            </section>
+            <section class="setting-section">
+              <h3>回答导入</h3>
+              <div class="setting-row"><span class="setting-copy"><b>读取剪贴板</b><small>仅在用户点击导入按钮后读取</small></span><span class="setting-control switch">按需读取</span></div>
+              <div class="setting-row"><span class="setting-copy"><b>自动写入笔记</b><small>建议保留人工确认</small></span><select class="setting-control"><option>关闭</option><option>导入后询问</option></select></div>
+              <div class="setting-row"><span class="setting-copy"><b>选区批注</b><small>只生成草稿，不直接写入 PDF</small></span><select class="setting-control"><option>生成草稿</option><option>关闭</option></select></div>
+            </section>
+          </main>
+        </section>
+      </section>
+
+      <section class="design-notes">
+        <article class="note"><h3>按钮最少化</h3><p>Zotero 主界面只新增一个渠道选择“Web Hub · 模型”和一个 ↗ 发送按钮；任务状态放在消息流中，不增加常驻大面板。</p></article>
+        <article class="note"><h3>两次人工动作</h3><p>用户在网页端负责“发送”和“复制回答”。Hub 自动处理上下文、打开入口、任务关联、格式预览和写回 Zotero。</p></article>
+        <article class="note"><h3>本地能力保留</h3><p>回答导入后，写笔记、分支和基于既有 PDF 选区的批注草稿仍由 Zotero 本地完成，不要求网页访问本地数据。</p></article>
+      </section>
+    </main>
+
+    <div class="toast" role="status"></div>
+    <script>
+      const tabs = Array.from(document.querySelectorAll("[data-view]"));
+      const screens = Array.from(document.querySelectorAll("[data-screen]"));
+      const toast = document.querySelector(".toast");
+      const targetToggle = document.querySelector("#targetToggle");
+      const targetMenu = document.querySelector("#targetMenu");
+      const targetWrap = document.querySelector(".target-menu-wrap");
+      const targetOptions = Array.from(document.querySelectorAll(".target-option"));
+      const webProviders = Array.from(document.querySelectorAll(".web-provider"));
+      const taskTarget = document.querySelector(".task-target");
+      const composerTarget = document.querySelector(".composer-target");
+      const composerHint = document.querySelector(".composer-hint");
+      const sendWebBtn = document.querySelector(".send-web");
+      const copyOpenBtn = document.querySelector('[data-action="copy-open"]');
+      const importTaskProvider = document.querySelector(".import-task-provider");
+      const importHint = document.querySelector(".hub-screen[data-screen='import'] .import-note");
+
+      const targetConfigs = {
+        chatgpt: {
+          label: "Web Hub · ChatGPT",
+          name: "ChatGPT",
+          importHint: "请先在 ChatGPT 中点击回答下方的“复制”",
+          openAction: "复制并打开 ChatGPT"
+        },
+        deepseek: {
+          label: "Web Hub · DeepSeek",
+          name: "DeepSeek",
+          importHint: "请先在 DeepSeek 中点击回答下方的“复制”",
+          openAction: "复制并打开 DeepSeek"
+        }
+      };
+
+      let currentTarget = "chatgpt";
+
+      function updateWebTarget(target) {
+        if (!targetConfigs[target]) return;
+        currentTarget = target;
+        const config = targetConfigs[target];
+
+        if (targetToggle) {
+          targetToggle.textContent = `${config.label} ▾`;
+          targetToggle.dataset.target = target;
+          targetToggle.setAttribute("aria-expanded", "false");
+        }
+        if (targetMenu) targetMenu.classList.remove("show");
+        if (taskTarget) taskTarget.textContent = config.name;
+        if (composerTarget) composerTarget.textContent = `发送目标：${config.label}`;
+        if (composerHint) composerHint.textContent = "↗ 只发送到 Hub，不直接控制网页";
+        if (sendWebBtn) sendWebBtn.title = `发送到 ${config.label}`;
+        if (importTaskProvider) importTaskProvider.textContent = `${config.name} · 对话 5`;
+        if (importHint) importHint.textContent = config.importHint;
+        if (copyOpenBtn) copyOpenBtn.textContent = config.openAction;
+
+        targetOptions.forEach((option) => {
+          const isActive = option.dataset.target === target;
+          option.classList.toggle("active", isActive);
+          option.setAttribute("aria-checked", String(isActive));
+        });
+        webProviders.forEach((provider) => provider.classList.toggle("selected", provider.dataset.target === target));
+      }
+
+      function closeTargetMenu() {
+        if (!targetMenu) return;
+        targetMenu.classList.remove("show");
+        if (targetToggle) targetToggle.setAttribute("aria-expanded", "false");
+      }
+
+      targetToggle?.addEventListener("click", (event) => {
+        event.stopPropagation();
+        if (!targetMenu) return;
+        const shown = targetMenu.classList.toggle("show");
+        targetToggle.setAttribute("aria-expanded", String(shown));
+      });
+
+      targetOptions.forEach((option) => option.addEventListener("click", () => updateWebTarget(option.dataset.target)));
+      webProviders.forEach((provider) => provider.addEventListener("click", () => updateWebTarget(provider.dataset.target)));
+      document.addEventListener("click", (event) => {
+        if (!targetWrap) return;
+        if (!targetWrap.contains(event.target)) closeTargetMenu();
+      });
+
+      updateWebTarget("chatgpt");
+
+      function showView(name) {
+        tabs.forEach((tab) => tab.classList.toggle("active", tab.dataset.view === name));
+        screens.forEach((screen) => screen.classList.toggle("active", screen.dataset.screen === name));
+      }
+
+      function notify(message) {
+        toast.textContent = message;
+        toast.classList.add("show");
+        clearTimeout(window.__hubToastTimer);
+        window.__hubToastTimer = setTimeout(() => toast.classList.remove("show"), 2400);
+      }
+
+      tabs.forEach((tab) => tab.addEventListener("click", () => showView(tab.dataset.view)));
+      document.querySelectorAll("[data-go]").forEach((button) => button.addEventListener("click", () => showView(button.dataset.go)));
+      webProviders.forEach((provider) => {
+        provider.addEventListener("click", () => notify(`已选择 ${provider.querySelector("b")?.textContent ?? "网页入口"}`));
+      });
+      document.querySelectorAll(".provider").forEach((provider) => {
+        if (provider.classList.contains("web-provider")) return;
+        provider.addEventListener("click", () => notify(`已选择 ${provider.querySelector("b")?.textContent ?? "动作"}`));
+      });
+      copyOpenBtn?.addEventListener("click", () => notify(`原型：已复制 Prompt；正式版将在用户操作下打开 ${targetConfigs[currentTarget].name}`));
+      document.querySelector('[data-action="copy"]')?.addEventListener("click", () => notify("原型：Prompt 已复制"));
+      document.querySelector('[data-action="paste"]')?.addEventListener("click", () => notify("原型不会读取真实剪贴板；正式版仅在点击后读取"));
+      document.querySelector('[data-action="import"]')?.addEventListener("click", () => {
+        notify("回答已关联任务 #ZAI-018，并准备写回 Zotero 对话 5");
+        setTimeout(() => showView("zotero"), 800);
+      });
+    </script>
+  </body>
+</html>

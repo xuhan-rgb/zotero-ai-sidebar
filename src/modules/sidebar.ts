@@ -47,8 +47,11 @@ import type {
   ChatTaskMeta,
   Message,
   PdfSelectionLocator,
+  WebTaskStatus,
 } from "../providers/types";
 import {
+  clearAffectedBranchOriginsAfterDeletion,
+  createBranchedConversation,
   createChatConversation,
   loadChatConversations,
   saveChatConversations,
@@ -71,6 +74,7 @@ import {
   loadLocalUiSettings,
   normalizeLocalUiSettings,
   saveLocalUiSettings,
+  type CustomWebProvider,
   type FullTranslationReadingSettings,
   type LocalUiSettings,
 } from "../settings/local-ui-settings";
@@ -186,6 +190,36 @@ import {
   messageToClipboard,
 } from "./clipboard-format";
 import { saveFrontBlockDebugFileOnce } from "./front-block-debug-file";
+import { migrateLegacyDeepSeekMessages } from "./web-history-migration";
+import {
+  createWebPromptTask,
+  type WebPromptProvider,
+  type WebPromptResult,
+} from "./web-prompt-hub";
+import {
+  advanceWebProgressText,
+  interruptStaleWebPromptTasks,
+  isWebPromptUserMessage,
+  webPromptProviderForUserMessage,
+  webPromptStatusBubbleContent,
+  webPromptTaskPending,
+} from "./web-prompt-runtime";
+import { buildWebPrompt, completedWebHistory } from "./web-prompt-format";
+import {
+  renderWebTaskProgress,
+  webTaskProgressFor,
+} from "./web-task-progress";
+import {
+  dispatchWebAgentTask,
+  getWebAccountStatus,
+  hideWebAccount,
+  openWebAccount,
+} from "./web-agent-client";
+import {
+  createWebContextAttachment,
+  createWebTocAttachment,
+  resolveWebPaperMaterial,
+} from "./web-paper-material";
 import {
   clearPendingSidebarCopy,
   copyToClipboard,
@@ -484,12 +518,23 @@ import {
   windowSidebars,
   type MessagesScrollLock,
   type MessagesScrollSnapshot,
+  type ConversationTaskRuntime,
   type PanelState,
   type ReaderLayoutPrefs,
   type VisualSelectionSnapshot,
   type WindowSidebarState,
 } from "./sidebar-state";
 import { appendLocalPath } from "../utils/local-path";
+import {
+  describeUnavailableGeneratedFiles,
+  saveWebGeneratedFileToCurrentItem,
+  webGeneratedFilePath,
+} from "./web-generated-file";
+import {
+  stripWebChartPlaceholders,
+  webChartImage,
+  webChartPlaceholderOrdinal,
+} from "./web-chart-placeholder";
 import { loadOverview, saveOverview } from "../context/overview-store";
 import {
   buildNetworkDiagramUserPrompt,
@@ -526,9 +571,7 @@ import {
   persist,
   presetSelectLabel,
   presetSignature,
-  reasoningEffortLabel,
   reasoningEffortOptionsForPreset,
-  reasoningEffortShortLabel,
   sanitizedTestError,
   selectedChatPreset,
   selectedPreset,
@@ -665,6 +708,7 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
       messages: [],
       historyLoaded: false,
       sending: false,
+      conversationTaskRuntimes: new Map(),
       draftText: "",
       draftSelectionStart: 0,
       draftSelectionEnd: 0,
@@ -703,11 +747,20 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
   }
 
   renderPanel(mount, state);
+  if (state.historyLoaded) void processNextQueuedChatTask(mount, state);
 }
 
 function renderPanel(mount: HTMLElement, state: PanelState) {
   const doc = mount.ownerDocument!;
   const sidebar = findSidebarStateByMount(mount);
+  if (migrateLegacyDeepSeekMessages(state.messages)) {
+    // A sidebar can render a restored conversation before the workspace-load
+    // callback has finished. Migrate the visible turn as a final guard so an
+    // old reasoning trace can never be painted as the answer body.
+    const current = activeConversation(state);
+    if (current) current.messages = state.messages;
+    void persistPanelConversations(state);
+  }
   capturePanelState(mount, state);
   try {
     const hostWindow = hostWindowForMount(mount);
@@ -938,6 +991,22 @@ function compactMenu(
       }
     }
     menu.toggleAttribute("open");
+    if (menu.classList.contains("header-layout-menu")) {
+      if (menu.hasAttribute("open")) {
+        const rect = summary.getBoundingClientRect();
+        const viewportWidth = doc.defaultView?.innerWidth ?? rect.right + 210;
+        const menuWidth = 210;
+        const left = Math.min(
+          Math.max(6, rect.left),
+          Math.max(6, viewportWidth - menuWidth - 6),
+        );
+        content.style.top = `${rect.bottom + 6}px`;
+        content.style.left = `${left}px`;
+      } else {
+        content.style.top = "";
+        content.style.left = "";
+      }
+    }
   });
   const content = el(doc, "div", "zai-compact-menu-content");
   menu.append(summary, content);
@@ -1081,7 +1150,6 @@ function renderLayoutMenu(
 function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   const sidebar = findSidebarStateByMount(mount);
   const toolbarPresets = configuredPresets(state);
-  const selectedForToolbar = selectedChatPreset(state);
   const bar = el(
     doc,
     "div",
@@ -1093,8 +1161,6 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     "div",
     "preset-switcher-row preset-switcher-bottom",
   );
-  const title = el(doc, "strong", "", "AI 对话");
-  topRow.append(title);
   const layoutMenu = renderLayoutMenu(doc, mount, state);
 
   if (toolbarPresets.length === 0) {
@@ -1107,25 +1173,6 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     bar.append(topRow, bottomRow);
     return bar;
   }
-
-  const select = doc.createElement("select");
-  for (const preset of toolbarPresets) {
-    const option = doc.createElement("option");
-    option.value = preset.id;
-    option.textContent = presetSelectLabel(preset);
-    select.append(option);
-  }
-  // Set after options exist; otherwise the browser falls back to the first item.
-  select.value = selectedForToolbar?.id ?? "";
-  select.addEventListener("change", () => {
-    state.selectedId = select.value;
-    state.agentPermissionMode = agentPermissionMode(
-      selectedChatPreset(state) ?? selectedPreset(state),
-    );
-    void persistPanelConversations(state);
-    renderPanelPreservingOpenMenus(mount, state);
-  });
-  topRow.append(select);
 
   const copyAll = buttonEl(doc, "复制MD");
   copyAll.disabled = state.messages.length === 0;
@@ -1143,7 +1190,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     : state.messages.length;
   const visibleConversationBusy = state.networkDiagramTarget
     ? sidebar?.networkDiagramBusy === true
-    : state.sending;
+    : conversationIsSending(state, state.activeConversationID);
   clear.disabled = visibleConversationBusy || visibleMessageCount === 0;
   clear.title = visibleConversationBusy
     ? state.networkDiagramTarget
@@ -1229,21 +1276,21 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     );
     // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留）。
     // menuContent.append(translateBtn);
-    topRow.append(layoutMenu, openNote, askBtn, menu, collapse);
-    bar.append(topRow);
+    bottomRow.append(openNote, layoutMenu, askBtn, menu, collapse);
+    bar.append(bottomRow);
   } else {
-    topRow.append(copyAll, clear, collapse);
     bottomRow.append(
       openNote,
+      layoutMenu,
       askBtn,
       settings,
-      layoutMenu,
       renderFontIconMenu(doc, mount, state),
       renderCopyDebugToggle(doc, mount, state),
+      collapse,
     );
     // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留）。
     // bottomRow.append(translateBtn);
-    bar.append(topRow, bottomRow);
+    bar.append(bottomRow);
   }
   return bar;
 }
@@ -1273,9 +1320,46 @@ function renderConversationSwitcher(
   mount: HTMLElement,
   state: PanelState,
 ): HTMLElement {
-  const conversationBusy = state.sending || state.processingQueuedTask === true;
+  const conversationBusy = conversationIsSending(
+    state,
+    state.activeConversationID,
+  );
   const wrap = el(doc, "div", "conversation-switcher");
   const tabs = el(doc, "div", "conversation-tabs");
+  const copyAll = buttonEl(doc, "⧉");
+  copyAll.className = "conversation-action conversation-copy";
+  copyAll.setAttribute("aria-label", "复制 Markdown");
+  copyAll.disabled = state.messages.length === 0;
+  copyAll.title = "复制当前对话为 Markdown";
+  copyAll.addEventListener("click", () => {
+    void copyCurrentConversation(doc, state, copyAll);
+  });
+  const clear = buttonEl(doc, "⌫");
+  clear.className = "conversation-action conversation-clear";
+  clear.setAttribute("aria-label", "清空当前对话");
+  const sidebar = findSidebarStateByMount(mount);
+  const visibleMessageCount = state.networkDiagramTarget
+    ? (sidebar?.networkDiagramMessages?.length ?? 0)
+    : state.messages.length;
+  const visibleConversationBusy = state.networkDiagramTarget
+    ? sidebar?.networkDiagramBusy === true
+    : conversationBusy;
+  clear.disabled = visibleConversationBusy || visibleMessageCount === 0;
+  clear.title = visibleConversationBusy ? "请先停止当前回答" : "清空当前对话";
+  clear.addEventListener("click", () => {
+    if (state.networkDiagramTarget) {
+      if (
+        doc.defaultView?.confirm &&
+        !doc.defaultView.confirm("确定清空当前网络图对话吗？")
+      )
+        return;
+      if (sidebar) void clearNetworkDiagramConversation(sidebar, state);
+      return;
+    }
+    state.messages = [];
+    void persistPanelConversations(state);
+    renderPanel(mount, state);
+  });
   if (!state.historyLoaded) {
     tabs.append(el(doc, "span", "conversation-loading", "正在载入对话…"));
   } else {
@@ -1284,10 +1368,39 @@ function renderConversationSwitcher(
       tab.className = "conversation-tab";
       tab.title = `${index + 1}. ${conversation.title}`;
       tab.setAttribute("aria-label", `切换到${conversation.title}`);
-      tab.disabled = conversationBusy;
+      if (conversation.branchOrigin) {
+        const sourceTitle = conversation.branchOrigin.sourceConversationTitle;
+        tab.classList.add("has-branch-origin");
+        tab.title += ` · 分支自${sourceTitle}`;
+        tab.setAttribute(
+          "aria-label",
+          `切换到${conversation.title}，分支自${sourceTitle}`,
+        );
+        tab.append(
+          el(
+            doc,
+            "span",
+            "conversation-tab-branch-origin",
+            `↳${branchOriginConversationLabel(sourceTitle)}`,
+          ),
+        );
+      }
+      tab.disabled = !state.historyLoaded;
       if (conversation.id === state.activeConversationID) {
         tab.classList.add("is-active");
         tab.setAttribute("aria-current", "page");
+      }
+      if (conversationIsSending(state, conversation.id)) {
+        tab.classList.add("is-running");
+        tab.title += " · 回答中";
+        tab.append(el(doc, "span", "conversation-tab-running", "●"));
+      } else if (
+        conversation.id !== state.activeConversationID &&
+        conversationHasUnreadAnswer(conversation)
+      ) {
+        tab.classList.add("has-unread");
+        tab.title += " · 回答完成，尚未查看";
+        tab.append(el(doc, "span", "conversation-tab-unread", "●"));
       }
       tab.addEventListener("click", () => {
         switchConversation(mount, state, conversation.id);
@@ -1300,7 +1413,7 @@ function renderConversationSwitcher(
   add.className = "conversation-icon conversation-add";
   add.title = "新建独立对话（默认不携带历史）";
   add.setAttribute("aria-label", "新建独立对话");
-  add.disabled = conversationBusy || !state.historyLoaded;
+  add.disabled = !state.historyLoaded;
   add.addEventListener("click", () => addConversation(mount, state));
 
   const historyLabel = el(doc, "label", "conversation-history-control");
@@ -1343,10 +1456,18 @@ function renderConversationSwitcher(
   const remove = buttonEl(doc, "×");
   remove.className = "conversation-icon conversation-delete";
   remove.setAttribute("aria-label", "删除当前对话");
+  const defaultConversationActive =
+    activeConversation(state)?.id === "default";
   remove.disabled =
-    conversationBusy || !state.historyLoaded || state.conversations.length <= 1;
-  remove.title =
-    state.conversations.length <= 1 ? "至少保留一个对话" : "删除当前对话";
+    conversationBusy ||
+    !state.historyLoaded ||
+    defaultConversationActive ||
+    state.conversations.length <= 1;
+  remove.title = defaultConversationActive
+    ? "默认对话不能删除"
+    : state.conversations.length <= 1
+      ? "至少保留一个对话"
+      : "删除当前对话";
   remove.addEventListener("click", () =>
     deleteActiveConversation(mount, state),
   );
@@ -1356,16 +1477,38 @@ function renderConversationSwitcher(
       doc,
       "conversation-actions-menu",
       "⋯",
-      "对话管理与快捷操作",
+      "快捷提示",
     );
-    menuContent.append(historyLabel, add, remove, quickPrompts);
-    wrap.append(tabs, menu);
+    menuContent.append(quickPrompts);
+    const controls = el(doc, "div", "conversation-controls");
+    historyLabel.prepend(
+      el(doc, "span", "conversation-history-label", "上下文"),
+    );
+    controls.append(historyLabel, add, remove, copyAll, clear, menu);
+    wrap.append(tabs, controls);
   } else {
     const controls = el(doc, "div", "conversation-controls");
-    controls.append(historyLabel, add, remove);
+    controls.append(historyLabel, add, remove, copyAll, clear);
     wrap.append(tabs, controls);
   }
   return wrap;
+}
+
+function branchOriginConversationLabel(title: string): string {
+  return /^对话\s*(\d+)$/.exec(title)?.[1] ?? "源";
+}
+
+function conversationHasUnreadAnswer(
+  conversation: ChatConversation,
+): boolean {
+  return conversation.messages.some(
+    (message) =>
+      message.role === "user" &&
+      !!message.task?.completedAt &&
+      !message.task.viewedAt &&
+      !message.task.cancelledAt &&
+      !message.task.error,
+  );
 }
 
 async function copyCurrentConversation(
@@ -1415,8 +1558,6 @@ function switchConversation(
   conversationID: string,
 ): void {
   if (
-    state.sending ||
-    state.processingQueuedTask ||
     !state.historyLoaded ||
     conversationID === state.activeConversationID
   ) {
@@ -1430,13 +1571,13 @@ function switchConversation(
   if (!conversation) return;
   state.activeConversationID = conversationID;
   applyConversation(state, conversation);
+  markAllChatTasksRead(state);
   void persistPanelConversations(state);
   renderPanel(mount, state);
 }
 
 function addConversation(mount: HTMLElement, state: PanelState): void {
-  if (state.sending || state.processingQueuedTask || !state.historyLoaded)
-    return;
+  if (!state.historyLoaded) return;
   capturePanelState(mount, state);
   captureActiveConversation(state);
   const now = new Date().toISOString();
@@ -1453,26 +1594,58 @@ function addConversation(mount: HTMLElement, state: PanelState): void {
   renderPanel(mount, state);
 }
 
+function branchConversationFromMessage(
+  mount: HTMLElement,
+  state: PanelState,
+  messageIndex: number,
+): void {
+  if (
+    conversationIsSending(state, state.activeConversationID) ||
+    !state.historyLoaded
+  )
+    return;
+  capturePanelState(mount, state);
+  captureActiveConversation(state);
+  const source = activeConversation(state);
+  if (!source || !source.messages[messageIndex]) return;
+  const now = new Date().toISOString();
+  const conversation = createBranchedConversation(
+    source,
+    messageIndex,
+    `conversation-${Date.now()}-${Zotero.Utilities.randomString(6)}`,
+    nextConversationTitle(state.conversations),
+    now,
+  );
+  state.conversations.push(conversation);
+  state.activeConversationID = conversation.id;
+  applyConversation(state, conversation);
+  void persistPanelConversations(state);
+  renderPanel(mount, state);
+}
+
 function deleteActiveConversation(mount: HTMLElement, state: PanelState): void {
   if (
-    state.sending ||
-    state.processingQueuedTask ||
+    conversationIsSending(state, state.activeConversationID) ||
     state.conversations.length <= 1
   ) {
     return;
   }
   const current = activeConversation(state);
-  if (!current) return;
-  const confirmed = mount.ownerDocument?.defaultView?.confirm(
-    `删除“${current.title}”及其中的全部消息？`,
-  );
-  if (!confirmed) return;
+  if (!current || current.id === "default") return;
+  if (state.uiSettings.confirmConversationDeletion) {
+    const confirmed = mount.ownerDocument?.defaultView?.confirm(
+      `删除“${current.title}”及其中的全部消息？`,
+    );
+    if (!confirmed) return;
+  }
   const currentIndex = state.conversations.indexOf(current);
+  clearAffectedBranchOriginsAfterDeletion(state.conversations, current.id);
   state.conversations = state.conversations.filter(
     (conversation) => conversation.id !== current.id,
   );
   const next =
-    state.conversations[Math.min(currentIndex, state.conversations.length - 1)];
+    state.conversations[currentIndex] ??
+    state.conversations[currentIndex - 1];
   state.activeConversationID = next.id;
   applyConversation(state, next);
   void persistPanelConversations(state);
@@ -1722,6 +1895,7 @@ export function refreshSidebarPreferences(): void {
       previousDisplayMode,
     );
     renderPanel(sidebar.mount, state);
+    void processNextQueuedChatTask(sidebar.mount, state);
   }
 }
 
@@ -1912,9 +2086,19 @@ function renderQuickPrompts(
     fullTextHighlight,
   } of prompts) {
     const button = buttonEl(doc, label);
-    button.disabled = state.sending || disabled;
+    button.disabled =
+      conversationIsSending(state, state.activeConversationID) || disabled;
     if (disabled && disabledTitle) button.title = disabledTitle;
     button.addEventListener("click", () => {
+      if (state.localUiSettings.chatSendMode === "web") {
+        void sendWebPromptMessage(
+          mount,
+          state,
+          prompt,
+          state.localUiSettings.webPromptProvider,
+        );
+        return;
+      }
       void sendMessage(mount, state, prompt, {
         explainSelection,
         ignoreSelection,
@@ -1932,11 +2116,23 @@ function renderQuickPrompts(
     for (const custom of customPrompts) {
       const button = buttonEl(doc, custom.label);
       button.className = "quick-prompt-custom";
-      button.disabled = state.sending;
+      button.disabled = conversationIsSending(
+        state,
+        state.activeConversationID,
+      );
       button.title = custom.shortcut
         ? `自定义提示词按钮；PDF 中按 ${custom.shortcut.toUpperCase()} 触发`
         : "自定义提示词按钮";
       button.addEventListener("click", () => {
+        if (state.localUiSettings.chatSendMode === "web") {
+          void sendWebPromptMessage(
+            mount,
+            state,
+            custom.prompt,
+            state.localUiSettings.webPromptProvider,
+          );
+          return;
+        }
         void sendMessage(mount, state, custom.prompt, {
           taskTitle: custom.label,
         });
@@ -2116,7 +2312,9 @@ function renderTaskRow(
   if (view.status === "running" || view.status === "queued") {
     const cancel = buttonEl(doc, "取消");
     cancel.className = "task-cancel";
-    cancel.disabled = state.cancellingTaskID === view.task.id;
+    cancel.disabled =
+      conversationRuntime(state, state.activeConversationID)
+        .cancellingTaskID === view.task.id;
     cancel.addEventListener("click", () => cancelChatTask(mount, state, view));
     actions.append(cancel);
   } else if (view.status === "cancelled") {
@@ -2155,7 +2353,11 @@ function visibleChatTasks(state: PanelState): ChatTaskView[] {
 function chatTaskStatus(state: PanelState, task: ChatTaskMeta): ChatTaskStatus {
   if (task.cancelledAt) return "cancelled";
   if (task.error) return "failed";
-  if (state.sending && state.activeTaskID === task.id) return "running";
+  if (
+    conversationRuntime(state, state.activeConversationID).activeTaskID ===
+    task.id
+  )
+    return "running";
   if (!task.completedAt) return "queued";
   if (task.completedAt && !task.viewedAt) return "unread";
   return "read";
@@ -2249,24 +2451,27 @@ function cancelChatTask(
     void processNextQueuedChatTask(mount, state);
     return;
   }
-  if (!(state.sending && state.activeTaskID === view.task.id)) return;
+  const runtime = conversationRuntime(state, state.activeConversationID);
+  if (runtime.activeTaskID !== view.task.id) return;
   view.task.cancelledAt = Date.now();
   view.task.completedAt ??= view.task.cancelledAt;
-  state.cancellingTaskID = view.task.id;
-  state.abort?.abort();
+  runtime.cancellingTaskID = view.task.id;
+  runtime.abort?.abort();
   void persistPanelConversations(state);
   renderPanel(mount, state);
 }
 
 function cancelActiveChatTask(mount: HTMLElement, state: PanelState) {
   const active = visibleChatTasks(state).find(
-    (view) => view.task.id === state.activeTaskID,
+    (view) =>
+      view.task.id ===
+      conversationRuntime(state, state.activeConversationID).activeTaskID,
   );
   if (active) {
     cancelChatTask(mount, state, active);
     return;
   }
-  state.abort?.abort();
+  conversationRuntime(state, state.activeConversationID).abort?.abort();
   renderPanel(mount, state);
 }
 
@@ -2288,7 +2493,7 @@ function handleTaskEscape(
   if (state.queueOpen) {
     state.queueOpen = false;
     renderPanel(mount, state);
-  } else if (state.sending) {
+  } else if (conversationIsSending(state, state.activeConversationID)) {
     cancelActiveChatTask(mount, state);
   } else {
     return false;
@@ -2495,6 +2700,11 @@ function fullTextHighlightDisabledReason(
 }
 
 function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
+  if (migrateLegacyDeepSeekMessages(state.messages)) {
+    const current = activeConversation(state);
+    if (current) current.messages = state.messages;
+    void persistPanelConversations(state);
+  }
   const messages = el(doc, "div", "messages");
   const sidebar = findSidebarStateByMount(mount);
   messages.dataset.conversationKind = state.networkDiagramTarget
@@ -2550,6 +2760,10 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
     state.messages.forEach((message, index) =>
       messages.append(bubble(doc, mount, state, message, index)),
     );
+    const branchOrigin = activeConversation(state)?.branchOrigin;
+    if (branchOrigin) {
+      messages.append(renderConversationBranchOrigin(doc, branchOrigin));
+    }
   }
 
   const taskMatchesItem =
@@ -2576,6 +2790,23 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
     );
   }
   return messages;
+}
+
+function renderConversationBranchOrigin(
+  doc: Document,
+  origin: NonNullable<ChatConversation["branchOrigin"]>,
+): HTMLElement {
+  const marker = el(doc, "div", "conversation-branch-origin");
+  marker.title = `来自${origin.sourceConversationTitle}`;
+  marker.append(
+    el(
+      doc,
+      "span",
+      "conversation-branch-origin-label",
+      `从“${origin.messagePreview}”建立的分支`,
+    ),
+  );
+  return marker;
 }
 
 function renderNetworkDiagramMessage(
@@ -2670,28 +2901,42 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   const status = el(doc, "div", "composer-status");
 
   const preset = selectedChatPreset(state);
+  const webPromptTarget = state.localUiSettings.chatSendMode === "web";
   const sidebar = findSidebarStateByMount(mount);
   const networkDiagramBusy = sidebar?.networkDiagramBusy === true;
   const queueAllowed = queueWhileSendingEnabled(state);
+  const conversationSending = conversationIsSending(
+    state,
+    state.activeConversationID,
+  );
+  const webPromptBusy = webPromptTarget && webPromptTaskPending(state);
   const canSubmit =
-    !!preset?.apiKey &&
-    !!preset.model &&
+    (state.networkDiagramTarget
+      ? !!preset?.apiKey && !!preset.model
+      : webPromptTarget || (!!preset?.apiKey && !!preset.model)) &&
     (state.networkDiagramTarget
       ? !state.sending && !networkDiagramBusy
-      : !state.sending || queueAllowed);
-  input.placeholder = preset
-    ? state.networkDiagramTarget
-      ? networkDiagramBusy
-        ? "网络图分析中…可在上方任务卡停止"
-        : "输入网络图优化要求…（Enter 发送，Shift+Enter 换行）"
-      : state.sending
+      : (!conversationSending || queueAllowed) && !webPromptBusy);
+  const webAccountReady =
+    !webPromptTarget || state.webAccountConfigured === true;
+  input.placeholder = state.networkDiagramTarget
+    ? networkDiagramBusy
+      ? "网络图分析中…可在上方任务卡停止"
+      : "输入网络图优化要求…（Enter 发送，Shift+Enter 换行）"
+    : webPromptTarget
+    ? webPromptBusy
+      ? `${webProviderName(state, state.localUiSettings.webPromptProvider)} 正在处理上一条请求…`
+      : `发送到 ${webProviderName(state, state.localUiSettings.webPromptProvider)}…（Enter 发送）`
+    : preset
+      ? conversationSending
         ? queueAllowed
           ? "AI 回答中…当前回复结束后将按顺序执行队列里的消息"
           : "AI 回答中…等待结束后再发送（设置可开启发送中排队）"
         : "问点什么... (Enter 发送，Shift+Enter 换行)"
-    : "先添加一个模型预设。";
+      : "先添加一个模型预设。";
   input.disabled =
-    !preset || (state.networkDiagramTarget === true && networkDiagramBusy);
+    (state.networkDiagramTarget ? !preset : !webPromptTarget && !preset) ||
+    (state.networkDiagramTarget === true && networkDiagramBusy);
   input.value = state.draftText;
   input.style.height = "auto";
   const slashMenu = el(doc, "div", "slash-command-menu");
@@ -2747,17 +2992,16 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
         return;
       }
     }
-    // Default: blocked while sending. Enable the "queue while sending"
+    // A conversation stays serial. Other conversations can use a separate
+    // parallel slot while this one is streaming.
     // toggle (UiSettings.composerQueueWhileSending) to allow Enter to
     // register new messages onto the queue. The actual queue handling is
-    // sequential: streamAssistant sets state.sending = true for the duration
-    // of one task, processNextQueuedChatTask only iterates once it returns
-    // to false, so messages run strictly one-at-a-time after the current
-    // task completes.
+    // Messages in this conversation remain sequential. A different
+    // conversation may use another configured parallel slot.
     const shouldSend =
       (state.networkDiagramTarget
         ? !state.sending && !networkDiagramBusy
-        : !state.sending || queueWhileSendingEnabled(state)) &&
+        : !conversationSending || queueWhileSendingEnabled(state)) &&
       event.key === "Enter" &&
       !event.isComposing &&
       (!event.shiftKey || event.ctrlKey || event.metaKey);
@@ -2838,27 +3082,32 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     status,
     { selectedChatPreset, renderPanel },
   );
-  if (
-    !state.networkDiagramTarget &&
-    state.localUiSettings.chatLayout === "compact"
-  ) {
+  if (!state.networkDiagramTarget) {
     const { menu: attachmentMenu, content: attachmentMenuContent } =
       compactMenu(doc, "composer-attachment-menu", "＋", "添加截图或图片");
     attachmentMenuContent.append(screenshotAttach, imageAttach);
     row.append(attachmentMenu);
   }
-
-  const send = buttonEl(doc, state.sending ? "↑ 排队" : "↑");
-  send.className = state.sending ? "send-btn send-queue-btn" : "send-btn";
-  send.disabled = !canSubmit;
+  const send = buttonEl(doc, conversationSending ? "↑ 排队" : "↑");
+  send.className = conversationSending
+    ? "send-btn send-queue-btn"
+    : "send-btn";
+  send.disabled = !canSubmit || !webAccountReady;
   send.title = preset
-    ? !preset.apiKey || !preset.model
+    ? webPromptTarget
+      ? webAccountReady
+        ? "发送到 Web Prompt Hub"
+        : "请先点击账号配置按钮并手动登录网页账号"
+      : !preset.apiKey || !preset.model
       ? "请先填写 API Key 和 Model ID"
-      : state.sending
+      : conversationSending
         ? "加入队列：当前回复结束后按顺序执行"
         : "发送"
     : "发送";
-  send.setAttribute("aria-label", state.sending ? "加入队列" : "发送");
+  send.setAttribute(
+    "aria-label",
+    conversationSending ? "加入队列" : "发送",
+  );
   send.addEventListener(
     "click",
     () =>
@@ -2869,7 +3118,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
       ),
   );
   row.append(send);
-  if (state.sending) {
+  if (conversationSending) {
     const stop = buttonEl(doc, "停止");
     stop.className = "stop-btn";
     stop.addEventListener("click", () => {
@@ -2878,7 +3127,9 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     row.append(stop);
   }
   if (!state.networkDiagramTarget) {
-    const selectionChip = renderSelectionChip(doc, mount, state);
+    const selectionChip = state.chatSelectionQuote
+      ? renderChatSelectionChip(doc, mount, state)
+      : renderSelectionChip(doc, mount, state);
     if (selectionChip) row.prepend(selectionChip);
   }
   const networkTargetChip = renderNetworkDiagramTargetChip(doc, mount, state);
@@ -2895,17 +3146,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   if (!state.networkDiagramTarget) {
     composer.append(renderTaskQueue(doc, mount, state));
   }
-  composer.append(
-    row,
-    renderComposerFooter(
-      doc,
-      mount,
-      state,
-      status,
-      screenshotAttach,
-      imageAttach,
-    ),
-  );
+  composer.append(row, renderComposerFooter(doc, mount, state, status));
   return composer;
 }
 
@@ -2919,6 +3160,15 @@ async function sendComposerMessage(
   text: string,
 ): Promise<void> {
   if (!state.networkDiagramTarget) {
+    if (state.localUiSettings.chatSendMode === "web") {
+      await sendWebPromptMessage(
+        mount,
+        state,
+        text,
+        state.localUiSettings.webPromptProvider,
+      );
+      return;
+    }
     await sendMessage(mount, state, text, { fromComposer: true });
     return;
   }
@@ -2936,6 +3186,755 @@ async function sendComposerMessage(
   state.scrollToBottom = true;
   renderPanel(mount, state);
   await runNetworkDiagramRequest(sidebar, "", instruction, "refine");
+}
+
+async function sendWebPromptMessage(
+  mount: HTMLElement,
+  state: PanelState,
+  text: string,
+  provider: WebPromptProvider,
+): Promise<void> {
+  const content = text.trim();
+  if (!content) return;
+  if (webPromptTaskPending(state)) return;
+  // Lock before the first await. Account checks and paper-material assembly
+  // are asynchronous, so a second click could otherwise create another
+  // assistant bubble before the first task is even queued.
+  state.webPromptBusy = true;
+  renderPanel(mount, state);
+  const releaseWebPromptLock = () => {
+    state.webPromptBusy = false;
+  };
+  const customProvider = customWebProviderFor(state, provider);
+  if (provider.startsWith("custom:") && !customProvider) {
+    releaseWebPromptLock();
+    state.webAccountConfigured = false;
+    state.webAccountNotice = "自定义网页配置不存在，请重新配置网页提供商";
+    renderPanel(mount, state);
+    return;
+  }
+  let account: Awaited<ReturnType<typeof getWebAccountStatus>>;
+  try {
+    account = await getWebAccountStatus(provider, undefined, customProvider);
+  } catch (error) {
+    releaseWebPromptLock();
+    state.webAccountConfigured = false;
+    state.webAccountNotice =
+      error instanceof Error ? error.message : String(error);
+    renderPanel(mount, state);
+    return;
+  }
+  if (!account.configured) {
+    releaseWebPromptLock();
+    state.webAccountConfigured = false;
+    state.webAccountNotice = provider.startsWith("custom:")
+      ? `未检测到 ${webProviderName(state, provider)} 的可用输入框，请先打开该网址并完成登录`
+      : `尚未配置 ${webProviderName(state, provider)} 网页账号，请先点击账号配置按钮并手动登录`;
+    renderPanel(mount, state);
+    return;
+  }
+  state.webAccountConfigured = true;
+  state.webAccountNotice = undefined;
+  await ensureHistoryLoaded(mount, state);
+  if (states.get(mount) !== state) {
+    releaseWebPromptLock();
+    return;
+  }
+
+  const conversation = activeConversation(state);
+  if (!conversation) {
+    releaseWebPromptLock();
+    return;
+  }
+  const chatQuote = state.chatSelectionQuote;
+  const selectedText = chatQuote?.excerpt.trim() ||
+    (await getSelectedTextForPrompt(mount, state.itemID));
+  const history = completedWebHistory(
+    selectConversationHistory(state.messages, state.historyMode),
+  );
+  const webHistory = chatQuote?.fullReply.trim()
+    ? [
+        ...history,
+        { role: "assistant" as const, content: chatQuote.fullReply.trim() },
+      ]
+    : history;
+  // A chat citation is one-shot. Capture it above for this task, then remove
+  // the chip so the next Web question starts with a clean composer.
+  state.chatSelectionQuote = undefined;
+  const item = state.itemID == null ? null : Zotero.Items.get(state.itemID);
+  const title = item ? String(item.getField("title") || "") : "";
+  const material = await resolveWebPaperMaterial(state.itemID);
+  const arxivToc = await buildArxivTocFrontBlock(state.itemID);
+  const contextAttachment = await createWebContextAttachment(webHistory);
+  const tocAttachment = await createWebTocAttachment(arxivToc);
+  const prompt = buildWebPrompt({
+    content,
+    title,
+    selectedText,
+    selectedTextOrigin: chatQuote ? "chat" : "pdf",
+    history: webHistory,
+    paperUrl: material.paperUrl,
+    attachmentKind:
+      material.attachment?.kind === "latex" || material.attachment?.kind === "pdf"
+        ? material.attachment.kind
+        : undefined,
+    historyAttachmentAvailable: !!contextAttachment,
+    historyAttachmentName: contextAttachment?.name,
+    tocAttachmentAvailable: !!tocAttachment,
+    tocAttachmentName: tocAttachment?.name,
+    webProvider: provider,
+  });
+  const continuationPrompt = buildWebPrompt({
+    content,
+    title,
+    selectedText,
+    selectedTextOrigin: chatQuote ? "chat" : "pdf",
+    history: webHistory,
+    paperUrl: material.paperUrl,
+    attachmentKind:
+      material.attachment?.kind === "latex" || material.attachment?.kind === "pdf"
+        ? material.attachment.kind
+        : undefined,
+    attachmentAlreadyAvailable: !!material.attachment,
+    historyAttachmentAvailable: !!contextAttachment,
+    historyAttachmentName: contextAttachment?.name,
+    tocAttachmentAvailable: !!tocAttachment,
+    tocAttachmentName: tocAttachment?.name,
+    webProvider: provider,
+  });
+  const createdAt = Date.now();
+  let taskID = "";
+  const userMessage: Message = {
+    role: "user",
+    content,
+    task: {
+      id: "pending-web-task",
+      kind: "general",
+      title: `${webProviderName(state, provider)} Web`,
+      promptPreview: contentPreview(content, 90),
+      createdAt,
+      webProvider: provider,
+      webStatus: "queued",
+    },
+    ...(selectedText
+      ? {
+          context: {
+            selectedText,
+            ...(chatQuote
+              ? {
+                  selectedTextOrigin: "chat" as const,
+                  quotedChatReply: {
+                    fullReply: chatQuote.fullReply,
+                    sourceConversationTitle: chatQuote.sourceConversationTitle,
+                    sourceAssistantOrdinal: chatQuote.sourceAssistantOrdinal,
+                    sourceQuestionPreview: chatQuote.sourceQuestionPreview,
+                  },
+                }
+              : {}),
+          },
+        }
+      : {}),
+  };
+  const assistantMessage: Message = {
+    role: "assistant",
+    content: `正在准备 ${webProviderName(state, provider)} 网页自动回答。`,
+    task: {
+      id: "pending-web-task",
+      kind: "general",
+      title: "等待网页回答",
+      promptPreview: contentPreview(content, 90),
+      createdAt,
+      webProvider: provider,
+      webStatus: "queued",
+    },
+  };
+  const sourceConversationID = conversation.id;
+  // Keep one Web conversation per paper and provider. A new Zotero chat for
+  // the same paper continues the existing Web thread; changing papers starts
+  // a separate Web conversation.
+  const paperSessionKey = state.itemID != null
+    ? `item:${state.itemID}`
+    : `paper:${material.paperUrl || title || "global"}`;
+  const webConversationKey = `${paperSessionKey}:${provider}`;
+  // Web Agent sends growing DOM snapshots rather than token deltas. Keep the
+  // latest snapshot for persistence, while painting it into the visible bubble
+  // in small steps so Web answers read like a live response.
+  let webProgressTimer: number | undefined;
+  let webProgressFinalized = false;
+  let webProgressAnswer = "";
+  let webProgressReasoning = "";
+  let webProgressImages: Message["images"] = [];
+  let latestWebProgress: WebPromptResult | undefined;
+  const webProgressWindow = mount.ownerDocument?.defaultView;
+  const cancelWebProgress = () => {
+    if (webProgressTimer != null) {
+      webProgressWindow?.clearTimeout(webProgressTimer);
+      webProgressTimer = undefined;
+    }
+    webProgressFinalized = true;
+    latestWebProgress = undefined;
+  };
+  const renderWebProgressBubble = (
+    source: ChatConversation,
+    target: Message,
+  ) => {
+    if (state.activeConversationID !== sourceConversationID) return;
+    state.messages = source.messages;
+    const index = source.messages.indexOf(target);
+    if (index < 0) return;
+    if (mount.querySelector(`[data-message-index="${index}"]`)) {
+      updateMessageBubble(mount, index, target);
+    } else {
+      renderPanel(mount, state);
+    }
+  };
+  const scheduleWebProgress = () => {
+    if (webProgressFinalized || webProgressTimer != null) return;
+    const flush = () => {
+      webProgressTimer = undefined;
+      if (webProgressFinalized || !latestWebProgress) return;
+      const nextAnswer = advanceWebProgressText(
+        webProgressAnswer,
+        latestWebProgress.answer,
+      );
+      const nextReasoning = advanceWebProgressText(
+        webProgressReasoning,
+        latestWebProgress.reasoning || "",
+      );
+      const changed =
+        nextAnswer !== webProgressAnswer ||
+        nextReasoning !== webProgressReasoning;
+      webProgressAnswer = nextAnswer;
+      webProgressReasoning = nextReasoning;
+      const source = state.conversations.find(
+        (candidate) => candidate.id === sourceConversationID,
+      );
+      const target = source?.messages.find(
+        (message) => message.role === "assistant" && message.task?.id === taskID,
+      );
+      if (source && target && changed) {
+        target.content =
+          webProgressAnswer ||
+          `${webProviderName(state, provider)} 正在生成最终回答。`;
+        target.thinking = webProgressReasoning || undefined;
+        target.images = webProgressImages;
+        source.updatedAt = new Date().toISOString();
+        renderWebProgressBubble(source, target);
+      }
+      const answerCaughtUp = webProgressAnswer === latestWebProgress.answer;
+      const reasoningCaughtUp =
+        webProgressReasoning === (latestWebProgress.reasoning || "");
+      if (answerCaughtUp && reasoningCaughtUp) {
+        void persistPanelConversations(state);
+      } else {
+        const schedule = webProgressWindow?.setTimeout;
+        webProgressTimer = schedule
+          ? schedule(flush, 35)
+          : (setTimeout(flush, 35) as unknown as number);
+      }
+    };
+    const schedule = webProgressWindow?.setTimeout;
+    webProgressTimer = schedule
+      ? schedule(flush, 0)
+      : (setTimeout(flush, 0) as unknown as number);
+  };
+  const task = createWebPromptTask({
+    provider,
+    prompt,
+    sourceLabel: `${title || "Zotero 条目"} · ${conversation.title}`,
+    onProgress: async (result) => {
+      if (webProgressFinalized) return;
+      latestWebProgress = {
+        answer: result.answer || latestWebProgress?.answer || "",
+        reasoning: result.reasoning || latestWebProgress?.reasoning || "",
+        images: result.images || latestWebProgress?.images,
+      };
+      scheduleWebProgress();
+    },
+    onStatus: async (status, error) => {
+      // The completed callback is followed immediately by onImport. Painting
+      // an intermediate status here would delete the streamed answer and then
+      // draw it again a moment later.
+      if (status === "completed") return;
+      const source = state.conversations.find(
+        (candidate) => candidate.id === sourceConversationID,
+      );
+      const target = source?.messages.find(
+        (message) => message.role === "assistant" && message.task?.id === taskID,
+      );
+      if (!source || !target) return;
+      if (
+        target.task &&
+        status !== "failed" &&
+        status !== "cancelled"
+      ) {
+        target.task.webStatus = status as WebTaskStatus;
+      }
+      if (status === "generating" && webProgressAnswer) {
+        target.content = webProgressAnswer;
+        target.thinking = webProgressReasoning || undefined;
+      } else {
+        target.content = webPromptStatusBubbleContent({
+          status,
+          statusMessage: webPromptStatusMessage(provider, status, error),
+          paintedAnswer: webProgressAnswer,
+          queuedAnswer: latestWebProgress?.answer,
+        });
+        if (
+          status === "generating" &&
+          (webProgressAnswer || latestWebProgress?.answer)
+        ) {
+          target.thinking =
+            webProgressReasoning || latestWebProgress?.reasoning || undefined;
+        }
+      }
+      if (status === "failed") {
+        cancelWebProgress();
+        releaseWebPromptLock();
+        target.content += `\n\n[打开手动 Prompt Hub](${task.url})`;
+      }
+      if (status === "cancelled") releaseWebPromptLock();
+      if (target.task) target.task.error = error;
+      if (status === "failed" || status === "cancelled") {
+        const sourceUserMessage = source.messages.find(
+          (message) =>
+            message.role === "user" && message.task?.id === taskID,
+        );
+        if (sourceUserMessage?.task) {
+          if (status === "failed") sourceUserMessage.task.error = error;
+          sourceUserMessage.task.completedAt ??= Date.now();
+          if (status === "cancelled") {
+            sourceUserMessage.task.cancelledAt ??= Date.now();
+          }
+        }
+      }
+      source.updatedAt = new Date().toISOString();
+      if (state.activeConversationID === sourceConversationID) {
+        state.messages = source.messages;
+      }
+      await persistPanelConversations(state);
+      renderWebProgressBubble(source, target);
+    },
+    onImport: async (result) => {
+      cancelWebProgress();
+      releaseWebPromptLock();
+      const source = state.conversations.find(
+        (candidate) => candidate.id === sourceConversationID,
+      );
+      const target = source?.messages.find(
+        (message) => message.role === "assistant" && message.task?.id === taskID,
+      );
+      if (!source || !target) return;
+      target.content = describeUnavailableGeneratedFiles(result.answer);
+      target.thinking = result.reasoning;
+      target.images = result.images;
+      if (target.task) {
+        target.task.completedAt = Date.now();
+        target.task.viewedAt =
+          state.activeConversationID === sourceConversationID
+            ? Date.now()
+            : undefined;
+      }
+      const sourceUserMessage = source.messages.find(
+        (message) => message.role === "user" && message.task?.id === taskID,
+      );
+      if (sourceUserMessage?.task) sourceUserMessage.task.completedAt = Date.now();
+      source.updatedAt = new Date().toISOString();
+      if (state.activeConversationID === sourceConversationID) {
+        state.messages = source.messages;
+        state.scrollToBottom = true;
+      }
+      await persistPanelConversations(state);
+      renderWebProgressBubble(source, target);
+    },
+  });
+  taskID = task.id;
+  userMessage.task!.id = taskID;
+  assistantMessage.task!.id = taskID;
+  state.messages.push(userMessage, assistantMessage);
+  state.draftText = "";
+  state.draftSelectionStart = 0;
+  state.draftSelectionEnd = 0;
+  state.skipNextDraftCapture = true;
+  state.draftImages = [];
+  state.pasteBlocks = [];
+  state.scrollToBottom = true;
+  await persistPanelConversations(state);
+  renderPanel(mount, state);
+  try {
+    await dispatchWebAgentTask({
+      id: task.id,
+      provider,
+      prompt,
+      continuationPrompt,
+      sessionKey: webConversationKey,
+      paperUrl: material.paperUrl,
+      hideBrowser: state.localUiSettings.hideWebBrowser,
+      chatgptOptions:
+        provider === "chatgpt"
+          ? state.localUiSettings.chatgptWeb
+          : undefined,
+      customProvider,
+      attachment: material.attachment,
+      contextAttachment,
+      tocAttachment,
+    });
+  } catch (error) {
+    cancelWebProgress();
+    releaseWebPromptLock();
+    const message = error instanceof Error ? error.message : String(error);
+    assistantMessage.content = `WEB 自动化启动失败：${message}\n\n[打开手动 Prompt Hub](${task.url})`;
+    if (assistantMessage.task) assistantMessage.task.error = message;
+    if (userMessage.task) {
+      userMessage.task.error = message;
+      userMessage.task.completedAt ??= Date.now();
+    }
+    await persistPanelConversations(state);
+    renderPanel(mount, state);
+  }
+}
+
+function webPromptStatusMessage(
+  provider: WebPromptProvider,
+  status: import("./web-prompt-hub").WebPromptTaskStatus,
+  error?: string,
+): string {
+  const name = provider === "chatgpt" ? "ChatGPT" : provider === "deepseek" ? "DeepSeek" : provider;
+  switch (status) {
+    case "queued":
+      return `等待执行 ${name} 网页任务。`;
+    case "starting_browser":
+      return `正在打开 ${name} 专用浏览器。`;
+    case "needs_login":
+      return `等待你在专用浏览器中人工完成 ${name} 登录。登录后任务会自动继续。`;
+    case "uploading_attachment":
+      return `正在向 ${name} 对话框粘贴论文文件并等待上传。`;
+    case "submitting":
+      return `正在向 ${name} 网页发送 Prompt。`;
+    case "generating":
+      return `${name} 正在生成回答。`;
+    case "processing_answer":
+      return `正在整理 ${name} 回答中的图表、文件并同步到 Zotero。`;
+    case "completed":
+      return `正在把 ${name} 回答导回 Zotero。`;
+    case "cancelled":
+      return `${name} 网页任务已取消。`;
+    case "failed":
+      return `${name} 网页任务失败：${error || "未知错误"}`;
+  }
+}
+
+function webProviderName(state: PanelState, provider: WebPromptProvider): string {
+  if (provider === "chatgpt") return "ChatGPT";
+  if (provider === "deepseek") return "DeepSeek";
+  return customWebProviderFor(state, provider)?.name || "自定义网页";
+}
+
+function customWebProviderFor(
+  state: PanelState,
+  provider: WebPromptProvider,
+): CustomWebProvider | undefined {
+  if (!provider.startsWith("custom:")) return undefined;
+  const id = provider.slice("custom:".length);
+  return state.localUiSettings.customWebProviders.find(
+    (candidate) => candidate.id === id,
+  );
+}
+
+const DEFAULT_CUSTOM_WEB_PROVIDER_SELECTORS: CustomWebProvider["selectors"] = {
+  composer: ["textarea", "[contenteditable='true']"],
+  send: [
+    "button[type='submit']",
+    "button[aria-label*='Send']",
+    "button[aria-label*='发送']",
+  ],
+  stop: ["button[aria-label*='Stop']", "button[aria-label*='停止']"],
+  answers: ["[data-message-author-role='assistant']", "article"],
+  reasoning: [],
+  attachmentPreviews: ["[class*='attachment']", "[class*='file']"],
+  attachmentUploading: ["[role='progressbar']", "[aria-busy='true']"],
+};
+
+function configureCustomWebProvider(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): void {
+  const view = doc.defaultView;
+  const current = customWebProviderFor(
+    state,
+    state.localUiSettings.webPromptProvider,
+  );
+  let editingProvider: CustomWebProvider | undefined = current;
+  const layer = el(doc, "div", "zai-custom-web-provider-layer");
+  const dialog = el(doc, "section", "zai-custom-web-provider-dialog");
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", "第三方网页配置");
+
+  const head = el(doc, "header", "zai-custom-web-provider-head");
+  const heading = el(doc, "div", "zai-custom-web-provider-heading");
+  heading.append(
+    el(doc, "strong", "zai-custom-web-provider-title", "第三方网页配置"),
+    el(
+      doc,
+      "span",
+      "zai-custom-web-provider-subtitle",
+      "只配置网页 URL；登录和网页内设置在独立浏览器中手工完成",
+    ),
+  );
+  const close = buttonEl(doc, "×");
+  close.className = "zai-custom-web-provider-close";
+  close.type = "button";
+  close.title = "关闭（Esc）";
+  head.append(heading, close);
+
+  const form = doc.createElementNS(XHTML_NS, "form") as HTMLFormElement;
+  form.className = "zai-custom-web-provider-form";
+  const body = el(doc, "div", "zai-custom-web-provider-scroll");
+  const notice = el(doc, "div", "zai-custom-web-provider-notice");
+
+  const input = (value: string, type = "text") => {
+    const control = doc.createElementNS(XHTML_NS, "input") as HTMLInputElement;
+    control.type = type;
+    control.value = value;
+    return control;
+  };
+  const formField = (label: string, control: HTMLElement, hint?: string) => {
+    const wrapper = el(doc, "label", "zai-custom-web-provider-field");
+    wrapper.append(el(doc, "span", "zai-custom-web-provider-label", label), control);
+    if (hint) wrapper.append(el(doc, "small", "zai-custom-web-provider-hint", hint));
+    return wrapper;
+  };
+
+  const providerSection = el(doc, "section", "zai-custom-web-provider-list");
+  const providerListHead = el(doc, "div", "zai-custom-web-provider-list-head");
+  providerListHead.append(
+    el(doc, "strong", "zai-custom-web-provider-list-title", "已配置网页"),
+  );
+  const addProvider = buttonEl(doc, "+ 新增网页");
+  addProvider.type = "button";
+  addProvider.className = "zai-custom-web-provider-add";
+  providerListHead.append(addProvider);
+  const providerTable = doc.createElement("table");
+  providerTable.className = "zai-custom-web-provider-table";
+  const providerTableHead = doc.createElement("thead");
+  const providerHeaderRow = doc.createElement("tr");
+  for (const label of ["网页", "URL", "状态", "操作"]) {
+    const cell = doc.createElement("th");
+    cell.textContent = label;
+    providerHeaderRow.append(cell);
+  }
+  providerTableHead.append(providerHeaderRow);
+  const providerTableBody = doc.createElement("tbody");
+  providerTable.append(providerTableHead, providerTableBody);
+  providerSection.append(providerListHead, providerTable);
+
+  const basics = el(doc, "div", "zai-custom-web-provider-editor");
+  const homeUrl = input(
+    editingProvider?.homeUrl || editingProvider?.newConversationUrl || "",
+    "url",
+  );
+  const editorTitle = el(
+    doc,
+    "strong",
+    "zai-custom-web-provider-editor-title",
+    editingProvider ? "编辑网页 URL" : "新增网页 URL",
+  );
+  basics.append(
+    editorTitle,
+    formField("网页 URL", homeUrl, "必须是 http:// 或 https:// 地址"),
+  );
+  body.append(
+    providerSection,
+    basics,
+    el(
+      doc,
+      "p",
+      "zai-custom-web-provider-rule-note",
+      "保存后请使用账号按钮打开该网址，手工登录并保持页面打开。",
+    ),
+    notice,
+  );
+
+  const foot = el(doc, "footer", "zai-custom-web-provider-foot");
+  const cancel = buttonEl(doc, "取消");
+  cancel.type = "button";
+  const remove = buttonEl(doc, "删除当前配置");
+  remove.type = "button";
+  remove.className = "zai-custom-web-provider-danger";
+  remove.hidden = !editingProvider;
+  const save = buttonEl(doc, editingProvider ? "保存修改" : "保存配置");
+  save.type = "submit";
+  save.className = "zai-custom-web-provider-primary";
+  foot.append(cancel, remove, save);
+
+  const closeDialog = () => {
+    layer.remove();
+  };
+  const showError = (message: string) => {
+    notice.textContent = message;
+    notice.classList.add("is-error");
+  };
+  const clearError = () => {
+    notice.textContent = "";
+    notice.classList.remove("is-error");
+  };
+  const renderProviderTable = () => {
+    providerTableBody.replaceChildren();
+    const providers = state.localUiSettings.customWebProviders;
+    if (providers.length === 0) {
+      const row = doc.createElement("tr");
+      const cell = doc.createElement("td");
+      cell.colSpan = 4;
+      cell.className = "zai-custom-web-provider-empty";
+      cell.textContent = "暂无第三方网页配置";
+      row.append(cell);
+      providerTableBody.append(row);
+      return;
+    }
+    for (const provider of providers) {
+      const row = doc.createElement("tr");
+      if (state.localUiSettings.webPromptProvider === `custom:${provider.id}`) {
+        row.className = "is-active";
+      }
+      const nameCell = doc.createElement("td");
+      nameCell.className = "zai-custom-web-provider-name-cell";
+      nameCell.textContent = provider.name;
+      const urlCell = doc.createElement("td");
+      urlCell.className = "zai-custom-web-provider-url-cell";
+      urlCell.textContent = provider.homeUrl;
+      urlCell.title = provider.homeUrl;
+      const statusCell = doc.createElement("td");
+      statusCell.className = "zai-custom-web-provider-status-cell";
+      statusCell.textContent =
+        state.localUiSettings.webPromptProvider === `custom:${provider.id}`
+          ? "当前"
+          : "可用";
+      const actionCell = doc.createElement("td");
+      actionCell.className = "zai-custom-web-provider-actions-cell";
+      const edit = buttonEl(doc, "编辑");
+      edit.type = "button";
+      edit.className = "zai-custom-web-provider-row-button";
+      edit.addEventListener("click", () => startEditor(provider));
+      const removeRow = buttonEl(doc, "删除");
+      removeRow.type = "button";
+      removeRow.className = "zai-custom-web-provider-row-button is-danger";
+      removeRow.addEventListener("click", () => deleteProvider(provider));
+      actionCell.append(edit, removeRow);
+      row.append(nameCell, urlCell, statusCell, actionCell);
+      providerTableBody.append(row);
+    }
+  };
+  const startEditor = (provider?: CustomWebProvider) => {
+    editingProvider = provider;
+    homeUrl.value = provider?.homeUrl || provider?.newConversationUrl || "";
+    editorTitle.textContent = provider ? "编辑网页 URL" : "新增网页 URL";
+    save.textContent = provider ? "保存修改" : "保存配置";
+    remove.hidden = !provider;
+    clearError();
+    renderProviderTable();
+    homeUrl.focus();
+  };
+  const deleteProvider = (provider: CustomWebProvider) => {
+    if (!view?.confirm?.(`删除 ${provider.name} 的网页配置？`)) return;
+    const deletingActive =
+      state.localUiSettings.webPromptProvider === `custom:${provider.id}`;
+    const next = normalizeLocalUiSettings({
+      ...state.localUiSettings,
+      customWebProviders: state.localUiSettings.customWebProviders.filter(
+        (candidate) => candidate.id !== provider.id,
+      ),
+      webPromptProvider: deletingActive
+        ? "chatgpt"
+        : state.localUiSettings.webPromptProvider,
+    });
+    state.localUiSettings = next;
+    state.webAccountConfigured = undefined;
+    saveLocalUiSettings(zoteroPrefs(), next);
+    if (editingProvider?.id === provider.id) startEditor();
+    else renderProviderTable();
+  };
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    clearError();
+    const providerHomeUrl = homeUrl.value.trim();
+    if (!providerHomeUrl) return showError("请填写网页 URL");
+    let parsedUrl: URL;
+    try {
+      parsedUrl = new URL(providerHomeUrl);
+      if (parsedUrl.protocol !== "http:" && parsedUrl.protocol !== "https:") {
+        throw new Error("unsupported protocol");
+      }
+    } catch {
+      return showError("请输入有效的 http:// 或 https:// 网页 URL");
+    }
+    const hostName = parsedUrl.hostname.replace(/^www\./i, "") || "自定义网页";
+    const providerName = editingProvider?.name || hostName;
+    const generatedId =
+      hostName
+        .toLowerCase()
+        .replace(/[^a-z0-9_-]+/g, "-")
+        .replace(/^-+|-+$/g, "") || `site-${Date.now().toString(36)}`;
+    const id =
+      editingProvider
+        ? editingProvider.id
+        : state.localUiSettings.customWebProviders.some(
+              (provider) => provider.id === generatedId,
+            )
+          ? `${generatedId}-${Date.now().toString(36)}`
+          : generatedId;
+    const candidate: CustomWebProvider = {
+      id,
+      name: providerName,
+      template: "chatgpt-like",
+      homeUrl: providerHomeUrl,
+      newConversationUrl: providerHomeUrl,
+      selectors:
+        editingProvider
+          ? editingProvider.selectors
+          : DEFAULT_CUSTOM_WEB_PROVIDER_SELECTORS,
+    };
+    const next = normalizeLocalUiSettings({
+      ...state.localUiSettings,
+      customWebProviders: [
+        ...state.localUiSettings.customWebProviders.filter((item) => item.id !== id),
+        candidate,
+      ],
+      webPromptProvider: `custom:${id}`,
+    });
+    const saved = next.customWebProviders.find((item) => item.id === id);
+    if (!saved) return showError("网页配置无效：请检查 URL");
+    state.localUiSettings = next;
+    state.webAccountConfigured = undefined;
+    state.webAccountNotice = `已保存 ${saved.name}，请点击账号图标手动登录`;
+    saveLocalUiSettings(zoteroPrefs(), next);
+    closeDialog();
+    renderPanelPreservingOpenMenus(mount, state);
+  });
+  close.addEventListener("click", closeDialog);
+  cancel.addEventListener("click", closeDialog);
+  addProvider.addEventListener("click", () => startEditor());
+  remove.addEventListener("click", () => {
+    if (editingProvider) deleteProvider(editingProvider);
+  });
+  layer.addEventListener("mousedown", (event) => {
+    if (event.target === layer) closeDialog();
+  });
+  layer.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeDialog();
+  });
+  dialog.append(head, form);
+  form.append(body, foot);
+  layer.append(dialog);
+  mount.before(layer);
+  renderProviderTable();
+  const focus = () => homeUrl.focus();
+  if (view?.requestAnimationFrame) view.requestAnimationFrame(focus);
+  else homeUrl.focus();
 }
 
 function activateNetworkDiagramTarget(
@@ -3146,7 +4145,10 @@ function renderSelectionChip(
   fullText.type = "button";
   fullText.className = "zai-sel-chip-action";
   fullText.textContent = forced ? "取消原文" : "+本轮原文";
-  fullText.disabled = state.sending;
+  fullText.disabled = conversationIsSending(
+    state,
+    state.activeConversationID,
+  );
   fullText.title = forced
     ? "取消本轮全文，恢复只发送选区和附近上下文"
     : "仅本轮额外带入论文全文；发送后自动恢复";
@@ -3165,7 +4167,7 @@ function renderSelectionChip(
   remove.type = "button";
   remove.className = "zai-sel-chip-remove";
   remove.textContent = "✕";
-  remove.disabled = state.sending;
+  remove.disabled = conversationIsSending(state, state.activeConversationID);
   remove.title = translationSelection
     ? "移除选区：本轮不发送，并同时取消翻译页里的选中"
     : "移除选区：本轮不发送，并同时取消 PDF 里的选中";
@@ -3186,6 +4188,84 @@ function renderSelectionChip(
         translationSelection ? "本轮会发送的英文原句" : "本轮会发送的 PDF 选区",
       ),
       el(doc, "div", "zai-sel-chip-preview-body", selectedText),
+    );
+    wrap.append(preview);
+  }
+  return wrap;
+}
+
+function renderChatSelectionChip(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement | null {
+  const citation = state.chatSelectionQuote;
+  const selectedText = citation?.excerpt.trim();
+  if (!citation || !selectedText) return null;
+
+  const previewOpen = state.chatSelectionPreviewOpen === true;
+  const wrap = el(doc, "div", "zai-sel-chip-wrap");
+  const chip = el(doc, "div", "zai-sel-chip zai-chat-quote-chip");
+  const body = doc.createElement("button");
+  body.type = "button";
+  body.className = "zai-sel-chip-body";
+  body.title = "点击展开 / 收起，核对本轮会随问题发送的对话引用";
+  body.append(
+    el(doc, "span", "zai-sel-chip-icon", "💬"),
+    el(doc, "span", "zai-sel-chip-label", "对话引用"),
+    el(doc, "span", "zai-sel-chip-text", selectedText.replace(/\s+/g, " ")),
+    el(
+      doc,
+      "span",
+      "zai-sel-chip-peek",
+      previewOpen
+        ? "收起"
+        : `仅本轮携带此回复全文 ${citation.fullReply.length} 字 · 点开核对`,
+    ),
+  );
+  body.addEventListener("click", () => {
+    state.chatSelectionPreviewOpen = !previewOpen;
+    renderPanel(mount, state);
+  });
+
+  const remove = doc.createElement("button");
+  remove.type = "button";
+  remove.className = "zai-sel-chip-remove";
+  remove.textContent = "✕";
+  remove.disabled = conversationIsSending(state, state.activeConversationID);
+  remove.title = "移除对话引用：本轮不发送这段文字";
+  remove.addEventListener("click", () => {
+    state.chatSelectionQuote = undefined;
+    state.chatSelectionPreviewOpen = false;
+    renderPanel(mount, state);
+  });
+
+  chip.append(body, remove);
+  wrap.append(chip);
+  if (previewOpen) {
+    const preview = el(doc, "div", "zai-sel-chip-preview");
+    preview.append(
+      el(
+        doc,
+        "div",
+        "zai-sel-chip-preview-title",
+        `仅本轮携带此回复全文（${citation.sourceConversationTitle}，不携带其他聊天历史）`,
+      ),
+      el(
+        doc,
+        "div",
+        "zai-sel-chip-preview-title",
+        "论文目录按“原文”开关发送，正文由模型按需读取",
+      ),
+      el(doc, "div", "zai-sel-chip-preview-title", "本轮重点引用"),
+      el(doc, "div", "zai-sel-chip-preview-body", selectedText),
+      el(
+        doc,
+        "div",
+        "zai-sel-chip-preview-title zai-chat-quote-full-title",
+        `来源 AI 回复全文 · ${citation.fullReply.length} 字`,
+      ),
+      el(doc, "div", "zai-sel-chip-preview-body", citation.fullReply),
     );
     wrap.append(preview);
   }
@@ -3251,26 +4331,445 @@ function renderComposerFooter(
   mount: HTMLElement,
   state: PanelState,
   status: HTMLElement,
-  screenshotAttach: HTMLElement,
-  imageAttach: HTMLElement,
 ): HTMLElement {
   const footer = el(doc, "div", "composer-footer");
   const left = el(doc, "div", "composer-footer-left");
   const actions = el(doc, "div", "composer-footer-actions");
   left.append(status);
-  if (
-    !state.networkDiagramTarget &&
-    state.localUiSettings.chatLayout === "classic"
-  ) {
-    actions.append(screenshotAttach, imageAttach);
+  left.hidden = status.hidden;
+  footer.classList.toggle("composer-footer-status-empty", Boolean(left.hidden));
+  const sendMode = renderSendTargetSwitcher(doc, mount, state);
+  if (state.localUiSettings.chatSendMode === "api") {
+    actions.append(
+      renderPresetSwitcher(doc, mount, state),
+      renderModelSwitcher(doc, mount, state),
+      renderYoloToggle(doc, mount, state),
+    );
+  } else {
+    actions.append(
+      renderWebPromptProviderSwitcher(doc, mount, state),
+      renderCustomWebProviderButton(doc, mount, state),
+      renderWebAccountButton(doc, mount, state),
+    );
   }
-  actions.append(
-    renderModelSwitcher(doc, mount, state),
-    renderReasoningSwitcher(doc, mount, state),
-    renderYoloToggle(doc, mount, state),
-  );
-  footer.append(left, actions);
+  footer.append(sendMode, actions, left);
   return footer;
+}
+
+function renderSendTargetSwitcher(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement {
+  const wrap = el(doc, "div", "composer-send-mode");
+  for (const [value, label] of [
+    ["api", "API"],
+    ["web", "WEB"],
+  ] as const) {
+    const button = buttonEl(doc, label);
+    button.className = "composer-send-mode-button";
+    button.classList.toggle("is-active", state.localUiSettings.chatSendMode === value);
+    button.setAttribute("aria-pressed", String(state.localUiSettings.chatSendMode === value));
+    button.addEventListener("click", () => {
+      state.localUiSettings = normalizeLocalUiSettings({
+        ...state.localUiSettings,
+        chatSendMode: value,
+      });
+      saveLocalUiSettings(zoteroPrefs(), state.localUiSettings);
+      renderPanelPreservingOpenMenus(mount, state);
+    });
+    wrap.append(button);
+  }
+  return wrap;
+}
+
+function renderWebPromptProviderSwitcher(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement {
+  const select = doc.createElement("select");
+  select.className = "composer-web-provider-select";
+  select.title = "选择网页模型";
+  for (const [value, label] of [
+    ["chatgpt", "ChatGPT"],
+    ["deepseek", "DeepSeek"],
+  ] as const) {
+    const option = doc.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.append(option);
+  }
+  for (const provider of state.localUiSettings.customWebProviders) {
+    const option = doc.createElement("option");
+    option.value = `custom:${provider.id}`;
+    option.textContent = provider.name;
+    select.append(option);
+  }
+  select.value = state.localUiSettings.webPromptProvider;
+  select.addEventListener("change", () => {
+    const previousProvider = state.localUiSettings.webPromptProvider;
+    if (select.value === "chatgpt" && previousProvider !== "chatgpt") {
+      const warning =
+        "ChatGPT 网页模式风险提示\n\n" +
+        "需要在独立浏览器中手动登录。网页自动化可能触发访问频率限制、额外验证或账号风控。\n\n" +
+        "确认了解风险并继续使用 ChatGPT 网页版吗？";
+      const confirmed = doc.defaultView?.confirm
+        ? doc.defaultView.confirm(warning)
+        : true;
+      if (!confirmed) {
+        select.value = previousProvider;
+        return;
+      }
+    }
+    state.localUiSettings = normalizeLocalUiSettings({
+      ...state.localUiSettings,
+      webPromptProvider: select.value,
+    });
+    state.webAccountConfigured = undefined;
+    state.webAccountNotice = undefined;
+    saveLocalUiSettings(zoteroPrefs(), state.localUiSettings);
+    renderPanelPreservingOpenMenus(mount, state);
+  });
+  return select;
+}
+
+function renderWebAccountButton(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement {
+  const provider = state.localUiSettings.webPromptProvider;
+  const providerName = webProviderName(state, provider);
+  const customProvider = customWebProviderFor(state, provider);
+  const button = buttonEl(doc, "");
+  button.className = "composer-web-account-button";
+  button.title = `在 Zotero 配置窗口中管理 ${providerName} 网页账号`;
+  button.setAttribute("aria-label", `配置 ${providerName} 网页账号`);
+  button.append(
+    webAccountIcon(doc),
+    el(doc, "span", "composer-web-account-label", "账号"),
+  );
+  button.disabled = state.webAccountNotice?.startsWith("正在打开") === true;
+  button.addEventListener("click", () => {
+    configureWebAccount(
+      doc,
+      mount,
+      state,
+      provider,
+      providerName,
+      customProvider,
+    );
+  });
+  return button;
+}
+
+function configureWebAccount(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+  provider: WebPromptProvider,
+  providerName: string,
+  customProvider?: CustomWebProvider,
+): void {
+  const view = doc.defaultView;
+  const layer = el(
+    doc,
+    "div",
+    "zai-custom-web-provider-layer zai-web-account-layer",
+  );
+  const dialog = el(
+    doc,
+    "section",
+    "zai-custom-web-provider-dialog zai-web-account-dialog",
+  );
+  dialog.setAttribute("role", "dialog");
+  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-label", `配置 ${providerName} 网页账号`);
+
+  const head = el(doc, "header", "zai-custom-web-provider-head");
+  const heading = el(doc, "div", "zai-custom-web-provider-heading");
+  heading.append(
+    el(
+      doc,
+      "strong",
+      "zai-custom-web-provider-title",
+      `${providerName} 账号配置`,
+    ),
+    el(
+      doc,
+      "span",
+      "zai-custom-web-provider-subtitle",
+      "登录网页只在配置期间显示；完成后自动回到后台运行",
+    ),
+  );
+  const close = buttonEl(doc, "×");
+  close.className = "zai-custom-web-provider-close";
+  close.type = "button";
+  close.title = "完成配置并隐藏网页（Esc）";
+  head.append(heading, close);
+
+  const form = doc.createElementNS(XHTML_NS, "form") as HTMLFormElement;
+  form.className = "zai-custom-web-provider-form zai-web-account-form";
+  const body = el(doc, "div", "zai-custom-web-provider-scroll");
+  const status = el(
+    doc,
+    "div",
+    "zai-web-account-status",
+    `正在打开 ${providerName} 登录网页…`,
+  );
+  const explanation = el(
+    doc,
+    "p",
+    "zai-web-account-explanation",
+    `请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示 Chrome。`,
+  );
+  const visibilityOption = el(doc, "label", "zai-web-account-option");
+  const checkbox = doc.createElement("input");
+  checkbox.type = "checkbox";
+  checkbox.checked = state.localUiSettings.hideWebBrowser;
+  const optionText = el(doc, "span", "", "对话时在后台隐藏浏览器");
+  const optionHint = el(
+    doc,
+    "small",
+    "",
+    "默认开启；取消勾选后，生成回答时会显示专用 Chrome。",
+  );
+  optionText.append(optionHint);
+  visibilityOption.append(checkbox, optionText);
+  body.append(status, explanation, visibilityOption);
+
+  const foot = el(
+    doc,
+    "footer",
+    "zai-custom-web-provider-foot zai-web-account-foot",
+  );
+  const reopen = buttonEl(doc, "重新显示登录网页");
+  reopen.type = "button";
+  const done = buttonEl(doc, "完成并隐藏");
+  done.type = "submit";
+  done.className = "zai-custom-web-provider-primary";
+  foot.append(reopen, done);
+  form.append(body, foot);
+  dialog.append(head, form);
+  layer.append(dialog);
+  mount.before(layer);
+
+  let closed = false;
+  let configured = false;
+  let pollTimer: number | undefined;
+  let opening: Promise<void> | undefined;
+
+  const updateDoneLabel = () => {
+    done.textContent = checkbox.checked ? "完成并隐藏" : "完成并保持显示";
+  };
+  checkbox.addEventListener("change", () => {
+    state.localUiSettings = normalizeLocalUiSettings({
+      ...state.localUiSettings,
+      hideWebBrowser: checkbox.checked,
+    });
+    saveLocalUiSettings(zoteroPrefs(), state.localUiSettings);
+    updateDoneLabel();
+  });
+  updateDoneLabel();
+
+  const stopPolling = () => {
+    if (pollTimer == null) return;
+    if (view) view.clearTimeout(pollTimer);
+    else clearTimeout(pollTimer);
+    pollTimer = undefined;
+  };
+  const schedulePoll = () => {
+    if (closed || pollTimer != null) return;
+    const callback = () => {
+      pollTimer = undefined;
+      void refreshStatus();
+    };
+    pollTimer = view
+      ? view.setTimeout(callback, 1_000)
+      : (setTimeout(callback, 1_000) as unknown as number);
+  };
+  const showResult = (result: { configured: boolean; browserOpen: boolean }) => {
+    if (closed) return;
+    configured = result.configured;
+    state.webAccountConfigured = result.configured;
+    status.classList.toggle("is-ready", result.configured);
+    status.textContent = result.configured
+      ? `${providerName} 已登录，可以完成并隐藏网页`
+      : result.browserOpen
+        ? `等待在 ${providerName} 网页中完成登录…`
+        : `${providerName} 登录网页尚未打开`;
+  };
+  const refreshStatus = async () => {
+    try {
+      showResult(await getWebAccountStatus(provider, undefined, customProvider));
+    } catch (error) {
+      if (!closed) {
+        status.textContent = error instanceof Error ? error.message : String(error);
+        status.classList.add("is-error");
+      }
+    } finally {
+      schedulePoll();
+    }
+  };
+  const openLoginPage = () => {
+    if (opening || closed) return;
+    reopen.disabled = true;
+    status.classList.remove("is-error");
+    status.textContent = `正在打开 ${providerName} 登录网页…`;
+    opening = openWebAccount(provider, customProvider)
+      .then(showResult)
+      .catch((error) => {
+        if (!closed) {
+          status.textContent = error instanceof Error ? error.message : String(error);
+          status.classList.add("is-error");
+        }
+      })
+      .finally(() => {
+        opening = undefined;
+        if (!closed) reopen.disabled = false;
+        schedulePoll();
+      });
+  };
+  const closeDialog = async () => {
+    if (closed) return;
+    closed = true;
+    stopPolling();
+    reopen.disabled = true;
+    done.disabled = true;
+    done.textContent = checkbox.checked ? "正在隐藏…" : "正在保存…";
+    await opening?.catch(() => undefined);
+    try {
+      if (checkbox.checked) {
+        const result = await hideWebAccount(provider, customProvider);
+        configured = result.configured || configured;
+        state.webAccountConfigured = configured;
+        state.webAccountNotice = configured
+          ? `${providerName} 网页账号已就绪，浏览器已转入后台`
+          : `${providerName} 登录网页已隐藏，尚未检测到登录`;
+      } else {
+        state.webAccountNotice = configured
+          ? `${providerName} 网页账号已就绪，对话时将显示浏览器`
+          : `${providerName} 登录网页保持显示，尚未检测到登录`;
+      }
+    } catch (error) {
+      state.webAccountNotice =
+        error instanceof Error ? error.message : String(error);
+    } finally {
+      layer.remove();
+      if (states.get(mount) === state) renderPanel(mount, state);
+    }
+  };
+
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    void closeDialog();
+  });
+  reopen.addEventListener("click", openLoginPage);
+  close.addEventListener("click", () => void closeDialog());
+  layer.addEventListener("mousedown", (event) => {
+    if (event.target === layer) void closeDialog();
+  });
+  layer.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (event.key !== "Escape" || event.isComposing) return;
+    event.preventDefault();
+    event.stopPropagation();
+    void closeDialog();
+  });
+  openLoginPage();
+}
+
+function renderCustomWebProviderButton(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement {
+  const button = buttonEl(doc, "");
+  button.className = "composer-web-provider-settings-button";
+  button.title = "配置第三方 ChatGPT-like 网页（手动登录）";
+  button.setAttribute("aria-label", "配置第三方网页");
+  button.append(webSettingsIcon(doc));
+  button.addEventListener("click", () => {
+    configureCustomWebProvider(doc, mount, state);
+  });
+  return button;
+}
+
+function webSettingsIcon(doc: Document): Element {
+  const svg = doc.createElementNS(ZAI_SVG_NS, "svg");
+  svg.setAttribute("width", "15");
+  svg.setAttribute("height", "15");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  for (const d of [
+    "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z",
+    "M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.7 1.7-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20h-2.4v-.21a1.7 1.7 0 0 0-1.03-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-1.7-1.7.06-.06A1.7 1.7 0 0 0 8.4 15a1.7 1.7 0 0 0-1.55-1.03H6v-2.4h.85A1.7 1.7 0 0 0 8.4 10a1.7 1.7 0 0 0-.34-1.88L8 8.06l1.7-1.7.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 12.67 5.2V5h2.4v.2a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.7 1.7-.06.06A1.7 1.7 0 0 0 19.34 10a1.7 1.7 0 0 0 1.55 1.03H21v2.4h-.11A1.7 1.7 0 0 0 19.4 15Z",
+  ]) {
+    const path = doc.createElementNS(ZAI_SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+function webAccountIcon(doc: Document): Element {
+  const svg = doc.createElementNS(ZAI_SVG_NS, "svg");
+  svg.setAttribute("width", "15");
+  svg.setAttribute("height", "15");
+  svg.setAttribute("viewBox", "0 0 24 24");
+  svg.setAttribute("fill", "none");
+  svg.setAttribute("stroke", "currentColor");
+  svg.setAttribute("stroke-width", "2");
+  svg.setAttribute("stroke-linecap", "round");
+  svg.setAttribute("stroke-linejoin", "round");
+  for (const d of [
+    "M20 21a8 8 0 0 0-16 0",
+    "M12 13a4 4 0 1 0 0-8 4 4 0 0 0 0 8",
+    "M19 8v3",
+    "M17.5 9.5h3",
+  ]) {
+    const path = doc.createElementNS(ZAI_SVG_NS, "path");
+    path.setAttribute("d", d);
+    svg.append(path);
+  }
+  return svg;
+}
+
+function renderPresetSwitcher(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+): HTMLElement {
+  const presets = configuredPresets(state);
+  const wrap = el(doc, "div", "composer-preset-switcher");
+  if (presets.length === 0) {
+    wrap.style.display = "none";
+    return wrap;
+  }
+  const select = doc.createElement("select");
+  select.className = "composer-preset-select";
+  select.title = "切换账号配置";
+  for (const preset of presets) {
+    const option = doc.createElement("option");
+    option.value = preset.id;
+    option.textContent = presetSelectLabel(preset);
+    select.append(option);
+  }
+  select.value = selectedChatPreset(state)?.id ?? selectedPreset(state)?.id ?? "";
+  select.addEventListener("change", () => {
+    state.selectedId = select.value;
+    state.agentPermissionMode = agentPermissionMode(
+      selectedChatPreset(state) ?? selectedPreset(state),
+    );
+    void persistPanelConversations(state);
+    renderPanelPreservingOpenMenus(mount, state);
+  });
+  wrap.append(select);
+  return wrap;
 }
 
 function renderWebSearchSwitcher(
@@ -3291,7 +4790,9 @@ function renderWebSearchSwitcher(
   trigger.title = enabledForPreset
     ? webSearchToggleTitle(mode)
     : "联网工具目前仅对 OpenAI Responses 兼容配置生效";
-  trigger.disabled = !enabledForPreset || state.sending;
+  trigger.disabled =
+    !enabledForPreset ||
+    conversationIsSending(state, state.activeConversationID);
   trigger.setAttribute("aria-haspopup", "menu");
   trigger.setAttribute("aria-expanded", "false");
 
@@ -3392,7 +4893,8 @@ function renderPaperPinSwitcher(
     : on
       ? "原文固定已开启：PDF 条目每轮固定全文；arXiv 源条目默认固定章节目录，模型按需读取章节或升级全文。点击关闭。"
       : "点击开启：把论文原文上下文固定在每轮对话最前面；arXiv 源默认先固定章节目录以便缓存复用。";
-  trigger.disabled = !hasItem || state.sending;
+  trigger.disabled =
+    !hasItem || conversationIsSending(state, state.activeConversationID);
   trigger.addEventListener("click", () => {
     void togglePaperPinFromComposer(doc, mount, state);
   });
@@ -3481,7 +4983,10 @@ function renderModelSwitcher(
   trigger.className = "model-switcher-trigger";
   trigger.textContent = active;
   trigger.title = "切换当前预设的模型";
-  trigger.disabled = state.sending;
+  trigger.disabled = conversationIsSending(
+    state,
+    state.activeConversationID,
+  );
   trigger.setAttribute("aria-haspopup", "menu");
   trigger.setAttribute("aria-expanded", "false");
 
@@ -3526,96 +5031,6 @@ function renderModelSwitcher(
       upsertPreset(state, { ...preset, model: id });
       persist(state);
       updateToolbarOption(mount, { ...preset, model: id });
-      renderPanel(mount, state);
-    });
-    popup.append(item);
-  }
-
-  trigger.addEventListener("click", () => {
-    if (popup.style.display === "none") openPopup();
-    else closePopup();
-  });
-
-  wrap.append(trigger, popup);
-  return wrap;
-}
-
-function renderReasoningSwitcher(
-  doc: Document,
-  mount: HTMLElement,
-  state: PanelState,
-): HTMLElement {
-  const preset = selectedChatPreset(state) ?? selectedPreset(state);
-  const wrap = el(doc, "div", "reasoning-switcher");
-  if (!preset) {
-    wrap.style.display = "none";
-    return wrap;
-  }
-  // Compat-vendor Anthropic presets never send a thinking field — show no
-  // switcher to avoid implying control we don't actually have.
-  if (
-    preset.provider === "anthropic" &&
-    (preset.extras?.vendor ?? "compat") === "compat"
-  ) {
-    wrap.style.display = "none";
-    return wrap;
-  }
-
-  const persisted = preset.extras?.reasoningEffort ?? DEFAULT_REASONING_EFFORT;
-  // DeepSeek effectively exposes only high/max — display low/medium as
-  // their server-side mapped value so the trigger label matches reality.
-  const active = collapseReasoningForPreset(preset, persisted);
-  const trigger = doc.createElement("button") as HTMLButtonElement;
-  trigger.type = "button";
-  trigger.className = "reasoning-switcher-trigger";
-  trigger.textContent = reasoningEffortShortLabel(active);
-  trigger.title = `推理等级：${reasoningEffortLabel(active)}`;
-  trigger.disabled = state.sending;
-  trigger.setAttribute("aria-haspopup", "menu");
-  trigger.setAttribute("aria-expanded", "false");
-
-  const popup = el(doc, "div", "reasoning-switcher-popup");
-  popup.setAttribute("role", "menu");
-  popup.style.display = "none";
-
-  const closePopup = () => {
-    if (popup.style.display === "none") return;
-    popup.style.display = "none";
-    trigger.setAttribute("aria-expanded", "false");
-    doc.removeEventListener("mousedown", outsideHandler, true);
-    doc.removeEventListener("keydown", escapeHandler, true);
-  };
-  const openPopup = () => {
-    if (popup.style.display !== "none") return;
-    popup.style.display = "";
-    trigger.setAttribute("aria-expanded", "true");
-    doc.addEventListener("mousedown", outsideHandler, true);
-    doc.addEventListener("keydown", escapeHandler, true);
-  };
-  const outsideHandler = (event: Event) => {
-    if (!wrap.contains(event.target as Node)) closePopup();
-  };
-  const escapeHandler = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      closePopup();
-      trigger.focus();
-    }
-  };
-
-  for (const [value, label] of reasoningEffortOptionsForPreset(preset)) {
-    const item = doc.createElement("button") as HTMLButtonElement;
-    item.type = "button";
-    item.className = "reasoning-switcher-item";
-    if (value === active) item.classList.add("reasoning-switcher-item-active");
-    item.textContent = label;
-    item.setAttribute("role", "menuitemradio");
-    item.setAttribute("aria-checked", value === active ? "true" : "false");
-    item.addEventListener("click", () => {
-      closePopup();
-      if (value === preset.extras?.reasoningEffort) return;
-      const next = withReasoningEffort(preset, value);
-      upsertPreset(state, next);
-      persist(state);
       renderPanel(mount, state);
     });
     popup.append(item);
@@ -3682,19 +5097,27 @@ function renderInputStatus(
     node.textContent = part.text;
     status.append(node);
   }
+  status.hidden = parts.length === 0;
+  const container = status.parentElement as HTMLElement | null;
+  if (container?.classList.contains("composer-footer-left")) {
+    container.hidden = status.hidden;
+  }
 }
 
 function composeInputStatus(
   input: HTMLTextAreaElement,
   state: PanelState,
 ): InputStatusPart[] {
-  const cursor = cursorPosition(input.value, input.selectionStart ?? 0);
   const selected = Math.abs(
     (input.selectionEnd ?? 0) - (input.selectionStart ?? 0),
   );
-  const parts: InputStatusPart[] = [
-    { text: `Ln ${cursor.line}, Col ${cursor.column}` },
-  ];
+  const parts: InputStatusPart[] = [];
+  if (state.webAccountNotice && state.localUiSettings.chatSendMode === "web") {
+    parts.push({
+      text: state.webAccountNotice,
+      className: "composer-status-web-account",
+    });
+  }
   if (selected > 0) {
     parts.push({
       text: `${selected} selected`,
@@ -3718,18 +5141,6 @@ function composeInputStatus(
     });
   }
   return parts;
-}
-
-function cursorPosition(
-  text: string,
-  offset: number,
-): { line: number; column: number } {
-  const before = text.slice(0, offset);
-  const lines = before.split("\n");
-  return {
-    line: lines.length,
-    column: lines[lines.length - 1].length + 1,
-  };
 }
 
 function autoResizeInput(input: HTMLTextAreaElement) {
@@ -3784,20 +5195,41 @@ async function sendMessage(
     return;
   }
 
-  const rawSelectedText =
+  const chatCitation =
     options.ignoreSelection || options.fullTextHighlight || options.readingRoute
+      ? undefined
+      : state.chatSelectionQuote;
+  const chatSelectionQuote = chatCitation?.excerpt.trim() || "";
+  const rawSelectedText = chatSelectionQuote
+    ? chatSelectionQuote
+    : options.ignoreSelection ||
+        options.fullTextHighlight ||
+        options.readingRoute
       ? ""
       : await getSelectedTextForPrompt(mount, state.itemID);
-  const selectionPayload = options.explainSelection
-    ? { selectedText: rawSelectedText, context: {} }
-    : await buildSelectionPromptContext(rawSelectedText, state.itemID);
+  const selectionPayload = chatSelectionQuote
+    ? {
+        selectedText: chatSelectionQuote,
+        context: {
+          selectedTextOrigin: "chat" as const,
+          quotedChatReply: {
+            fullReply: chatCitation!.fullReply,
+            sourceConversationTitle: chatCitation!.sourceConversationTitle,
+            sourceAssistantOrdinal: chatCitation!.sourceAssistantOrdinal,
+            sourceQuestionPreview: chatCitation!.sourceQuestionPreview,
+          },
+        },
+      }
+    : options.explainSelection
+      ? { selectedText: rawSelectedText, context: {} }
+      : await buildSelectionPromptContext(rawSelectedText, state.itemID);
   const selectedText = selectionPayload.selectedText;
   const forcePinnedFullText =
-    !!selectedText && state.fullTextTurnMode === "force";
+    !chatSelectionQuote && !!selectedText && state.fullTextTurnMode === "force";
   const quickPromptSettings = loadQuickPromptSettings(zoteroPrefs());
-  const selectedSnapshot = cloneSelectionAnnotationDraft(
-    getStoredSelectionAnnotation(state.itemID),
-  );
+  const selectedSnapshot = chatSelectionQuote
+    ? null
+    : cloneSelectionAnnotationDraft(getStoredSelectionAnnotation(state.itemID));
   if (selectedSnapshot && selectedText) selectedSnapshot.text = selectedText;
   // Suggestion card (with color chip) is enabled for two paths:
   //   1. Explain-selection button — always, when a selection exists.
@@ -3858,14 +5290,12 @@ async function sendMessage(
   };
   userMessage.context = {
     ...userMessage.context,
-    conversationHistoryMode: state.historyMode,
+    conversationHistoryMode: chatSelectionQuote ? "none" : state.historyMode,
   };
-  const shouldQueue = state.sending;
-  const isolatedExplainSelection = options.explainSelection === true;
-  const history =
-    shouldQueue || isolatedExplainSelection
-      ? []
-      : selectConversationHistory(state.messages, state.historyMode);
+  const shouldQueue =
+    conversationIsSending(state, state.activeConversationID) ||
+    activeConversationTaskCount(state) >=
+      state.uiSettings.maxParallelConversations;
   state.messages.push(userMessage);
   state.draftText = "";
   state.draftSelectionStart = 0;
@@ -3875,23 +5305,14 @@ async function sendMessage(
   state.skipNextDraftCapture = true;
   state.pasteBlocks = [];
   state.draftImages = [];
+  state.chatSelectionQuote = undefined;
+  state.chatSelectionPreviewOpen = false;
   resetTurnFullTextMode(state);
   state.autoFollowMessages = true;
   state.scrollToBottom = true;
   void persistPanelConversations(state);
-  if (shouldQueue) {
-    state.queueOpen = true;
-    renderPanel(mount, state);
-    return;
-  }
-  await streamAssistant(mount, state, history, userMessage, {
-    annotationSnapshot: snapshot,
-    annotationColorEnabled: annotationSuggestionEnabled,
-    fullTextHighlight: options.fullTextHighlight,
-    readingRoute: options.readingRoute,
-    isolatedHistory: isolatedExplainSelection,
-    taskID: userMessage.task?.id,
-  });
+  if (shouldQueue) state.queueOpen = true;
+  renderPanel(mount, state);
   void processNextQueuedChatTask(mount, state);
 }
 
@@ -3902,18 +5323,34 @@ async function processNextQueuedChatTask(
   if (state.processingQueuedTask) return;
   state.processingQueuedTask = true;
   try {
-    while (states.get(mount) === state && !state.sending) {
-      const next = firstQueuedChatTask(state);
+    while (
+      states.get(mount) === state &&
+      activeConversationTaskCount(state) <
+        state.uiSettings.maxParallelConversations
+    ) {
+      const excludedConversationIDs = new Set(
+        Array.from(state.conversationTaskRuntimes.entries())
+          .filter(([, runtime]) => !!runtime.activeTaskID)
+          .map(([conversationID]) => conversationID),
+      );
+      const next = firstQueuedChatTaskAcrossConversations(
+        state,
+        excludedConversationIDs,
+      );
       if (!next) break;
-      const userMessage = state.messages[next.userIndex];
+      const messages = next.conversation.messages;
+      const userMessage = messages[next.userIndex];
       if (!userMessage || userMessage.role !== "user") break;
-      const isolatedHistory = userMessage.context?.explainSelection === true;
+      const isolatedHistory =
+        userMessage.context?.explainSelection === true ||
+        userMessage.context?.selectedTextOrigin === "chat";
       const history = isolatedHistory
         ? []
         : selectConversationHistory(
-            state.messages.slice(0, next.userIndex),
+            messages.slice(0, next.userIndex),
             normalizeConversationHistoryMode(
-              userMessage.context?.conversationHistoryMode ?? state.historyMode,
+              userMessage.context?.conversationHistoryMode ??
+                next.conversation.historyMode,
             ),
           );
       // Restore whatever annotation context was captured at queue time.
@@ -3923,7 +5360,7 @@ async function processNextQueuedChatTask(
       // currently highlighted in the Reader, which is rarely what they
       // typed against minutes ago.
       const queuedSnapshot = userMessage.context?.queuedAnnotationSnapshot;
-      await streamAssistant(mount, state, history, userMessage, {
+      void streamAssistant(mount, state, history, userMessage, {
         annotationSnapshot: queuedSnapshot
           ? {
               text: queuedSnapshot.text,
@@ -3937,6 +5374,8 @@ async function processNextQueuedChatTask(
         readingRoute: userMessage.task?.kind === "reading_route",
         isolatedHistory,
         taskID: userMessage.task?.id,
+        conversationID: next.conversation.id,
+        messages,
       });
     }
   } finally {
@@ -3944,13 +5383,44 @@ async function processNextQueuedChatTask(
   }
 }
 
-function firstQueuedChatTask(state: PanelState): ChatTaskView | null {
-  for (const view of visibleChatTasks(state)
-    .slice()
-    .sort((a, b) => a.task.createdAt - b.task.createdAt)) {
-    if (view.status === "queued") return view;
+function firstQueuedChatTaskAcrossConversations(
+  state: PanelState,
+  excludedConversationIDs = new Set<string>(),
+): { conversation: ChatConversation; userIndex: number } | null {
+  captureActiveConversation(state);
+  let oldest: {
+    conversation: ChatConversation;
+    userIndex: number;
+    createdAt: number;
+  } | null = null;
+  for (const conversation of state.conversations) {
+    if (excludedConversationIDs.has(conversation.id)) continue;
+    for (let index = 0; index < conversation.messages.length; index++) {
+      const message = conversation.messages[index];
+      const task = message?.role === "user" ? message.task : undefined;
+      if (
+        // Web tasks are dispatched directly to the Web Agent and update the
+        // paired assistant message through callbacks. They must never enter
+        // the normal API streaming queue as a second request.
+        isWebPromptUserMessage(message) ||
+        !task ||
+        task.completedAt ||
+        task.cancelledAt ||
+        task.error ||
+        Array.from(state.conversationTaskRuntimes.values()).some(
+          (runtime) => runtime.activeTaskID === task.id,
+        )
+      ) {
+        continue;
+      }
+      if (!oldest || task.createdAt < oldest.createdAt) {
+        oldest = { conversation, userIndex: index, createdAt: task.createdAt };
+      }
+    }
   }
-  return null;
+  return oldest
+    ? { conversation: oldest.conversation, userIndex: oldest.userIndex }
+    : null;
 }
 
 async function buildSelectionPromptContext(
@@ -4592,7 +6062,7 @@ async function transferQuickAskToResearch(
     renderActiveQuickAsk(sidebar, controller);
     return;
   }
-  if (state.sending) {
+  if (conversationIsSending(state, state.activeConversationID)) {
     controller.state.error = "研究对话正在回答，请结束后再转入。";
     controller.state.status = "error";
     renderActiveQuickAsk(sidebar, controller);
@@ -4624,6 +6094,57 @@ interface StreamAssistantOptions {
   readingRoute?: boolean;
   isolatedHistory?: boolean;
   taskID?: string;
+  conversationID?: string;
+  messages?: Message[];
+}
+
+function conversationRuntime(
+  state: PanelState,
+  conversationID: string,
+): ConversationTaskRuntime {
+  let runtime = state.conversationTaskRuntimes.get(conversationID);
+  if (!runtime) {
+    runtime = {};
+    state.conversationTaskRuntimes.set(conversationID, runtime);
+  }
+  return runtime;
+}
+
+function conversationIsSending(
+  state: PanelState,
+  conversationID: string,
+): boolean {
+  return !!conversationRuntime(state, conversationID).activeTaskID;
+}
+
+function activeConversationTaskCount(state: PanelState): number {
+  let count = 0;
+  for (const runtime of state.conversationTaskRuntimes.values()) {
+    if (runtime.activeTaskID) count++;
+  }
+  return count;
+}
+
+function refreshAggregateSendingState(state: PanelState): void {
+  state.sending = activeConversationTaskCount(state) > 0;
+}
+
+function assistantProgressForActiveConversation(
+  state: PanelState,
+  index: number,
+  message: Message,
+): AssistantProgress | null {
+  const runtime = conversationRuntime(state, state.activeConversationID);
+  return assistantProgressFor(
+    {
+      ...state,
+      activeAssistantIndex: runtime.activeAssistantIndex,
+      activeAssistantStage: runtime.activeAssistantStage,
+      activeAssistantDetail: runtime.activeAssistantDetail,
+    },
+    index,
+    message,
+  );
 }
 
 // streamAssistant: the project's OUTER loop wrapping the provider's inner
@@ -4651,32 +6172,55 @@ async function streamAssistant(
   userMessage: Message,
   options: StreamAssistantOptions = {},
 ) {
-  const preset = selectedChatPreset(state);
-  if (!preset || state.sending) return;
+  const taskConversationID =
+    options.conversationID ?? state.activeConversationID;
+  const taskMessages = options.messages ?? state.messages;
+  const taskConversation = state.conversations.find(
+    (conversation) => conversation.id === taskConversationID,
+  );
+  const preset =
+    (taskConversation?.presetID
+      ? configuredPresets(state).find(
+          (candidate) => candidate.id === taskConversation.presetID,
+        )
+      : undefined) ?? selectedChatPreset(state);
+  const runtime = conversationRuntime(state, taskConversationID);
+  if (!preset || runtime.activeTaskID) return;
+  if (taskConversation) taskConversation.messages = taskMessages;
 
-  state.sending = true;
-  state.autoFollowMessages = true;
-  state.scrollToBottom = true;
-  state.focusInput = true;
+  runtime.activeTaskID = options.taskID;
+  refreshAggregateSendingState(state);
+  if (state.activeConversationID === taskConversationID) {
+    state.autoFollowMessages = true;
+    state.scrollToBottom = true;
+    state.focusInput = true;
+  }
   renderPanel(mount, state);
-  const userIndex = state.messages.indexOf(userMessage);
-  const assistantIndex = userIndex >= 0 ? userIndex + 1 : state.messages.length;
+  const userIndex = taskMessages.indexOf(userMessage);
+  const assistantIndex = userIndex >= 0 ? userIndex + 1 : taskMessages.length;
   const assistant: Message = { role: "assistant", content: "" };
   let readingRouteMarkdown = "";
   if (options.readingRoute) {
     assistant.content = readingRouteProgressMessage(0);
   }
-  state.messages.splice(assistantIndex, 0, assistant);
-  state.activeAssistantIndex = assistantIndex;
-  state.activeAssistantStage = "building_context";
-  state.activeTaskID = options.taskID;
-  state.scrollToBottom = true;
-  state.focusInput = true;
+  taskMessages.splice(assistantIndex, 0, assistant);
+  runtime.activeAssistantIndex = assistantIndex;
+  runtime.activeAssistantStage = "building_context";
+  if (state.activeConversationID === taskConversationID) {
+    state.scrollToBottom = true;
+    state.focusInput = true;
+  }
   renderPanel(mount, state);
+
+  const updateTaskBubble = () => {
+    if (state.activeConversationID === taskConversationID) {
+      updateMessageBubble(mount, assistantIndex, assistant);
+    }
+  };
 
   const controllerCtor = mount.ownerDocument!.defaultView!.AbortController;
   const controller = new controllerCtor();
-  state.abort = controller;
+  runtime.abort = controller;
   let toolSession: ZoteroAgentToolSession | null = null;
 
   try {
@@ -4746,10 +6290,12 @@ async function streamAssistant(
       );
       const planReason = forcePinnedFullText
         ? "用户本轮点击“+ 本轮原文”，PDF 选区、附近上下文和论文全文一起发送；长期“原文”状态不变"
-        : (userMessage.context?.planReason ??
-          (fullTextSource === "arxiv_toc"
-            ? "手动“原文”开关已开启；当前为 arXiv 源，先发送稳定章节目录，模型按需调用 arxiv_get_section、arxiv_get_equation、arxiv_get_figure、arxiv_get_table、arxiv_get_bibliography 或 zotero_get_full_pdf 读取正文/公式/图/表格/参考文献"
-            : "手动“原文”开关已开启，论文全文作为前置块发送"));
+        : fullTextSource === "arxiv_toc" && userMessage.context?.selectedText
+          ? "聚焦提问：发送当前选区/对话引用和精简 arXiv 章节目录；需要核对论文原文时由模型按需读取章节、公式、图表或 PDF 正文"
+          : (userMessage.context?.planReason ??
+            (fullTextSource === "arxiv_toc"
+              ? "手动“原文”开关已开启；当前为 arXiv 源，先发送稳定章节目录，模型按需调用 arxiv_get_section、arxiv_get_equation、arxiv_get_figure、arxiv_get_table、arxiv_get_bibliography 或 zotero_get_full_pdf 读取正文/公式/图/表格/参考文献"
+              : "手动“原文”开关已开启，论文全文作为前置块发送"));
       userMessage.context = {
         ...userMessage.context,
         planMode: forcePinnedFullText
@@ -4792,8 +6338,7 @@ async function streamAssistant(
       // the visible note panel after the write so the user sees the
       // append immediately, matching the manual button's UX.
       onMindmapReady: (data) => {
-        const idx = state.activeAssistantIndex;
-        if (idx != null) state.messages[idx].mindmap = data;
+        assistant.mindmap = data;
       },
       onOverviewReady: (data) => {
         // Persist + sync, then refresh the 总览 panel view if it is open.
@@ -4861,8 +6406,10 @@ async function streamAssistant(
         tools: toolsForTurn,
       }),
     };
-    state.scrollToBottom = state.autoFollowMessages;
-    state.activeAssistantStage = "waiting_model";
+    if (state.activeConversationID === taskConversationID) {
+      state.scrollToBottom = state.autoFollowMessages;
+    }
+    runtime.activeAssistantStage = "waiting_model";
     renderPanel(mount, state);
 
     const messagesForApi: Message[] = toApiMessages(
@@ -4895,7 +6442,7 @@ async function streamAssistant(
       {
         tools: toolsForTurn,
         maxToolIterations: contextPolicy.maxToolIterations,
-        permissionMode: state.agentPermissionMode,
+        permissionMode: agentPermissionMode(preset),
         toolSettings: loadToolSettings(zoteroPrefs()),
         promptCacheKey,
         relayRoutingItemKey,
@@ -4903,8 +6450,8 @@ async function streamAssistant(
       },
     )) {
       if (chunk.type === "text_delta") {
-        state.activeAssistantStage = "writing";
-        state.activeAssistantDetail = undefined;
+        runtime.activeAssistantStage = "writing";
+        runtime.activeAssistantDetail = undefined;
         if (options.readingRoute) {
           readingRouteMarkdown += chunk.text;
           assistant.content = readingRouteProgressMessage(
@@ -4913,35 +6460,37 @@ async function streamAssistant(
         } else {
           assistant.content += chunk.text;
         }
-        updateMessageBubble(mount, assistantIndex, assistant);
+        updateTaskBubble();
       } else if (chunk.type === "thinking_delta") {
-        state.activeAssistantStage = "thinking";
-        state.activeAssistantDetail = undefined;
+        runtime.activeAssistantStage = "thinking";
+        runtime.activeAssistantDetail = undefined;
         assistant.thinking = `${assistant.thinking ?? ""}${chunk.text}`;
-        updateMessageBubble(mount, assistantIndex, assistant);
+        updateTaskBubble();
       } else if (chunk.type === "tool_call") {
-        state.activeAssistantStage =
+        runtime.activeAssistantStage =
           chunk.status === "started" ? "using_tool" : "waiting_model";
-        state.activeAssistantDetail = undefined;
+        runtime.activeAssistantDetail = undefined;
         recordToolCall(userMessage, chunk);
         void persistPanelConversations(state);
-        state.scrollToBottom = state.autoFollowMessages;
+        if (state.activeConversationID === taskConversationID) {
+          state.scrollToBottom = state.autoFollowMessages;
+        }
         renderPanel(mount, state);
       } else if (chunk.type === "tool_images") {
         assistant.images = [...(assistant.images ?? []), ...chunk.images];
-        updateMessageBubble(mount, assistantIndex, assistant);
+        updateTaskBubble();
       } else if (chunk.type === "status") {
-        state.activeAssistantStage = "waiting_model";
-        state.activeAssistantDetail = chunk.message;
-        updateMessageBubble(mount, assistantIndex, assistant);
+        runtime.activeAssistantStage = "waiting_model";
+        runtime.activeAssistantDetail = chunk.message;
+        updateTaskBubble();
       } else if (chunk.type === "usage") {
         assistant.usage = mergeMessageUsage(assistant.usage, chunk);
-        updateMessageBubble(mount, assistantIndex, assistant);
+        updateTaskBubble();
       } else if (chunk.type === "error") {
-        state.activeAssistantDetail = undefined;
+        runtime.activeAssistantDetail = undefined;
         markMessageTaskError(userMessage, chunk.message);
         assistant.content += `\n[Error] ${chunk.message}`;
-        updateMessageBubble(mount, assistantIndex, assistant);
+        updateTaskBubble();
         break;
       }
     }
@@ -4956,7 +6505,7 @@ async function streamAssistant(
       markMessageTaskError(userMessage, message);
       assistant.content += `\n[Error] ${message}`;
     }
-    updateMessageBubble(mount, assistantIndex, assistant);
+    updateTaskBubble();
   } finally {
     toolSession?.dispose();
     markMessageTaskCompleted(userMessage);
@@ -4975,17 +6524,28 @@ async function streamAssistant(
         readingRouteMarkdown,
       );
     }
-    state.sending = false;
-    state.abort = undefined;
-    state.activeAssistantIndex = undefined;
-    state.activeAssistantStage = undefined;
-    state.activeAssistantDetail = undefined;
-    state.activeTaskID = undefined;
-    state.cancellingTaskID = undefined;
+    runtime.abort = undefined;
+    runtime.activeAssistantIndex = undefined;
+    runtime.activeAssistantStage = undefined;
+    runtime.activeAssistantDetail = undefined;
+    runtime.activeTaskID = undefined;
+    runtime.cancellingTaskID = undefined;
+    refreshAggregateSendingState(state);
+    if (
+      state.activeConversationID === taskConversationID &&
+      userMessage.task?.completedAt &&
+      !userMessage.task.cancelledAt &&
+      !userMessage.task.error
+    ) {
+      userMessage.task.viewedAt = Date.now();
+    }
     void persistPanelConversations(state);
-    state.scrollToBottom = state.autoFollowMessages;
-    state.focusInput = true;
+    if (state.activeConversationID === taskConversationID) {
+      state.scrollToBottom = state.autoFollowMessages;
+      state.focusInput = true;
+    }
     renderPanel(mount, state);
+    void processNextQueuedChatTask(mount, state);
   }
 }
 
@@ -5177,13 +6737,13 @@ async function resolvePinnedFullText(
 ): Promise<string | undefined> {
   if (itemID == null) return undefined;
   if (!options.force) {
-    if (options.suppressPinned) return undefined;
     if (!(await isPaperPinned(itemID))) return undefined;
     // For arXiv items, the default pinned block is a compact TOC, not the
     // full source. Keep it out of the generic full-text cache so
     // zotero_get_full_pdf can still upgrade to the actual LaTeX body.
     const tocBlock = await buildArxivTocFrontBlock(itemID);
     if (tocBlock) return tocBlock;
+    if (options.suppressPinned) return undefined;
   }
   const frozen = await getFrozenFullText(itemID);
   if (frozen != null && !isArxivTocBlock(frozen)) return frozen;
@@ -5344,7 +6904,7 @@ function recordToolCall(
   };
 }
 
-function mergeToolContext(
+export function mergeToolContext(
   previous: Message["context"],
   next: Message["context"],
 ): Message["context"] {
@@ -5353,6 +6913,13 @@ function mergeToolContext(
     ...previous,
     ...next,
   };
+  // The TOC describes what was attached to the original user request.
+  // Section tools may report the text they fetched, but must not rewrite
+  // that request-level provenance or the sidebar will claim no TOC was sent.
+  if (previous?.fullTextSource === "arxiv_toc") {
+    merged.fullTextSource = previous.fullTextSource;
+    merged.fullTextChars = previous.fullTextChars;
+  }
   if (previous?.retrievedPassages?.length || next.retrievedPassages?.length) {
     const passages = [
       ...(previous?.retrievedPassages ?? []),
@@ -5380,7 +6947,7 @@ function mergeToolContext(
 // flow, the regenerated answer should still be anchored to the same PDF
 // passage so the new "建议注释" suggestion can be saved at the same spot.
 async function regenerateLastResponse(mount: HTMLElement, state: PanelState) {
-  if (state.sending) return;
+  if (conversationIsSending(state, state.activeConversationID)) return;
   await ensureHistoryLoaded(mount, state);
   if (states.get(mount) !== state) return;
 
@@ -5393,7 +6960,9 @@ async function regenerateLastResponse(mount: HTMLElement, state: PanelState) {
   const previousAssistant = state.messages[assistantIndex];
   const carriedSnapshot = previousAssistant.annotationDraft?.snapshot ?? null;
   const availableHistory = state.messages.slice(0, userIndex);
-  const isolatedHistory = userMessage.context?.explainSelection === true;
+  const isolatedHistory =
+    userMessage.context?.explainSelection === true ||
+    userMessage.context?.selectedTextOrigin === "chat";
   const history = isolatedHistory
     ? []
     : selectConversationHistory(availableHistory, state.historyMode);
@@ -5441,15 +7010,21 @@ async function loadPersistedMessages(mount: HTMLElement, state: PanelState) {
   let cancelledStale = 0;
   for (const conversation of workspace.conversations) {
     cancelledStale += cancelStaleQueuedTasks(conversation.messages);
+    cancelledStale += interruptStaleWebPromptTasks(conversation.messages);
   }
   state.conversations = workspace.conversations;
+  let migratedLegacyWeb = false;
+  for (const conversation of state.conversations) {
+    migratedLegacyWeb =
+      migrateLegacyDeepSeekMessages(conversation.messages) || migratedLegacyWeb;
+  }
   state.activeConversationID = workspace.activeConversationID;
   const conversation = activeConversation(state) ?? state.conversations[0];
   applyConversation(state, conversation);
   state.historyLoaded = true;
   state.paperPinned = paperPinned;
   state.scrollToBottom = true;
-  if (cancelledStale > 0) {
+  if (cancelledStale > 0 || migratedLegacyWeb) {
     void persistPanelConversations(state);
   }
   renderPanel(mount, state);
@@ -5809,7 +7384,9 @@ function updateSelectionIndicators(mount: HTMLElement, _itemID: number | null) {
     ) as HTMLElement | null;
     const row = mount.querySelector(".input-row") as HTMLElement | null;
     if (state && row) {
-      const nextChip = renderSelectionChip(mount.ownerDocument!, mount, state);
+      const nextChip = state.chatSelectionQuote
+        ? renderChatSelectionChip(mount.ownerDocument!, mount, state)
+        : renderSelectionChip(mount.ownerDocument!, mount, state);
       if (chip && nextChip) {
         chip.replaceWith(nextChip);
       } else if (chip) {
@@ -6018,10 +7595,11 @@ function updateMessageBubble(
     state?.autoFollowMessages ?? isMessagesNearBottom(mount);
   preserveStreamingMessagesScroll(mount, shouldStickToBottom, () => {
     if (state) {
+      updateWebTaskProgress(root, body, state, index, message);
       updateAssistantProgress(
         root,
         body,
-        assistantProgressFor(state, index, message),
+        assistantProgressForActiveConversation(state, index, message),
       );
     }
 
@@ -6030,12 +7608,42 @@ function updateMessageBubble(
     }
     renderMarkdownInto(
       body,
-      message.content || (state?.activeAssistantIndex === index ? " " : ""),
+      message.content ||
+        (state &&
+        conversationRuntime(state, state.activeConversationID)
+          .activeAssistantIndex === index
+          ? " "
+          : ""),
     );
     if (state) {
       scheduleAssistantPdfQuoteLinks(body, mount, state, message, index);
+      installWebGeneratedFileLinks(body, state);
     }
   });
+}
+
+function updateWebTaskProgress(
+  root: HTMLElement,
+  before: HTMLElement,
+  state: PanelState,
+  index: number,
+  message: Message,
+) {
+  const existing = root.querySelector(
+    ".web-task-progress",
+  ) as HTMLElement | null;
+  const sourceUser = state.messages[findPreviousUserIndex(state.messages, index)];
+  const provider = webPromptProviderForUserMessage(sourceUser);
+  const progress = provider
+    ? webTaskProgressFor(message.task, webProviderName(state, provider))
+    : null;
+  if (!progress) {
+    existing?.remove();
+    return;
+  }
+  const next = renderWebTaskProgress(root.ownerDocument!, progress);
+  if (existing) existing.replaceWith(next);
+  else root.insertBefore(next, before);
 }
 
 function updateAssistantProgress(
@@ -6187,6 +7795,16 @@ function bubble(
   });
   actions.append(copy);
 
+  const branch = buttonEl(doc, "分支");
+  branch.title = "复制从对话开头到此消息的完整上下文，创建独立对话";
+  branch.disabled =
+    conversationIsSending(state, state.activeConversationID) ||
+    !state.historyLoaded;
+  branch.addEventListener("click", () => {
+    branchConversationFromMessage(mount, state, index);
+  });
+  actions.append(branch);
+
   if (message.role === "assistant" && message.content.trim()) {
     const saveNote = buttonEl(doc, "写入笔记");
     saveNote.title = betterNotesInsertAvailable()
@@ -6194,10 +7812,13 @@ function bubble(
       : "写入当前条目的 Zotero 子笔记";
     saveNote.disabled =
       state.itemID == null ||
-      (state.sending && state.activeAssistantIndex === index);
+      (conversationIsSending(state, state.activeConversationID) &&
+        conversationRuntime(state, state.activeConversationID)
+          .activeAssistantIndex === index);
     saveNote.addEventListener("click", () => {
       void writeAssistantMessageToNote(
         doc,
+        mount,
         state.itemID,
         message,
         saveNote,
@@ -6216,7 +7837,10 @@ function bubble(
     index === findLastAssistantIndex(state.messages)
   ) {
     const retry = buttonEl(doc, "重试");
-    retry.disabled = state.sending;
+    retry.disabled = conversationIsSending(
+      state,
+      state.activeConversationID,
+    );
     retry.addEventListener(
       "click",
       () => void regenerateLastResponse(mount, state),
@@ -6225,7 +7849,7 @@ function bubble(
   }
 
   const del = buttonEl(doc, "删除");
-  del.disabled = state.sending;
+  del.disabled = conversationIsSending(state, state.activeConversationID);
   del.addEventListener("click", () => {
     state.messages = state.messages.filter((_, i) => i !== index);
     void persistPanelConversations(state);
@@ -6246,33 +7870,62 @@ function bubble(
   if (message.role === "assistant") {
     renderAssistantProcess(doc, mount, state, root, sourceUser);
   }
-  const progress = assistantProgressFor(state, index, message);
+  const webProvider = webPromptProviderForUserMessage(sourceUser);
+  const progress = assistantProgressForActiveConversation(
+    state,
+    index,
+    message,
+  );
   if (progress) {
     root.append(renderAssistantProgress(doc, progress));
   }
+  const webTaskProgress = webProvider
+    ? webTaskProgressFor(message.task, webProviderName(state, webProvider))
+    : null;
+  if (webTaskProgress) {
+    root.append(renderWebTaskProgress(doc, webTaskProgress));
+  }
   if (message.role === "assistant" && message.thinking) {
     const details = el(doc, "details", "bubble-thinking") as HTMLDetailsElement;
-    details.open = true;
-    details.append(el(doc, "summary", "", "思考过程"));
+    details.open = !webProvider;
+    details.append(
+      el(
+        doc,
+        "summary",
+        "",
+        webProvider === "deepseek" ? "DeepSeek 已思考" : "思考过程",
+      ),
+    );
     const thinkingBody = el(doc, "div", "bubble-thinking-body");
     renderMarkdownInto(thinkingBody, message.thinking);
     details.append(thinkingBody);
     root.append(details);
   }
+  if (webProvider && message.task?.completedAt) {
+    root.append(el(doc, "div", "bubble-answer-label", "回答"));
+  }
   const body = el(doc, "div", "bubble-body");
   renderMarkdownInto(body, message.content || (progress ? " " : ""));
   scheduleAssistantPdfQuoteLinks(body, mount, state, message, index);
+  installWebGeneratedFileLinks(body, state);
+  const placedCharts =
+    message.role === "assistant"
+      ? installWebChartImages(doc, body, message.images)
+      : new Set<number>();
   if (message.role === "assistant" && message.mindmap) {
     body.append(renderMindmapBlock(doc, message.mindmap));
   }
   root.append(body);
+  if (message.role === "assistant") {
+    renderMessageImages(doc, root, message.images, placedCharts);
+  }
   if (message.role === "assistant" && message.usage) {
     root.append(renderMessageUsage(doc, message.usage));
   }
   if (message.role === "assistant" && message.content.trim()) {
     const rawPre = doc.createElement("pre");
     rawPre.className = "bubble-raw";
-    rawPre.textContent = message.content;
+    rawPre.textContent = stripWebChartPlaceholders(message.content);
     rawPre.style.display = "none";
     root.append(rawPre);
   }
@@ -6301,6 +7954,9 @@ function renderUserPdfSelectionContext(
   const selectedText =
     message.context?.selectedText || locator?.selectedText || "";
   if (!selectedText) return;
+  const webChatCitation =
+    message.context?.selectedTextOrigin === "chat" &&
+    isWebPromptUserMessage(message);
 
   const card = el(doc, "div", "bubble-source-selection");
   const head = el(doc, "div", "bubble-source-selection-head");
@@ -6308,7 +7964,21 @@ function renderUserPdfSelectionContext(
     doc,
     "div",
     "bubble-source-selection-label",
-    locator ? `PDF 选区${pdfSelectionPageLabel(locator)}` : "原文选区",
+    message.context?.selectedTextOrigin === "chat"
+      ? [
+           "对话引用",
+          message.context.quotedChatReply?.sourceConversationTitle,
+          webChatCitation
+            ? chatCitationLocation(state, message, selectedText)
+            : message.context.quotedChatReply?.fullReply
+              ? `完整回复 ${message.context.quotedChatReply.fullReply.length} 字`
+              : "",
+        ]
+          .filter(Boolean)
+          .join(" · ")
+      : locator
+        ? `PDF 选区${pdfSelectionPageLabel(locator)}`
+        : "原文选区",
   );
   head.append(label);
   if (locator) {
@@ -6321,11 +7991,89 @@ function renderUserPdfSelectionContext(
     });
     head.append(jump);
   }
-  card.append(
-    head,
-    el(doc, "div", "bubble-source-selection-text", selectedText),
-  );
+  const sourceBody = el(doc, "div", "bubble-source-selection-text");
+  const quotedReply =
+    message.context?.selectedTextOrigin === "chat"
+      ? message.context.quotedChatReply?.fullReply?.trim()
+      : "";
+  if (webChatCitation) renderMarkdownInto(sourceBody, selectedText);
+  else if (quotedReply) renderMarkdownInto(sourceBody, quotedReply);
+  else sourceBody.textContent = selectedText;
+  card.append(head, sourceBody);
   root.append(card);
+}
+
+
+
+function chatCitationLocation(
+  state: PanelState,
+  message: Message,
+  selectedText: string,
+): string {
+  const fullReply = message.context?.quotedChatReply?.fullReply ?? "";
+  const ordinal = message.context?.quotedChatReply?.sourceAssistantOrdinal;
+  const question =
+    message.context?.quotedChatReply?.sourceQuestionPreview ||
+    sourceQuestionPreviewFromHistory(state, message, fullReply);
+  const reply = question
+    ? `来源回答“${question}”`
+    : ordinal
+      ? `来源回答第 ${ordinal} 条`
+      : "来源回答";
+  const excerpt = contentPreview(selectedText, 30);
+  const paragraph = chatCitationParagraph(fullReply, selectedText);
+  const start = fullReply.indexOf(selectedText);
+  const excerptLabel = excerpt ? ` · 引用“${excerpt}”` : "";
+  return start >= 0
+    ? `${reply}${excerptLabel}${paragraph ? ` · ${paragraph}` : ""} · 第 ${start + 1}-${start + selectedText.length} 字`
+    : `${reply}${excerptLabel}${paragraph ? ` · ${paragraph}` : ""} · 引用 ${selectedText.length} 字`;
+}
+
+function sourceQuestionPreviewFromHistory(
+  state: PanelState,
+  citationMessage: Message,
+  fullReply: string,
+): string {
+  const citationIndex = state.messages.indexOf(citationMessage);
+  for (let index = citationIndex - 1; index >= 0; index -= 1) {
+    const candidate = state.messages[index];
+    if (
+      candidate?.role !== "assistant" ||
+      candidate.content.trim() !== fullReply.trim()
+    ) {
+      continue;
+    }
+    const userIndex = findPreviousUserIndex(state.messages, index);
+    return contentPreview(state.messages[userIndex]?.content || "", 28);
+  }
+  return "";
+}
+
+function chatCitationParagraph(
+  fullReply: string,
+  selectedText: string,
+): string {
+  const normalizedExcerpt = normalizeChatCitationText(selectedText);
+  if (!normalizedExcerpt) return "";
+  const paragraphs = fullReply
+    .split(/\n\s*\n/)
+    .map((paragraph) => paragraph.trim())
+    .filter(Boolean);
+  const index = paragraphs.findIndex((paragraph) => {
+    const normalizedParagraph = normalizeChatCitationText(paragraph);
+    return (
+      normalizedParagraph.includes(normalizedExcerpt) ||
+      normalizedExcerpt.includes(normalizedParagraph)
+    );
+  });
+  return index >= 0 ? `第 ${index + 1} 段` : "";
+}
+
+function normalizeChatCitationText(value: string): string {
+  return value
+    .replace(/[`*_>#\[\]()]/g, "")
+    .replace(/\s+/g, "")
+    .trim();
 }
 
 function renderMessageUsage(
@@ -6438,7 +8186,12 @@ function scheduleAssistantPdfQuoteLinks(
   index: number,
 ) {
   if (message.role !== "assistant") return;
-  if (state.sending && state.activeAssistantIndex === index) return;
+  if (
+    conversationIsSending(state, state.activeConversationID) &&
+    conversationRuntime(state, state.activeConversationID)
+      .activeAssistantIndex === index
+  )
+    return;
   // Quote evidence may arrive as a `>` blockquote OR as a `- "…"` list item;
   // pdfQuoteBlocks() handles both, so gate on either element being present.
   if (!body.querySelector("blockquote, li")) return;
@@ -9227,11 +10980,13 @@ function captureVisibleNoteScroll(
 
 async function writeAssistantMessageToNote(
   doc: Document,
+  mount: HTMLElement,
   itemID: number | null,
   message: Message,
   button: HTMLButtonElement,
   pdfSelection: PdfSelectionLocator | null = null,
 ) {
+  const chatScroll = lockMessagesScroll(mount);
   const originalText = button.textContent || "写入笔记";
   const originalTitle = button.title;
   button.textContent = "写入中...";
@@ -9256,8 +11011,12 @@ async function writeAssistantMessageToNote(
         ? "已新建笔记"
         : "已写入";
     button.title = `目标笔记 #${result.noteID}`;
+    lockMessagesScroll(mount, chatScroll);
     refreshVisibleNoteWindow(doc, result.noteID, noteScroll);
+    scheduleMessagesScrollRestore(mount, chatScroll);
   } catch (err) {
+    lockMessagesScroll(mount, chatScroll);
+    scheduleMessagesScrollRestore(mount, chatScroll);
     button.textContent = "写入失败";
     button.title = err instanceof Error ? err.message : String(err);
   } finally {
@@ -9282,6 +11041,7 @@ async function appendAssistantContentToItemNote(
     itemID,
     content,
     pdfSelection,
+    { parentNoteID: target.note.id },
   );
   const usedBetterNotes = await insertHTMLIntoNote(target.note, html);
   return {
@@ -9577,15 +11337,17 @@ function renderAssistantProcess(
   const summary = contextSummaryLine(sourceUser);
   const tools = sourceUser.context.toolCalls;
   if (!summary && !tools?.length) return;
+  const webContext = isWebPromptUserMessage(sourceUser);
 
   const details = el(doc, "details", "assistant-process") as HTMLDetailsElement;
-  details.open = true;
+  details.open = !webContext;
+  const contextLabel = webContext ? "发送上下文" : "思考与上下文";
   details.append(
     el(
       doc,
       "summary",
       "",
-      summary ? `思考与上下文 · ${summary}` : "思考与上下文",
+      summary ? `${contextLabel} · ${summary}` : contextLabel,
     ),
   );
 
@@ -9624,7 +11386,10 @@ function renderAssistantProcess(
       contextRow.append(chip);
     }
     body.append(contextRow);
-    if (sourceUser.context.selectedText) {
+    if (
+      sourceUser.context.selectedText &&
+      !isWebPromptUserMessage(sourceUser)
+    ) {
       body.append(
         el(
           doc,
@@ -9640,14 +11405,50 @@ function renderAssistantProcess(
   root.append(details);
 }
 
+// Charts the Web Agent synced carry a placeholder in the answer text. Paint
+// them where the chart actually appeared instead of leaving every figure in
+// the thumbnail tray at the bottom of the message.
+function installWebChartImages(
+  doc: Document,
+  body: HTMLElement,
+  images: Message["images"] | undefined,
+): Set<number> {
+  const placed = new Set<number>();
+  const blocks = Array.from(body.querySelectorAll("p, li")) as HTMLElement[];
+  for (const block of blocks) {
+    const ordinal = webChartPlaceholderOrdinal(block.textContent || "");
+    if (ordinal == null) continue;
+    const image = webChartImage(images, ordinal);
+    if (!image) {
+      // The answer kept a placeholder but the image never arrived; showing the
+      // raw token would be worse than showing nothing.
+      block.remove();
+      continue;
+    }
+    const figure = el(doc, "figure", "message-chart");
+    const img = doc.createElement("img");
+    img.src = image.dataUrl;
+    img.alt = image.name;
+    figure.append(img, el(doc, "figcaption", "", image.name));
+    block.replaceWith(figure);
+    placed.add(ordinal);
+  }
+  return placed;
+}
+
 function renderMessageImages(
   doc: Document,
   root: HTMLElement,
   images: Message["images"] | undefined,
+  placedCharts?: Set<number>,
 ) {
   if (!images?.length) return;
+  const remaining = images.filter(
+    (_, index) => !placedCharts?.has(index + 1),
+  );
+  if (!remaining.length) return;
   const tray = el(doc, "div", "message-images");
-  for (const image of images) {
+  for (const image of remaining) {
     const figure = el(doc, "figure", "message-image");
     const img = doc.createElement("img");
     img.src = image.dataUrl;
@@ -10975,11 +12776,109 @@ function serializeSidebarSelection(
   return text;
 }
 
-// Right-click on a chat selection → floating menu with 复制 / 导入笔记.
+// Right-click on a chat selection → floating menu with 复制 / 加入笔记 / 提问.
 // We deliberately don't replace the entire context menu (that would require
 // fighting Zotero's XUL menupopup system); instead we suppress the default
 // browser menu only when our criteria are met, then render a lightweight
 // HTML menu at the click point.
+function installWebGeneratedFileLinks(
+  body: HTMLElement,
+  state: PanelState,
+): void {
+  const links = Array.from(body.querySelectorAll("a")) as HTMLAnchorElement[];
+  for (const link of links) {
+    const sourcePath = webGeneratedFilePath(link.href);
+    if (!sourcePath) continue;
+    link.classList.add("zai-web-generated-file");
+    link.setAttribute("title", "点击打开文件；右键保存到当前论文目录");
+    link.addEventListener("click", (event: MouseEvent) => {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      void openWebGeneratedFile(sourcePath, link);
+    });
+    link.addEventListener("contextmenu", (event: MouseEvent) => {
+      event.preventDefault();
+      event.stopPropagation();
+      openWebGeneratedFileContextMenu(event, sourcePath, link, state);
+    });
+  }
+}
+
+async function openWebGeneratedFile(
+  sourcePath: string,
+  link: HTMLAnchorElement,
+): Promise<void> {
+  if (!(await IOUtils.exists(sourcePath))) {
+    link.title = "生成文件已不存在，请重新生成";
+    return;
+  }
+  Zotero.launchFile(sourcePath);
+}
+
+function openWebGeneratedFileContextMenu(
+  event: MouseEvent,
+  sourcePath: string,
+  link: HTMLAnchorElement,
+  state: PanelState,
+): void {
+  const doc = link.ownerDocument!;
+  doc.querySelector(".zai-web-generated-file-menu")?.remove();
+  const menu = doc.createElement("div");
+  menu.className = "zai-selection-menu zai-web-generated-file-menu";
+  menu.setAttribute("role", "menu");
+  menu.style.left = `${event.clientX}px`;
+  menu.style.top = `${event.clientY}px`;
+
+  const save = doc.createElement("button");
+  save.type = "button";
+  save.className = "zai-selection-menu-item";
+  save.setAttribute("role", "menuitem");
+  save.textContent = "保存到当前论文目录";
+  const itemID = state.itemID;
+  save.disabled = itemID == null;
+  if (itemID == null) save.title = "请先选择一篇论文";
+  save.addEventListener("click", () => {
+    if (itemID == null) return;
+    save.disabled = true;
+    save.textContent = "保存中…";
+    void saveWebGeneratedFileToCurrentItem(
+      sourcePath,
+      itemID,
+      link.textContent || "",
+    )
+      .then((attachmentID) => {
+        save.textContent = "已保存";
+        save.title = attachmentID ? `已添加为附件 #${attachmentID}` : "已添加为附件";
+        link.title = "已保存到当前论文的 Zotero 附件";
+      })
+      .catch((error) => {
+        save.textContent = "保存失败";
+        save.title = errorMessage(error);
+        save.disabled = false;
+      });
+  });
+  menu.append(save);
+  const root = doc.body ?? doc.documentElement;
+  if (!root) return;
+  root.append(menu);
+
+  const close = () => {
+    menu.remove();
+    doc.removeEventListener("mousedown", outside, true);
+    doc.removeEventListener("keydown", escape, true);
+  };
+  const outside = (click: Event) => {
+    if (!menu.contains(click.target as Node)) close();
+  };
+  const escape = (keyEvent: KeyboardEvent) => {
+    if (keyEvent.key === "Escape") close();
+  };
+  doc.defaultView?.setTimeout(() => {
+    doc.addEventListener("mousedown", outside, true);
+    doc.addEventListener("keydown", escape, true);
+  }, 0);
+}
+
 function installSidebarSelectionMenu(
   win: Window,
   sidebar: WindowSidebarState,
@@ -10999,20 +12898,20 @@ function installSidebarSelectionMenu(
     if (e.key === "Escape") dismiss();
   };
 
-  const onContextMenu = (event: MouseEvent) => {
-    const sel = win.getSelection();
-    if (!selectionBelongsToSidebar(sel, sidebar)) return;
-    const text = serializeSidebarSelection(sel, "context-menu");
-    if (!text) return;
-
-    event.preventDefault();
-    event.stopPropagation();
+  const openMenu = (event: MouseEvent, text: string) => {
     dismiss();
+    const sourceReply = chatReplyCitationFromTarget(
+      event.target,
+      sidebar,
+      text,
+    );
 
     const menu = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
     menu.className = "zai-selection-menu";
-    menu.style.left = `${event.clientX}px`;
-    menu.style.top = `${event.clientY}px`;
+    const position = selectionMenuPosition(event, sidebar);
+    if (position.docked) menu.style.position = "absolute";
+    menu.style.left = `${position.left}px`;
+    menu.style.top = `${position.top}px`;
 
     const copyBtn = doc.createElementNS(
       XHTML_NS,
@@ -11038,7 +12937,7 @@ function installSidebarSelectionMenu(
     ) as HTMLButtonElement;
     importBtn.type = "button";
     importBtn.className = "zai-selection-menu-item";
-    importBtn.textContent = "导入笔记";
+    importBtn.textContent = "加入笔记";
     importBtn.addEventListener("click", () => {
       debugZai("context-menu-import: click", textDebugInfo(text));
       void importSelectionToNote(doc, sidebar, text);
@@ -11046,17 +12945,140 @@ function installSidebarSelectionMenu(
     });
 
     menu.append(copyBtn, importBtn);
-    (doc.body ?? doc.documentElement)?.append(menu);
+    if (sourceReply) {
+      const askBtn = doc.createElementNS(
+        XHTML_NS,
+        "button",
+      ) as HTMLButtonElement;
+      askBtn.type = "button";
+      askBtn.className = "zai-selection-menu-item";
+      askBtn.textContent = "提问";
+      askBtn.addEventListener("click", () => {
+        const state = states.get(sidebar.mount);
+        if (!state) return;
+        state.chatSelectionQuote = sourceReply;
+        state.chatSelectionPreviewOpen = false;
+        state.focusInput = true;
+        state.draftHadFocus = true;
+        dismiss();
+        renderPanel(sidebar.mount, state);
+      });
+      menu.append(askBtn);
+    }
+    sidebar.column.append(menu);
     activeMenu = menu;
-    doc.addEventListener("mousedown", outsideClick, true);
-    doc.addEventListener("keydown", escClose, true);
+    win.setTimeout(() => {
+      if (activeMenu !== menu) return;
+      doc.addEventListener("mousedown", outsideClick, true);
+      doc.addEventListener("keydown", escClose, true);
+    }, 0);
+  };
+
+  const openMenuForEvent = (event: MouseEvent): boolean => {
+    const text = sidebarSelectionMenuText(win, sidebar, event.target);
+    if (!text) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    openMenu(event, text);
+    return true;
+  };
+
+  const onContextMenu = (event: MouseEvent) => {
+    openMenuForEvent(event);
+  };
+
+  // Zotero's Linux chrome UI can consume `contextmenu` before it reaches
+  // add-on listeners. Right-button mousedown still arrives, and also occurs
+  // before Firefox collapses the visual selection, so use it as the primary
+  // fallback without changing left-click behavior or menus outside the panel.
+  const onRightMouseDown = (event: MouseEvent) => {
+    if (event.button !== 2) return;
+    if (openMenuForEvent(event)) event.stopImmediatePropagation();
   };
 
   win.addEventListener("contextmenu", onContextMenu, true);
+  win.addEventListener("mousedown", onRightMouseDown, true);
   sidebar.selectionMenuCleanup = () => {
     win.removeEventListener("contextmenu", onContextMenu, true);
+    win.removeEventListener("mousedown", onRightMouseDown, true);
     dismiss();
   };
+}
+
+function chatReplyCitationFromTarget(
+  target: EventTarget | null,
+  sidebar: WindowSidebarState,
+  excerpt: string,
+): PanelState["chatSelectionQuote"] {
+  const node = target as Node | null;
+  const element =
+    node?.nodeType === 1
+      ? (node as Element)
+      : (node?.parentElement as Element | null);
+  const bubble = element?.closest(
+    ".bubble-assistant[data-message-index]",
+  ) as HTMLElement | null;
+  if (!bubble || !sidebar.mount.contains(bubble)) return undefined;
+
+  const index = Number(bubble.dataset.messageIndex);
+  const state = states.get(sidebar.mount);
+  const sourceMessage = Number.isInteger(index) ? state?.messages[index] : null;
+  if (!state || sourceMessage?.role !== "assistant") return undefined;
+  if (!sourceMessage.content.trim()) return undefined;
+  const sourceUserIndex = findPreviousUserIndex(state.messages, index);
+  const sourceQuestion = state.messages[sourceUserIndex]?.content.trim() || "";
+  return {
+    excerpt,
+    fullReply: sourceMessage.content,
+    sourceConversationTitle: activeConversation(state)?.title ?? "当前对话",
+    sourceAssistantOrdinal: state.messages
+      .slice(0, index + 1)
+      .filter((message) => message.role === "assistant").length,
+    sourceQuestionPreview: contentPreview(sourceQuestion, 28),
+  };
+}
+
+function selectionMenuPosition(
+  event: MouseEvent,
+  sidebar: WindowSidebarState,
+): { left: number; top: number; docked: boolean } {
+  const docked = dockedSidebarLayouts.has(sidebar);
+  if (!docked) {
+    return { left: event.clientX, top: event.clientY, docked: false };
+  }
+
+  const rect = sidebar.column.getBoundingClientRect();
+  const localCoordinate = (value: number, start: number, size: number) =>
+    value >= start && value <= start + size ? value - start : value;
+  return {
+    left: localCoordinate(event.clientX, rect.left, rect.width),
+    top: localCoordinate(event.clientY, rect.top, rect.height),
+    docked: true,
+  };
+}
+
+function sidebarSelectionMenuText(
+  win: Window,
+  sidebar: WindowSidebarState,
+  target: EventTarget | null,
+): string {
+  const selection = win.getSelection();
+  if (selectionBelongsToSidebar(selection, sidebar)) {
+    const text = serializeSidebarSelection(selection, "context-menu");
+    if (text) cacheSidebarSelection(sidebar, text, "context-menu");
+    return text;
+  }
+
+  const node = target as Node | null;
+  if (
+    !node ||
+    (!sidebar.column.contains(node) && !sidebar.noteColumn.contains(node))
+  ) {
+    return "";
+  }
+  const cached = sidebar.lastCopySelection;
+  if (!cached || Date.now() - cached.updatedAt > 10000) return "";
+  return cached.text;
 }
 
 // Insert a chat selection into the user's note. If the note panel is open

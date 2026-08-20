@@ -1,0 +1,375 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero 多模型 Web Prompt Hub 方案</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f2eee7;
+        --surface: rgba(255, 253, 249, 0.96);
+        --surface-2: #f8f5f0;
+        --text: #29231e;
+        --muted: #756a60;
+        --faint: #a3978c;
+        --border: #dfd5c8;
+        --orange: #ba5a32;
+        --orange-soft: #fff0e7;
+        --blue: #376f91;
+        --blue-soft: #eaf5fb;
+        --green: #347558;
+        --green-soft: #eaf6ef;
+        --purple: #6556b5;
+        --purple-soft: #f1efff;
+        --red: #a84f49;
+        --red-soft: #fbeeed;
+        --shadow: 0 20px 60px rgba(69, 50, 33, 0.12);
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background:
+          radial-gradient(circle at 10% 0%, #fffaf0 0 12%, transparent 35%),
+          radial-gradient(circle at 90% 0%, #e8f3f7 0 10%, transparent 30%),
+          linear-gradient(145deg, #eee7dc, #f8f5ef 54%, #eae7e1);
+        color: var(--text);
+        font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+
+      button { font: inherit; }
+
+      .page {
+        width: min(1220px, calc(100% - 28px));
+        margin: 0 auto;
+        padding: 32px 0 50px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 24px;
+        align-items: end;
+        margin-bottom: 22px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--orange);
+        font-size: 12px;
+        font-weight: 900;
+        letter-spacing: .12em;
+        text-transform: uppercase;
+      }
+
+      h1 { margin: 0; font-size: clamp(28px, 4.5vw, 45px); line-height: 1.15; }
+      .lead { max-width: 820px; margin: 12px 0 0; color: var(--muted); line-height: 1.75; }
+
+      .scope {
+        max-width: 300px;
+        padding: 13px 16px;
+        border: 1px solid rgba(52, 117, 88, .28);
+        border-radius: 14px;
+        background: var(--green-soft);
+        color: var(--green);
+        font-size: 13px;
+        font-weight: 800;
+        line-height: 1.55;
+      }
+
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 20px;
+        background: var(--surface);
+        box-shadow: var(--shadow);
+      }
+
+      .architecture { padding: 24px; }
+      .section-title { margin: 0 0 5px; font-size: 20px; }
+      .section-note { margin: 0 0 20px; color: var(--muted); font-size: 13px; line-height: 1.6; }
+
+      .flow {
+        display: grid;
+        grid-template-columns: 1fr 52px 1.15fr 52px 1.5fr 52px 1fr;
+        gap: 8px;
+        align-items: stretch;
+      }
+
+      .node {
+        min-height: 154px;
+        padding: 17px;
+        border: 1px solid var(--border);
+        border-radius: 15px;
+        background: #fff;
+      }
+
+      .node.zotero { border-color: rgba(186, 90, 50, .30); background: var(--orange-soft); }
+      .node.hub { border-color: rgba(101, 86, 181, .31); background: var(--purple-soft); }
+      .node.providers { border-color: rgba(55, 111, 145, .30); background: var(--blue-soft); }
+      .node.return { border-color: rgba(52, 117, 88, .30); background: var(--green-soft); }
+      .node .icon { font-size: 25px; }
+      .node h3 { margin: 8px 0 7px; font-size: 15px; }
+      .node p { margin: 0; color: var(--muted); font-size: 12.5px; line-height: 1.62; }
+      .arrow { display: grid; place-items: center; color: #9b8f83; font-size: 29px; }
+
+      .provider-pills { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 11px; }
+      .provider-pills span {
+        padding: 4px 8px;
+        border: 1px solid rgba(55, 111, 145, .19);
+        border-radius: 999px;
+        background: rgba(255,255,255,.72);
+        color: var(--blue);
+        font-size: 11px;
+        font-weight: 800;
+      }
+
+      .boundary {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+        margin-top: 15px;
+      }
+
+      .boundary > div {
+        padding: 11px 13px;
+        border-radius: 11px;
+        font-size: 12.5px;
+        line-height: 1.6;
+      }
+
+      .allowed { background: var(--green-soft); color: #2f684f; }
+      .blocked { background: var(--red-soft); color: #874541; }
+
+      .mockup {
+        display: grid;
+        grid-template-columns: 245px minmax(0, 1fr) 300px;
+        min-height: 500px;
+        margin-top: 18px;
+        overflow: hidden;
+      }
+
+      .sidebar {
+        padding: 18px;
+        border-right: 1px solid var(--border);
+        background: #f4f0ea;
+      }
+
+      .brand { display: flex; gap: 10px; align-items: center; margin-bottom: 22px; font-weight: 900; }
+      .brand-icon { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 10px; background: var(--purple); color: #fff; }
+      .nav-label { margin: 18px 0 8px; color: var(--faint); font-size: 10px; font-weight: 900; letter-spacing: .1em; }
+      .nav-item { padding: 9px 10px; border-radius: 9px; color: var(--muted); font-size: 12px; }
+      .nav-item.active { background: #fff; color: var(--purple); font-weight: 800; box-shadow: 0 4px 14px rgba(68,55,44,.08); }
+
+      .workspace { padding: 20px; min-width: 0; }
+      .workspace-head { display: flex; justify-content: space-between; gap: 14px; align-items: start; margin-bottom: 15px; }
+      .workspace-head h2 { margin: 0 0 5px; font-size: 18px; }
+      .workspace-head p { margin: 0; color: var(--muted); font-size: 12px; }
+      .status { padding: 6px 9px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 11px; font-weight: 900; white-space: nowrap; }
+
+      .prompt-card { border: 1px solid var(--border); border-radius: 14px; background: #fff; overflow: hidden; }
+      .prompt-meta { display: flex; justify-content: space-between; gap: 12px; padding: 11px 13px; border-bottom: 1px solid var(--border); background: var(--surface-2); font-size: 11px; color: var(--muted); }
+      .prompt-body { min-height: 180px; padding: 14px; font: 12px/1.7 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; color: #49413a; white-space: pre-wrap; }
+      .prompt-actions { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px; border-top: 1px solid var(--border); }
+
+      .btn { border: 1px solid var(--border); border-radius: 9px; padding: 8px 11px; background: #fff; color: #554a41; font-size: 12px; font-weight: 800; }
+      .btn.primary { border-color: var(--purple); background: var(--purple); color: #fff; }
+      .btn.web { border-color: rgba(55,111,145,.3); background: var(--blue-soft); color: var(--blue); }
+
+      .providers-panel { padding: 18px; border-left: 1px solid var(--border); background: #fbf9f5; }
+      .providers-panel h3 { margin: 0 0 5px; font-size: 15px; }
+      .providers-panel > p { margin: 0 0 13px; color: var(--muted); font-size: 11.5px; line-height: 1.5; }
+      .provider-list { display: grid; gap: 9px; }
+      .provider {
+        display: grid;
+        grid-template-columns: 34px 1fr auto;
+        gap: 9px;
+        align-items: center;
+        padding: 11px;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: #fff;
+      }
+      .provider-logo { display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; background: var(--surface-2); font-weight: 900; }
+      .provider b { display: block; font-size: 12px; }
+      .provider small { color: var(--muted); font-size: 10px; }
+      .tag { padding: 3px 6px; border-radius: 999px; background: #f2eee8; color: var(--muted); font-size: 9px; font-weight: 900; }
+      .tag.api { background: var(--green-soft); color: var(--green); }
+
+      .modes {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 16px;
+        margin-top: 18px;
+      }
+
+      .mode { padding: 20px; }
+      .mode.recommended { border: 2px solid rgba(52, 117, 88, .55); }
+      .badge { display: inline-block; padding: 4px 8px; border-radius: 999px; background: var(--green-soft); color: var(--green); font-size: 10px; font-weight: 900; }
+      .mode h2 { margin: 12px 0 7px; font-size: 18px; }
+      .mode p { min-height: 62px; margin: 0 0 14px; color: var(--muted); font-size: 12.5px; line-height: 1.62; }
+      .mode ul { margin: 0; padding-left: 18px; color: #5d534a; font-size: 12px; line-height: 1.75; }
+
+      .rules { margin-top: 18px; padding: 22px; }
+      .rules-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+      .rule { padding: 13px; border: 1px solid var(--border); border-radius: 11px; background: #fff; }
+      .rule b { display: block; margin-bottom: 4px; font-size: 13px; }
+      .rule span { color: var(--muted); font-size: 12px; line-height: 1.6; }
+
+      @media (max-width: 980px) {
+        .hero { grid-template-columns: 1fr; }
+        .flow { grid-template-columns: 1fr; }
+        .arrow { min-height: 30px; transform: rotate(90deg); }
+        .mockup { grid-template-columns: 190px 1fr; }
+        .providers-panel { grid-column: 1 / -1; border-top: 1px solid var(--border); border-left: 0; }
+        .provider-list { grid-template-columns: repeat(2, 1fr); }
+        .modes { grid-template-columns: 1fr; }
+      }
+
+      @media (max-width: 620px) {
+        .page { width: min(100% - 18px, 1220px); padding-top: 18px; }
+        .architecture, .mode, .rules { padding: 16px; border-radius: 14px; }
+        .boundary, .rules-grid { grid-template-columns: 1fr; }
+        .mockup { display: block; }
+        .sidebar { display: none; }
+        .providers-panel { border-left: 0; }
+        .provider-list { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="hero">
+        <div>
+          <p class="eyebrow">Zotero AI Sidebar · Design</p>
+          <h1>多模型 Web Prompt Hub</h1>
+          <p class="lead">
+            Zotero 写完新 Prompt 后自动发送到一个本地独立页面。该页面统一管理 ChatGPT、DeepSeek、Claude、Gemini 等入口、Prompt 队列和导入结果，但不安装浏览器扩展，也不自动抓取第三方网页回答。
+          </p>
+        </div>
+        <div class="scope">核心边界<br />自动到达 Prompt Hub<br />网页模型由用户发送与复制<br />API 模型可全自动</div>
+      </header>
+
+      <section class="card architecture">
+        <h2 class="section-title">系统结构</h2>
+        <p class="section-note">“集成网页端”指统一入口、上下文管理、窗口启动和结果归档，不代表绕过跨域限制操控厂商页面。</p>
+        <div class="flow">
+          <article class="node zotero">
+            <div class="icon">📚</div>
+            <h3>Zotero</h3>
+            <p>整理问题、PDF 选区、论文元数据与必要章节；保存来源定位和目标对话。</p>
+          </article>
+          <div class="arrow">→</div>
+          <article class="node hub">
+            <div class="icon">🧭</div>
+            <h3>本地 Prompt Hub</h3>
+            <p>接收任务、预览上下文、选择模型入口、复制 Prompt、保存网页对话链接并接收用户导入的回答。</p>
+          </article>
+          <div class="arrow">→</div>
+          <article class="node providers">
+            <div class="icon">🌐</div>
+            <h3>模型入口</h3>
+            <p>网页端采用“复制并打开”；配置官方 API 的模型可由 Hub 自动请求和流式显示。</p>
+            <div class="provider-pills"><span>ChatGPT Web</span><span>DeepSeek Web</span><span>Claude Web</span><span>Gemini Web</span><span>API</span></div>
+          </article>
+          <div class="arrow">→</div>
+          <article class="node return">
+            <div class="icon">↩️</div>
+            <h3>返回 Zotero</h3>
+            <p>用户粘贴或导入回答后，Hub 按任务 ID 写回原对话；写笔记和选区批注仍在本地执行。</p>
+          </article>
+        </div>
+        <div class="boundary">
+          <div class="allowed"><b>可以自动：</b>Zotero → Hub 传送 Prompt、选择预设、打开厂商网页、复制 Prompt、保存任务和回传用户导入的结果。</div>
+          <div class="blocked"><b>不应自动：</b>跨域填写/提交第三方网页、监听页面输出、抓取回答或调用未公开网页接口。</div>
+        </div>
+      </section>
+
+      <section class="card mockup" aria-label="Prompt Hub 界面示意">
+        <aside class="sidebar">
+          <div class="brand"><span class="brand-icon">P</span><span>Prompt Hub</span></div>
+          <div class="nav-label">任务</div>
+          <div class="nav-item active">当前待发送</div>
+          <div class="nav-item">等待导入</div>
+          <div class="nav-item">已完成</div>
+          <div class="nav-label">来源</div>
+          <div class="nav-item">Zotero 对话 5</div>
+          <div class="nav-item">论文选区</div>
+          <div class="nav-label">设置</div>
+          <div class="nav-item">网页入口</div>
+          <div class="nav-item">API 账号</div>
+        </aside>
+
+        <section class="workspace">
+          <div class="workspace-head">
+            <div><h2>新 Prompt 已从 Zotero 接收</h2><p>任务 #ZAI-018 · 对话 5 · 当前 PDF 选区 436 字</p></div>
+            <span class="status">等待选择模型</span>
+          </div>
+          <article class="prompt-card">
+            <div class="prompt-meta"><span>上下文：当前选区 + 论文信息 + 上一轮</span><span>约 1,280 字</span></div>
+            <div class="prompt-body">任务：解释下面这段方法设计，并判断它与连续 latent world model 的关系。
+
+论文：Enhancing End-to-End Autonomous Driving with Latent World Model
+
+选区：……
+
+回答要求：先给出一句话结论，再解释数据流、训练目标和局限。</div>
+            <div class="prompt-actions">
+              <button class="btn primary">复制 Prompt</button>
+              <button class="btn web">复制并打开所选网页</button>
+              <button class="btn">编辑上下文</button>
+              <button class="btn">取消任务</button>
+            </div>
+          </article>
+        </section>
+
+        <aside class="providers-panel">
+          <h3>选择回答入口</h3>
+          <p>网页模式需要用户粘贴并发送；API 模式可自动回答。</p>
+          <div class="provider-list">
+            <div class="provider"><span class="provider-logo">G</span><span><b>ChatGPT</b><small>复制并打开网页</small></span><span class="tag">WEB</span></div>
+            <div class="provider"><span class="provider-logo">D</span><span><b>DeepSeek</b><small>复制并打开网页</small></span><span class="tag">WEB</span></div>
+            <div class="provider"><span class="provider-logo">C</span><span><b>Claude</b><small>复制并打开网页</small></span><span class="tag">WEB</span></div>
+            <div class="provider"><span class="provider-logo">A</span><span><b>API Preset</b><small>自动发送并回传</small></span><span class="tag api">AUTO</span></div>
+          </div>
+        </aside>
+      </section>
+
+      <section class="modes">
+        <article class="card mode recommended">
+          <span class="badge">推荐默认</span>
+          <h2>网页辅助模式</h2>
+          <p>Zotero 自动把任务送到 Hub；用户选择网页模型、粘贴发送，再把回答复制回 Hub。</p>
+          <ul><li>不需要浏览器扩展</li><li>不抓取第三方网页</li><li>可以使用网页订阅</li><li>保留 Zotero 本地写笔记能力</li></ul>
+        </article>
+        <article class="card mode">
+          <span class="badge" style="background:var(--blue-soft);color:var(--blue)">可选</span>
+          <h2>API 自动模式</h2>
+          <p>选择已配置 API 的模型后，Hub 或 Zotero 自动发送、流式显示并回传，适合需要完全自动化的任务。</p>
+          <ul><li>官方自动化接口</li><li>支持工具调用</li><li>支持并发和取消</li><li>按 API token 计费</li></ul>
+        </article>
+        <article class="card mode">
+          <span class="badge" style="background:var(--orange-soft);color:var(--orange)">混合</span>
+          <h2>按任务选择</h2>
+          <p>普通长问答使用网页端；需要 Zotero 工具、高亮定位或完全自动流程时切换 API。</p>
+          <ul><li>同一任务统一归档</li><li>网页/API 共用 Prompt</li><li>关键任务保留工具能力</li><li>控制总体费用</li></ul>
+        </article>
+      </section>
+
+      <section class="card rules">
+        <h2 class="section-title">第一版范围</h2>
+        <p class="section-note">把 Hub 做成可靠的任务中转站，不把它伪装成能够控制所有网页模型的通用 Agent。</p>
+        <div class="rules-grid">
+          <div class="rule"><b>任务传送</b><span>Zotero 通过 localhost 将 Prompt、来源对话、选区摘要和任务 ID 发给 Hub。</span></div>
+          <div class="rule"><b>网页入口</b><span>每个厂商配置名称、首页/对话 URL 和打开方式；按钮执行“复制 Prompt + 打开网页”。</span></div>
+          <div class="rule"><b>回答导入</b><span>用户在厂商网页点击复制，再在 Hub 点击“从剪贴板导入”，由任务 ID 回写 Zotero。</span></div>
+          <div class="rule"><b>对话链接</b><span>用户可把厂商对话 URL 保存到当前 Zotero 对话，下一轮继续打开同一页面。</span></div>
+          <div class="rule"><b>本地写入</b><span>回答回到 Zotero 后继续支持写笔记；高亮仅针对发送前保存的当前 PDF 选区。</span></div>
+          <div class="rule"><b>安全边界</b><span>Hub 只监听 127.0.0.1，使用随机访问令牌，不记录完整 PDF，不读取浏览器 Cookie。</span></div>
+        </div>
+      </section>
+    </main>
+  </body>
+</html>

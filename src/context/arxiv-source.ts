@@ -28,7 +28,7 @@ import { parseSections } from "./tex-sections";
 import { annotateNumberedTables, parseTables } from "./tex-tables";
 import { appendLocalPath } from "../utils/local-path";
 
-export const ARXIV_SOURCE_CLEANER_VERSION = 14;
+export const ARXIV_SOURCE_CLEANER_VERSION = 15;
 
 export function isFreshArxivSourceMeta(meta: ArxivMeta | null): boolean {
   return (

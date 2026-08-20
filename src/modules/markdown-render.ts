@@ -16,6 +16,7 @@ import {
 } from "../context/tex-clean";
 import { parseMermaidMindmap, renderMindmapBlock } from "./mindmap-render";
 import { parseMermaidFlowchart } from "./mermaid-flowchart";
+import { parseGraphvizDot } from "./graphviz-dot";
 
 interface ListState {
   tag: "ol" | "ul";
@@ -57,7 +58,9 @@ export function renderMarkdownInto(
 ) {
   const doc = target.ownerDocument!;
   target.replaceChildren();
-  const normalized = markdown.replaceAll("\r\n", "\n").replaceAll("\r", "\n");
+  const normalized = repairDetachedGraphvizFenceLanguage(
+    markdown.replaceAll("\r\n", "\n").replaceAll("\r", "\n"),
+  );
   const lines = normalized.split("\n");
   let paragraph: string[] = [];
   let listStack: ListState[] = [];
@@ -190,7 +193,22 @@ export function renderMarkdownInto(
         return;
       }
     }
-    const mathLatex = mathFenceToDisplayLatex(raw, codeLanguage);
+    const graphvizCandidate =
+      codeLanguage === "dot" ||
+      codeLanguage === "graphviz" ||
+      (!codeLanguage && /^(?:strict\s+)?(?:di)?graph\b/i.test(raw.trim()));
+    if (graphvizCandidate) {
+      const graph = parseGraphvizDot(raw);
+      if (graph) {
+        target.append(renderMindmapBlock(doc, graph, { sourceName: "DOT" }));
+        codeLines = null;
+        codeLanguage = "";
+        return;
+      }
+    }
+    const mathLatex = graphvizCandidate
+      ? null
+      : mathFenceToDisplayLatex(raw, codeLanguage);
     if (mathLatex) {
       renderMathInto(target, mathRegion(mathLatex), mathMode);
       codeLines = null;
@@ -525,6 +543,13 @@ function extractWholeParagraphInlineMath(
   };
 }
 
+function repairDetachedGraphvizFenceLanguage(markdown: string): string {
+  return markdown.replace(
+    /(^|\n)[ \t]*(?:dot|graphviz)[ \t]*\n(?:[ \t]*\n)+[ \t]*```[ \t]*\n(?=[ \t]*(?:strict\s+)?(?:di)?graph\b)/gi,
+    "$1```dot\n",
+  );
+}
+
 function mathFenceToDisplayLatex(raw: string, language: string): string | null {
   if (!isMathLikeFenceLanguage(language)) return null;
   const trimmed = raw.trim();
@@ -812,6 +837,10 @@ function appendInlineMarkdown(
     const boldStart = text.indexOf("**", cursor);
     const italicStart = findSingleStarEmphasisStart(text, cursor);
     const linkStart = text.indexOf("[", cursor);
+    const bareUrl =
+      parent.tagName.toLowerCase() === "a"
+        ? null
+        : findNextBareUrl(text, cursor);
     const cite = findNextCitationCommand(text, cursor);
     const latexText = findNextLatexTextCommand(text, cursor);
     const starts = [
@@ -822,6 +851,7 @@ function appendInlineMarkdown(
       boldStart,
       italicStart,
       linkStart,
+      bareUrl ? bareUrl.start : -1,
     ].filter((index) => index >= 0);
     const next = starts.length ? Math.min(...starts) : -1;
 
@@ -920,6 +950,17 @@ function appendInlineMarkdown(
       appendInlineMarkdown(em, text.slice(next + 1, end), mathMode);
       parent.append(em);
       cursor = end + 1;
+      continue;
+    }
+
+    if (bareUrl && next === bareUrl.start) {
+      const anchor = doc.createElement("a");
+      anchor.href = bareUrl.href;
+      anchor.target = "_blank";
+      anchor.rel = "noreferrer";
+      anchor.textContent = bareUrl.href;
+      parent.append(anchor);
+      cursor = bareUrl.end;
       continue;
     }
 
@@ -1075,9 +1116,6 @@ function normalizeLatexTabularRowLine(line: string): string {
   }
 
   const withoutRowBreak = trimmed.replace(/\\\\\s*$/, "").trim();
-  // Drop empty cells (a leading `&` for a blank header column, or stray
-  // doubled `&&`) rather than rejecting the whole row — otherwise common
-  // benchmark rows like `& Method & val & val \\` leak their `&` / `\\`.
   const cells = splitLatexTabularRow(withoutRowBreak)
     .map((cell) => cell.trim())
     .filter((cell) => cell.length > 0);
@@ -1204,7 +1242,21 @@ function parseMarkdownLink(
 ): { label: string; href: string; end: number } | null {
   const closeLabel = text.indexOf("]", start + 1);
   if (closeLabel < 0 || text[closeLabel + 1] !== "(") return null;
-  const closeHref = text.indexOf(")", closeLabel + 2);
+  // File names and valid URLs may contain balanced parentheses, e.g.
+  // `flowchart_cn(5).pdf`. Stop at the matching Markdown delimiter instead
+  // of the first closing parenthesis inside the URL.
+  let depth = 0;
+  let closeHref = -1;
+  for (let index = closeLabel + 2; index < text.length; index += 1) {
+    if (text[index] === "(") depth += 1;
+    else if (text[index] === ")") {
+      if (depth === 0) {
+        closeHref = index;
+        break;
+      }
+      depth -= 1;
+    }
+  }
   if (closeHref < 0) return null;
   const href = text.slice(closeLabel + 2, closeHref).trim();
   if (!href) return null;
@@ -1213,4 +1265,23 @@ function parseMarkdownLink(
     href,
     end: closeHref + 1,
   };
+}
+
+function findNextBareUrl(
+  text: string,
+  start: number,
+): { start: number; end: number; href: string } | null {
+  const match = /https?:\/\/[^\s<>"'`]+/i.exec(text.slice(start));
+  if (!match || match.index == null) return null;
+  let href = match[0];
+  while (/[.,!?;:，。！？；：]$/.test(href)) href = href.slice(0, -1);
+  while (
+    href.endsWith(")") &&
+    (href.match(/\)/g)?.length || 0) > (href.match(/\(/g)?.length || 0)
+  ) {
+    href = href.slice(0, -1);
+  }
+  if (!href) return null;
+  const urlStart = start + match.index;
+  return { start: urlStart, end: urlStart + href.length, href };
 }

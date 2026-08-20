@@ -56,6 +56,11 @@ export interface PdfQuoteButtonOptions {
   quoteLinks?: Map<string, PdfSelectionLocator>;
 }
 
+interface NoteDiagramOptions {
+  parentNoteID?: number;
+  embedDiagram?: (svg: SVGSVGElement, parentNoteID: number) => Promise<string>;
+}
+
 export function installPdfQuoteButtonsInElement(
   root: HTMLElement,
   options: PdfQuoteButtonOptions = {},
@@ -357,6 +362,7 @@ export async function assistantContentToNoteHTML(
   itemID: number | null,
   content: string,
   pdfSelection: PdfSelectionLocator | null = null,
+  diagramOptions: NoteDiagramOptions = {},
 ): Promise<string> {
   const root = doc.createElement("div");
   root.append(doc.createElement("hr"));
@@ -376,9 +382,133 @@ export async function assistantContentToNoteHTML(
   // re-renders via its own KaTeX pass. See the comment in
   // appendInlineMarkdown above for the failure modes we'd hit otherwise.
   renderMarkdownInto(body, content.trim(), "source");
+  await replaceNoteDiagramBlocks(body, diagramOptions);
   installPdfQuoteButtonsInElement(body, { sourceItemID: itemID });
   while (body.firstChild) root.appendChild(body.firstChild);
   return String(root.innerHTML);
+}
+
+async function replaceNoteDiagramBlocks(
+  root: HTMLElement,
+  options: NoteDiagramOptions,
+): Promise<void> {
+  const blocks = Array.from(
+    root.querySelectorAll(".mindmap-block"),
+  ) as HTMLElement[];
+  for (const block of blocks) {
+    const source =
+      block.querySelector<HTMLElement>(".mindmap-source")?.textContent || "";
+    const fallback = root.ownerDocument!.createElement("pre");
+    const code = root.ownerDocument!.createElement("code");
+    code.textContent = source;
+    fallback.append(code);
+
+    const svg = block.querySelector(
+      "svg.zai-mm-svg",
+    ) as unknown as SVGSVGElement | null;
+    if (!svg || options.parentNoteID == null) {
+      block.replaceWith(fallback);
+      continue;
+    }
+
+    try {
+      const embed = options.embedDiagram ?? embedNoteDiagram;
+      const attachmentKey = await embed(svg, options.parentNoteID);
+      const paragraph = root.ownerDocument!.createElement("p");
+      const image = root.ownerDocument!.createElement("img");
+      image.setAttribute("data-attachment-key", attachmentKey);
+      image.alt = "流程图";
+      paragraph.append(image);
+      block.replaceWith(paragraph);
+    } catch (err) {
+      debugZai("note-diagram.embed.failed", { error: errorMessage(err) });
+      block.replaceWith(fallback);
+    }
+  }
+}
+
+async function embedNoteDiagram(
+  svg: SVGSVGElement,
+  parentNoteID: number,
+): Promise<string> {
+  const blob = await noteDiagramPngBlob(svg);
+  const attachment = await Zotero.Attachments.importEmbeddedImage({
+    blob,
+    parentItemID: parentNoteID,
+  });
+  if (!attachment.key) throw new Error("嵌入的流程图附件缺少 item key");
+  return attachment.key;
+}
+
+async function noteDiagramPngBlob(svg: SVGSVGElement): Promise<Blob> {
+  const doc = svg.ownerDocument!;
+  const win = doc.defaultView;
+  if (!win) throw new Error("流程图窗口不可用");
+  const width = Math.max(
+    1,
+    Math.ceil(parseFloat(svg.getAttribute("data-natural-w") || "400")),
+  );
+  const height = Math.max(
+    1,
+    Math.ceil(parseFloat(svg.getAttribute("data-natural-h") || "300")),
+  );
+  const clone = svg.cloneNode(true) as SVGSVGElement;
+  clone.setAttribute("width", String(width));
+  clone.setAttribute("height", String(height));
+  clone.setAttribute("xmlns", "http://www.w3.org/2000/svg");
+  const style = doc.createElementNS("http://www.w3.org/2000/svg", "style");
+  style.textContent = `
+    .zai-mm-edge{fill:none;stroke:#c0b4a6;stroke-width:1.5px}
+    .zai-mm-arrow-fill{fill:#c0b4a6}
+    .zai-mm-node rect{fill:#fffdf8;stroke:#d8c9b6;stroke-width:1.2px}
+    .zai-mm-node text,.zai-mm-node tspan{font-family:sans-serif;font-size:11.5px;fill:#24211d}
+    .zai-mm-node-section rect{fill:#fbfaf7;stroke:#c0673d;stroke-width:1.4px}
+    .zai-mm-node-root rect{fill:#fff0e7;stroke:#c0673d;stroke-width:2px}
+    .zai-mm-node-root text,.zai-mm-node-root tspan{font-weight:600;fill:#a94e25;font-size:12px}
+    .zai-mm-node-result rect{fill:#eaf4ff;stroke:#3b7ec0;stroke-width:1.4px}
+    .zai-mm-node-result text,.zai-mm-node-result tspan{font-weight:600;fill:#2f6aa0}
+    .zai-mm-node-innovation rect{fill:#eaf5ea;stroke:#4a9a4a;stroke-width:1.8px}
+    .zai-mm-node-innovation text,.zai-mm-node-innovation tspan{font-weight:700;fill:#2f6b2f}
+  `;
+  clone.insertBefore(style, clone.firstChild);
+
+  const serialized = new win.XMLSerializer().serializeToString(clone);
+  const svgBlob = new win.Blob([serialized], { type: "image/svg+xml" });
+  const url = win.URL.createObjectURL(svgBlob);
+  try {
+    const image = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const candidate = new win.Image();
+      candidate.addEventListener("load", () => resolve(candidate), {
+        once: true,
+      });
+      candidate.addEventListener(
+        "error",
+        () => reject(new Error("流程图 SVG 无法转换为图片")),
+        { once: true },
+      );
+      candidate.src = url;
+    });
+    const scale = Math.max(0.25, Math.min(2, 4096 / width, 4096 / height));
+    const canvas = doc.createElement("canvas");
+    canvas.width = Math.max(1, Math.round(width * scale));
+    canvas.height = Math.max(1, Math.round(height * scale));
+    const context = canvas.getContext(
+      "2d",
+    ) as unknown as CanvasRenderingContext2D | null;
+    if (!context) throw new Error("流程图画布不可用");
+    context.scale(scale, scale);
+    context.fillStyle = "#fffdf8";
+    context.fillRect(0, 0, width, height);
+    context.drawImage(image, 0, 0, width, height);
+    return await new Promise<Blob>((resolve, reject) => {
+      canvas.toBlob((png) => {
+        if (png) resolve(png);
+        else reject(new Error("流程图 PNG 生成失败"));
+      }, "image/png");
+    });
+  } finally {
+    win.URL.revokeObjectURL(url);
+  }
 }
 
 export function renderNotePdfSelectionJump(
@@ -596,7 +726,10 @@ export function betterNotesNoteInsert():
     : null;
 }
 
-export function appendHTMLToExistingNote(existing: string, addition: string): string {
+export function appendHTMLToExistingNote(
+  existing: string,
+  addition: string,
+): string {
   if (!existing.trim()) return `<div>${addition}</div>`;
   const closingDiv = existing.lastIndexOf("</div>");
   if (closingDiv >= 0 && existing.slice(closingDiv).trim() === "</div>") {

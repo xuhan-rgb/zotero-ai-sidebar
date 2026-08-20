@@ -1,6 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   chatHistoryPath,
+  clearAffectedBranchOriginsAfterDeletion,
+  createBranchedConversation,
   createChatConversation,
   loadChatConversations,
   loadChatMessages,
@@ -45,6 +47,97 @@ describe('chat history', () => {
       draftText: '',
       historyMode: 'none',
     });
+  });
+
+  it('branches through the selected message with independent full context', () => {
+    const source = {
+      ...createChatConversation(
+        'default',
+        '对话 1',
+        'preset-a',
+        '2026-08-10T00:00:00.000Z',
+      ),
+      historyMode: 'all' as const,
+      draftText: '不要继承这个草稿',
+      messages: [
+        {
+          role: 'user' as const,
+          content: '问题一',
+          context: { selectedText: 'PDF 上下文' },
+        },
+        {
+          role: 'assistant' as const,
+          content: '回答一',
+          thinking: '思考一',
+          images: [
+            {
+              id: 'image-1',
+              name: 'figure.png',
+              mediaType: 'image/png',
+              dataUrl: 'data:image/png;base64,abc',
+              size: 3,
+            },
+          ],
+        },
+        { role: 'user' as const, content: '不应进入分支' },
+      ],
+    };
+
+    const branch = createBranchedConversation(
+      source,
+      1,
+      'conversation-branch',
+      '对话 2',
+      '2026-08-11T00:00:00.000Z',
+    );
+
+    expect(branch).toMatchObject({
+      id: 'conversation-branch',
+      title: '对话 2',
+      presetID: 'preset-a',
+      draftText: '',
+      historyMode: 'all',
+      branchOrigin: {
+        sourceConversationID: 'default',
+        sourceConversationTitle: '对话 1',
+        messagePreview: '回答一',
+      },
+      messages: [
+        {
+          role: 'user',
+          content: '问题一',
+          context: { selectedText: 'PDF 上下文' },
+        },
+        {
+          role: 'assistant',
+          content: '回答一',
+          thinking: '思考一',
+          images: [{ id: 'image-1' }],
+        },
+      ],
+    });
+    expect(branch.messages[0]).not.toBe(source.messages[0]);
+    expect(branch.messages[0].context).not.toBe(source.messages[0].context);
+    expect(branch.messages[1].images).not.toBe(source.messages[1].images);
+  });
+
+  it('clears branch markers when deleting their source or an earlier tab', () => {
+    const first = createChatConversation('default', '对话 1');
+    const second = createChatConversation('conversation-2', '对话 2');
+    const third = createChatConversation('conversation-3', '对话 3');
+    const branch = {
+      ...createChatConversation('conversation-4', '对话 4'),
+      branchOrigin: {
+        sourceConversationID: third.id,
+        sourceConversationTitle: third.title,
+        messagePreview: '来源消息',
+      },
+    };
+    const conversations = [first, second, third, branch];
+
+    clearAffectedBranchOriginsAfterDeletion(conversations, second.id);
+
+    expect(branch.branchOrigin).toBeUndefined();
   });
 
   it('migrates a legacy per-item message array into the first conversation', async () => {
@@ -101,6 +194,10 @@ describe('chat history', () => {
           presetID: 'preset-b',
           draftText: '这个表格说明什么？',
           historyMode: 'none',
+          branchOrigin: {
+            sourceConversationTitle: '论文总结',
+            messagePreview: 'summary',
+          },
         },
       ],
     });
@@ -130,6 +227,10 @@ describe('chat history', () => {
           presetID: 'preset-b',
           draftText: '这个表格说明什么？',
           historyMode: 'none',
+          branchOrigin: {
+            sourceConversationTitle: '论文总结',
+            messagePreview: 'summary',
+          },
         },
       ],
     });
@@ -275,6 +376,7 @@ describe('chat history', () => {
           title: '选中文字提问',
           promptPreview: 'While most robotic learning systems...',
           createdAt: 100,
+          webProvider: 'custom:sorryios',
           completedAt: 200,
           viewedAt: 300,
           pdfSelection: {
@@ -298,6 +400,7 @@ describe('chat history', () => {
           title: '选中文字提问',
           promptPreview: 'While most robotic learning systems...',
           createdAt: 100,
+          webProvider: 'custom:sorryios',
           completedAt: 200,
           viewedAt: 300,
           pdfSelection: {

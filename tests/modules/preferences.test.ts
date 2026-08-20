@@ -178,6 +178,14 @@ describe("preference save controls", () => {
     );
     expect(preferenceMarkup).toContain('value="docked">右侧并排（同一主窗口）');
     expect(preferenceMarkup).not.toContain('value="companion"');
+    expect(preferenceMarkup).toContain(
+      'id="zai-ui-confirm-conversation-deletion"',
+    );
+    expect(preferenceMarkup).toContain(
+      'id="zai-ui-max-parallel-conversations"',
+    );
+    expect(preferenceMarkup).toContain('同时回答的对话数');
+    expect(preferenceMarkup).toContain('删除对话前显示确认');
   });
 
   it("uses a flat account picker instead of an account select", () => {

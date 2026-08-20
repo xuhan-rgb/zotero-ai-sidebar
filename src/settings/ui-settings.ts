@@ -23,6 +23,8 @@ export interface UiSettings {
   // send button are blocked while sending, matching the historical
   // single-task-at-a-time behavior.
   composerQueueWhileSending: boolean;
+  confirmConversationDeletion: boolean;
+  maxParallelConversations: number;
 }
 
 export const DEFAULT_UI_SETTINGS: UiSettings = {
@@ -33,6 +35,8 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   userProfile: { label: 'YOU', avatar: '' },
   assistantProfile: { label: 'AI', avatar: '' },
   composerQueueWhileSending: false,
+  confirmConversationDeletion: false,
+  maxParallelConversations: 2,
 };
 
 const KEY = 'extensions.zotero-ai-sidebar.uiSettings';
@@ -77,7 +81,20 @@ export function normalizeUiSettings(value: unknown): UiSettings {
     // Strict boolean — only `true` enables; anything else (undefined, legacy
     // shapes, garbage) keeps the conservative default-off behavior.
     composerQueueWhileSending: input.composerQueueWhileSending === true,
+    // Direct deletion is the default; only an explicit `true` opts into the
+    // confirmation dialog.
+    confirmConversationDeletion: input.confirmConversationDeletion === true,
+    maxParallelConversations: normalizeParallelConversationLimit(
+      input.maxParallelConversations,
+    ),
   };
+}
+
+function normalizeParallelConversationLimit(value: unknown): number {
+  const numeric = typeof value === 'number' && Number.isFinite(value)
+    ? Math.round(value)
+    : DEFAULT_UI_SETTINGS.maxParallelConversations;
+  return Math.max(1, Math.min(8, numeric));
 }
 
 function isMessageActionsPosition(value: unknown): value is MessageActionsPosition {

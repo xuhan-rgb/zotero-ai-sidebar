@@ -101,10 +101,17 @@ export interface PortableThread {
   presetID?: string;
   draftText?: string;
   historyMode?: ConversationHistoryMode;
+  branchOrigin?: ChatConversationBranchOrigin;
   createdAt?: string;
   active?: boolean;
   updatedAt: string;
   messages: Message[];
+}
+
+export interface ChatConversationBranchOrigin {
+  sourceConversationID?: string;
+  sourceConversationTitle: string;
+  messagePreview: string;
 }
 
 export interface ChatConversation {
@@ -116,6 +123,7 @@ export interface ChatConversation {
   presetID?: string;
   draftText: string;
   historyMode: ConversationHistoryMode;
+  branchOrigin?: ChatConversationBranchOrigin;
 }
 
 export interface ChatConversationWorkspace {
@@ -139,6 +147,60 @@ export function createChatConversation(
     draftText: '',
     historyMode: 'none',
   };
+}
+
+export function createBranchedConversation(
+  source: ChatConversation,
+  throughMessageIndex: number,
+  id: string,
+  title: string,
+  timestamp = new Date().toISOString(),
+): ChatConversation {
+  const messageCount = Math.min(
+    source.messages.length,
+    Math.max(0, Math.trunc(throughMessageIndex) + 1),
+  );
+  const messages = JSON.parse(
+    JSON.stringify(source.messages.slice(0, messageCount)),
+  ) as Message[];
+  return {
+    ...createChatConversation(id, title, source.presetID, timestamp),
+    messages,
+    historyMode: source.historyMode,
+    branchOrigin: {
+      sourceConversationID: source.id,
+      sourceConversationTitle: source.title,
+      messagePreview: branchMessagePreview(source.messages[throughMessageIndex]),
+    },
+  };
+}
+
+export function clearAffectedBranchOriginsAfterDeletion(
+  conversations: ChatConversation[],
+  deletedConversationID: string,
+): void {
+  const deletedIndex = conversations.findIndex(
+    (conversation) => conversation.id === deletedConversationID,
+  );
+  if (deletedIndex < 0) return;
+  for (const conversation of conversations) {
+    const origin = conversation.branchOrigin;
+    if (!origin) continue;
+    const sourceIndex = conversations.findIndex((candidate) =>
+      origin.sourceConversationID
+        ? candidate.id === origin.sourceConversationID
+        : candidate.title === origin.sourceConversationTitle,
+    );
+    if (sourceIndex < 0 || deletedIndex <= sourceIndex) {
+      delete conversation.branchOrigin;
+    }
+  }
+}
+
+function branchMessagePreview(message: Message | undefined): string {
+  const text = message?.content.replace(/\s+/g, ' ').trim() ?? '';
+  if (!text) return message?.role === 'assistant' ? 'AI 回答' : '用户消息';
+  return text.length > 36 ? `${text.slice(0, 36)}…` : text;
 }
 
 export interface ImportThreadsResult {
@@ -289,6 +351,7 @@ function normalizeConversations(value: unknown): ChatConversation[] {
       typeof entry.presetID === 'string' && entry.presetID
         ? entry.presetID
         : undefined;
+    const branchOrigin = normalizeBranchOrigin(entry.branchOrigin);
     return [
       {
         id,
@@ -299,9 +362,34 @@ function normalizeConversations(value: unknown): ChatConversation[] {
         ...(presetID ? { presetID } : {}),
         draftText: typeof entry.draftText === 'string' ? entry.draftText : '',
         historyMode: normalizeHistoryMode(entry.historyMode),
+        ...(branchOrigin ? { branchOrigin } : {}),
       },
     ];
   });
+}
+
+function normalizeBranchOrigin(
+  value: unknown,
+): ChatConversationBranchOrigin | null {
+  if (!isRecord(value)) return null;
+  const sourceConversationTitle =
+    typeof value.sourceConversationTitle === 'string'
+      ? value.sourceConversationTitle.trim()
+      : '';
+  const sourceConversationID =
+    typeof value.sourceConversationID === 'string' &&
+    value.sourceConversationID.trim()
+      ? value.sourceConversationID.trim()
+      : undefined;
+  const messagePreview =
+    typeof value.messagePreview === 'string' ? value.messagePreview.trim() : '';
+  return sourceConversationTitle && messagePreview
+    ? {
+        ...(sourceConversationID ? { sourceConversationID } : {}),
+        sourceConversationTitle,
+        messagePreview,
+      }
+    : null;
 }
 
 function normalizeHistoryMode(value: unknown): ConversationHistoryMode {
@@ -441,6 +529,8 @@ function normalizeChatTask(value: unknown): ChatTaskMeta | null {
   const cancelledAt = optionalNumber(value.cancelledAt);
   const error =
     typeof value.error === 'string' && value.error ? value.error : undefined;
+  const webProvider = normalizeWebPromptProvider(value.webProvider);
+  const webStatus = normalizeWebTaskStatus(value.webStatus);
   const pdfSelection = normalizePdfSelectionLocator(value.pdfSelection);
   return {
     id,
@@ -453,8 +543,36 @@ function normalizeChatTask(value: unknown): ChatTaskMeta | null {
     ...(hiddenAt != null ? { hiddenAt } : {}),
     ...(cancelledAt != null ? { cancelledAt } : {}),
     ...(error ? { error } : {}),
+    ...(webProvider ? { webProvider } : {}),
+    ...(webStatus ? { webStatus } : {}),
     ...(pdfSelection ? { pdfSelection } : {}),
   };
+}
+
+function normalizeWebTaskStatus(
+  value: unknown,
+): ChatTaskMeta['webStatus'] | undefined {
+  return [
+    'queued',
+    'starting_browser',
+    'needs_login',
+    'uploading_attachment',
+    'submitting',
+    'generating',
+    'processing_answer',
+  ].includes(String(value))
+    ? (value as ChatTaskMeta['webStatus'])
+    : undefined;
+}
+
+function normalizeWebPromptProvider(
+  value: unknown,
+): ChatTaskMeta['webProvider'] | undefined {
+  if (value === 'chatgpt' || value === 'deepseek') return value;
+  if (typeof value !== 'string') return undefined;
+  return /^custom:[a-z0-9_-]{1,48}$/.test(value)
+    ? (value as `custom:${string}`)
+    : undefined;
 }
 
 function normalizePdfSelectionLocator(
@@ -594,6 +712,9 @@ export async function exportAllThreads(): Promise<PortableThread[]> {
         ...(conversation.presetID ? { presetID: conversation.presetID } : {}),
         draftText: conversation.draftText,
         historyMode: conversation.historyMode,
+        ...(conversation.branchOrigin
+          ? { branchOrigin: conversation.branchOrigin }
+          : {}),
         createdAt: conversation.createdAt,
         active: conversation.id === workspace.activeConversationID,
         updatedAt: conversation.updatedAt,
@@ -627,6 +748,9 @@ export function importAllThreads(
           continue;
         }
         const safeMessages = normalizeMessages(candidate.messages);
+        const candidateBranchOrigin = normalizeBranchOrigin(
+          candidate.branchOrigin,
+        );
         const existingThread = existing[localKey];
         const isConversationPayload =
           typeof candidate.conversationID === 'string' &&
@@ -657,6 +781,9 @@ export function importAllThreads(
             ...(candidate.presetID ? { presetID: candidate.presetID } : {}),
             draftText: candidate.draftText ?? '',
             historyMode: normalizeHistoryMode(candidate.historyMode),
+            ...(candidateBranchOrigin
+              ? { branchOrigin: candidateBranchOrigin }
+              : {}),
           };
           workspace.conversations.push(conversation);
         }
@@ -676,6 +803,11 @@ export function importAllThreads(
             conversation.historyMode = normalizeHistoryMode(
               candidate.historyMode,
             );
+          }
+          if (candidateBranchOrigin) {
+            conversation.branchOrigin = candidateBranchOrigin;
+          } else if (isConversationPayload) {
+            delete conversation.branchOrigin;
           }
           if (candidate.presetID) {
             conversation.presetID = candidate.presetID;

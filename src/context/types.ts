@@ -80,6 +80,13 @@ export interface MessageContext {
   sourceTitle?: string;
   sourceUrl?: string;
   selectedText?: string;
+  selectedTextOrigin?: "pdf" | "chat";
+  quotedChatReply?: {
+    fullReply: string;
+    sourceConversationTitle: string;
+    sourceAssistantOrdinal?: number;
+    sourceQuestionPreview?: string;
+  };
   explainSelection?: boolean;
   // Per-turn override from the composer "+ 本轮原文" button. It forces the
   // frozen full text front block for this selected-text message only.
