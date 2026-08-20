@@ -61,6 +61,20 @@ const sidebarCSS = readFileSync(
 );
 
 describe("AI dialog toolbar", () => {
+  it("shows dismissible signatures only in the empty normal conversation", () => {
+    expect(messagesSource).toContain('state.messages.length === 0');
+    expect(messagesSource).toContain('messages.classList.add("messages-empty")');
+    expect(messagesSource).toContain('renderEmptySignatures(');
+    expect(messagesSource).toContain(
+      'assistantSignaturesEnabled: false',
+    );
+    expect(messagesSource).toContain(
+      'saveUiSettings(zoteroPrefs(), state.uiSettings)',
+    );
+    expect(sidebarCSS).toContain('.empty-signatures {');
+    expect(sidebarCSS).toContain('.empty-signatures:hover .empty-signature-close');
+  });
+
   it("keeps the visible toolbar row draggable in a docked window", () => {
     expect(sidebarCSS).toContain(
       ":root.zai-docked-window .zai-root-docked .preset-switcher-bottom {",
@@ -367,10 +381,17 @@ describe("AI dialog toolbar", () => {
   });
 
   it("keeps third-party Web configuration in the WEB footer only", () => {
-    expect(sidebarSource).toContain("renderCustomWebProviderButton(doc, mount, state)");
+    expect(composerFooterSource).not.toContain("renderCustomWebProviderButton");
     expect(sidebarSource).toContain("state.localUiSettings.customWebProviders");
     expect(sidebarSource).toContain("customWebProviderFor(state, provider)");
-    expect(sidebarCSS).toContain(".composer-web-provider-settings-button");
+    expect(sidebarSource).toContain('option.value = "__manage_web_providers__"');
+    expect(sidebarSource).toContain('option.textContent = "＋ 管理第三方网页…"');
+    expect(sidebarSource).toMatch(
+      /if \(select\.value === "__manage_web_providers__"\) \{\s*select\.value = previousProvider;\s*configureCustomWebProvider\(doc, mount, state\);\s*return;/s,
+    );
+    expect(sidebarSource).not.toContain("function renderCustomWebProviderButton(");
+    expect(sidebarSource).not.toContain("function webSettingsIcon(");
+    expect(sidebarCSS).not.toContain(".composer-web-provider-settings-button");
     expect(sidebarSource).toContain("ChatGPT 网页模式风险提示");
     expect(sidebarSource).toContain("账号风控");
   });
@@ -388,6 +409,9 @@ describe("AI dialog toolbar", () => {
       'state.localUiSettings.chatSendMode === "api"',
     );
     expect(composerFooterSource).toContain("renderWebPromptProviderSwitcher");
+    expect(composerFooterSource).toMatch(
+      /renderWebPromptProviderSwitcher\(doc, mount, state\),\s*renderWebAccountButton\(doc, mount, state\)/s,
+    );
     expect(composerFooterSource).toContain(
       "footer.append(sendMode, actions, left)",
     );

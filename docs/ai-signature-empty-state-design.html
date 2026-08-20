@@ -1,0 +1,873 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero AI Sidebar · AI 个性签名设计方案</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f6f2ec;
+        --paper: #fffdf9;
+        --paper-strong: #ffffff;
+        --text: #292621;
+        --muted: #776e66;
+        --faint: #a0968d;
+        --border: #dfd4c8;
+        --accent: #2c7798;
+        --accent-soft: #ebf6fa;
+        --warm: #b65f37;
+        --warm-soft: #fff0e7;
+        --green: #39734d;
+        --green-soft: #edf7f0;
+        --shadow: 0 18px 48px rgba(67, 48, 30, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 12% 0%, #fff 0, transparent 32%),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+        line-height: 1.65;
+      }
+
+      main {
+        width: min(1080px, calc(100% - 32px));
+        margin: 38px auto 68px;
+      }
+
+      .hero,
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 253, 249, 0.95);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        padding: 30px 34px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--accent);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 10px;
+        font-size: clamp(26px, 4vw, 40px);
+        line-height: 1.18;
+      }
+
+      h2 {
+        margin-bottom: 16px;
+        font-size: 21px;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 15px;
+      }
+
+      .lead,
+      .muted {
+        color: var(--muted);
+      }
+
+      .lead {
+        max-width: 800px;
+        margin-bottom: 0;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .card {
+        padding: 24px;
+      }
+
+      .wide {
+        grid-column: 1 / -1;
+      }
+
+      .badge {
+        display: inline-flex;
+        margin-bottom: 12px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: var(--green-soft);
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .state-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 16px;
+      }
+
+      .state-label {
+        margin-bottom: 8px;
+        color: var(--muted);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        min-height: 360px;
+        overflow: hidden;
+        border: 1px solid #d7cabd;
+        border-radius: 13px;
+        background:
+          linear-gradient(rgba(255, 253, 249, 0.94), rgba(255, 253, 249, 0.94)),
+          repeating-linear-gradient(135deg, transparent 0 42px, #f4ede4 43px 44px);
+        box-shadow: inset 3px 0 #35302c;
+      }
+
+      .sidebar-head {
+        display: flex;
+        min-height: 40px;
+        align-items: center;
+        gap: 7px;
+        padding: 9px 14px;
+        border-bottom: 1px solid #e9dfd5;
+      }
+
+      .ai-tag {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 27px;
+        height: 20px;
+        padding: 0 7px;
+        border-radius: 999px;
+        background: #f0ebe4;
+        color: #716960;
+        font: 800 11px/1 ui-monospace, SFMono-Regular, Consolas, monospace;
+      }
+
+      .empty-content {
+        flex: 1;
+        position: relative;
+        padding: 12px 16px 20px;
+      }
+
+      .ready {
+        max-width: 430px;
+        margin-bottom: 0;
+        font-size: 13px;
+      }
+
+      .signature-shell {
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: calc(100% - 32px);
+        max-width: 520px;
+        transform: translate(-50%, -50%);
+      }
+
+      .signature-copy {
+        display: grid;
+        gap: 7px;
+        padding: 11px 34px 11px 16px;
+        border-radius: 9px;
+        transition: background 120ms ease;
+      }
+
+      .signature-line {
+        display: grid;
+        grid-template-columns: 14px minmax(0, 1fr);
+        gap: 7px;
+        align-items: baseline;
+        margin: 0;
+        color: var(--muted);
+        font-size: 12px;
+        line-height: 1.65;
+        text-align: left;
+      }
+
+      .signature-line::before {
+        color: #b29d8b;
+        content: "—";
+      }
+
+      .signature-line + .signature-line {
+        color: #6d645d;
+      }
+
+      .signature-close {
+        position: absolute;
+        top: 50%;
+        right: 4px;
+        display: inline-flex;
+        width: 22px;
+        height: 22px;
+        align-items: center;
+        justify-content: center;
+        transform: translateY(-50%);
+        border: 0;
+        border-radius: 50%;
+        background: transparent;
+        color: var(--faint);
+        cursor: pointer;
+        font: 16px/1 system-ui, sans-serif;
+        opacity: 0;
+        transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+      }
+
+      .signature-shell:hover .signature-copy,
+      .signature-shell:focus-within .signature-copy {
+        background: rgba(255, 255, 255, 0.72);
+      }
+
+      .signature-shell:hover .signature-close,
+      .signature-shell:focus-within .signature-close {
+        opacity: 1;
+      }
+
+      .signature-close:hover,
+      .signature-close:focus-visible {
+        background: #f0e7df;
+        color: #6d4633;
+        outline: none;
+      }
+
+      .setting-toggle {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        min-height: 35px;
+        font-size: 13px;
+      }
+
+      .setting-toggle input {
+        width: 16px;
+        height: 16px;
+        margin: 0;
+        accent-color: var(--accent);
+      }
+
+      .conversation {
+        display: grid;
+        gap: 16px;
+        padding: 16px;
+      }
+
+      .bubble-user {
+        justify-self: end;
+        max-width: 78%;
+        padding: 10px 13px;
+        border: 1px solid #cbe1eb;
+        border-radius: 14px 14px 4px 14px;
+        background: #eef8fc;
+        font-size: 13px;
+      }
+
+      .answer {
+        font-size: 13px;
+      }
+
+      .answer .ai-tag {
+        margin-bottom: 8px;
+      }
+
+      .settings {
+        overflow: hidden;
+        border: 1px solid #d8d0c8;
+        border-radius: 12px;
+        background: #fff;
+      }
+
+      .settings-head {
+        padding: 14px 16px 11px;
+        border-bottom: 1px solid #eee6df;
+      }
+
+      .settings-head strong {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 16px;
+      }
+
+      .settings-head span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .settings-body {
+        display: grid;
+        grid-template-columns: 150px minmax(0, 1fr);
+        gap: 11px 14px;
+        align-items: center;
+        padding: 16px;
+      }
+
+      .setting-label {
+        color: #3a342f;
+        font-size: 13px;
+      }
+
+      .field {
+        min-height: 35px;
+        padding: 7px 10px;
+        border: 1px solid #d7d0c9;
+        border-radius: 7px;
+        background: #fff;
+        font-size: 13px;
+      }
+
+      .field.signature-field {
+        border-color: #8abbd0;
+        box-shadow: 0 0 0 3px rgba(44, 119, 152, 0.09);
+      }
+
+      .signature-editor {
+        overflow: hidden;
+        border: 1px solid #8abbd0;
+        border-radius: 9px;
+        background: #fbfeff;
+        box-shadow: 0 0 0 3px rgba(44, 119, 152, 0.09);
+      }
+
+      .signature-list {
+        display: grid;
+      }
+
+      .signature-row {
+        display: grid;
+        grid-template-columns: 24px minmax(0, 1fr) auto;
+        gap: 8px;
+        align-items: center;
+        padding: 8px;
+      }
+
+      .signature-row + .signature-row {
+        border-top: 1px solid #e5edf0;
+      }
+
+      .signature-index {
+        color: var(--faint);
+        font-size: 11px;
+        font-weight: 800;
+        text-align: center;
+      }
+
+      .signature-row input {
+        width: 100%;
+        min-width: 0;
+        height: 33px;
+        padding: 6px 9px;
+        border: 1px solid #d7d0c9;
+        border-radius: 6px;
+        color: var(--text);
+        font: inherit;
+      }
+
+      .signature-row input:focus {
+        border-color: var(--accent);
+        outline: 2px solid rgba(44, 119, 152, 0.12);
+      }
+
+      .signature-actions {
+        display: flex;
+        gap: 3px;
+      }
+
+      .signature-action,
+      .signature-add {
+        border: 1px solid #ddd3ca;
+        border-radius: 6px;
+        background: #fff;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .signature-action {
+        width: 27px;
+        height: 27px;
+        padding: 0;
+      }
+
+      .signature-action:hover:not(:disabled),
+      .signature-action:focus-visible,
+      .signature-add:hover,
+      .signature-add:focus-visible {
+        border-color: #9ebfcd;
+        color: var(--accent);
+        outline: none;
+      }
+
+      .signature-action:disabled {
+        cursor: default;
+        opacity: 0.32;
+      }
+
+      .signature-editor-footer {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        padding: 8px;
+        border-top: 1px solid #dce8ed;
+        background: #f5fafc;
+      }
+
+      .signature-add {
+        padding: 5px 9px;
+        font-size: 12px;
+      }
+
+      .signature-count {
+        color: var(--faint);
+        font-size: 11px;
+      }
+
+      .setting-help {
+        grid-column: 2;
+        margin-top: -6px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .setting-help span {
+        float: right;
+        color: var(--faint);
+      }
+
+      .rules {
+        display: grid;
+        gap: 9px;
+      }
+
+      .rule {
+        display: grid;
+        grid-template-columns: 118px minmax(0, 1fr);
+        gap: 12px;
+        padding: 10px 12px;
+        border: 1px solid #e4dacf;
+        border-radius: 9px;
+        background: #fff;
+      }
+
+      .rule strong {
+        color: var(--accent);
+        font-size: 12px;
+      }
+
+      .rule span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .step {
+        position: relative;
+        min-height: 105px;
+        padding: 13px;
+        border: 1px solid var(--border);
+        border-radius: 10px;
+        background: #fff;
+        font-size: 12px;
+      }
+
+      .step:not(:last-child)::after {
+        position: absolute;
+        top: 39px;
+        right: -10px;
+        z-index: 2;
+        color: var(--warm);
+        content: "→";
+        font-weight: 900;
+      }
+
+      .step strong {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--accent);
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 21px;
+      }
+
+      li + li {
+        margin-top: 7px;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: #f2ede7;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.92em;
+      }
+
+      .note {
+        border-left: 4px solid #d4b296;
+        padding-left: 15px;
+      }
+
+      @media (max-width: 760px) {
+        main {
+          width: min(100% - 20px, 1080px);
+          margin-top: 16px;
+        }
+
+        .hero,
+        .card {
+          padding: 20px;
+          border-radius: 14px;
+        }
+
+        .grid,
+        .state-grid,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+
+        .wide {
+          grid-column: auto;
+        }
+
+        .settings-body {
+          grid-template-columns: 1fr;
+        }
+
+        .setting-help {
+          grid-column: 1;
+        }
+
+        .rule {
+          grid-template-columns: 1fr;
+          gap: 3px;
+        }
+
+        .step:not(:last-child)::after {
+          top: auto;
+          right: 50%;
+          bottom: -14px;
+          transform: rotate(90deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Zotero AI Sidebar · UI proposal</p>
+        <h1>AI 个性签名设计方案</h1>
+        <p class="lead">
+          在空对话欢迎语下增加一条可配置的轻量签名；用户发送第一条消息后立即隐藏。签名只属于界面设置，不进入模型上下文、聊天历史或笔记。
+        </p>
+      </section>
+
+      <div class="grid">
+        <section class="card wide">
+          <span class="badge">推荐方案 · 轻量文字签名</span>
+          <h2>空对话显示，产生对话后隐藏</h2>
+          <div class="state-grid">
+            <div>
+              <div class="state-label">状态 A · 当前对话为空</div>
+              <div class="sidebar">
+                <div class="sidebar-head"><span class="ai-tag">AI</span></div>
+                <div class="empty-content">
+                  <p class="ready">已就绪。配置模型预设后，可以直接询问当前 Zotero 条目或 PDF 内容。</p>
+                  <div class="signature-shell" id="signature-preview">
+                    <div class="signature-copy" id="signature-copy">
+                      <p class="signature-line">Why am I reading this paper? Keep the question in sight.</p>
+                      <p class="signature-line">Answers can be borrowed, but the thinking must be your own.</p>
+                    </div>
+                    <button class="signature-close" id="signature-close" type="button" aria-label="关闭个性签名" title="关闭个性签名">×</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <div>
+              <div class="state-label">状态 B · 已产生真实对话</div>
+              <div class="sidebar">
+                <div class="conversation">
+                  <div class="bubble-user">这篇论文的核心贡献是什么？</div>
+                  <div class="answer">
+                    <span class="ai-tag">AI</span>
+                    <div>这篇论文的核心贡献可以归纳为三个方面……</div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <section class="card wide">
+          <h2>设置页配置原型</h2>
+          <div class="settings">
+            <div class="settings-head">
+              <strong>显示设置</strong>
+              <span>配置消息昵称、头像和空对话提醒。修改后自动保存。</span>
+            </div>
+            <div class="settings-body">
+              <div class="setting-label">我的昵称</div>
+              <div class="field">YOU</div>
+              <div class="setting-label">我的头像</div>
+              <div class="field">👨‍💻</div>
+              <div class="setting-label">AI 昵称</div>
+              <div class="field">AI</div>
+              <div class="setting-label">AI 头像</div>
+              <div class="field">🤖</div>
+              <div class="setting-label">AI 个性签名</div>
+              <div class="signature-editor">
+                <div class="signature-list" id="signature-list">
+                  <div class="signature-row">
+                    <span class="signature-index">1</span>
+                    <input maxlength="80" value="Why am I reading this paper? Keep the question in sight." aria-label="签名 1" />
+                    <div class="signature-actions">
+                      <button class="signature-action" type="button" data-action="up" title="上移" aria-label="上移签名">↑</button>
+                      <button class="signature-action" type="button" data-action="down" title="下移" aria-label="下移签名">↓</button>
+                      <button class="signature-action" type="button" data-action="delete" title="删除" aria-label="删除签名">×</button>
+                    </div>
+                  </div>
+                  <div class="signature-row">
+                    <span class="signature-index">2</span>
+                    <input maxlength="80" value="Answers can be borrowed, but the thinking must be your own." aria-label="签名 2" />
+                    <div class="signature-actions">
+                      <button class="signature-action" type="button" data-action="up" title="上移" aria-label="上移签名">↑</button>
+                      <button class="signature-action" type="button" data-action="down" title="下移" aria-label="下移签名">↓</button>
+                      <button class="signature-action" type="button" data-action="delete" title="删除" aria-label="删除签名">×</button>
+                    </div>
+                  </div>
+                </div>
+                <div class="signature-editor-footer">
+                  <button class="signature-add" id="signature-add" type="button">＋ 添加签名</button>
+                  <span class="signature-count" id="signature-count">2 条</span>
+                </div>
+              </div>
+              <div class="setting-help">
+                每条签名单独显示一行；可调整顺序。旧版分号内容会自动拆分。
+              </div>
+              <div class="setting-label">签名显示</div>
+              <label class="setting-toggle">
+                <input id="signature-enabled" type="checkbox" checked />
+                在空对话中显示 AI 个性签名
+              </label>
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>视觉规格</h2>
+          <ul>
+            <li>“已就绪……”保持在对话区域顶部，不随签名移动。</li>
+            <li>两条提醒组成一个签名组，放在剩余对话内容区域的水平、垂直中心。</li>
+            <li>两行采用相同字号、行高和短横引导，通过间距区分，不使用粗体抢占注意力。</li>
+            <li>鼠标悬停或键盘聚焦签名组时，右侧显示关闭按钮 <code>×</code>。</li>
+            <li>字号 <code>12px</code>，普通字形，不使用中文斜体。</li>
+            <li>使用次要文字颜色，不添加卡片、边框或阴影。</li>
+            <li>显示前缀“——”，正文由用户配置。</li>
+            <li>最大宽度跟随消息区域，长文本自然换行。</li>
+            <li>字段为空时不渲染节点，也不留下额外空白。</li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h2>配置规则</h2>
+          <ul>
+            <li>使用多行列表配置签名，每行一条，并支持添加、删除、上移和下移。</li>
+            <li>按列表顺序逐行显示，不随机轮播；每条最多 <code>80</code> 个字符。</li>
+            <li>旧版英文分号 <code>;</code> 或中文分号 <code>；</code> 内容在读取时自动拆分为列表。</li>
+            <li>迁移时去除每条签名首尾空格，并忽略连续分号产生的空项。</li>
+            <li>修改后自动保存，与昵称和头像行为一致。</li>
+            <li>关闭按钮与设置页复选框控制同一个持久化开关，不清空签名文本。</li>
+            <li>默认签名仅在配置项从未存在时初始化一次，插件升级不得覆盖已有值。</li>
+            <li>用户主动清空签名也属于有效配置，升级后必须继续保持为空。</li>
+            <li>跟随设置导出、导入和 WebDAV 状态同步。</li>
+            <li>默认配置包含两条列表项；用户可以增删、修改或调整任意一条的顺序。</li>
+            <li>不支持随机轮播，保持阅读顺序和界面位置稳定。</li>
+          </ul>
+        </section>
+
+        <section class="card wide">
+          <h2>显示状态流</h2>
+          <div class="flow">
+            <div class="step">
+              <strong>1. 打开空对话</strong>
+              没有用户消息、真实 AI 回答或恢复任务时，显示欢迎语和签名。
+            </div>
+            <div class="step">
+              <strong>2. 用户点击发送</strong>
+              第一条消息进入本地状态后立即隐藏，不等待模型开始回答。
+            </div>
+            <div class="step">
+              <strong>3. 对话持续</strong>
+              API 流式回答、WEB 增量同步和历史恢复期间都不再显示。
+            </div>
+            <div class="step">
+              <strong>4. 清空或新建</strong>
+              切换到新的空对话或清空当前对话后，重新显示签名。
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>数据边界</h2>
+          <div class="rules">
+            <div class="rule"><strong>保存位置</strong><span>UI 设置；可随配置备份和 WebDAV 设置同步。</span></div>
+            <div class="rule"><strong>默认值初始化</strong><span>仅当签名配置键不存在时写入；已有文本或显式空值均原样保留。</span></div>
+            <div class="rule"><strong>版本升级</strong><span>不根据版本号重写签名，不用新的默认文案替换用户配置。</span></div>
+            <div class="rule"><strong>模型请求</strong><span>不发送给 API、ChatGPT、DeepSeek 或自定义网页。</span></div>
+            <div class="rule"><strong>聊天记录</strong><span>不创建助手消息，不写入历史或对话分支。</span></div>
+            <div class="rule"><strong>导出与笔记</strong><span>不进入 Markdown、复制内容、Zotero 笔记或 PDF。</span></div>
+            <div class="rule"><strong>Token</strong><span>纯本地渲染，不占用任何模型 token。</span></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>验收标准</h2>
+          <ul>
+            <li>空对话显示欢迎语和非空签名。</li>
+            <li>第一条用户消息发送后立即隐藏。</li>
+            <li>API、WEB、历史恢复和会话切换行为一致。</li>
+            <li>已有历史的会话从不显示签名。</li>
+            <li>清空会话或新建空会话后重新显示。</li>
+            <li>留空配置不产生额外布局空间。</li>
+            <li>升级前修改过的签名在升级后保持完全一致。</li>
+            <li>升级前主动清空或关闭签名，升级后仍保持清空或关闭状态。</li>
+            <li>只有全新安装或确实缺少配置键时才采用当前默认签名。</li>
+            <li>导出、同步、复制和模型请求遵守数据边界。</li>
+            <li>不修改 AI 流式刷新与 WEB 增量同步链路。</li>
+          </ul>
+        </section>
+
+        <section class="card wide note">
+          <h2>不采用的方案</h2>
+          <p>
+            不建议使用带背景的签名卡片，也不建议配置多条签名随机轮播。卡片会与进度卡、上下文卡竞争视觉层级；随机签名则增加存储、同步和测试复杂度，并削弱界面的稳定感。
+          </p>
+        </section>
+      </div>
+    </main>
+    <script>
+      const signaturePreview = document.getElementById("signature-preview");
+      const signatureCopy = document.getElementById("signature-copy");
+      const signatureClose = document.getElementById("signature-close");
+      const signatureEnabled = document.getElementById("signature-enabled");
+      const signatureList = document.getElementById("signature-list");
+      const signatureAdd = document.getElementById("signature-add");
+      const signatureCount = document.getElementById("signature-count");
+
+      function createSignatureRow(value = "") {
+        const row = document.createElement("div");
+        row.className = "signature-row";
+
+        const index = document.createElement("span");
+        index.className = "signature-index";
+
+        const input = document.createElement("input");
+        input.maxLength = 80;
+        input.value = value;
+
+        const actions = document.createElement("div");
+        actions.className = "signature-actions";
+        for (const [action, label, symbol] of [
+          ["up", "上移签名", "↑"],
+          ["down", "下移签名", "↓"],
+          ["delete", "删除签名", "×"],
+        ]) {
+          const button = document.createElement("button");
+          button.className = "signature-action";
+          button.type = "button";
+          button.dataset.action = action;
+          button.title = label;
+          button.setAttribute("aria-label", label);
+          button.textContent = symbol;
+          actions.append(button);
+        }
+
+        row.append(index, input, actions);
+        return row;
+      }
+
+      function updateSignaturePreview() {
+        const rows = [...signatureList.querySelectorAll(".signature-row")];
+        rows.forEach((row, index) => {
+          row.querySelector(".signature-index").textContent = index + 1;
+          row.querySelector("input").setAttribute("aria-label", `签名 ${index + 1}`);
+          row.querySelector('[data-action="up"]').disabled = index === 0;
+          row.querySelector('[data-action="down"]').disabled = index === rows.length - 1;
+        });
+
+        const signatures = rows
+          .map((row) => row.querySelector("input").value.trim())
+          .filter(Boolean);
+        signatureCopy.replaceChildren(
+          ...signatures.map((text) => {
+            const line = document.createElement("p");
+            line.className = "signature-line";
+            line.textContent = text;
+            return line;
+          }),
+        );
+        signatureCount.textContent = `${signatures.length} 条`;
+        signaturePreview.hidden = !signatureEnabled.checked || signatures.length === 0;
+      }
+
+      signatureClose.addEventListener("click", () => {
+        signatureEnabled.checked = false;
+        updateSignaturePreview();
+      });
+
+      signatureEnabled.addEventListener("change", updateSignaturePreview);
+      signatureList.addEventListener("input", updateSignaturePreview);
+      signatureList.addEventListener("click", (event) => {
+        const button = event.target.closest("[data-action]");
+        if (!button) return;
+        const row = button.closest(".signature-row");
+        if (button.dataset.action === "up" && row.previousElementSibling) {
+          signatureList.insertBefore(row, row.previousElementSibling);
+        } else if (button.dataset.action === "down" && row.nextElementSibling) {
+          signatureList.insertBefore(row.nextElementSibling, row);
+        } else if (button.dataset.action === "delete") {
+          row.remove();
+        }
+        updateSignaturePreview();
+      });
+      signatureAdd.addEventListener("click", () => {
+        const row = createSignatureRow();
+        signatureList.append(row);
+        updateSignaturePreview();
+        row.querySelector("input").focus();
+      });
+
+      updateSignaturePreview();
+    </script>
+  </body>
+</html>

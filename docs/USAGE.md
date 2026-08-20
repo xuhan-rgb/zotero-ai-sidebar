@@ -27,6 +27,7 @@ This document targets **end users** and is split in two halves:
   - [2.9 Back up and migrate config](#29-back-up-and-migrate-config)
   - [2.10 Use Quick Ask for a temporary multi-turn conversation](#210-use-quick-ask-for-a-temporary-multi-turn-conversation)
   - [2.11 Read an arXiv paper in full-document translation](#211-read-an-arxiv-paper-in-full-document-translation)
+  - [2.12 Use ChatGPT or DeepSeek through WEB mode](#212-use-chatgpt-or-deepseek-through-web-mode)
 - [3. Reference Manual](#3-reference-manual)
   - [3.1 Model presets](#31-model-presets)
   - [3.2 Sidebar UI map](#32-sidebar-ui-map)
@@ -42,6 +43,8 @@ This document targets **end users** and is split in two halves:
   - [3.12 Chat history](#312-chat-history)
   - [3.13 arXiv LaTeX source mode](#313-arxiv-latex-source-mode)
   - [3.14 Paper overview map & reading routes](#314-paper-overview-map--reading-routes)
+  - [3.15 API and WEB chat modes](#315-api-and-web-chat-modes)
+  - [3.16 Empty-chat signatures](#316-empty-chat-signatures)
 - [Troubleshooting](#troubleshooting)
 - [Related docs](#related-docs)
 
@@ -267,6 +270,33 @@ When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full t
 - The full-translation view can stay beside the AI sidebar. Select source or translated text and press `Alt+Q` to start a temporary multi-turn Quick Ask about it.
 - Click **返回 PDF (Back to PDF)** to exit the full-translation reader.
 
+### 2.12 Use ChatGPT or DeepSeek through WEB mode
+
+WEB mode mirrors a real AI website into the Zotero conversation. It is useful when you want to use a website account instead of an API key. API mode remains independent and does not need Chrome or the companion process.
+
+**One-time installation (currently Linux/X11):**
+
+1. Install Node.js 20 or newer, Google Chrome, and `xclip`.
+2. From this repository checkout, run:
+
+   ```bash
+   sudo apt install xclip
+   bash scripts/install-web-agent.sh "$HOME/Zotero"
+   ```
+
+   Replace `$HOME/Zotero` with the actual Zotero data directory when different.
+3. Restart Zotero. In the composer footer select **WEB**, choose **ChatGPT** or **DeepSeek**, then click **Account**.
+4. Complete login in the temporary Chrome window. Keep **Hide browser in the background while chatting** checked to minimize the dedicated browser after setup; this is the default.
+
+**Daily use:**
+
+1. Select **WEB** and the destination service. The service menu also lists saved custom sites and **Manage third-party web pages…**. Opening the manager does not change the active service.
+2. Ask normally and press Enter. The sidebar reports preparation, upload, submission, generation, and synchronization progress; growing website answers are mirrored incrementally instead of appearing only at the end.
+3. `📄 Original` can attach the current paper material. The agent prefers the website's real file input in hidden mode, so attachment handling does not need to focus Chrome. If a site has no usable file input, the task fails explicitly instead of flashing the browser and using clipboard fallback.
+4. A generated website file is exposed only when the site provides a real attachment or downloadable URL. A textual `sandbox:/...` path is not a downloadable file.
+
+The Web Agent uses a dedicated Chrome profile and a random localhost bearer token. It does not read your normal Chrome profile. Login, CAPTCHA, uploads, and website scripts still require a real browser, so “hidden” means minimized—not a headless API. Zotero does not change the site's fast/deep-thinking/search switches; the current website state is authoritative.
+
 ---
 
 ## 3. Reference Manual
@@ -457,7 +487,7 @@ The rubric is editable in settings — for a literature review you might switch 
 
 | Field | Included |
 |---|---|
-| UI settings (nicknames, avatars, theme, action-button placement) | ✅ |
+| UI settings (nicknames, avatars, signatures, theme, action-button placement) | ✅ |
 | Model presets | ✅ |
 | API keys (inside the presets) | ✅ — keep the file private |
 | Quick prompts | ✅ |
@@ -510,9 +540,55 @@ Click a section row to navigate the PDF to it — exact scroll-to-top via the PD
 
 Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-arXiv PDFs the skeleton uses heuristic heading detection and may fall back to even-sized windows (`· 估算分段`).
 
+### 3.15 API and WEB chat modes
+
+| Control | API mode | WEB mode |
+|---|---|---|
+| Destination | A configured local model preset | ChatGPT, DeepSeek, or a custom ChatGPT-like site |
+| Authentication | API key in Zotero prefs | Manual login in a dedicated Chrome profile |
+| Tools | Zotero/model tool loop is available | Website answer mirroring; no API tool loop |
+| Browser | Not used | Minimized by default after account setup |
+| Progress | Provider streaming and tool traces | Five-stage task progress plus incremental DOM snapshots |
+| Site mode | Controlled by preset parameters | Current website model/search/thinking state; Zotero does not switch it |
+
+WEB footer controls are intentionally small:
+
+- **Service menu** — switches ChatGPT, DeepSeek, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection.
+- **Account** — opens the current service for login and controls whether its dedicated browser stays minimized during chat.
+- There are no Zotero-side fast/deep-thinking/search toggles. Change those on the website itself when the account window is visible.
+
+### 3.16 Empty-chat signatures
+
+Open `Settings → Zotero AI Sidebar → Display settings → AI signatures`:
+
+- Each signature has its own input row and is limited to 80 characters. Use `＋ Add signature` to create another.
+- Use `↑` / `↓` to change display order and `×` to delete one entry.
+- When **Show AI signatures in empty chats** is enabled, the ordered group appears in the center of the empty conversation area while the ready message stays at the top.
+- Hover the centered group to reveal `×`. Dismissing it disables display without deleting the list; re-enable it from settings.
+- The group disappears as soon as the first message is sent, and returns only in a new or cleared empty conversation.
+- Plugin upgrades preserve customized text, explicit empty lists, the disabled state, and user-defined order.
+- Legacy strings separated by ASCII `;` or full-width `；` are migrated into ordered rows.
+
+The defaults are:
+
+1. `Why am I reading this paper? Keep the question in sight.`
+2. `Answers can be borrowed, but the thinking must be your own.`
+
 ---
 
 ## Troubleshooting
+
+### "WEB mode says the account is not configured"
+
+Click **Account**, wait for the dedicated Chrome window, complete login, and make sure the page exposes an editable composer. Custom sites must be added through **Manage third-party web pages…** before account setup.
+
+### "WEB mode is stuck / the answer does not update"
+
+Check whether the progress card is still advancing. A stale companion is rejected before submission; rerun `bash scripts/install-web-agent.sh "$HOME/Zotero"` and restart the Web Agent when the protocol warning appears. Closing Zotero during a running task can leave a persisted progress card, but it does not mean the website is still generating after the agent process has stopped.
+
+### "Chrome appears while I ask a WEB question"
+
+Open **Account** and enable **Hide browser in the background while chatting**. Hidden attachment upload only uses a real file input; when the site does not expose one, the task reports an error rather than focusing Chrome for clipboard paste. Login and CAPTCHA setup remain intentionally visible.
 
 ### "API call fails / 401 / 403"
 

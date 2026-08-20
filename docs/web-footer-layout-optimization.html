@@ -1,0 +1,423 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero AI Sidebar · WEB 底栏布局优化方案</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f4ef;
+        --paper: #fffdf9;
+        --text: #2d2925;
+        --muted: #756c64;
+        --border: #dfd3c6;
+        --blue: #28759a;
+        --blue-soft: #eaf5fa;
+        --accent: #b7653d;
+        --accent-soft: #fff0e7;
+        --green: #31734a;
+        --shadow: 0 16px 42px rgba(62, 47, 33, 0.1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background:
+          radial-gradient(circle at 10% 0%, #fff 0, transparent 34%),
+          var(--bg);
+        color: var(--text);
+        font-family:
+          Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+        line-height: 1.65;
+      }
+
+      main {
+        width: min(1040px, calc(100% - 32px));
+        margin: 40px auto 64px;
+      }
+
+      .hero,
+      .card {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 253, 249, 0.94);
+        box-shadow: var(--shadow);
+      }
+
+      .hero {
+        padding: 30px 34px;
+      }
+
+      .eyebrow {
+        margin: 0 0 8px;
+        color: var(--blue);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1,
+      h2,
+      h3,
+      p {
+        margin-top: 0;
+      }
+
+      h1 {
+        margin-bottom: 10px;
+        font-size: clamp(25px, 4vw, 38px);
+        line-height: 1.2;
+      }
+
+      h2 {
+        margin-bottom: 16px;
+        font-size: 21px;
+      }
+
+      h3 {
+        margin-bottom: 8px;
+        font-size: 16px;
+      }
+
+      .lead,
+      .muted {
+        color: var(--muted);
+      }
+
+      .lead {
+        max-width: 760px;
+        margin-bottom: 0;
+        font-size: 15px;
+      }
+
+      .grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+        margin-top: 18px;
+      }
+
+      .card {
+        padding: 24px;
+      }
+
+      .wide {
+        grid-column: 1 / -1;
+      }
+
+      .badge {
+        display: inline-flex;
+        align-items: center;
+        margin-bottom: 12px;
+        padding: 3px 9px;
+        border-radius: 999px;
+        background: #eaf6ed;
+        color: var(--green);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .footer-demo {
+        display: flex;
+        align-items: center;
+        gap: 9px;
+        min-height: 66px;
+        overflow: hidden;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 13px;
+        background: #fff;
+      }
+
+      .segmented,
+      .control {
+        display: inline-flex;
+        min-height: 31px;
+        flex: 0 0 auto;
+        align-items: center;
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        background: var(--paper);
+        font-size: 13px;
+      }
+
+      .segmented span,
+      .control {
+        padding: 5px 11px;
+      }
+
+      .segmented span + span {
+        border-left: 1px solid var(--border);
+      }
+
+      .segmented .active {
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-weight: 800;
+      }
+
+      .provider {
+        min-width: 112px;
+        justify-content: space-between;
+        gap: 16px;
+      }
+
+      .account {
+        gap: 6px;
+      }
+
+      .removed {
+        position: relative;
+        color: #9d8e80;
+        opacity: 0.68;
+      }
+
+      .removed::after {
+        position: absolute;
+        top: 50%;
+        right: 4px;
+        left: 4px;
+        height: 2px;
+        background: #c85f53;
+        content: "";
+        transform: rotate(-18deg);
+      }
+
+      .menu {
+        width: min(300px, 100%);
+        margin: 18px 0 0 93px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: #fff;
+        box-shadow: 0 12px 32px rgba(62, 47, 33, 0.14);
+      }
+
+      .menu div {
+        display: flex;
+        justify-content: space-between;
+        padding: 9px 12px;
+        font-size: 13px;
+      }
+
+      .menu div + div {
+        border-top: 1px solid #eee6dc;
+      }
+
+      .menu .selected {
+        background: var(--blue-soft);
+        color: var(--blue);
+        font-weight: 800;
+      }
+
+      .menu .manage {
+        color: var(--accent);
+        font-weight: 800;
+      }
+
+      ol,
+      ul {
+        margin: 0;
+        padding-left: 22px;
+      }
+
+      li + li {
+        margin-top: 7px;
+      }
+
+      .flow {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .step {
+        position: relative;
+        min-height: 104px;
+        padding: 14px;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: #fff;
+      }
+
+      .step:not(:last-child)::after {
+        position: absolute;
+        top: 42px;
+        right: -10px;
+        z-index: 2;
+        color: var(--accent);
+        content: "→";
+        font-weight: 900;
+      }
+
+      .step strong {
+        display: block;
+        margin-bottom: 5px;
+        color: var(--blue);
+      }
+
+      .alternative {
+        border-left: 4px solid #d9c8b7;
+        padding-left: 14px;
+      }
+
+      .risk {
+        border-left-color: #d88663;
+      }
+
+      code {
+        padding: 2px 5px;
+        border-radius: 5px;
+        background: #f3eee8;
+        font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+        font-size: 0.92em;
+      }
+
+      @media (max-width: 720px) {
+        main {
+          width: min(100% - 20px, 1040px);
+          margin-top: 16px;
+        }
+
+        .hero,
+        .card {
+          padding: 20px;
+          border-radius: 14px;
+        }
+
+        .grid,
+        .flow {
+          grid-template-columns: 1fr;
+        }
+
+        .wide {
+          grid-column: auto;
+        }
+
+        .footer-demo {
+          flex-wrap: wrap;
+        }
+
+        .menu {
+          margin-left: 0;
+        }
+
+        .step:not(:last-child)::after {
+          top: auto;
+          right: 50%;
+          bottom: -14px;
+          transform: rotate(90deg);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">Zotero AI Sidebar · UI proposal</p>
+        <h1>WEB 底栏布局优化方案</h1>
+        <p class="lead">
+          目标是消除齿轮按钮的语义歧义，让当前服务与账号入口形成稳定组合，同时减少窄侧边栏中的拥挤和裁切风险。
+        </p>
+      </section>
+
+      <div class="grid">
+        <section class="card wide">
+          <span class="badge">推荐方案</span>
+          <h2>移除常驻齿轮，把第三方网页管理并入服务菜单</h2>
+          <div class="footer-demo" aria-label="推荐的 WEB 底栏布局示意">
+            <div class="segmented"><span>API</span><span class="active">WEB</span></div>
+            <div class="control provider"><span>ChatGPT</span><span>⌄</span></div>
+            <div class="control account"><span>♙</span><span>账号</span></div>
+            <div class="control removed" title="建议移除常驻齿轮">⚙</div>
+          </div>
+          <div class="menu" aria-label="服务选择菜单示意">
+            <div class="selected"><span>ChatGPT</span><span>✓</span></div>
+            <div><span>DeepSeek</span></div>
+            <div><span>自定义服务 A</span></div>
+            <div class="manage"><span>＋ 管理第三方网页…</span></div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>为什么这样更合理</h2>
+          <ul>
+            <li>ChatGPT 和 DeepSeek 不需要第三方网页齿轮，常驻显示会造成误解。</li>
+            <li>服务选择与服务管理集中在同一个入口，操作对象一致。</li>
+            <li>“账号”始终紧跟当前服务，只处理登录和浏览器显隐。</li>
+            <li>减少一个底栏按钮，降低窄窗口下的挤压和裁切概率。</li>
+            <li>不会触碰发送、增量同步、附件上传或会话恢复代码。</li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h2>交互规则</h2>
+          <ol>
+            <li>选择 ChatGPT、DeepSeek 或已有自定义服务时，正常切换当前服务。</li>
+            <li>选择“管理第三方网页…”时打开现有配置窗口，但不改变当前服务。</li>
+            <li>保存新服务后刷新服务列表，并保持此前选择，除非用户主动选择新服务。</li>
+            <li>“账号”按钮只配置当前服务的登录以及“对话时隐藏浏览器”选项。</li>
+            <li>插件不自动切换网页的快速、深度思考或智能搜索状态。</li>
+          </ol>
+        </section>
+
+        <section class="card wide">
+          <h2>操作流程</h2>
+          <div class="flow">
+            <div class="step">
+              <strong>1. 选择服务</strong>
+              用户打开 ChatGPT 下拉菜单。
+            </div>
+            <div class="step">
+              <strong>2. 管理服务</strong>
+              点击“管理第三方网页…”，当前服务保持不变。
+            </div>
+            <div class="step">
+              <strong>3. 保存配置</strong>
+              新增、编辑或删除自定义网址，列表立即更新。
+            </div>
+            <div class="step">
+              <strong>4. 配置账号</strong>
+              回到底栏点击“账号”，完成当前服务登录和显隐设置。
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <h2>稳定性边界</h2>
+          <ul>
+            <li>仅调整 WEB 底栏 DOM 顺序和管理入口。</li>
+            <li>不修改 Web Agent 协议、任务队列和回答刷新逻辑。</li>
+            <li>不清空当前会话、账号状态或自定义服务配置。</li>
+            <li>管理菜单项不是实际服务，点击后必须恢复原选择值。</li>
+            <li>键盘选择和取消配置窗口后也必须保持当前服务。</li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h2>验收标准</h2>
+          <ul>
+            <li>ChatGPT、DeepSeek 和自定义服务均可正常切换。</li>
+            <li>打开管理窗口不会误切换服务或新建会话。</li>
+            <li>新增、编辑、删除服务后菜单立即同步。</li>
+            <li>账号按钮始终指向当前服务。</li>
+            <li>窄侧边栏中所有控件完整可见。</li>
+            <li>WEB 发送、附件和增量刷新测试保持通过。</li>
+          </ul>
+        </section>
+
+        <section class="card wide alternative risk">
+          <h2>备选方案（不推荐）</h2>
+          <p>
+            仅把顺序改为 <code>服务选择 → 账号 → 齿轮</code>。它改动最小，但齿轮用途仍不直观，并继续占用底栏空间；适合作为低风险临时修复，不适合作为最终布局。
+          </p>
+        </section>
+      </div>
+    </main>
+  </body>
+</html>

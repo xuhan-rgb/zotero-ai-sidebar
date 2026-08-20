@@ -16,6 +16,8 @@ export interface UiSettings {
   chatFontFamily: string;
   userProfile: ChatProfileSettings;
   assistantProfile: ChatProfileSettings;
+  assistantSignatures: string[];
+  assistantSignaturesEnabled: boolean;
   // When ON, the composer can submit a new message while a previous task is
   // still streaming — the new one is registered into the queue and runs
   // after the current task finishes (the original PDF selection at queue
@@ -34,6 +36,11 @@ export const DEFAULT_UI_SETTINGS: UiSettings = {
   chatFontFamily: '',
   userProfile: { label: 'YOU', avatar: '' },
   assistantProfile: { label: 'AI', avatar: '' },
+  assistantSignatures: [
+    'Why am I reading this paper? Keep the question in sight.',
+    'Answers can be borrowed, but the thinking must be your own.',
+  ],
+  assistantSignaturesEnabled: true,
   composerQueueWhileSending: false,
   confirmConversationDeletion: false,
   maxParallelConversations: 2,
@@ -43,6 +50,7 @@ const KEY = 'extensions.zotero-ai-sidebar.uiSettings';
 const LABEL_MAX = 24;
 const AVATAR_MAX = 2048;
 const CHAT_FONT_MAX = 240;
+const SIGNATURE_MAX = 80;
 
 export function loadUiSettings(prefs: PrefsStore): UiSettings {
   const raw = prefs.get(KEY);
@@ -78,6 +86,10 @@ export function normalizeUiSettings(value: unknown): UiSettings {
       input.assistantProfile,
       DEFAULT_UI_SETTINGS.assistantProfile,
     ),
+    assistantSignatures: normalizeAssistantSignatures(
+      input.assistantSignatures,
+    ),
+    assistantSignaturesEnabled: input.assistantSignaturesEnabled !== false,
     // Strict boolean — only `true` enables; anything else (undefined, legacy
     // shapes, garbage) keeps the conservative default-off behavior.
     composerQueueWhileSending: input.composerQueueWhileSending === true,
@@ -128,6 +140,18 @@ function normalizeChatFontFamily(value: unknown): string {
   // Keep normal font-family syntax (quotes, commas, CJK names) but reject
   // characters that only make sense for CSS injection or HTML markup.
   return /[;{}<>]/.test(font) ? '' : font;
+}
+
+function normalizeAssistantSignatures(value: unknown): string[] {
+  const entries = Array.isArray(value)
+    ? value
+    : typeof value === 'string'
+      ? value.split(/[;；]/)
+      : DEFAULT_UI_SETTINGS.assistantSignatures;
+  return entries
+    .filter((entry): entry is string => typeof entry === 'string')
+    .map((entry) => entry.trim().slice(0, SIGNATURE_MAX))
+    .filter(Boolean);
 }
 
 function stringValue(value: unknown): string {

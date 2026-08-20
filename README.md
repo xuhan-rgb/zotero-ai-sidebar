@@ -11,6 +11,7 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 ## What you can do with it
 
 - **Ask anything about the paper you're reading** — *"summarize this"*, *"what's the core contribution"*, *"compare with X"*. The model fetches the parts of the PDF it needs and shows its work in a tool trace.
+- **Choose API or WEB for each conversation** — use configured API presets directly, or mirror ChatGPT, DeepSeek, and custom ChatGPT-like sites through a local Web Agent. WEB mode keeps the website's current model/search/thinking state, reports staged progress, and incrementally mirrors the growing answer into Zotero.
 - **Open Quick Ask anywhere and keep following up** — press `Alt+Q` by default for a temporary conversation that remembers turns while the window stays open, is destroyed on close, and can be explicitly transferred into the current paper's research chat.
 - **See the whole paper at a glance** — generate a *全文总览* map: a phase-grouped section skeleton (motivation / method / validation) with one-line gists, innovation / result markers, and a structural flowchart. Click a section to jump to that spot in the PDF; your reading position is remembered per paper and synced across machines.
 - **arXiv papers come through clean** — equations and figures are pulled from the LaTeX source instead of broken PDF text. *"Explain Eq. (3)"* and *"walk me through Figure 2"* actually work.
@@ -51,17 +52,33 @@ Quick Ask opens with `Alt+Q` by default. It initially uses the active AI-chat mo
 
 Do not hardcode personal API keys, base URLs, or private model IDs in this repository.
 
+### Optional WEB mode (Linux/X11)
+
+WEB mode uses a local companion process and a dedicated Google Chrome profile. API mode does not need these components and is unaffected if the Web Agent is not installed.
+
+Requirements: Node.js 20 or newer, Google Chrome, and `xclip`. From a checkout of this repository, install the companion into your Zotero data directory:
+
+```bash
+sudo apt install xclip
+bash scripts/install-web-agent.sh "$HOME/Zotero"
+```
+
+Replace `$HOME/Zotero` if your Zotero data directory is elsewhere. Then select `WEB` in the composer, choose ChatGPT, DeepSeek, or a custom service, and click **Account**. Complete login in the temporary Chrome window and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
+
+The browser is minimized rather than replaced by a headless API: login, CAPTCHA, uploads, and each site's scripts still run in the dedicated Chrome profile. The plugin does not switch the site's fast/deep-thinking/search controls. The footer's service menu also contains **Manage third-party web pages…**; opening it does not change the active service. See [Web Agent troubleshooting](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md) for current compatibility limits.
+
 ## Features
 
 ### Chat & UI
 
 - **AI chat inside Zotero**: open a dedicated sidebar and discuss the current paper without leaving Zotero.
+- **Stable browser-backed WEB chat**: send to ChatGPT, DeepSeek, or custom ChatGPT-like sites through a localhost-authenticated companion; account setup is opened from Zotero, the dedicated browser is hidden by default during chat, and staged progress plus incremental answer snapshots remain visible in the sidebar.
 - **Temporary multi-turn Quick Ask**: press `Alt+Q` by default, ask follow-up questions in the same popup, copy the latest answer, or transfer every turn into the research chat. It neither reads research-chat history nor persists after the popup closes.
 - **Configurable providers**: supports Anthropic, OpenAI, and OpenAI-compatible endpoints through local Zotero preferences. Model presets include connectivity tests and a per-preset model list with a footer switcher.
 - **Quick prompts & slash commands**: customizable prompt buttons next to the composer plus built-in slash commands (`/arxiv-search`, `/web-search`) that expand into explicit instructions for the model.
 - **Markdown output**: renders headings, lists, code blocks, quotes, links, thinking/context blocks, and tool-call traces.
 - **Selection context bar**: when PDF text is selected, the composer shows whether the next turn is `只看选区` or `选区 + 全文`, with a one-turn full-text override and selection preview.
-- **Customizable chat UI**: nickname and avatar (emoji or image URL) for both user and AI, plus configurable position and layout for the per-message action buttons.
+- **Customizable chat UI**: nickname and avatar (emoji or image URL) for both user and AI, plus an ordered list of empty-chat reminders that can be edited, reordered, or dismissed on hover. Per-message action placement and layout remain configurable.
 - **Clean / debug copy modes**: copy the conversation as Markdown with the paper introduction, dialogue, and selected PDF text; debug mode also includes tool context, PDF snippets, model-input layout, and thinking summaries.
 
 ### Paper overview map
@@ -131,6 +148,8 @@ flowchart TB
     subgraph Runtime[Runtime integrations]
         direction LR
         Provider[LLM provider API<br/>OpenAI / Anthropic / compatible]
+        WebAgent[Local Web Agent<br/>localhost token + task queue]
+        Browser[Dedicated Chrome profile<br/>manual login + site state]
         Tools[Local AgentTool<br/>optional automation]
     end
 
@@ -139,10 +158,14 @@ flowchart TB
         ZoteroOrg[(zotero.org<br/>metadata sync)]
         FileDAV[(WebDAV<br/>Zotero File Sync)]
         PluginDAV[(Plugin WebDAV<br/>state.json)]
+        WebApps[(AI web apps<br/>ChatGPT / DeepSeek / custom)]
     end
 
     User -->|prompt / selection / screenshot| Side
     Side <-->|HTTPS| Provider
+    Side <-->|localhost| WebAgent
+    WebAgent --> Browser
+    Browser <-->|HTTPS| WebApps
     Side -->|tools| Tools
     Tools --> Core
     Side --> Secrets
@@ -161,8 +184,8 @@ flowchart TB
     class User actor;
     class Side,PDF,Note zotero;
     class Core,Files,PluginState,Secrets local;
-    class Provider,Tools runtime;
-    class ZoteroOrg,FileDAV,PluginDAV cloud;
+    class Provider,WebAgent,Browser,Tools runtime;
+    class ZoteroOrg,FileDAV,PluginDAV,WebApps cloud;
     style UI fill:#f8fafc,stroke:#c7d2fe,stroke-width:1px
     style Local fill:#ecfeff,stroke:#67e8f9,stroke-width:1px
     style Runtime fill:#faf5ff,stroke:#d8b4fe,stroke-width:1px

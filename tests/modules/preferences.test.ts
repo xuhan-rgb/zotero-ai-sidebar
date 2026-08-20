@@ -194,6 +194,14 @@ describe("preference save controls", () => {
     expect(preferenceMarkup).not.toContain('id="zai-preset-select"');
   });
 
+  it("provides a reorderable AI signature list and visibility control", () => {
+    expect(preferenceMarkup).toContain('id="zai-ui-signature-list"');
+    expect(preferenceMarkup).toContain('id="zai-ui-signature-add"');
+    expect(preferenceMarkup).toContain('id="zai-ui-signature-enabled"');
+    expect(preferenceMarkup).toContain('id="zai-ui-signature-count"');
+    expect(preferenceMarkup).toContain('旧版分号内容会自动拆分');
+  });
+
   it("groups settings in their editing workflow order", () => {
     const sectionTitles = Array.from(
       preferenceMarkup.matchAll(

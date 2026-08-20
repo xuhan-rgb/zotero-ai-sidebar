@@ -697,25 +697,6 @@
   opacity: 0.6;
 }
 
-.composer-web-provider-settings-button {
-  display: inline-grid;
-  place-items: center;
-  flex: 0 0 28px;
-  width: 28px;
-  min-width: 28px;
-  height: 26px;
-  padding: 0 !important;
-  border: 1px solid var(--zai-border) !important;
-  border-radius: 7px !important;
-  background: var(--zai-panel-strong) !important;
-  color: var(--zai-muted) !important;
-}
-
-.composer-web-provider-settings-button:hover {
-  border-color: var(--zai-blue) !important;
-  color: var(--zai-blue) !important;
-}
-
 /* Third-party web providers only expose the URL; login and site-specific
    settings remain in the dedicated browser. */
 .zai-custom-web-provider-layer {
@@ -2015,6 +1996,83 @@ button:disabled,
   font-size: var(--zai-chat-font-size);
   -moz-user-select: text;
   user-select: text;
+}
+
+.messages-empty {
+  position: relative;
+}
+
+.empty-signatures {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: calc(100% - 32px);
+  max-width: 520px;
+  transform: translate(-50%, -50%);
+}
+
+.empty-signature-copy {
+  display: grid;
+  gap: 7px;
+  padding: 11px 34px 11px 16px;
+  border-radius: 9px;
+  transition: background 120ms ease;
+}
+
+.empty-signature-line {
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  gap: 7px;
+  align-items: baseline;
+  margin: 0;
+  color: var(--zai-muted);
+  font-size: 12px;
+  line-height: 1.65;
+  text-align: left;
+}
+
+.empty-signature-line::before {
+  color: #b29d8b;
+  content: "—";
+}
+
+.empty-signatures:hover .empty-signature-copy,
+.empty-signatures:focus-within .empty-signature-copy {
+  background: rgba(255, 255, 255, 0.72);
+}
+
+.empty-signature-close {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: inline-flex;
+  width: 22px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--zai-muted);
+  cursor: pointer;
+  font: 16px/1 var(--zai-font);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+}
+
+.empty-signatures:hover .empty-signature-close,
+.empty-signatures:focus-within .empty-signature-close {
+  opacity: 1;
+  pointer-events: auto;
+}
+
+.empty-signature-close:hover,
+.empty-signature-close:focus-visible {
+  background: rgba(116, 107, 96, 0.12);
+  color: var(--zai-text);
+  outline: none;
 }
 
 .messages::-webkit-scrollbar,

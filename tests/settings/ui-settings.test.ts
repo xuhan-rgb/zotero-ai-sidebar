@@ -31,6 +31,11 @@ describe('ui settings storage', () => {
       chatFontFamily: '"LXGW WenKai", serif',
       userProfile: { label: '我', avatar: '🙂' },
       assistantProfile: { label: '助手', avatar: 'https://example.test/ai.png' },
+      assistantSignatures: [
+        'Why am I reading this paper? Keep the question in sight.',
+        'Answers can be borrowed, but the thinking must be your own.',
+      ],
+      assistantSignaturesEnabled: true,
       composerQueueWhileSending: true,
       confirmConversationDeletion: false,
       maxParallelConversations: 6,
@@ -43,6 +48,11 @@ describe('ui settings storage', () => {
       chatFontFamily: '"LXGW WenKai", serif',
       userProfile: { label: '我', avatar: '🙂' },
       assistantProfile: { label: '助手', avatar: 'https://example.test/ai.png' },
+      assistantSignatures: [
+        'Why am I reading this paper? Keep the question in sight.',
+        'Answers can be borrowed, but the thinking must be your own.',
+      ],
+      assistantSignaturesEnabled: true,
       composerQueueWhileSending: true,
       confirmConversationDeletion: false,
       maxParallelConversations: 6,
@@ -116,5 +126,59 @@ describe('ui settings storage', () => {
       JSON.stringify({ preferenceBorderStyle: 'high-contrast' }),
     );
     expect(loadUiSettings(prefs).preferenceBorderStyle).toBe('soft');
+  });
+
+  it('adds the default signature list to settings saved by an older version', () => {
+    const prefs = memPrefs();
+    prefs.set(
+      'extensions.zotero-ai-sidebar.uiSettings',
+      JSON.stringify({
+        userProfile: { label: '我', avatar: '' },
+        assistantProfile: { label: 'AI', avatar: '' },
+      }),
+    );
+
+    expect(loadUiSettings(prefs).assistantSignatures).toEqual([
+      'Why am I reading this paper? Keep the question in sight.',
+      'Answers can be borrowed, but the thinking must be your own.',
+    ]);
+    expect(loadUiSettings(prefs).assistantSignaturesEnabled).toBe(true);
+  });
+
+  it('preserves customized, empty, and disabled signature settings', () => {
+    const prefs = memPrefs();
+    saveUiSettings(prefs, {
+      ...DEFAULT_UI_SETTINGS,
+      assistantSignatures: ['My own reminder.'],
+      assistantSignaturesEnabled: false,
+    });
+    expect(loadUiSettings(prefs).assistantSignatures).toEqual([
+      'My own reminder.',
+    ]);
+    expect(loadUiSettings(prefs).assistantSignaturesEnabled).toBe(false);
+
+    saveUiSettings(prefs, {
+      ...DEFAULT_UI_SETTINGS,
+      assistantSignatures: [],
+      assistantSignaturesEnabled: false,
+    });
+    expect(loadUiSettings(prefs).assistantSignatures).toEqual([]);
+    expect(loadUiSettings(prefs).assistantSignaturesEnabled).toBe(false);
+  });
+
+  it('migrates semicolon-delimited signatures in their original order', () => {
+    const prefs = memPrefs();
+    prefs.set(
+      'extensions.zotero-ai-sidebar.uiSettings',
+      JSON.stringify({
+        assistantSignatures: ' first ;； second； third ',
+      }),
+    );
+
+    expect(loadUiSettings(prefs).assistantSignatures).toEqual([
+      'first',
+      'second',
+      'third',
+    ]);
   });
 });

@@ -11,6 +11,7 @@
 ## 能做什么
 
 - **对正在读的论文随便问** —— *"帮我总结"*、*"核心贡献是什么"*、*"和 X 比较"*。模型自动取它需要的 PDF 内容，并在工具 trace 里把过程显式展示。
+- **每个对话可选 API 或 WEB** —— API 直接使用本地配置的模型预设；WEB 通过本机 Web Agent 对接 ChatGPT、DeepSeek 或自定义 ChatGPT-like 网页，保留网页当前的模型/搜索/思考状态，并把分阶段进度和持续增长的回答同步显示在 Zotero 中。
 - **随时打开 Quick Ask 连续追问** —— 默认按 `Alt+Q` 在 Zotero 任意页面打开临时对话；本窗口内会保留上下文，关闭即销毁，也可把整段问答显式转入当前论文的研究对话。
 - **arXiv 论文公式不破** —— 公式和插图从 LaTeX 源码取，不再是 PDF 文本层里的乱码。*"解释 Eq. (3)"* 和 *"讲一下 Figure 2"* 都能精确命中。
 - **PDF 沉浸式翻译** —— 开启沉浸模式后点句子即在原文旁出译文卡；`Enter` / `Shift+Enter` 在句子间穿行，`/` 把光标移进追问框，`Esc` 关卡后该句仍标为「在读高亮」可继续切句。
@@ -50,17 +51,33 @@ Quick Ask 默认用 `Alt+Q` 打开。首次使用时采用当前 AI 对话模型
 
 请勿在本仓库中硬编码个人 API Key、Base URL 或私有模型 ID。
 
+### 可选 WEB 模式（Linux/X11）
+
+WEB 模式使用一个本地伴随进程和独立的 Google Chrome 配置目录。API 模式不依赖这些组件；未安装 Web Agent 时，普通 API 对话不受影响。
+
+需要 Node.js 20 或更高版本、Google Chrome 和 `xclip`。在本仓库检出目录中运行：
+
+```bash
+sudo apt install xclip
+bash scripts/install-web-agent.sh "$HOME/Zotero"
+```
+
+如果 Zotero 数据目录不在 `$HOME/Zotero`，请替换为实际路径。安装后在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek 或自定义服务，再点击**账号**。在临时显示的 Chrome 窗口中完成登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
+
+这里的“隐藏”是最小化独立浏览器，而不是用 headless API 替代网页：登录、验证码、附件上传和网页脚本仍由该 Chrome 配置运行。插件不会切换网页的快速/深度思考/智能搜索开关。服务下拉菜单末尾提供**管理第三方网页…**，打开管理窗口不会改变当前服务。当前兼容边界见 [Web Agent 排障文档](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)。
+
 ## 功能特性
 
 ### 对话与界面
 
 - **Zotero 内置 AI 对话**：直接在专属侧边栏与当前论文对话，无需离开 Zotero。
+- **稳定的网页 WEB 对话**：通过带本地令牌认证的伴随进程连接 ChatGPT、DeepSeek 或自定义 ChatGPT-like 网页；账号从 Zotero 内配置，专用浏览器在对话时默认隐藏，侧边栏持续显示分阶段进度和增量回答。
 - **Quick Ask 临时连续对话**：默认按 `Alt+Q` 快速打开；可在同一窗口连续追问、复制最后回答或把全部轮次转入研究对话。它不读取研究对话历史，关闭后也不会保存。
 - **多提供商可配置**：通过 Zotero 本地偏好支持 Anthropic、OpenAI 以及任何 OpenAI 兼容端点。账号预设支持连通性测试，可为每个预设配置独立的模型列表并通过底部切换器快速切换。
 - **快捷提示词与 Slash 命令**：在输入框旁边可自定义提示词按钮，并内置 `/arxiv-search`、`/web-search` 等 slash 命令，这些命令会被展开成给模型的明确指令。
 - **Markdown 输出**：渲染标题、列表、代码块、引用、链接、思考/上下文块，以及工具调用轨迹。
 - **选区上下文条**：PDF 有选中文本时，输入框上方会显示下一轮是 `只看选区` 还是 `选区 + 全文`，并提供本轮全文覆盖和选区预览。
-- **可定制聊天界面**：用户和 AI 的昵称、头像（emoji 或图片 URL）均可自定义，每条消息的操作按钮位置和布局也可配置。
+- **可定制聊天界面**：用户和 AI 的昵称、头像（emoji 或图片 URL）均可自定义；空对话中央还可显示有序的多条 AI 个性签名，支持增删、排序、悬停关闭。每条消息的操作按钮位置和布局也可配置。
 - **干净 / 调试两种复制模式**：将对话以 Markdown 复制时，普通导出包含论文介绍、对话和当轮 PDF 选区；调试模式额外附带工具上下文、PDF 片段、模型输入顺序和思考过程。
 
 ### 全文总览
@@ -130,6 +147,8 @@ flowchart TB
     subgraph Runtime[运行时集成]
         direction LR
         Provider[LLM 提供商 API<br/>OpenAI / Anthropic / 兼容端点]
+        WebAgent[本地 Web Agent<br/>localhost 令牌 + 任务队列]
+        Browser[独立 Chrome 配置<br/>手动登录 + 网页状态]
         Tools[本地 AgentTool<br/>可选自动化]
     end
 
@@ -138,10 +157,14 @@ flowchart TB
         ZoteroOrg[(zotero.org<br/>元数据同步)]
         FileDAV[(WebDAV<br/>Zotero File Sync)]
         PluginDAV[(插件 WebDAV<br/>state.json)]
+        WebApps[(AI 网页<br/>ChatGPT / DeepSeek / 自定义)]
     end
 
     User -->|提问 / 选区 / 截图| Side
     Side <-->|HTTPS| Provider
+    Side <-->|localhost| WebAgent
+    WebAgent --> Browser
+    Browser <-->|HTTPS| WebApps
     Side -->|工具| Tools
     Tools --> Core
     Side --> Secrets
@@ -160,8 +183,8 @@ flowchart TB
     class User actor;
     class Side,PDF,Note zotero;
     class Core,Files,PluginState,Secrets local;
-    class Provider,Tools runtime;
-    class ZoteroOrg,FileDAV,PluginDAV cloud;
+    class Provider,WebAgent,Browser,Tools runtime;
+    class ZoteroOrg,FileDAV,PluginDAV,WebApps cloud;
     style UI fill:#f8fafc,stroke:#c7d2fe,stroke-width:1px
     style Local fill:#ecfeff,stroke:#67e8f9,stroke-width:1px
     style Runtime fill:#faf5ff,stroke:#d8b4fe,stroke-width:1px

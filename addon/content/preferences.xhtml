@@ -21,7 +21,33 @@
       #zotero-ai-sidebar-tool-settings .zai-pref-checkbox-row
       input[type="checkbox"] { width: auto; margin: 0; }
       #zotero-ai-sidebar-tool-settings .zai-pref-checkbox-label { font-weight:
-      600; } #zotero-ai-sidebar-tool-settings input[type="text"],
+      600; } #zotero-ai-sidebar-tool-settings .zai-signature-setting { display:
+      grid; gap: 7px; min-width: 0; } #zotero-ai-sidebar-tool-settings
+      .zai-signature-editor { overflow: hidden; border: 1px solid
+      var(--zai-pref-border-control); border-radius: 8px; background:
+      rgba(255,255,255,0.58); } #zotero-ai-sidebar-tool-settings
+      .zai-signature-list { display: grid; } #zotero-ai-sidebar-tool-settings
+      .zai-signature-row { display: grid; grid-template-columns: 22px
+      minmax(0,1fr) auto; gap: 6px; align-items: center; padding: 7px; }
+      #zotero-ai-sidebar-tool-settings .zai-signature-row +
+      .zai-signature-row { border-top: 1px solid
+      var(--zai-pref-border-divider); } #zotero-ai-sidebar-tool-settings
+      .zai-signature-index { color: #777; font-size: 11px; font-weight: 700;
+      text-align: center; } #zotero-ai-sidebar-tool-settings
+      .zai-signature-actions { display: flex; gap: 3px; }
+      #zotero-ai-sidebar-tool-settings .zai-signature-action { box-sizing:
+      border-box; width: 28px; min-width: 28px; height: 28px; padding: 0; }
+      #zotero-ai-sidebar-tool-settings .zai-signature-action:disabled {
+      opacity: 0.35; } #zotero-ai-sidebar-tool-settings
+      .zai-signature-editor-footer { display: flex; align-items: center;
+      justify-content: space-between; gap: 8px; padding: 7px; border-top: 1px
+      solid var(--zai-pref-border-divider); background: rgba(245,250,252,0.7);
+      } #zotero-ai-sidebar-tool-settings .zai-signature-count { color: #777;
+      font-size: 11px; } #zotero-ai-sidebar-tool-settings
+      .zai-signature-help { margin: 0; color: #666; font-size: 12px;
+      line-height: 1.4; } #zotero-ai-sidebar-tool-settings
+      .zai-signature-toggle { margin-top: 2px; } #zotero-ai-sidebar-tool-settings
+      input[type="text"],
       #zotero-ai-sidebar-tool-settings input[type="password"],
       #zotero-ai-sidebar-tool-settings input[type="number"],
       #zotero-ai-sidebar-tool-settings select, #zotero-ai-sidebar-tool-settings
@@ -642,6 +668,35 @@
           type="text"
           placeholder="例如：🤖 或 data:image/png;base64,..."
         />
+        <html:label>AI 个性签名</html:label>
+        <html:div class="zai-signature-setting">
+          <html:div class="zai-signature-editor">
+            <html:div
+              id="zai-ui-signature-list"
+              class="zai-signature-list"
+            ></html:div>
+            <html:div class="zai-signature-editor-footer">
+              <html:button id="zai-ui-signature-add" type="button"
+                >＋ 添加签名</html:button
+              >
+              <html:span
+                id="zai-ui-signature-count"
+                class="zai-signature-count"
+              ></html:span>
+            </html:div>
+          </html:div>
+          <html:p class="zai-signature-help">
+            每条签名单独显示一行，最多 80 个字符；可调整顺序。旧版分号内容会自动拆分。
+          </html:p>
+          <html:label
+            class="zai-pref-checkbox-row zai-signature-toggle"
+          >
+            <html:input id="zai-ui-signature-enabled" type="checkbox" />
+            <html:span class="zai-pref-checkbox-label"
+              >在空对话中显示 AI 个性签名</html:span
+            >
+          </html:label>
+        </html:div>
         <html:div class="zai-pref-subtitle zai-grid-section">消息界面</html:div>
         <html:label for="zai-ui-chat-font">聊天字体</html:label>
         <html:input

@@ -85,6 +85,7 @@ import {
 } from "../settings/tool-settings";
 import {
   loadUiSettings,
+  saveUiSettings,
   type ChatProfileSettings,
   type UiSettings,
 } from "../settings/ui-settings";
@@ -209,6 +210,7 @@ import {
   renderWebTaskProgress,
   webTaskProgressFor,
 } from "./web-task-progress";
+import { renderEmptySignatures } from "./empty-signatures";
 import {
   dispatchWebAgentTask,
   getWebAccountStatus,
@@ -2745,6 +2747,7 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
       );
     }
   } else if (state.messages.length === 0) {
+    messages.classList.add("messages-empty");
     const hint = el(doc, "div", "bubble bubble-assistant bubble-hint");
     hint.append(
       el(doc, "div", "bubble-role", "AI"),
@@ -2756,6 +2759,21 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
       ),
     );
     messages.append(hint);
+    if (state.uiSettings.assistantSignaturesEnabled) {
+      const signatures = renderEmptySignatures(
+        doc,
+        state.uiSettings.assistantSignatures,
+        () => {
+          state.uiSettings = {
+            ...state.uiSettings,
+            assistantSignaturesEnabled: false,
+          };
+          saveUiSettings(zoteroPrefs(), state.uiSettings);
+          messages.querySelector(".empty-signatures")?.remove();
+        },
+      );
+      if (signatures) messages.append(signatures);
+    }
   } else {
     state.messages.forEach((message, index) =>
       messages.append(bubble(doc, mount, state, message, index)),
@@ -4348,7 +4366,6 @@ function renderComposerFooter(
   } else {
     actions.append(
       renderWebPromptProviderSwitcher(doc, mount, state),
-      renderCustomWebProviderButton(doc, mount, state),
       renderWebAccountButton(doc, mount, state),
     );
   }
@@ -4406,9 +4423,18 @@ function renderWebPromptProviderSwitcher(
     option.textContent = provider.name;
     select.append(option);
   }
+  const option = doc.createElement("option");
+  option.value = "__manage_web_providers__";
+  option.textContent = "＋ 管理第三方网页…";
+  select.append(option);
   select.value = state.localUiSettings.webPromptProvider;
   select.addEventListener("change", () => {
     const previousProvider = state.localUiSettings.webPromptProvider;
+    if (select.value === "__manage_web_providers__") {
+      select.value = previousProvider;
+      configureCustomWebProvider(doc, mount, state);
+      return;
+    }
     if (select.value === "chatgpt" && previousProvider !== "chatgpt") {
       const warning =
         "ChatGPT 网页模式风险提示\n\n" +
@@ -4677,43 +4703,6 @@ function configureWebAccount(
     void closeDialog();
   });
   openLoginPage();
-}
-
-function renderCustomWebProviderButton(
-  doc: Document,
-  mount: HTMLElement,
-  state: PanelState,
-): HTMLElement {
-  const button = buttonEl(doc, "");
-  button.className = "composer-web-provider-settings-button";
-  button.title = "配置第三方 ChatGPT-like 网页（手动登录）";
-  button.setAttribute("aria-label", "配置第三方网页");
-  button.append(webSettingsIcon(doc));
-  button.addEventListener("click", () => {
-    configureCustomWebProvider(doc, mount, state);
-  });
-  return button;
-}
-
-function webSettingsIcon(doc: Document): Element {
-  const svg = doc.createElementNS(ZAI_SVG_NS, "svg");
-  svg.setAttribute("width", "15");
-  svg.setAttribute("height", "15");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  svg.setAttribute("stroke-linejoin", "round");
-  for (const d of [
-    "M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z",
-    "M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-1.7 1.7-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V20h-2.4v-.21a1.7 1.7 0 0 0-1.03-1.55 1.7 1.7 0 0 0-1.88.34l-.06.06-1.7-1.7.06-.06A1.7 1.7 0 0 0 8.4 15a1.7 1.7 0 0 0-1.55-1.03H6v-2.4h.85A1.7 1.7 0 0 0 8.4 10a1.7 1.7 0 0 0-.34-1.88L8 8.06l1.7-1.7.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 12.67 5.2V5h2.4v.2a1.7 1.7 0 0 0 1.03 1.56 1.7 1.7 0 0 0 1.88-.34l.06-.06 1.7 1.7-.06.06A1.7 1.7 0 0 0 19.34 10a1.7 1.7 0 0 0 1.55 1.03H21v2.4h-.11A1.7 1.7 0 0 0 19.4 15Z",
-  ]) {
-    const path = doc.createElementNS(ZAI_SVG_NS, "path");
-    path.setAttribute("d", d);
-    svg.append(path);
-  }
-  return svg;
 }
 
 function webAccountIcon(doc: Document): Element {

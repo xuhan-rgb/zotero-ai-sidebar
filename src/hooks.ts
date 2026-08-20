@@ -474,6 +474,17 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
       setPreferenceSectionDirty(doc, "prompts", true);
     },
   );
+  byID<HTMLButtonElement>(doc, "zai-ui-signature-add")?.addEventListener(
+    "click",
+    () => {
+      const list = byID<HTMLElement>(doc, "zai-ui-signature-list");
+      if (!list) return;
+      const row = uiSignatureRow(doc, "");
+      list.append(row);
+      refreshUiSignatureRows(doc);
+      row.querySelector<HTMLInputElement>("input")?.focus();
+    },
+  );
   byID<HTMLButtonElement>(doc, "zai-prompt-reset")?.addEventListener(
     "click",
     () => {
@@ -588,7 +599,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
   );
   bindAutoSaveControls(
     doc,
-    "#zai-ui-user-label, #zai-ui-user-avatar, #zai-ui-assistant-label, #zai-ui-assistant-avatar, #zai-ui-chat-font, #zai-ui-actions-position, #zai-ui-actions-layout, #zai-ui-preference-border-style, #zai-ui-composer-queue, #zai-ui-max-parallel-conversations, #zai-ui-confirm-conversation-deletion",
+    "#zai-ui-user-label, #zai-ui-user-avatar, #zai-ui-assistant-label, #zai-ui-assistant-avatar, #zai-ui-signature-enabled, #zai-ui-chat-font, #zai-ui-actions-position, #zai-ui-actions-layout, #zai-ui-preference-border-style, #zai-ui-composer-queue, #zai-ui-max-parallel-conversations, #zai-ui-confirm-conversation-deletion",
     () => saveUiSettingsControls(doc),
   );
   bindAutoSaveControls(
@@ -1516,6 +1527,14 @@ function renderUiSettings(doc: Document): void {
     "zai-ui-assistant-avatar",
     settings.assistantProfile.avatar,
   );
+  renderUiSignatureRows(doc, settings.assistantSignatures);
+  const signaturesEnabled = byID<HTMLInputElement>(
+    doc,
+    "zai-ui-signature-enabled",
+  );
+  if (signaturesEnabled) {
+    signaturesEnabled.checked = settings.assistantSignaturesEnabled;
+  }
   setInputValue(doc, "zai-ui-chat-font", settings.chatFontFamily);
   const position = byID<HTMLSelectElement>(doc, "zai-ui-actions-position");
   if (position) position.value = settings.messageActionsPosition;
@@ -1582,6 +1601,10 @@ function readUiSettingsControls(doc: Document): UiSettings {
       label: byID<HTMLInputElement>(doc, "zai-ui-assistant-label")?.value,
       avatar: byID<HTMLInputElement>(doc, "zai-ui-assistant-avatar")?.value,
     },
+    assistantSignatures: readUiSignatureRows(doc),
+    assistantSignaturesEnabled:
+      byID<HTMLInputElement>(doc, "zai-ui-signature-enabled")?.checked !==
+      false,
     chatFontFamily: byID<HTMLInputElement>(doc, "zai-ui-chat-font")?.value,
     messageActionsPosition: position?.value,
     messageActionsLayout: layout?.value,
@@ -1595,6 +1618,82 @@ function readUiSettingsControls(doc: Document): UiSettings {
       byID<HTMLInputElement>(doc, "zai-ui-confirm-conversation-deletion")
         ?.checked !== false,
   });
+}
+
+function renderUiSignatureRows(doc: Document, signatures: string[]): void {
+  const list = byID<HTMLElement>(doc, "zai-ui-signature-list");
+  if (!list) return;
+  list.replaceChildren(
+    ...signatures.map((signature) => uiSignatureRow(doc, signature)),
+  );
+  refreshUiSignatureRows(doc);
+}
+
+function uiSignatureRow(doc: Document, signature: string): HTMLElement {
+  const row = el(doc, "div", "zai-signature-row");
+  const index = el(doc, "span", "zai-signature-index");
+  const field = input(doc, signature);
+  field.maxLength = 80;
+  field.addEventListener("change", () => saveUiSettingsControls(doc));
+
+  const actions = el(doc, "div", "zai-signature-actions");
+  for (const [action, label, symbol] of [
+    ["up", "上移签名", "↑"],
+    ["down", "下移签名", "↓"],
+    ["delete", "删除签名", "×"],
+  ] as const) {
+    const control = button(doc, symbol);
+    control.className = "zai-signature-action";
+    control.dataset.action = action;
+    control.title = label;
+    control.setAttribute("aria-label", label);
+    control.addEventListener("click", () => {
+      const list = row.parentElement;
+      if (!list) return;
+      if (action === "up" && row.previousElementSibling) {
+        list.insertBefore(row, row.previousElementSibling);
+      } else if (action === "down" && row.nextElementSibling) {
+        list.insertBefore(row.nextElementSibling, row);
+      } else if (action === "delete") {
+        row.remove();
+      }
+      refreshUiSignatureRows(doc);
+      saveUiSettingsControls(doc);
+    });
+    actions.append(control);
+  }
+
+  row.append(index, field, actions);
+  return row;
+}
+
+function readUiSignatureRows(doc: Document): string[] {
+  const fields = Array.from(
+    doc.querySelectorAll("#zai-ui-signature-list .zai-signature-row input"),
+  ) as HTMLInputElement[];
+  return fields
+    .map((field) => field.value.trim())
+    .filter(Boolean);
+}
+
+function refreshUiSignatureRows(doc: Document): void {
+  const rows = Array.from(
+    doc.querySelectorAll("#zai-ui-signature-list .zai-signature-row"),
+  ) as HTMLElement[];
+  rows.forEach((row, index) => {
+    const label = row.querySelector<HTMLElement>(".zai-signature-index");
+    if (label) label.textContent = String(index + 1);
+    const field = row.querySelector<HTMLInputElement>("input");
+    field?.setAttribute("aria-label", `签名 ${index + 1}`);
+    const up = row.querySelector<HTMLButtonElement>('[data-action="up"]');
+    const down = row.querySelector<HTMLButtonElement>(
+      '[data-action="down"]',
+    );
+    if (up) up.disabled = index === 0;
+    if (down) down.disabled = index === rows.length - 1;
+  });
+  const count = byID<HTMLElement>(doc, "zai-ui-signature-count");
+  if (count) count.textContent = `${readUiSignatureRows(doc).length} 条`;
 }
 
 function saveUiSettingsControls(doc: Document): void {

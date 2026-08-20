@@ -215,16 +215,17 @@
 
   <header class="hero">
     <h1>Zotero AI Sidebar · 使用教程</h1>
-    <p>Zotero 里的 AI 对话侧栏：对正在读的论文随便问、Quick Ask 临时连续追问、PDF 沉浸/全文翻译、写回笔记，全部本地驱动、模型可自配。下面的界面都是用 HTML 还原的真实插件外观。</p>
+    <p>Zotero 里的 AI 对话侧栏：可选 API 或 WEB 对话、对正在读的论文随便问、Quick Ask 临时连续追问、PDF 沉浸/全文翻译、写回笔记。下面的界面都是用 HTML 还原的真实插件外观。</p>
     <nav class="toc">
       <a href="#overview">① 界面总览</a>
       <a href="#config">② 配置模型</a>
-      <a href="#chat">③ 对话</a>
-      <a href="#quick-ask">④ Quick Ask</a>
-      <a href="#immersive">⑤ 翻译阅读</a>
-      <a href="#notes">⑥ 笔记与总览</a>
-      <a href="#steps">⑦ 三步上手</a>
-      <a href="#keys">⑧ 快捷键</a>
+      <a href="#web-chat">③ WEB 对话</a>
+      <a href="#chat">④ API 对话</a>
+      <a href="#quick-ask">⑤ Quick Ask</a>
+      <a href="#immersive">⑥ 翻译阅读</a>
+      <a href="#notes">⑦ 笔记与总览</a>
+      <a href="#steps">⑧ 上手步骤</a>
+      <a href="#keys">⑨ 快捷键</a>
     </nav>
   </header>
 
@@ -288,11 +289,9 @@
               <span class="send">↑</span>
             </div>
             <div class="footbar">
-              <span class="mono">Ln 1, Col</span>
-              <span>截图</span><span>图片</span>
-              <span class="model">gpt-5.5</span>
-              <span>Low</span>
-              <span class="spacer"></span>
+              <span class="btn">API</span><span class="btn ghost">WEB</span>
+              <span class="model">GPT (openai)</span>
+              <span>gpt-5.6-terra</span>
               <span>YOLO</span><span class="toggle on"></span>
             </div>
           </div>
@@ -312,7 +311,8 @@
         <li><span class="k">论文原文依据</span><span class="d">回答末尾给出引用的<b>PDF 原文</b>，可溯源、可跳回。</span></li>
         <li><span class="k">总结论文 / 全文重点</span><span class="d">一键快捷提示词；<b>解释选区</b>在 PDF 有选中文本时才可点。</span></li>
         <li><span class="k">📄 原文 / + 联网</span><span class="d">是否把整篇论文固定进每轮上下文；是否允许联网检索。</span></li>
-        <li><span class="k">底栏</span><span class="d">截图 / 贴图、当前模型（gpt-5.5）、思考程度（Low）、<b>YOLO</b>（放开写操作权限）。</span></li>
+        <li><span class="k">API / WEB</span><span class="d">API 使用本地模型预设和 Zotero 工具；WEB 使用已登录的 ChatGPT、DeepSeek 或自定义网页账号。</span></li>
+        <li><span class="k">API 底栏</span><span class="d">当前账号、模型和 <b>YOLO</b>（放开写操作权限）；思考程度在账号预设中配置，不在这里临时切换。</span></li>
       </ul>
     </div>
   </section>
@@ -378,9 +378,49 @@
     <div class="warn-box">🔒 <b>隐私提醒</b>：API Key 和 Base URL 都是敏感信息，截图 / 分享前请打码。导出的配置 JSON 和 WebDAV 的 <span class="kbd">state.json</span> 里也含密钥，妥善保管、不要公开。</div>
   </section>
 
-  <!-- ============ 3. 对话 ============ -->
+  <!-- ============ 3. WEB 对话 ============ -->
+  <section id="web-chat">
+    <h2><span class="n">3</span>通过 WEB 使用 ChatGPT / DeepSeek</h2>
+    <p class="lead">WEB 模式通过本机 Web Agent 控制一个独立 Chrome 配置，把网页回答持续同步回 Zotero。它适合使用网页账号；API 模式不依赖 Chrome，也不会受到 Web Agent 状态影响。</p>
+
+    <div class="grid2">
+      <div class="win" aria-label="WEB 对话底栏示意">
+        <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">Zotero · AI Sidebar</span></div>
+        <div class="sb">
+          <div class="flow">
+            <div class="msg-user"><div class="bubble">解释这篇论文的核心方法</div></div>
+            <div class="collapse">DeepSeek 正在思考并生成回答 · 已等待 18 秒</div>
+            <div class="answer">回答会随着网页内容增长，持续同步显示在这里……</div>
+          </div>
+          <div class="composer">
+            <div class="input">发送到 ChatGPT…（Enter 发送）</div>
+            <div class="ctx"><span class="chip active">📄 原文</span><span class="send">↑</span></div>
+            <div class="footbar">
+              <span class="btn ghost">API</span><span class="btn">WEB</span>
+              <span class="model">ChatGPT ▾</span>
+              <span class="btn">♙ 账号</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <ul class="legend">
+        <li><span class="k">首次安装</span><span class="d">需要 Node.js 20+、Google Chrome、<code>xclip</code>；在仓库目录运行 <code>bash scripts/install-web-agent.sh "$HOME/Zotero"</code>。</span></li>
+        <li><span class="k">ChatGPT ▾</span><span class="d">切换 ChatGPT、DeepSeek 和自定义站点；末尾“<b>管理第三方网页…</b>”只打开网址管理，不改变当前服务。</span></li>
+        <li><span class="k">账号</span><span class="d">临时显示专用 Chrome 完成登录，并设置“对话时在后台隐藏浏览器”；默认勾选。</span></li>
+        <li><span class="k">进度卡</span><span class="d">依次显示准备、上传、提交、生成、同步；网页回答增长时左侧同步刷新。</span></li>
+        <li><span class="k">网页状态</span><span class="d">快速 / 深度思考 / 智能搜索由网页当前状态决定，Zotero 不主动切换。</span></li>
+        <li><span class="k">附件</span><span class="d">隐藏模式只使用网页真实文件输入框；没有输入框时明确报错，不聚焦 Chrome 做剪贴板粘贴。</span></li>
+      </ul>
+    </div>
+
+    <div class="tip">💡 “隐藏浏览器”表示最小化专用 Chrome，不是 headless API。登录、验证码和网页脚本仍在该独立配置中运行；它不会读取你日常 Chrome 的配置。</div>
+    <div class="warn-box">⚠️ 第三方网页 DOM、上传和下载机制会变化。网页只返回 <span class="kbd">sandbox:/...</span> 文本路径时，没有可下载文件；详细排障见 <b>docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md</b>。</div>
+  </section>
+
+  <!-- ============ 4. API 对话 ============ -->
   <section id="chat">
-    <h2><span class="n">3</span>对正在读的论文随便问</h2>
+    <h2><span class="n">4</span>用 API 对正在读的论文随便问</h2>
     <p class="lead">在输入框<b>直接用自然语言</b>问就行——比如「<b>公式1和 figure1 是什么意思</b>」「这篇的核心贡献是什么」「和 X 方法比有什么区别」（这些只是例子，问什么都可以）。模型会自己决定要不要读当前条目、PDF 文本、注释、选区或截图，过程在「思考与上下文」里显式展示。</p>
     <div class="steps">
       <div class="step"><b>整篇提问</b><p>“帮我总结”“核心贡献是什么”“和 X 比较”。不选任何东西时，默认带<b>整篇论文</b>上下文（📄 原文 打开时）。</p></div>
@@ -392,9 +432,9 @@
     <div class=”tip”>✍️ 这类「写回 PDF」都是 Agent <b>显式工具调用</b>、过程可见、且受权限控制——默认模式会先确认，开 <b>YOLO</b> 可直接执行，不会偷偷改你的 PDF。</div>
   </section>
 
-  <!-- ============ 4. Quick Ask ============ -->
+  <!-- ============ 5. Quick Ask ============ -->
   <section id="quick-ask">
-    <h2><span class="n">4</span>Quick Ask 临时连续对话</h2>
+    <h2><span class="n">5</span>Quick Ask 临时连续对话</h2>
     <p class="lead">默认按 <span class="kbd">Alt+Q</span> 在 Zotero 任意页面打开。它适合临时问几轮：窗口内保留上下文，关闭后全部销毁，不会混入当前论文的研究对话。</p>
 
     <div class="grid2">
@@ -430,7 +470,7 @@
 
   <!-- ============ 5. 翻译阅读 ============ -->
   <section id="immersive">
-    <h2><span class="n">5</span>PDF 沉浸式与全文翻译</h2>
+    <h2><span class="n">6</span>PDF 沉浸式与全文翻译</h2>
     <p class="lead">点工具栏「沉浸」开启后，点句子即在原文旁出译文卡；也可选中 / 悬停某句后按<b>快捷翻译键（默认空格）</b>直接翻这一句。</p>
 
     <div class="grid2">
@@ -490,7 +530,7 @@
 
   <!-- ============ 6. 笔记与总览 ============ -->
   <section id="notes">
-    <h2><span class="n">6</span>笔记与总览</h2>
+    <h2><span class="n">7</span>笔记与总览</h2>
     <p class="lead">点「打开笔记」展开笔记列，目标布局是 <b>PDF | 笔记 | AI 对话</b>。笔记用 Zotero 官方富文本编辑器（Enter / 列表 / 链接行为与主笔记一致，自动保存）。顶部四个模块各司其职：</p>
 
     <div class="grid2">
@@ -570,20 +610,21 @@
     </div>
   </section>
 
-  <!-- ============ 7. 三步上手 ============ -->
+  <!-- ============ 8. 四步上手 ============ -->
   <section id="steps">
-    <h2><span class="n">7</span>三步上手</h2>
+    <h2><span class="n">8</span>四步上手</h2>
     <div class="steps">
-      <div class="step"><b>配模型</b><p>「设置」里新增一个模型预设：填 Base URL、API key、模型 ID、最大 token 与思考程度。预设与密钥只存在本地 Zotero 偏好里。</p></div>
+      <div class="step"><b>选择 API 或 WEB</b><p>API 使用模型预设和 Zotero 工具；WEB 使用 ChatGPT / DeepSeek 网页账号。两条路线可在输入框底部随时切换。</p></div>
+      <div class="step"><b>完成配置</b><p>API 在「设置」新增模型预设；WEB 先安装 Web Agent，再点「账号」登录专用 Chrome，并按需保持后台隐藏。还可在「显示设置」用多行列表配置空对话中央的阅读提醒。</p></div>
       <div class="step"><b>开读 + 提问</b><p>在 Reader 打开 PDF，侧栏直接问，或点「总结论文 / 全文重点」。需要逐句精读时点「沉浸」。</p></div>
       <div class="step"><b>写回 / 同步</b><p>把回答追加进论文笔记，或让模型给 PDF 加按颜色分类的高亮；需要换机时在设置里导出 JSON，或开 WebDAV 同步单个 <span class="kbd">state.json</span>。</p></div>
     </div>
     <div class="tip">💡 数据本地优先：不开同步时什么都不出本机；开了 WebDAV 才会把含预设（含 API key）、对话、批注、翻译缓存的 <b>state.json</b> 推到<b>你自己的</b>端点，不发给 zotero.org 或第三方。</div>
   </section>
 
-  <!-- ============ 8. 快捷键 ============ -->
+  <!-- ============ 9. 快捷键 ============ -->
   <section id="keys">
-    <h2><span class="n">8</span>快捷键速查</h2>
+    <h2><span class="n">9</span>快捷键速查</h2>
     <table class="keys">
       <tr><th>操作</th><th>默认键</th><th>说明</th></tr>
       <tr><td>发送提问</td><td><span class="kbd">Enter</span></td><td>输入框里发送；<span class="kbd">Shift+Enter</span> 换行</td></tr>
@@ -598,7 +639,7 @@
     <div class="tip">Quick Ask、切句、选区快译等快捷键都能在「设置 → 沉浸阅读」里修改。</div>
   </section>
 
-  <footer>Zotero AI Sidebar · 本页为离线使用教程，界面为 HTML 还原，非真实截图。</footer>
+  <footer>Zotero AI Sidebar v0.8.0 · 本页为离线使用教程，界面为 HTML 还原，非真实截图。</footer>
 </div>
 </body>
 </html>
