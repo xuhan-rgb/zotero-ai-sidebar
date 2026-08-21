@@ -373,7 +373,23 @@ describe("AI dialog toolbar", () => {
       /\.composer-status\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*white-space:\s*nowrap;/s,
     );
     expect(sidebarCSS).toMatch(
-      /\.input-row\.input-row-compact > \.composer-switchers\s*\{[^}]*left:\s*45px;/s,
+      /\.input-row > \.composer-attachment-menu\s*\{[^}]*left:\s*10px;/s,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.composer-attachment-menu > summary\s*\{[^}]*width:\s*24px;[^}]*min-width:\s*24px;/s,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.input-row > \.composer-switchers\s*\{[^}]*left:\s*34px;/s,
+    );
+    expect(sidebarCSS).toMatch(
+      /\.input-row > \.composer-switchers\s*\{[^}]*gap:\s*2px;/s,
+    );
+    expect(sidebarSource).toContain('"＋\\u00a0联网"');
+    expect(sidebarSource).toContain('"＋\\u00a0原文"');
+    expect(sidebarSource).not.toContain('"web-search-trigger-icon"');
+    expect(sidebarSource).not.toContain('"web-search-trigger-label"');
+    expect(sidebarCSS).toMatch(
+      /\.web-search-switcher \.web-search-trigger\s*\{[^}]*padding:\s*3px 4px;[^}]*white-space:\s*nowrap;/s,
     );
     expect(sidebarCSS).toMatch(
       /\.preset-switcher-bottom\s*\{[^}]*overflow:\s*visible;/s,

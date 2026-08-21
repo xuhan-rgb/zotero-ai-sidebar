@@ -43,7 +43,8 @@ export async function createWebContextAttachment(
 export async function createWebTocAttachment(
   arxivToc: string | null | undefined,
 ): Promise<WebAgentAttachment | undefined> {
-  if (!arxivToc?.trim()) return undefined;
+  const directory = webArxivTocDirectory(arxivToc);
+  if (!directory) return undefined;
   const root = (Zotero as any).DataDirectory?.dir;
   const io = (globalThis as any).IOUtils;
   if (!root || !io?.writeUTF8 || !io?.makeDirectory) return undefined;
@@ -52,8 +53,28 @@ export async function createWebTocAttachment(
   const name = `zai-arxiv-toc-${Date.now()}-${token}.txt`;
   const path = appendLocalPath(dir, name);
   await io.makeDirectory(dir, { createAncestors: true });
-  await io.writeUTF8(path, `## arXiv 论文目录\n${arxivToc.trim()}`);
+  await io.writeUTF8(path, `## arXiv 论文目录\n${directory}`);
   return { kind: "text", path, name, mimeType: "text/plain" };
+}
+
+export function webArxivTocDirectory(
+  arxivToc: string | null | undefined,
+): string {
+  if (!arxivToc?.trim()) return "";
+  const lines = arxivToc.split(/\r?\n/);
+  const directoryStart = lines.findIndex((line) =>
+    line.startsWith("Sections (number · title · body chars):"),
+  );
+  if (directoryStart < 0) return "";
+  return lines
+    .slice(directoryStart + 1)
+    .map((line) =>
+      line
+        .replace(/\s+\{[^{}\n]+\}(?=\s+\(\d+ chars\)\s*$)/, "")
+        .replace(/\s+\(\d+ chars\)\s*$/, ""),
+    )
+    .filter((line) => line.trim())
+    .join("\n");
 }
 
 interface ZoteroWebItem {

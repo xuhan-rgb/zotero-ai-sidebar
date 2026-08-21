@@ -1,9 +1,66 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
-import { resolveWebPaperMaterial } from "../../src/modules/web-paper-material";
+import {
+  createWebTocAttachment,
+  resolveWebPaperMaterial,
+  webArxivTocDirectory,
+} from "../../src/modules/web-paper-material";
 
 describe("WEB paper material", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("sends WEB only the arXiv section directory without API tool instructions", () => {
+    const apiToc = [
+      "[arXiv paper — section index]",
+      "The cleaned LaTeX source is cached locally; bodies are NOT inlined.",
+      "Use these tools to read source parts on demand:",
+      "  • arxiv_get_section(section) — fetch ONE section",
+      "  • zotero_get_full_pdf() — upgrade to the full LaTeX source if needed",
+      "Sections (number · title · body chars):",
+      "  1  Introduction {sec:intro}  (1200 chars)",
+      "    1.1  Motivation  (480 chars)",
+      "  2  Method  (3200 chars)",
+    ].join("\n");
+
+    const directory = webArxivTocDirectory(apiToc);
+
+    expect(directory).toBe(
+      ["  1  Introduction", "    1.1  Motivation", "  2  Method"].join("\n"),
+    );
+    expect(directory).not.toContain("arxiv_get_section");
+    expect(directory).not.toContain("zotero_get_full_pdf");
+    expect(directory).not.toContain("cached locally");
+    expect(directory).not.toContain("chars");
+    expect(directory).not.toContain("sec:intro");
+  });
+
+  it("writes the directory-only text into the WEB attachment", async () => {
+    const writeUTF8 = vi.fn(async () => undefined);
+    vi.stubGlobal("Zotero", {
+      DataDirectory: { dir: "/zotero" },
+      Utilities: { randomString: () => "TOKEN" },
+    });
+    vi.stubGlobal("IOUtils", {
+      makeDirectory: vi.fn(async () => undefined),
+      writeUTF8,
+    });
+
+    const attachment = await createWebTocAttachment(
+      [
+        "[arXiv paper — section index]",
+        "Use these tools to read source parts on demand:",
+        "  • arxiv_get_section(section) — fetch ONE section",
+        "Sections (number · title · body chars):",
+        "  1  Introduction  (1200 chars)",
+      ].join("\n"),
+    );
+
+    expect(attachment?.kind).toBe("text");
+    expect(writeUTF8).toHaveBeenCalledOnce();
+    const written = String(writeUTF8.mock.calls[0]?.[1]);
+    expect(written).toBe("## arXiv 论文目录\n  1  Introduction");
+    expect(written).not.toContain("arxiv_get_section");
+  });
 
   it("prefers cached arXiv LaTeX and emits the canonical arXiv URL", async () => {
     const parent = item(1, {

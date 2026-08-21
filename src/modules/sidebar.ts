@@ -4871,7 +4871,7 @@ function renderWebSearchSwitcher(
   const trigger = doc.createElement("button");
   trigger.type = "button";
   trigger.className = "web-search-trigger";
-  trigger.textContent = enabled ? "🌐 联网" : "＋ 联网";
+  trigger.textContent = enabled ? "🌐\u00a0联网" : "＋\u00a0联网";
   trigger.title = enabledForPreset
     ? webSearchToggleTitle(mode)
     : "联网工具目前仅对 OpenAI Responses 兼容配置生效";
@@ -4972,7 +4972,7 @@ function renderPaperPinSwitcher(
   trigger.type = "button";
   trigger.className = "web-search-trigger";
   const hasItem = state.itemID != null;
-  trigger.textContent = on ? "📄 原文" : "＋ 原文";
+  trigger.textContent = on ? "📄\u00a0原文" : "＋\u00a0原文";
   trigger.title = !hasItem
     ? "请先在 Zotero 中选择一篇有 PDF 的论文"
     : on

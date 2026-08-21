@@ -3648,8 +3648,8 @@ div.math-fallback {
 }
 
 .composer-attachment-menu > summary {
-  width: 29px;
-  min-width: 29px;
+  width: 24px;
+  min-width: 24px;
   height: 25px;
   padding: 0;
   border-color: transparent;
@@ -3791,30 +3791,26 @@ div.math-fallback {
 
 .input-row > .composer-switchers {
   position: absolute;
-  left: 10px;
+  left: 34px;
   bottom: 9px;
   z-index: 2;
   display: flex;
   align-items: center;
-  gap: 6px;
-}
-
-.input-row.input-row-compact > .composer-switchers {
-  left: 45px;
+  gap: 2px;
 }
 
 .composer-footer-actions .web-search-trigger,
 .web-search-switcher .web-search-trigger {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
   min-height: 24px;
-  padding: 3px 8px;
+  padding: 3px 4px;
   border: 1px solid transparent;
   border-radius: 999px;
   background: transparent;
   color: var(--zai-muted);
   font: 600 12px/18px var(--zai-font);
+  white-space: nowrap;
 }
 
 .web-search-live .web-search-trigger,
