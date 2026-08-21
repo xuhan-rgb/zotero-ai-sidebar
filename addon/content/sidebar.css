@@ -3742,8 +3742,9 @@ div.math-fallback {
   grid-template-columns: auto minmax(0, 1fr) minmax(0, 120px);
   align-items: center;
   gap: 8px;
-  width: calc(100% + 20px);
-  margin-left: -10px;
+  box-sizing: border-box;
+  width: 100%;
+  margin-left: 0;
   padding: 7px 2px 0;
 }
 
@@ -3769,7 +3770,8 @@ div.math-fallback {
   display: flex;
   align-items: center;
   flex-wrap: nowrap;
-  flex: 0 0 auto;
+  flex: 1 1 auto;
+  min-width: 0;
   gap: 5px 8px;
   min-height: 18px;
   color: var(--zai-muted);
@@ -3780,6 +3782,13 @@ div.math-fallback {
   text-overflow: ellipsis;
   -moz-user-select: text;
   user-select: text;
+}
+
+.composer-status-web-account {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .web-search-switcher {

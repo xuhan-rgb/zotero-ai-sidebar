@@ -204,7 +204,10 @@ describe("WEB send flow", () => {
     expect(sidebar).toContain("renderWebAccountButton(doc, mount, state)");
     expect(sidebar).toContain("openWebAccount(provider, customProvider)");
     expect(sidebar).toContain("尚未配置");
-    expect(sidebar).toContain("state.webAccountConfigured === true");
+    expect(sendWebPrompt).toContain(
+      "getWebAccountStatus(provider, undefined, customProvider)",
+    );
+    expect(sendWebPrompt).toContain("if (!account.configured)");
     expect(agent).toContain(
       'request.method === "POST" && request.url === "/browser/open"',
     );

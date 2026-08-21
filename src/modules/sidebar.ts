@@ -2963,8 +2963,6 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     (state.networkDiagramTarget
       ? !state.sending && !networkDiagramBusy
       : (!conversationSending || queueAllowed) && !webPromptBusy);
-  const webAccountReady =
-    !webPromptTarget || state.webAccountConfigured === true;
   input.placeholder = state.networkDiagramTarget
     ? networkDiagramBusy
       ? "网络图分析中…可在上方任务卡停止"
@@ -3138,18 +3136,16 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   send.className = conversationSending
     ? "send-btn send-queue-btn"
     : "send-btn";
-  send.disabled = !canSubmit || !webAccountReady;
-  send.title = preset
-    ? webPromptTarget
-      ? webAccountReady
-        ? "发送到 Web Prompt Hub"
-        : "请先点击账号配置按钮并手动登录网页账号"
-      : !preset.apiKey || !preset.model
+  send.disabled = !canSubmit;
+  send.title = webPromptTarget
+    ? "发送到 Web Prompt Hub；未登录时会提示配置网页账号"
+    : preset
+      ? !preset.apiKey || !preset.model
       ? "请先填写 API Key 和 Model ID"
       : conversationSending
         ? "加入队列：当前回复结束后按顺序执行"
         : "发送"
-    : "发送";
+      : "发送";
   send.setAttribute(
     "aria-label",
     conversationSending ? "加入队列" : "发送",
@@ -4767,11 +4763,11 @@ function configureWebAccount(
         configured = result.configured || configured;
         state.webAccountConfigured = configured;
         state.webAccountNotice = configured
-          ? `${providerName} 网页账号已就绪，浏览器已转入后台`
+          ? `${providerName} 已就绪`
           : `${providerName} 登录网页已隐藏，尚未检测到登录`;
       } else {
         state.webAccountNotice = configured
-          ? `${providerName} 网页账号已就绪，对话时将显示浏览器`
+          ? `${providerName} 已就绪`
           : `${providerName} 登录网页保持显示，尚未检测到登录`;
       }
     } catch (error) {
@@ -4864,6 +4860,7 @@ function renderWebSearchSwitcher(
 ): HTMLElement {
   const settings = loadToolSettings(zoteroPrefs());
   const preset = selectedChatPreset(state);
+  const webMode = state.localUiSettings.chatSendMode === "web";
   const enabledForPreset = preset?.provider === "openai";
   const mode = settings.webSearchMode;
   const enabled = mode !== "disabled";
@@ -4872,10 +4869,13 @@ function renderWebSearchSwitcher(
   trigger.type = "button";
   trigger.className = "web-search-trigger";
   trigger.textContent = enabled ? "🌐\u00a0联网" : "＋\u00a0联网";
-  trigger.title = enabledForPreset
-    ? webSearchToggleTitle(mode)
-    : "联网工具目前仅对 OpenAI Responses 兼容配置生效";
+  trigger.title = webMode
+    ? "WEB 模式使用网页自身的联网能力；此开关仅用于 API 模式"
+    : enabledForPreset
+      ? webSearchToggleTitle(mode)
+      : "联网工具目前仅对 OpenAI Responses 兼容配置生效";
   trigger.disabled =
+    webMode ||
     !enabledForPreset ||
     conversationIsSending(state, state.activeConversationID);
   trigger.setAttribute("aria-haspopup", "menu");
@@ -4963,6 +4963,7 @@ function renderPaperPinSwitcher(
   state: PanelState,
 ): HTMLElement {
   const on = state.paperPinned === true;
+  const webMode = state.localUiSettings.chatSendMode === "web";
   const wrap = el(
     doc,
     "div",
@@ -4973,13 +4974,17 @@ function renderPaperPinSwitcher(
   trigger.className = "web-search-trigger";
   const hasItem = state.itemID != null;
   trigger.textContent = on ? "📄\u00a0原文" : "＋\u00a0原文";
-  trigger.title = !hasItem
-    ? "请先在 Zotero 中选择一篇有 PDF 的论文"
-    : on
-      ? "原文固定已开启：PDF 条目每轮固定全文；arXiv 源条目默认固定章节目录，模型按需读取章节或升级全文。点击关闭。"
-      : "点击开启：把论文原文上下文固定在每轮对话最前面；arXiv 源默认先固定章节目录以便缓存复用。";
+  trigger.title = webMode
+    ? "WEB 模式由网页附件流程提供论文材料；此开关仅用于 API 模式"
+    : !hasItem
+      ? "请先在 Zotero 中选择一篇有 PDF 的论文"
+      : on
+        ? "原文固定已开启：PDF 条目每轮固定全文；arXiv 源条目默认固定章节目录，模型按需读取章节或升级全文。点击关闭。"
+        : "点击开启：把论文原文上下文固定在每轮对话最前面；arXiv 源默认先固定章节目录以便缓存复用。";
   trigger.disabled =
-    !hasItem || conversationIsSending(state, state.activeConversationID);
+    webMode ||
+    !hasItem ||
+    conversationIsSending(state, state.activeConversationID);
   trigger.addEventListener("click", () => {
     void togglePaperPinFromComposer(doc, mount, state);
   });

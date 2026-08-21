@@ -47,6 +47,10 @@ const composerFooterSource = sidebarSource.slice(
   sidebarSource.indexOf("function renderComposerFooter("),
   sidebarSource.indexOf("function renderWebSearchSwitcher("),
 );
+const contextSwitchersSource = sidebarSource.slice(
+  sidebarSource.indexOf("function renderWebSearchSwitcher("),
+  sidebarSource.indexOf("function renderModelSwitcher("),
+);
 const copyDebugToggleSource = sidebarSource.slice(
   sidebarSource.indexOf("function renderCopyDebugToggle("),
   sidebarSource.indexOf("export function refreshSidebarPreferences("),
@@ -358,7 +362,7 @@ describe("AI dialog toolbar", () => {
       /\.composer-footer\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\) minmax\(0, 120px\);/s,
     );
     expect(sidebarCSS).toMatch(
-      /\.composer-footer\s*\{[^}]*width:\s*calc\(100% \+ 20px\);[^}]*margin-left:\s*-10px;/s,
+      /\.composer-footer\s*\{[^}]*box-sizing:\s*border-box;[^}]*width:\s*100%;[^}]*margin-left:\s*0;/s,
     );
     expect(sidebarCSS).toMatch(
       /\.composer-footer-left:empty\s*\{[^}]*display:\s*none;/s,
@@ -370,8 +374,14 @@ describe("AI dialog toolbar", () => {
       /\.composer-footer\.composer-footer-status-empty\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\);/s,
     );
     expect(sidebarCSS).toMatch(
-      /\.composer-status\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*white-space:\s*nowrap;/s,
+      /\.composer-status\s*\{[^}]*flex-wrap:\s*nowrap;[^}]*flex:\s*1 1 auto;[^}]*min-width:\s*0;[^}]*white-space:\s*nowrap;/s,
     );
+    expect(sidebarCSS).toMatch(
+      /\.composer-status-web-account\s*\{[^}]*overflow:\s*hidden;[^}]*text-overflow:\s*ellipsis;[^}]*white-space:\s*nowrap;/s,
+    );
+    expect(
+      sidebarSource.match(/`\$\{providerName\} 已就绪`/g),
+    ).toHaveLength(2);
     expect(sidebarCSS).toMatch(
       /\.input-row > \.composer-attachment-menu\s*\{[^}]*left:\s*10px;/s,
     );
@@ -410,6 +420,33 @@ describe("AI dialog toolbar", () => {
     expect(sidebarCSS).not.toContain(".composer-web-provider-settings-button");
     expect(sidebarSource).toContain("ChatGPT 网页模式风险提示");
     expect(sidebarSource).toContain("账号风控");
+  });
+
+  it("disables the API context switches while WEB mode is selected", () => {
+    expect(contextSwitchersSource).toContain(
+      'const webMode = state.localUiSettings.chatSendMode === "web";',
+    );
+    expect(contextSwitchersSource).toMatch(
+      /trigger\.disabled =\s*webMode \|\|\s*!enabledForPreset \|\|/s,
+    );
+    expect(contextSwitchersSource).toMatch(
+      /trigger\.disabled =\s*webMode \|\|\s*!hasItem \|\|/s,
+    );
+    expect(contextSwitchersSource).toContain(
+      '"WEB 模式使用网页自身的联网能力；此开关仅用于 API 模式"',
+    );
+    expect(contextSwitchersSource).toContain(
+      '"WEB 模式由网页附件流程提供论文材料；此开关仅用于 API 模式"',
+    );
+  });
+
+  it("uses the same WEB account preflight for Enter and the send button", () => {
+    expect(inputSource).not.toContain("const webAccountReady =");
+    expect(inputSource).toContain("send.disabled = !canSubmit;");
+    expect(inputSource).toContain(
+      '"发送到 Web Prompt Hub；未登录时会提示配置网页账号"',
+    );
+    expect(inputSource).not.toContain("send.disabled = !canSubmit || !webAccountReady");
   });
 
   it("keeps model and YOLO controls inline without a reasoning selector", () => {
