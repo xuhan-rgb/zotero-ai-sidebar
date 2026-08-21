@@ -157,7 +157,7 @@ The model first reads context (`zotero_search_pdf` / `zotero_read_pdf_range`), t
 
 Color mapping: see [§3.9](#39-pdf-highlight-color-rubric).
 
-In **WEB mode**, **🔖 全文重点** sends the paper context to the active web model and asks it to append a structured annotation manifest after its normal reply. The sidebar keeps the complete web reply, locates each quoted passage in the current PDF with local algorithms, and shows a previewable “PDF annotation draft” card. Zotero is modified only after you click **Save all located entries**. This path does not call a model API and does not change the existing API-mode tool, approval, or YOLO behavior.
+In **WEB mode**, **🔖 全文重点** sends the paper context to the active web model and asks it to append a structured annotation manifest after its normal reply. The sidebar keeps the complete web reply, recognizes the manifest even when the website wraps it in a JSON code block, locates each verbatim quote in the current PDF with local algorithms, and shows a previewable “PDF annotation draft” card. You can preview or relocate matches before clicking **Save all located entries**. **Explain selection** uses the same path when the web answer includes `建议注释`, so its suggested comments can be reused on the selected passage. Zotero is modified only after an explicit save. This path does not call a model API and does not change the existing API-mode tool, approval, or YOLO behavior.
 
 ### 2.4 Use slash commands for arXiv or web search
 
@@ -293,9 +293,10 @@ WEB mode mirrors a real AI website into the Zotero conversation. It is useful wh
 **Daily use:**
 
 1. Select **WEB** and the destination service. The service menu also lists saved custom sites and **Manage third-party web pages…**. Opening the manager does not change the active service.
-2. Ask normally and press Enter. The sidebar reports preparation, upload, submission, generation, and synchronization progress; growing website answers are mirrored incrementally instead of appearing only at the end.
-3. `📄 Original` can attach the current paper material. The agent prefers the website's real file input in hidden mode, so attachment handling does not need to focus Chrome. If a site has no usable file input, the task fails explicitly instead of flashing the browser and using clipboard fallback.
-4. A generated website file is exposed only when the site provides a real attachment or downloadable URL. A textual `sandbox:/...` path is not a downloadable file.
+2. Ask normally and press Enter or click the send arrow. Both use the same live account check; if the selected website is not configured or no longer logged in, sending stops and the sidebar asks you to open **Account**. The sidebar then reports preparation, upload, submission, generation, and synchronization progress; growing website answers are mirrored incrementally instead of appearing only at the end.
+3. Paper-reading tasks attach the current paper automatically through the website's real file input. A cached LaTeX main file is preferred when available; otherwise the PDF is used. For arXiv items, a separate TXT attachment contains only the section hierarchy, numbers, and titles—not Zotero tool instructions or section bodies. If a site has no usable file input, the task fails explicitly instead of flashing the browser and using clipboard fallback.
+4. Ask for **whole-paper highlights** or **selection explanation** when you want annotation suggestions. The prompt tells the web model how to return the structured manifest; the plugin parses it from the normal answer and builds a local draft. Review the matched page and quote before saving.
+5. A generated website file is exposed only when the site provides a real attachment or downloadable URL. A textual `sandbox:/...` path is not a downloadable file.
 
 The Web Agent uses a dedicated Chrome profile and a random localhost bearer token. It does not read your normal Chrome profile. Login, CAPTCHA, uploads, and website scripts still require a real browser, so “hidden” means minimized—not a headless API. Zotero does not change the site's fast/deep-thinking/search switches; the current website state is authoritative.
 
@@ -552,11 +553,14 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 | Browser | Not used | Minimized by default after account setup |
 | Progress | Provider streaming and tool traces | Five-stage task progress plus incremental DOM snapshots |
 | Site mode | Controlled by preset parameters | Current website model/search/thinking state; Zotero does not switch it |
+| Paper context | `Original` controls API prompt context | Attached automatically through the WEB file-upload flow |
+| Network control | `Network` uses the configured API web-search feature | `Network` is disabled; use the website's own search control |
 
 WEB footer controls are intentionally small:
 
 - **Service menu** — switches ChatGPT, DeepSeek, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection.
 - **Account** — opens the current service for login and controls whether its dedicated browser stays minimized during chat.
+- **Send** — Enter and the arrow follow the same path and perform a live account check immediately before submission.
 - There are no Zotero-side fast/deep-thinking/search toggles. Change those on the website itself when the account window is visible.
 
 ### 3.16 Empty-chat signatures

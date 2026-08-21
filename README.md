@@ -30,6 +30,12 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
+### What's new in v0.8.1
+
+- **WEB paper context is cleaner**: the current paper is uploaded as a real LaTeX/PDF attachment, while the separate arXiv directory TXT contains only the section hierarchy, numbers, and titles.
+- **WEB answers can become PDF annotation drafts**: whole-paper highlighting and selection explanation recognize the structured annotation block, locate verbatim quotes locally, and let you preview, relocate, and explicitly save the matches to Zotero without calling a model API.
+- **API and WEB controls are now clearly separated**: WEB uses the website's own network/model/search state and paper-attachment flow, so the API-only `Network` and `Original` toggles are disabled there. Enter and the send arrow share the same live account check, and the footer/status layout has been tightened for narrow sidebars.
+
 ## Configuration
 
 Open the AI Sidebar settings in Zotero and configure at least one model preset:
@@ -66,6 +72,8 @@ bash scripts/install-web-agent.sh "$HOME/Zotero"
 Replace `$HOME/Zotero` if your Zotero data directory is elsewhere. Then select `WEB` in the composer, choose ChatGPT, DeepSeek, or a custom service, and click **Account**. Complete login in the temporary Chrome window and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
 
 The browser is minimized rather than replaced by a headless API: login, CAPTCHA, uploads, and each site's scripts still run in the dedicated Chrome profile. The plugin does not switch the site's fast/deep-thinking/search controls. The footer's service menu also contains **Manage third-party web pages…**; opening it does not change the active service. See [Web Agent troubleshooting](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md) for current compatibility limits.
+
+In WEB mode, paper material is attached automatically for paper-reading tasks. The composer’s **Network** and **Original** switches are API-only and therefore disabled; the website's own search state and the WEB attachment pipeline remain authoritative.
 
 ## Features
 
