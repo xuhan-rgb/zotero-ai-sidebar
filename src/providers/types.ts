@@ -35,9 +35,27 @@ export interface Message {
   images?: MessageImage[];
   context?: MessageContext;
   annotationDraft?: AssistantAnnotationDraft;
+  webAnnotationBatch?: WebAnnotationBatchDraft;
   mindmap?: MindmapData;
   overview?: OverviewData;
   task?: ChatTaskMeta;
+}
+
+export interface WebAnnotationBatchDraft {
+  createdAt: number;
+  error?: string;
+  entries: WebAnnotationBatchEntry[];
+}
+
+export interface WebAnnotationBatchEntry {
+  quote: string;
+  comment: string;
+  color?: string;
+  locateState: "pending" | "located" | "not_found" | "failed";
+  confidence?: number;
+  pageLabel?: string;
+  snapshot?: AssistantAnnotationDraft["snapshot"];
+  state: AssistantAnnotationDraftState;
 }
 
 export interface MessageUsage {

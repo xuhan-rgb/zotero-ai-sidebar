@@ -424,6 +424,19 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
           );
         }
 
+        const interrupted = interruptedExactRanges(
+          page.normalizedText,
+          normalizedNeedle,
+        );
+        if (interrupted) {
+          return locateInterruptedOnPage(
+            page,
+            interrupted,
+            needle,
+            await cumulativeOffset(pageIndex),
+          );
+        }
+
         if (exactOnly) continue;
 
         const fuzzy = fuzzyNormalizedMatch(page, normalizedNeedle);
@@ -571,6 +584,98 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
       bundles.clear();
       pageLengths.clear();
     },
+  };
+}
+
+function interruptedExactRanges(
+  haystack: string,
+  needle: string,
+): Array<{ start: number; end: number }> | null {
+  const minSideLength = 24;
+  if (needle.length < minSideLength * 2) return null;
+  const seed = needle.slice(0, Math.min(32, needle.length));
+  let start = haystack.indexOf(seed);
+  while (start >= 0) {
+    let shared = 0;
+    while (
+      shared < needle.length &&
+      start + shared < haystack.length &&
+      haystack[start + shared] === needle[shared]
+    ) {
+      shared += 1;
+    }
+    const remaining = needle.length - shared;
+    if (shared >= minSideLength && remaining >= minSideLength) {
+      const suffixSeed = needle.slice(shared, shared + minSideLength);
+      let resume = haystack.indexOf(suffixSeed, start + shared + 1);
+      while (resume >= 0 && resume - (start + shared) <= 200) {
+        const noise = haystack.slice(start + shared, resume).trim();
+        if (
+          isSkippableInsertedPageNoise(noise) &&
+          haystack.startsWith(needle.slice(shared), resume)
+        ) {
+          return [
+            { start, end: start + shared },
+            { start: resume, end: resume + remaining },
+          ];
+        }
+        resume = haystack.indexOf(suffixSeed, resume + 1);
+      }
+    }
+    start = haystack.indexOf(seed, start + 1);
+  }
+  return null;
+}
+
+function isSkippableInsertedPageNoise(text: string): boolean {
+  return (
+    !!text &&
+    text.length <= 160 &&
+    /^(?:[*†‡§]|\d+\s|equal contribution\b)/iu.test(text)
+  );
+}
+
+async function locateInterruptedOnPage(
+  page: PageBundle,
+  normalizedRanges: Array<{ start: number; end: number }>,
+  needle: string,
+  pageGlobalOffset: number,
+): Promise<LocateResult | null> {
+  const ranges = normalizedRanges
+    .map((range) =>
+      originalRangeFromNormalized(
+        page.pageText,
+        page.normalizedToOriginal,
+        range.start,
+        range.end,
+      ),
+    )
+    .filter(
+      (range): range is { start: number; end: number } => range != null,
+    );
+  if (ranges.length !== normalizedRanges.length) return null;
+  const rectGroups = ranges.map((range) =>
+    rectsForRange(page.anchors, range.start, range.end),
+  );
+  if (rectGroups.some((rects) => rects.length === 0)) return null;
+  const firstRange = ranges[0]!;
+  const firstRects = rectGroups[0]!;
+  return {
+    pageIndex: page.pageIndex,
+    pageLabel: page.pageLabel,
+    rects: rectGroups.flat(),
+    sortIndex: buildSortIndex(
+      page.pageIndex,
+      sortOffsetForRange(
+        page,
+        firstRange.start,
+        firstRange.end,
+        pageGlobalOffset,
+      ),
+      sortTopForPage(page, firstRects),
+    ),
+    matchedText: needle.replace(/\s+/gu, " ").trim(),
+    confidence: 1,
   };
 }
 

@@ -329,6 +329,55 @@ describe('chat history', () => {
     ]);
   });
 
+  it('preserves WEB batch annotation drafts independently of API drafts', async () => {
+    await saveChatMessages(42, [
+      {
+        role: 'assistant',
+        content: 'DeepSeek 的正常回复',
+        webAnnotationBatch: {
+          createdAt: 1234,
+          entries: [
+            {
+              quote: 'exact PDF sentence',
+              comment: '定义：核心概念',
+              color: '#2ea8e5',
+              locateState: 'located',
+              confidence: 1,
+              pageLabel: '3',
+              snapshot: {
+                text: 'exact PDF sentence',
+                attachmentID: 7,
+                annotation: {
+                  pageLabel: '3',
+                  sortIndex: '00003|000001|00000',
+                  position: { pageIndex: 2, rects: [[1, 2, 3, 4]] },
+                },
+              },
+              state: { kind: 'idle' },
+            },
+          ],
+        },
+      },
+    ]);
+
+    const restored = (await loadChatMessages(42))[0];
+    expect(restored).not.toHaveProperty('annotationDraft');
+    expect(restored).toMatchObject({
+      content: 'DeepSeek 的正常回复',
+      webAnnotationBatch: {
+        createdAt: 1234,
+        entries: [
+          {
+            quote: 'exact PDF sentence',
+            locateState: 'located',
+            pageLabel: '3',
+            state: { kind: 'idle' },
+          },
+        ],
+      },
+    });
+  });
+
   it('preserves assistant token usage', async () => {
     await saveChatMessages(42, [
       {

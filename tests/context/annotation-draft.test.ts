@@ -59,6 +59,33 @@ describe('parseAnnotationSuggestion', () => {
     expect(color).toBe('#2ea8e5');
   });
 
+  it('accepts a Markdown-bold suggestion header from WEB replies', () => {
+    const content = [
+      '解释正文。',
+      '',
+      '**建议注释：**',
+      '',
+      '- 第一条要点',
+      '- 第二条要点',
+      '建议颜色：#FF6666',
+    ].join('\n');
+
+    expect(parseAnnotationSuggestion(content)).toEqual({
+      body: '解释正文。',
+      comment: '- 第一条要点\n- 第二条要点',
+      color: '#ff6666',
+    });
+  });
+
+  it('accepts a Markdown heading before the suggestion marker', () => {
+    const content = '解释正文。\n\n### 建议注释：一句简短注释';
+    expect(parseAnnotationSuggestion(content)).toEqual({
+      body: '解释正文。',
+      comment: '一句简短注释',
+      color: null,
+    });
+  });
+
   it('takes only the last header occurrence', () => {
     const content = [
       '第一段提到"建议注释"这个词组，但不是真正的标记。',

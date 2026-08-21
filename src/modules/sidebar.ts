@@ -47,6 +47,7 @@ import type {
   ChatTaskMeta,
   Message,
   PdfSelectionLocator,
+  WebAnnotationBatchDraft,
   WebTaskStatus,
 } from "../providers/types";
 import {
@@ -206,6 +207,14 @@ import {
   webPromptTaskPending,
 } from "./web-prompt-runtime";
 import { buildWebPrompt, completedWebHistory } from "./web-prompt-format";
+import {
+  hasWebAnnotationProtocol,
+  parseWebAnnotationBatch,
+  type WebAnnotationCandidate,
+  webAnnotationTaskQuestion,
+} from "./web-annotation-batch";
+import { locateWebAnnotationQuote } from "./web-annotation-locate";
+import { locateWebSelectionAnnotationDraft } from "./web-selection-annotation";
 import {
   renderWebTaskProgress,
   webTaskProgressFor,
@@ -2045,6 +2054,7 @@ function renderQuickPrompts(
     doc.defaultView,
     state,
     preset,
+    state.localUiSettings.chatSendMode === "web",
   );
   const prompts: Array<{
     label: string;
@@ -2098,6 +2108,11 @@ function renderQuickPrompts(
           state,
           prompt,
           state.localUiSettings.webPromptProvider,
+          {
+            explainSelection,
+            annotationBatch: fullTextHighlight,
+            taskTitle: label,
+          },
         );
         return;
       }
@@ -2691,7 +2706,13 @@ function fullTextHighlightDisabledReason(
   win: Window | null,
   state: PanelState,
   preset: ModelPreset | null,
+  webMode = false,
 ): string {
+  if (webMode) {
+    return getActiveReaderForItem(win, state.itemID)
+      ? ""
+      : "请先在 Reader 中打开此 PDF，以便本地定位标注原文";
+  }
   if (!preset) return "请先配置并选择一个 OpenAI 模型";
   if (preset.provider !== "openai") return "全文重点 v1 仅支持 OpenAI 工具循环";
   if (state.agentPermissionMode !== "yolo")
@@ -2706,6 +2727,13 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
     const current = activeConversation(state);
     if (current) current.messages = state.messages;
     void persistPanelConversations(state);
+  }
+  const restoredWebBatches = migrateRestoredWebAnnotationBatches(state.messages);
+  if (restoredWebBatches.length) {
+    void persistPanelConversations(state);
+    for (const message of restoredWebBatches) {
+      void locateWebAnnotationBatch(mount, state, message);
+    }
   }
   const messages = el(doc, "div", "messages");
   const sidebar = findSidebarStateByMount(mount);
@@ -3211,10 +3239,19 @@ async function sendWebPromptMessage(
   state: PanelState,
   text: string,
   provider: WebPromptProvider,
+  options: {
+    explainSelection?: boolean;
+    annotationBatch?: boolean;
+    taskTitle?: string;
+  } = {},
 ): Promise<void> {
   const content = text.trim();
   if (!content) return;
   if (webPromptTaskPending(state)) return;
+  const sourceItemID = state.itemID;
+  let selectionSnapshot = options.explainSelection
+    ? cloneSelectionAnnotationDraft(getStoredSelectionAnnotation(sourceItemID))
+    : null;
   // Lock before the first await. Account checks and paper-material assembly
   // are asynchronous, so a second click could otherwise create another
   // assistant bubble before the first task is even queued.
@@ -3265,8 +3302,18 @@ async function sendWebPromptMessage(
     return;
   }
   const chatQuote = state.chatSelectionQuote;
-  const selectedText = chatQuote?.excerpt.trim() ||
-    (await getSelectedTextForPrompt(mount, state.itemID));
+  const selectedText =
+    chatQuote?.excerpt.trim() ||
+    selectionSnapshot?.text.trim() ||
+    (await getSelectedTextForPrompt(mount, sourceItemID));
+  if (options.explainSelection && !selectionSnapshot && selectedText) {
+    selectionSnapshot = await rebuildWebSelectionAnnotationSnapshot(
+      mount,
+      sourceItemID,
+      selectedText,
+    );
+  }
+  if (selectionSnapshot && selectedText) selectionSnapshot.text = selectedText;
   const history = completedWebHistory(
     selectConversationHistory(state.messages, state.historyMode),
   );
@@ -3279,14 +3326,20 @@ async function sendWebPromptMessage(
   // A chat citation is one-shot. Capture it above for this task, then remove
   // the chip so the next Web question starts with a clean composer.
   state.chatSelectionQuote = undefined;
-  const item = state.itemID == null ? null : Zotero.Items.get(state.itemID);
+  const item = sourceItemID == null ? null : Zotero.Items.get(sourceItemID);
   const title = item ? String(item.getField("title") || "") : "";
-  const material = await resolveWebPaperMaterial(state.itemID);
-  const arxivToc = await buildArxivTocFrontBlock(state.itemID);
+  const material = await resolveWebPaperMaterial(sourceItemID);
+  const arxivToc = await buildArxivTocFrontBlock(sourceItemID);
   const contextAttachment = await createWebContextAttachment(webHistory);
   const tocAttachment = await createWebTocAttachment(arxivToc);
+  const annotationColorGuide = loadToolSettings(
+    zoteroPrefs(),
+  ).annotationColorGuide;
+  const webContent = options.annotationBatch
+    ? webAnnotationTaskQuestion()
+    : content;
   const prompt = buildWebPrompt({
-    content,
+    content: webContent,
     title,
     selectedText,
     selectedTextOrigin: chatQuote ? "chat" : "pdf",
@@ -3301,9 +3354,12 @@ async function sendWebPromptMessage(
     tocAttachmentAvailable: !!tocAttachment,
     tocAttachmentName: tocAttachment?.name,
     webProvider: provider,
+    annotationBatch: options.annotationBatch,
+    annotationSuggestion: options.explainSelection,
+    annotationColorGuide,
   });
   const continuationPrompt = buildWebPrompt({
-    content,
+    content: webContent,
     title,
     selectedText,
     selectedTextOrigin: chatQuote ? "chat" : "pdf",
@@ -3319,6 +3375,9 @@ async function sendWebPromptMessage(
     tocAttachmentAvailable: !!tocAttachment,
     tocAttachmentName: tocAttachment?.name,
     webProvider: provider,
+    annotationBatch: options.annotationBatch,
+    annotationSuggestion: options.explainSelection,
+    annotationColorGuide,
   });
   const createdAt = Date.now();
   let taskID = "";
@@ -3327,8 +3386,12 @@ async function sendWebPromptMessage(
     content,
     task: {
       id: "pending-web-task",
-      kind: "general",
-      title: `${webProviderName(state, provider)} Web`,
+      kind: options.annotationBatch
+        ? "full_text"
+        : options.explainSelection
+          ? "selection"
+          : "general",
+      title: options.taskTitle || `${webProviderName(state, provider)} Web`,
       promptPreview: contentPreview(content, 90),
       createdAt,
       webProvider: provider,
@@ -3338,6 +3401,7 @@ async function sendWebPromptMessage(
       ? {
           context: {
             selectedText,
+            explainSelection: options.explainSelection,
             ...(chatQuote
               ? {
                   selectedTextOrigin: "chat" as const,
@@ -3358,7 +3422,11 @@ async function sendWebPromptMessage(
     content: `正在准备 ${webProviderName(state, provider)} 网页自动回答。`,
     task: {
       id: "pending-web-task",
-      kind: "general",
+      kind: options.annotationBatch
+        ? "full_text"
+        : options.explainSelection
+          ? "selection"
+          : "general",
       title: "等待网页回答",
       promptPreview: contentPreview(content, 90),
       createdAt,
@@ -3370,8 +3438,8 @@ async function sendWebPromptMessage(
   // Keep one Web conversation per paper and provider. A new Zotero chat for
   // the same paper continues the existing Web thread; changing papers starts
   // a separate Web conversation.
-  const paperSessionKey = state.itemID != null
-    ? `item:${state.itemID}`
+  const paperSessionKey = sourceItemID != null
+    ? `item:${sourceItemID}`
     : `paper:${material.paperUrl || title || "global"}`;
   const webConversationKey = `${paperSessionKey}:${provider}`;
   // Web Agent sends growing DOM snapshots rather than token deltas. Keep the
@@ -3544,6 +3612,24 @@ async function sendWebPromptMessage(
       );
       if (!source || !target) return;
       target.content = describeUnavailableGeneratedFiles(result.answer);
+      if (
+        options.annotationBatch || hasWebAnnotationProtocol(target.content)
+      ) {
+        const parsed = parseWebAnnotationBatch(target.content);
+        target.content = parsed.body || "DeepSeek 已返回 PDF 标注草稿。";
+        target.webAnnotationBatch = parsed.annotations.length
+          ? createPendingWebAnnotationBatch(parsed.annotations)
+          : parsed.error
+            ? { createdAt: Date.now(), error: parsed.error, entries: [] }
+            : {
+                createdAt: Date.now(),
+                error:
+                  "WEB 回答未包含可解析的 Zotero 标注协议；正常回答已保留。",
+                entries: [],
+              };
+      } else if (options.explainSelection && selectionSnapshot) {
+        attachAnnotationDraft(target, selectionSnapshot, true);
+      }
       target.thinking = result.reasoning;
       target.images = result.images;
       if (target.task) {
@@ -3563,7 +3649,17 @@ async function sendWebPromptMessage(
         state.scrollToBottom = true;
       }
       await persistPanelConversations(state);
-      renderWebProgressBubble(source, target);
+      if (
+        target.annotationDraft &&
+        state.activeConversationID === sourceConversationID
+      ) {
+        renderPanel(mount, state);
+      } else {
+        renderWebProgressBubble(source, target);
+      }
+      if (target.webAnnotationBatch?.entries.length) {
+        void locateWebAnnotationBatch(mount, state, target, sourceItemID);
+      }
     },
   });
   taskID = task.id;
@@ -6657,6 +6753,151 @@ function attachAnnotationDraft(
   };
 }
 
+function createPendingWebAnnotationBatch(
+  candidates: WebAnnotationCandidate[],
+): WebAnnotationBatchDraft {
+  return {
+    createdAt: Date.now(),
+    entries: candidates.map((candidate) => ({
+      quote: candidate.quote,
+      comment: candidate.comment,
+      ...(candidate.color ? { color: candidate.color } : {}),
+      locateState: "pending",
+      state: { kind: "idle" },
+    })),
+  };
+}
+
+function migrateRestoredWebAnnotationBatches(messages: Message[]): Message[] {
+  const migrated: Message[] = [];
+  for (const message of messages) {
+    if (
+      message.role !== "assistant" ||
+      !message.task?.webProvider ||
+      message.webAnnotationBatch ||
+      !hasWebAnnotationProtocol(message.content)
+    ) {
+      continue;
+    }
+    const parsed = parseWebAnnotationBatch(message.content);
+    if (!parsed.annotations.length) continue;
+    message.content = parsed.body || "网页模型已返回 PDF 标注草稿。";
+    message.webAnnotationBatch = createPendingWebAnnotationBatch(
+      parsed.annotations,
+    );
+    migrated.push(message);
+  }
+  return migrated;
+}
+
+async function rebuildWebSelectionAnnotationSnapshot(
+  mount: HTMLElement,
+  itemID: number | null,
+  selectedText: string,
+): Promise<SelectionAnnotationDraft | null> {
+  const reader = getActiveReaderForItem(
+    mount.ownerDocument?.defaultView,
+    itemID,
+  );
+  if (!reader) return null;
+  let locator: Awaited<ReturnType<typeof createPdfLocator>> | null = null;
+  try {
+    locator = await createPdfLocator(reader);
+    return await locateWebSelectionAnnotationDraft(
+      locator,
+      selectedText,
+      DEFAULT_CONTEXT_POLICY.minLocateConfidence,
+    );
+  } catch (error) {
+    debugZai("web.selection-annotation.locate.failed", {
+      itemID,
+      error: errorMessage(error),
+      selectedText: textDebugInfo(selectedText, 120),
+    });
+    return null;
+  } finally {
+    locator?.dispose();
+  }
+}
+
+async function locateWebAnnotationBatch(
+  mount: HTMLElement,
+  state: PanelState,
+  message: Message,
+  itemID = state.itemID,
+): Promise<void> {
+  const batch = message.webAnnotationBatch;
+  if (!batch?.entries.length) return;
+  const reader = getActiveReaderForItem(
+    mount.ownerDocument?.defaultView,
+    itemID,
+  );
+  if (!reader) {
+    batch.error = "请先在 Reader 中打开当前 PDF，再重新定位标注草稿。";
+    renderPanel(mount, state);
+    await persistPanelConversations(state);
+    return;
+  }
+
+  let locator: Awaited<ReturnType<typeof createPdfLocator>> | null = null;
+  try {
+    locator = await createPdfLocator(reader);
+    for (const entry of batch.entries) {
+      if (entry.locateState !== "pending") continue;
+      try {
+        const result = await locateWebAnnotationQuote(
+          locator,
+          entry.quote,
+          DEFAULT_CONTEXT_POLICY.minLocateConfidence,
+        );
+        if (!result) {
+          entry.locateState = "not_found";
+          continue;
+        }
+        entry.locateState = "located";
+        entry.confidence = result.confidence;
+        entry.pageLabel = result.pageLabel;
+        entry.color = allowedAnnotationColor(entry.color ?? null) ?? undefined;
+        entry.snapshot = {
+          text: result.matchedText,
+          attachmentID: locator.attachmentID,
+          annotation: {
+            type: "highlight",
+            text: result.matchedText,
+            pageLabel: result.pageLabel,
+            sortIndex: result.sortIndex,
+            position: {
+              pageIndex: result.pageIndex,
+              rects: result.rects,
+              ...(result.anchorOffset != null
+                ? { zaiAnchorOffset: result.anchorOffset }
+                : {}),
+              ...(result.headOffset != null
+                ? { zaiHeadOffset: result.headOffset }
+                : {}),
+            },
+          },
+        };
+      } catch (error) {
+        entry.locateState = "failed";
+        entry.state = {
+          kind: "failed",
+          error: error instanceof Error ? error.message : String(error),
+        };
+      }
+    }
+    delete batch.error;
+  } catch (error) {
+    batch.error = `本地 PDF 定位失败：${
+      error instanceof Error ? error.message : String(error)
+    }`;
+  } finally {
+    locator?.dispose();
+  }
+  await persistPanelConversations(state);
+  renderPanel(mount, state);
+}
+
 function markMessageTaskCompleted(message: Message) {
   if (!message.task || message.task.completedAt) return;
   message.task.completedAt = Date.now();
@@ -7926,6 +8167,17 @@ function bubble(
         state,
         index,
         message.annotationDraft,
+      ),
+    );
+  }
+  if (message.role === "assistant" && message.webAnnotationBatch) {
+    root.append(
+      renderWebAnnotationBatch(
+        doc,
+        mount,
+        state,
+        message,
+        message.webAnnotationBatch,
       ),
     );
   }
@@ -11078,6 +11330,221 @@ function renderAnnotationSuggestion(
     renderAnnotationSuggestionActions(doc, mount, state, index, draft),
   );
   return box;
+}
+
+function renderWebAnnotationBatch(
+  doc: Document,
+  mount: HTMLElement,
+  state: PanelState,
+  message: Message,
+  batch: WebAnnotationBatchDraft,
+): HTMLElement {
+  const box = el(doc, "section", "web-annotation-batch");
+  const located = batch.entries.filter(
+    (entry) => entry.locateState === "located",
+  );
+  const saved = located.filter((entry) => entry.state.kind === "saved");
+  const unresolved = batch.entries.length - located.length;
+  const head = el(doc, "div", "web-annotation-batch-head");
+  head.append(
+    el(doc, "strong", "", `📌 PDF 标注草稿 · ${batch.entries.length}`),
+    el(
+      doc,
+      "span",
+      "web-annotation-batch-summary",
+      saved.length
+        ? `已保存 ${saved.length} · 已定位 ${located.length}`
+        : `已定位 ${located.length}${unresolved ? ` · 待检查 ${unresolved}` : ""}`,
+    ),
+  );
+  box.append(head);
+
+  if (batch.error) {
+    box.append(el(doc, "div", "web-annotation-batch-error", batch.error));
+  }
+
+  const list = el(doc, "div", "web-annotation-batch-list");
+  batch.entries.forEach((entry, index) => {
+    const row = el(doc, "div", "web-annotation-batch-row");
+    const status =
+      entry.state.kind === "saved"
+        ? "✓"
+        : entry.locateState === "located"
+          ? "●"
+          : entry.locateState === "pending"
+            ? "…"
+            : "⚠";
+    const main = buttonEl(doc, "");
+    main.className = "web-annotation-batch-entry";
+    main.disabled = !entry.snapshot;
+    main.title = entry.snapshot
+      ? "在 PDF 中查看这条原文"
+      : "这条原文尚未在当前 PDF 中可靠定位";
+    const label = el(
+      doc,
+      "span",
+      "web-annotation-batch-entry-label",
+      `${status} ${index + 1}. ${entry.comment}`,
+    );
+    const meta = el(
+      doc,
+      "small",
+      "web-annotation-batch-entry-meta",
+      entry.snapshot
+        ? `第 ${entry.pageLabel || "?"} 页 · ${
+            entry.confidence === 1
+              ? "精确匹配"
+              : `相似度 ${Math.round((entry.confidence ?? 0) * 100)}%`
+          }`
+        : webAnnotationLocateLabel(entry.locateState),
+    );
+    main.append(label, meta);
+    if (entry.color) {
+      const chip = el(doc, "span", "web-annotation-batch-color");
+      chip.style.setProperty("--annotation-color", entry.color);
+      chip.title = entry.color;
+      main.append(chip);
+    }
+    main.addEventListener("click", () => {
+      if (!entry.snapshot) return;
+      void jumpToPdfSelectionPreview(
+        mount,
+        state,
+        pdfSelectionFromAnnotationSnapshot(entry.snapshot),
+      );
+    });
+    row.append(main);
+    list.append(row);
+  });
+  box.append(list);
+
+  const actions = el(doc, "div", "web-annotation-batch-actions");
+  const preview = buttonEl(doc, "在 PDF 中预览");
+  const firstLocated = located.find((entry) => !!entry.snapshot);
+  preview.disabled = !firstLocated?.snapshot;
+  preview.addEventListener("click", () => {
+    if (!firstLocated?.snapshot) return;
+    void jumpToPdfSelectionPreview(
+      mount,
+      state,
+      pdfSelectionFromAnnotationSnapshot(firstLocated.snapshot),
+    );
+  });
+  const retry = buttonEl(doc, "重新定位");
+  retry.disabled = batch.entries.every(
+    (entry) => entry.locateState === "located" || entry.state.kind === "saved",
+  );
+  retry.addEventListener("click", () => {
+    for (const entry of batch.entries) {
+      if (entry.state.kind === "saved") continue;
+      entry.locateState = "pending";
+      entry.state = { kind: "idle" };
+      delete entry.snapshot;
+      delete entry.pageLabel;
+      delete entry.confidence;
+    }
+    delete batch.error;
+    renderPanel(mount, state);
+    void locateWebAnnotationBatch(mount, state, message);
+  });
+  const save = buttonEl(
+    doc,
+    saved.length ? "保存剩余已定位条目" : "保存全部已定位条目",
+  );
+  save.className = "web-annotation-batch-save";
+  save.disabled = !located.some(
+    (entry) => entry.state.kind !== "saved" && entry.state.kind !== "saving",
+  );
+  save.addEventListener("click", () => {
+    save.blur();
+    void saveWebAnnotationBatch(mount, state, message);
+  });
+  actions.append(preview, retry, save);
+  box.append(actions);
+  return box;
+}
+
+function webAnnotationLocateLabel(
+  state: WebAnnotationBatchDraft["entries"][number]["locateState"],
+): string {
+  switch (state) {
+    case "pending":
+      return "等待本地定位";
+    case "not_found":
+      return "未在 PDF 中可靠找到";
+    case "failed":
+      return "定位失败";
+    case "located":
+      return "已定位";
+  }
+}
+
+function pdfSelectionFromAnnotationSnapshot(
+  snapshot: AssistantAnnotationDraft["snapshot"],
+): PdfSelectionLocator {
+  const annotation = snapshot.annotation;
+  const position = annotation.position;
+  const pageIndex =
+    position &&
+    typeof position === "object" &&
+    typeof (position as { pageIndex?: unknown }).pageIndex === "number"
+      ? (position as { pageIndex: number }).pageIndex
+      : undefined;
+  return {
+    attachmentID: snapshot.attachmentID,
+    selectedText: snapshot.text,
+    ...(pageIndex != null ? { pageIndex } : {}),
+    ...(typeof annotation.pageLabel === "string"
+      ? { pageLabel: annotation.pageLabel }
+      : {}),
+    position:
+      position && typeof position === "object"
+        ? (position as Record<string, unknown>)
+        : {},
+  };
+}
+
+async function saveWebAnnotationBatch(
+  mount: HTMLElement,
+  state: PanelState,
+  message: Message,
+): Promise<void> {
+  const batch = message.webAnnotationBatch;
+  if (!batch) return;
+  const targets = batch.entries.filter(
+    (entry) =>
+      entry.locateState === "located" &&
+      !!entry.snapshot &&
+      entry.state.kind !== "saved" &&
+      entry.state.kind !== "saving",
+  );
+  if (!targets.length) return;
+  const scrollSnapshot = lockMessagesScroll(mount);
+  for (const entry of targets) entry.state = { kind: "saving" };
+  renderPanel(mount, state);
+  scheduleMessagesScrollRestore(mount, scrollSnapshot);
+  for (const entry of targets) {
+    try {
+      const saved = await saveSelectionAnnotation(entry.snapshot!, {
+        comment: entry.comment,
+        ...(entry.color ? { color: entry.color } : {}),
+      });
+      entry.state = {
+        kind: "saved",
+        annotationID: saved.id,
+        savedAt: Date.now(),
+      };
+    } catch (error) {
+      entry.state = {
+        kind: "failed",
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  }
+  await persistPanelConversations(state);
+  lockMessagesScroll(mount, scrollSnapshot);
+  renderPanel(mount, state);
+  scheduleMessagesScrollRestore(mount, scrollSnapshot);
 }
 
 function renderAnnotationSuggestionActions(

@@ -157,6 +157,8 @@ The model first reads context (`zotero_search_pdf` / `zotero_read_pdf_range`), t
 
 Color mapping: see [§3.9](#39-pdf-highlight-color-rubric).
 
+In **WEB mode**, **🔖 全文重点** sends the paper context to the active web model and asks it to append a structured annotation manifest after its normal reply. The sidebar keeps the complete web reply, locates each quoted passage in the current PDF with local algorithms, and shows a previewable “PDF annotation draft” card. Zotero is modified only after you click **Save all located entries**. This path does not call a model API and does not change the existing API-mode tool, approval, or YOLO behavior.
+
 ### 2.4 Use slash commands for arXiv or web search
 
 Type `/` in the composer to surface command suggestions. Two are built-in:

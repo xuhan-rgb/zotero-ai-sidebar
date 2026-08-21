@@ -121,6 +121,43 @@ describe("pdf locator", () => {
     expect(result?.matchedText).toContain("Extensive experiments");
   });
 
+  it("locates a cross-column sentence interrupted by a short footnote", async () => {
+    const locator = await createPdfLocator(
+      readerWithProcessedPages([
+        processedPage([
+          ...processedWord(
+            "Extensive experiments demonstrate the ability of",
+            0,
+            100,
+            { lineBreakAfter: true },
+          ),
+          ...processedWord("*Equal contribution.", 0, 80, {
+            lineBreakAfter: true,
+          }),
+          ...processedWord(
+            "OccWorld to effectively model the driving scenes.",
+            300,
+            720,
+            { lineBreakAfter: true },
+          ),
+        ]),
+      ]),
+    );
+
+    const result = await locator.locate(
+      "Extensive experiments demonstrate the ability of OccWorld to effectively model the driving scenes.",
+      { exactOnly: true },
+    );
+
+    expect(result).toMatchObject({ confidence: 1, pageIndex: 0 });
+    expect(result?.matchedText).toBe(
+      "Extensive experiments demonstrate the ability of OccWorld to effectively model the driving scenes.",
+    );
+    expect(result?.rects.some((rect) => rect[1] === 80)).toBe(false);
+    expect(result?.rects.some((rect) => rect[0] < 200)).toBe(true);
+    expect(result?.rects.some((rect) => rect[0] >= 300)).toBe(true);
+  });
+
   it("extracts selected text from annotation rects without crossing columns", async () => {
     const locator = await createPdfLocator(
       readerWithPages([

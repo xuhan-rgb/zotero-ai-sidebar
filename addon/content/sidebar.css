@@ -2059,7 +2059,10 @@ button:disabled,
   font: 16px/1 var(--zai-font);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 120ms ease, background 120ms ease, color 120ms ease;
+  transition:
+    opacity 120ms ease,
+    background 120ms ease,
+    color 120ms ease;
 }
 
 .empty-signatures:hover .empty-signature-close,
@@ -4501,6 +4504,125 @@ div.math-fallback {
   font-size: 11px;
   color: var(--zai-red);
   text-align: right;
+}
+
+.web-annotation-batch {
+  display: grid;
+  gap: 9px;
+  margin-top: 12px;
+  padding: 11px;
+  border: 1px solid color-mix(in srgb, var(--zai-border) 78%, #2f7d51 22%);
+  border-radius: 11px;
+  background: color-mix(in srgb, var(--zai-panel-strong) 94%, #e8f4ec 6%);
+}
+
+.web-annotation-batch-head,
+.web-annotation-batch-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.web-annotation-batch-head strong {
+  font-size: 12px;
+}
+
+.web-annotation-batch-summary {
+  margin-left: auto;
+  color: var(--zai-muted);
+  font-size: 10.5px;
+}
+
+.web-annotation-batch-list {
+  display: grid;
+  gap: 4px;
+}
+
+.web-annotation-batch-row {
+  min-width: 0;
+}
+
+.web-annotation-batch-entry {
+  display: grid;
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  gap: 2px;
+  padding: 7px 28px 7px 8px;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--zai-text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.web-annotation-batch-entry:hover:not(:disabled) {
+  border-color: var(--zai-border);
+  background: var(--zai-panel);
+}
+
+.web-annotation-batch-entry:disabled {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.web-annotation-batch-entry-label {
+  overflow: hidden;
+  font-size: 11.5px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.web-annotation-batch-entry-meta {
+  color: var(--zai-muted);
+  font-size: 10px;
+}
+
+.web-annotation-batch-color {
+  position: absolute;
+  top: 50%;
+  right: 9px;
+  width: 10px;
+  height: 10px;
+  border: 1px solid rgba(0, 0, 0, 0.15);
+  border-radius: 50%;
+  background: var(--annotation-color);
+  transform: translateY(-50%);
+}
+
+.web-annotation-batch-error {
+  color: var(--zai-red);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.web-annotation-batch-actions {
+  justify-content: flex-end;
+  padding-top: 2px;
+}
+
+.web-annotation-batch-actions button {
+  min-height: 29px;
+  padding: 0 9px;
+  border: 1px solid var(--zai-border);
+  border-radius: 7px;
+  background: var(--zai-panel-strong);
+  color: var(--zai-text);
+  cursor: pointer;
+  font-size: 10.5px;
+}
+
+.web-annotation-batch-actions button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.web-annotation-batch-actions .web-annotation-batch-save {
+  border-color: #2f7d51;
+  background: #2f7d51;
+  color: #fff;
 }
 
 @media (max-width: 420px) {

@@ -104,7 +104,8 @@ describe("WEB send flow", () => {
   it("sends a stable paper-scoped web conversation key and a no-attachment follow-up prompt", () => {
     expect(sendWebPrompt).toContain("const webConversationKey =");
     expect(sendWebPrompt).toContain("const paperSessionKey =");
-    expect(sendWebPrompt).toContain("item:${state.itemID}");
+    expect(sendWebPrompt).toContain("const sourceItemID = state.itemID");
+    expect(sendWebPrompt).toContain("item:${sourceItemID}");
     expect(sendWebPrompt).not.toContain(
       '`${state.itemID ?? "global"}:${sourceConversationID}:${provider}`',
     );
@@ -118,6 +119,40 @@ describe("WEB send flow", () => {
       "attachmentAlreadyAvailable: !!material.attachment",
     );
     expect(sendWebPrompt).not.toContain("deepseekOptions:");
+  });
+
+  it("reuses the single-selection annotation draft flow for WEB explain-selection", () => {
+    expect(sidebar).toMatch(
+      /explainSelection,\s*annotationBatch: fullTextHighlight,\s*taskTitle: label/,
+    );
+    expect(sendWebPrompt).toContain("explainSelection?: boolean");
+    expect(sendWebPrompt).toContain(
+      "cloneSelectionAnnotationDraft(getStoredSelectionAnnotation(sourceItemID))",
+    );
+    expect(sendWebPrompt).toContain(
+      "selectionSnapshot = await rebuildWebSelectionAnnotationSnapshot(",
+    );
+    expect(sendWebPrompt).toContain("annotationSuggestion: options.explainSelection");
+    expect(sendWebPrompt).toContain(
+      "attachAnnotationDraft(target, selectionSnapshot, true)",
+    );
+    expect(sendWebPrompt).toContain(
+      "options.annotationBatch || hasWebAnnotationProtocol(target.content)",
+    );
+    expect(sendWebPrompt).toMatch(
+      /if \(\s*target\.annotationDraft &&\s*state\.activeConversationID === sourceConversationID\s*\) \{\s*renderPanel\(mount, state\);\s*\} else \{\s*renderWebProgressBubble\(source, target\);/,
+    );
+  });
+
+  it("preserves the chat position while saving a WEB annotation batch", () => {
+    const saveBatch = sidebar.slice(
+      sidebar.indexOf("async function saveWebAnnotationBatch("),
+      sidebar.indexOf("function renderAnnotationSuggestionActions("),
+    );
+    expect(saveBatch).toContain("const scrollSnapshot = lockMessagesScroll(mount)");
+    expect(saveBatch).toContain(
+      "scheduleMessagesScrollRestore(mount, scrollSnapshot)",
+    );
   });
 
   it("never changes DeepSeek mode or option toggles before submitting", () => {

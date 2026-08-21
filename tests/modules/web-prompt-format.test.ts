@@ -53,7 +53,9 @@ describe("WEB prompt formatting", () => {
     expect(prompt).toContain(
       "## 参考引用内容（来自 PDF 选区）",
     );
-    expect(prompt).toContain("--- 引用内容开始 ---\n\nWe predict occupancy in latent space.\n\n--- 引用内容结束 ---");
+    expect(prompt).toContain(
+      "--- 引用内容开始 ---\n\nWe predict occupancy in latent space.\n\n--- 引用内容结束 ---",
+    );
     expect(prompt).toContain("不要声称读取了未提供的 PDF 内容");
     expect(prompt).toContain(
       "## 论文链接\nhttps://arxiv.org/abs/2311.16038",
@@ -146,6 +148,52 @@ describe("WEB prompt formatting", () => {
     expect(prompt).toContain("无需重复上传");
     expect(prompt).toContain("本网页对话前序消息附加的 LaTeX");
     expect(prompt).not.toContain("已随本消息附加");
+  });
+
+  it("offers the annotation protocol to ordinary WEB tasks and requires it for an explicit annotation task", () => {
+    const ordinary = buildWebPrompt({
+      content: "总结论文",
+      title: "Paper",
+      selectedText: "",
+      history: [],
+    });
+    const annotation = buildWebPrompt({
+      content: "标注全文重点",
+      title: "Paper",
+      selectedText: "",
+      history: [],
+      annotationBatch: true,
+      annotationColorGuide: "#2EA8E5 — 定义",
+    });
+
+    expect(ordinary).toContain("## 可选 PDF 标注输出约定");
+    expect(ordinary).toContain("用户明确要求对 PDF 内容进行标注");
+    expect(ordinary).toContain("普通问答、解释、总结、翻译、比较或推导");
+    expect(ordinary).toContain("解释某个 PDF 句子或选区");
+    expect(ordinary).toContain("原句含义、它在上下文中的作用");
+    expect(ordinary).toContain("ZOTERO_ANNOTATIONS_V1");
+    expect(annotation).toContain("ZOTERO_ANNOTATIONS_V1");
+    expect(annotation).toContain("## Zotero WEB 批量标注输出协议");
+    expect(annotation).not.toContain("## 可选 PDF 标注输出约定");
+    expect(annotation).toContain("#2EA8E5 — 定义");
+  });
+
+  it("asks WEB explain-selection replies for a reusable single annotation draft", () => {
+    const prompt = buildWebPrompt({
+      content: "解释当前选区",
+      title: "Paper",
+      selectedText: "Selected PDF passage.",
+      history: [],
+      annotationSuggestion: true,
+      annotationColorGuide: "#2EA8E5 — 定义",
+    });
+
+    expect(prompt).toContain("建议注释：");
+    expect(prompt).toContain("1–3 条");
+    expect(prompt).toContain("建议颜色：#hex");
+    expect(prompt).toContain("#2EA8E5 — 定义");
+    expect(prompt).not.toContain("## 可选 PDF 标注输出约定");
+    expect(prompt).not.toContain("ZOTERO_ANNOTATIONS_V1");
   });
 
   it("keeps a completed WEB turn", () => {

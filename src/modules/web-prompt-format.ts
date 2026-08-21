@@ -1,4 +1,8 @@
 import type { Message } from "../providers/types";
+import {
+  webAnnotationProtocolInstructions,
+  webOptionalAnnotationProtocolInstructions,
+} from "./web-annotation-batch";
 
 export interface WebPromptFormatInput {
   content: string;
@@ -14,6 +18,9 @@ export interface WebPromptFormatInput {
   tocAttachmentAvailable?: boolean;
   tocAttachmentName?: string;
   webProvider?: "chatgpt" | "deepseek" | string;
+  annotationBatch?: boolean;
+  annotationSuggestion?: boolean;
+  annotationColorGuide?: string;
 }
 
 export function buildWebPrompt(input: WebPromptFormatInput): string {
@@ -121,6 +128,30 @@ export function buildWebPrompt(input: WebPromptFormatInput): string {
               "完成条件：首条回答正文必须包含至少一个可点击下载链接或网页附件卡片；只输出路径视为任务未完成。若首次工具调用只得到路径，请继续在当前会话中附加文件或生成可访问链接后再回答。",
               "如果只能返回 Markdown 链接，请使用 [下载文件名](完整可访问 URL)；如果无法生成或附加文件，必须明确说明失败原因，不要声称已经提供文件。",
             ].join("\n"),
+      ),
+    );
+  }
+  if (input.annotationBatch) {
+    blocks.push(
+      webAnnotationProtocolInstructions(input.annotationColorGuide ?? ""),
+    );
+  } else if (!input.annotationSuggestion) {
+    blocks.push(
+      webOptionalAnnotationProtocolInstructions(
+        input.annotationColorGuide ?? "",
+      ),
+    );
+  }
+  if (input.annotationSuggestion) {
+    blocks.push(
+      section(
+        "PDF 选区建议注释输出格式",
+        [
+          "先正常解释当前 PDF 选区；回答末尾必须另起一段，以 `建议注释：` 开头，用 `- ` 列出 1–3 条可直接保存到该选区的简短注释要点（每条不超过 80 字）。",
+          "建议注释只能写当前选区和附件中可核对内容；证据不足时明确写“基于当前上下文尚不能确定”。",
+          "如能明确分类，请从下面的颜色预设中选择一个，并在建议注释段最后另起一行输出 `建议颜色：#hex`；类别不明确时省略颜色。",
+          input.annotationColorGuide?.trim() || "当前未配置颜色预设。",
+        ].join("\n"),
       ),
     );
   }

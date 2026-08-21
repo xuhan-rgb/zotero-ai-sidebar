@@ -2,6 +2,7 @@ import type {
   AssistantAnnotationDraft,
   ChatTaskMeta,
   Message,
+  WebAnnotationBatchDraft,
 } from '../providers/types';
 import type { ConversationHistoryMode } from '../modules/conversation-history';
 
@@ -170,7 +171,9 @@ export function createBranchedConversation(
     branchOrigin: {
       sourceConversationID: source.id,
       sourceConversationTitle: source.title,
-      messagePreview: branchMessagePreview(source.messages[throughMessageIndex]),
+      messagePreview: branchMessagePreview(
+        source.messages[throughMessageIndex],
+      ),
     },
   };
 }
@@ -472,6 +475,9 @@ function normalizeMessages(value: unknown): Message[] {
     if (typeof m.content !== 'string') return [];
     const images = normalizeImages(m.images);
     const annotationDraft = normalizeAnnotationDraft(m.annotationDraft);
+    const webAnnotationBatch = normalizeWebAnnotationBatch(
+      m.webAnnotationBatch,
+    );
     const task = normalizeChatTask(m.task);
     const usage = normalizeMessageUsage(m.usage);
     return [
@@ -487,10 +493,66 @@ function normalizeMessages(value: unknown): Message[] {
           ? { context: m.context as Message['context'] }
           : {}),
         ...(annotationDraft ? { annotationDraft } : {}),
+        ...(webAnnotationBatch ? { webAnnotationBatch } : {}),
         ...(task ? { task } : {}),
       },
     ];
   });
+}
+
+function normalizeWebAnnotationBatch(
+  value: unknown,
+): WebAnnotationBatchDraft | null {
+  if (!isRecord(value) || !Array.isArray(value.entries)) return null;
+  const createdAt = optionalNumber(value.createdAt) ?? Date.now();
+  const entries = value.entries.flatMap((entry) => {
+    if (!isRecord(entry)) return [];
+    const quote = typeof entry.quote === 'string' ? entry.quote.trim() : '';
+    const comment =
+      typeof entry.comment === 'string' ? entry.comment.trim() : '';
+    if (!quote || !comment) return [];
+    const locateState = ['pending', 'located', 'not_found', 'failed'].includes(
+      String(entry.locateState),
+    )
+      ? (entry.locateState as 'pending' | 'located' | 'not_found' | 'failed')
+      : 'pending';
+    const snapshot = normalizeAnnotationSnapshot(entry.snapshot);
+    const effectiveLocateState =
+      locateState === 'located' && !snapshot ? 'pending' : locateState;
+    const color = normalizeAnnotationColor(entry.color);
+    const confidence = optionalNumber(entry.confidence);
+    const pageLabel =
+      typeof entry.pageLabel === 'string' ? entry.pageLabel : undefined;
+    return [
+      {
+        quote,
+        comment,
+        ...(color ? { color } : {}),
+        locateState: effectiveLocateState,
+        ...(confidence != null ? { confidence } : {}),
+        ...(pageLabel ? { pageLabel } : {}),
+        ...(snapshot ? { snapshot } : {}),
+        state: normalizeAnnotationDraftState(entry.state),
+      },
+    ];
+  });
+  const error =
+    typeof value.error === 'string' && value.error ? value.error : undefined;
+  if (!entries.length && !error) return null;
+  return { createdAt, ...(error ? { error } : {}), entries };
+}
+
+function normalizeAnnotationSnapshot(
+  value: unknown,
+): AssistantAnnotationDraft['snapshot'] | null {
+  if (!isRecord(value)) return null;
+  const text = typeof value.text === 'string' ? value.text : '';
+  const attachmentID =
+    typeof value.attachmentID === 'number' ? value.attachmentID : null;
+  const annotation = isRecord(value.annotation) ? value.annotation : null;
+  return text && attachmentID != null && annotation
+    ? { text, attachmentID, annotation }
+    : null;
 }
 
 function normalizeMessageUsage(value: unknown): Message['usage'] | null {
