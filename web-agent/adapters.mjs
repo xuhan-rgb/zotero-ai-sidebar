@@ -1,6 +1,7 @@
 export const PROVIDERS = {
   chatgpt: {
     name: "ChatGPT",
+    pageNoticeFallback: true,
     url: "https://chatgpt.com/",
     host: "chatgpt.com",
     composer: [
@@ -52,6 +53,7 @@ export const PROVIDERS = {
   },
   deepseek: {
     name: "DeepSeek",
+    pageNoticeFallback: true,
     url: "https://chat.deepseek.com/",
     host: "chat.deepseek.com",
     composer: [
@@ -117,6 +119,96 @@ const CUSTOM_COPY_SELECTORS = [
   "[class*='copy']",
 ];
 
+const CHATGLM_CN_ADAPTER = {
+  url: "https://chatglm.cn/main/alltoolsdetail?lang=zh",
+  composer: [
+    "textarea[placeholder*='输入']",
+    "textarea[placeholder*='智谱']",
+    "textarea[placeholder*='问']",
+    "textarea",
+    "[contenteditable='true']",
+  ],
+  send: [
+    ".enter-icon-container",
+    "div.enter",
+    "div.enter img.enter_icon",
+    "button[aria-label*='发送']",
+    "[role='button'][aria-label*='发送']",
+    "button[type='submit']",
+    "[class*='send']",
+  ],
+  stop: [
+    "button[aria-label*='停止']",
+    "[role='button'][aria-label*='停止']",
+    "button[aria-label*='Stop']",
+    "[role='button'][aria-label*='Stop']",
+    ".enter-icon-container[class*='stop']",
+    ".enter-icon-container [class*='stop']",
+  ],
+  answers: [
+    '[class*="assistant"] [class*="markdown"]',
+    "[class*='bot-message']",
+    "[class*='message-content']",
+    "[class*='glm-response']",
+    ".markdown-body",
+  ],
+  attachmentPreviews: [
+    "[class*='attachment']",
+    "[class*='file-item']",
+    "[class*='file-card']",
+    "[class*='upload-file']",
+  ],
+  attachmentUploading: [
+    "[class*='upload'][class*='loading']",
+    "[class*='file'][class*='loading']",
+  ],
+  attachmentTrigger: [
+    "button[aria-label*='附件']",
+    "button[aria-label*='上传']",
+    "button[title*='附件']",
+    "button[title*='上传']",
+    "[role='button'][aria-label*='附件']",
+    "[role='button'][aria-label*='上传']",
+    "[class*='upload']",
+  ],
+};
+
+PROVIDERS.chatglm = {
+  name: "ChatGLM",
+  host: "chatglm.cn",
+  ...CHATGLM_CN_ADAPTER,
+  copy: CUSTOM_COPY_SELECTORS,
+  serialAttachments: true,
+  looseAttachmentNames: true,
+  pageNoticeFallback: true,
+};
+
+PROVIDERS.kimi = {
+  name: "Kimi",
+  template: "chatgpt-like",
+  latexUploadExtension: ".txt",
+  url: "https://www.kimi.com/",
+  accountUrl: "https://www.kimi.com/",
+  host: "www.kimi.com",
+  pageNoticeFallback: true,
+  composer: [".chat-input-editor[contenteditable='true']", "[contenteditable='true']"],
+  send: [".send-button-container:has(svg[name='Send'])"],
+  stop: [
+    ".send-button-container:has(svg[name='Stop'])",
+    ".send-button-container:has(.stop-icon)",
+  ],
+  answers: [
+    ".chat-content-item-assistant .segment-content-box > .markdown-container > .markdown",
+  ],
+  reasoning: [".thinking-container .markdown"],
+  attachmentPreviews: ["[class*='attachment']", "[class*='file']"],
+  attachmentUploading: [
+    "[role='progressbar']",
+    "[class*='upload'][class*='loading']",
+    "[class*='file'][class*='loading']",
+  ],
+};
+
 export function providerDefinition(provider, customProvider) {
   if (String(provider).startsWith("custom:")) {
     if (!customProvider || `custom:${customProvider.id}` !== provider) {
@@ -153,8 +245,11 @@ export function customProviderDefinition(value) {
     // class is a safe fallback and lets URL-only custom providers keep
     // receiving live answers when their DOM build changes.
     answers: appendSelector(
-      safeSelectors(selectors.answers, true),
-      "[class*='_markdown'].markdown",
+      appendSelector(
+        safeSelectors(selectors.answers, true),
+        "[class*='_markdown'].markdown",
+      ),
+      ".chat-content-item-assistant .segment-content-box > .markdown-container > .markdown",
     ),
     reasoning: safeSelectors(selectors.reasoning, false),
     attachmentPreviews: safeSelectors(selectors.attachmentPreviews, false),
@@ -163,16 +258,36 @@ export function customProviderDefinition(value) {
   normalized.stop ||= ["button[aria-label*='Stop']", "button[aria-label*='停止']"];
   normalized.attachmentPreviews ||= ["[class*='attachment']", "[class*='file']"];
   normalized.attachmentUploading ||= ["[role='progressbar']", "[aria-busy='true']"];
-  return {
+  const definition = {
     id,
     name,
     template: "chatgpt-like",
+    latexUploadExtension: ".txt",
     url: newConversationUrl,
     accountUrl: homeUrl,
     host: new URL(homeUrl).hostname,
+    pageNoticeFallback: true,
     ...normalized,
     copy: CUSTOM_COPY_SELECTORS,
   };
+  if (
+    definition.host === "chatglm.cn" ||
+    definition.host.endsWith(".chatglm.cn")
+  ) {
+    definition.url = CHATGLM_CN_ADAPTER.url;
+    for (const key of [
+      "composer",
+      "send",
+      "stop",
+      "answers",
+      "attachmentPreviews",
+      "attachmentUploading",
+    ]) {
+      definition[key] = prependSelectors(CHATGLM_CN_ADAPTER[key], definition[key]);
+    }
+    definition.attachmentTrigger = [...CHATGLM_CN_ADAPTER.attachmentTrigger];
+  }
+  return definition;
 }
 
 function cleanText(value, limit) {
@@ -211,6 +326,10 @@ function safeSelectors(value, required) {
 function appendSelector(selectors, fallback) {
   if (!selectors.includes(fallback)) selectors.push(fallback);
   return selectors;
+}
+
+function prependSelectors(preferred, fallbacks) {
+  return [...new Set([...(preferred || []), ...(fallbacks || [])])];
 }
 
 export function selectorList(selectors) {

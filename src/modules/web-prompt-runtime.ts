@@ -41,11 +41,17 @@ export function webPromptProviderForUserMessage(
   message: WebPromptPendingMessage | undefined,
 ): WebPromptProvider | null {
   if (message?.task?.webProvider) {
+    if (message.task.webProvider === "custom:kimi-com") return "kimi";
     return message.task.webProvider as WebPromptProvider;
   }
   if (message?.task?.title === "ChatGPT Web") return "chatgpt";
   if (message?.task?.title === "DeepSeek Web") return "deepseek";
+  if (message?.task?.title === "ChatGLM Web") return "chatglm";
   const task = message?.task;
+  if (
+    task?.title === "Kimi Web" &&
+    !String(task.id || "").startsWith("task-")
+  ) return "kimi";
   if (task?.title?.endsWith(" Web") && !String(task.id || "").startsWith("task-")) {
     return "custom:legacy";
   }

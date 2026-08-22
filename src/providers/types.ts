@@ -36,6 +36,7 @@ export interface Message {
   context?: MessageContext;
   annotationDraft?: AssistantAnnotationDraft;
   webAnnotationBatch?: WebAnnotationBatchDraft;
+  webPageNotice?: boolean;
   mindmap?: MindmapData;
   overview?: OverviewData;
   task?: ChatTaskMeta;

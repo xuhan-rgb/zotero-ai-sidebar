@@ -2,7 +2,9 @@
 
 import { describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 import {
   firstPopulatedLocator,
@@ -10,7 +12,12 @@ import {
   selectorList,
   customProviderDefinition,
 } from "../../web-agent/adapters.mjs";
-import { setWebAttachmentInputFiles } from "../../web-agent/attachments.mjs";
+import {
+  attachmentVisibleNameCandidates,
+  attachmentPreviewMatchesName,
+  setWebAttachmentInputFiles,
+  stageWebAttachment,
+} from "../../web-agent/attachments.mjs";
 
 describe("Web Agent provider adapters", () => {
   it("defines separate ChatGPT and DeepSeek pages and response selectors", () => {
@@ -27,9 +34,48 @@ describe("Web Agent provider adapters", () => {
     expect(deepseek.attachmentPreviews.length).toBeGreaterThan(0);
     expect(chatgpt.attachmentUploading.length).toBeGreaterThan(0);
     expect(deepseek.attachmentUploading.length).toBeGreaterThan(0);
+    expect(chatgpt.serialAttachments).toBeUndefined();
+    expect(deepseek.serialAttachments).toBeUndefined();
+    expect(chatgpt.pageNoticeFallback).toBe(true);
+    expect(deepseek.pageNoticeFallback).toBe(true);
+    expect(chatgpt.latexUploadExtension).toBeUndefined();
+    expect(deepseek.latexUploadExtension).toBeUndefined();
     expect(chatgpt.attachmentUploading).toContain(
       "[data-composer-body] [role='group'][aria-label] [class*='animate-spin']",
     );
+  });
+
+  it("defines ChatGLM as a built-in provider", () => {
+    const chatglm = providerDefinition("chatglm");
+    expect(chatglm.name).toBe("ChatGLM");
+    expect(chatglm.host).toBe("chatglm.cn");
+    expect(chatglm.url).toBe("https://chatglm.cn/main/alltoolsdetail?lang=zh");
+    expect(chatglm.send[0]).toBe(".enter-icon-container");
+    expect(chatglm.attachmentTrigger.length).toBeGreaterThan(0);
+    expect(chatglm.serialAttachments).toBe(true);
+    expect(chatglm.looseAttachmentNames).toBe(true);
+    expect(chatglm.pageNoticeFallback).toBe(true);
+    expect(chatglm.stop).not.toContain("[class*='stop']");
+    expect(chatglm.stop).toContain(
+      ".enter-icon-container [class*='stop']",
+    );
+    expect(chatglm.attachmentUploading).not.toContain("[aria-busy='true']");
+    expect(chatglm.attachmentUploading).not.toContain("[role='progressbar']");
+  });
+
+  it("defines Kimi as a built-in provider with its own submit and final-answer selectors", () => {
+    const kimi = providerDefinition("kimi");
+    expect(kimi.name).toBe("Kimi");
+    expect(kimi.host).toBe("www.kimi.com");
+    expect(kimi.template).toBe("chatgpt-like");
+    expect(kimi.latexUploadExtension).toBe(".txt");
+    expect(kimi.send).toContain(
+      ".send-button-container:has(svg[name='Send'])",
+    );
+    expect(kimi.answers).toContain(
+      ".chat-content-item-assistant .segment-content-box > .markdown-container > .markdown",
+    );
+    expect(kimi.reasoning).toContain(".thinking-container .markdown");
   });
 
   it("recognizes ChatGPT's UUID-named file tile after a pasted upload", () => {
@@ -74,13 +120,16 @@ describe("Web Agent provider adapters", () => {
         attachmentUploading: [".loading"],
       },
     });
+    expect(adapter.latexUploadExtension).toBe(".txt");
     expect(adapter.name).toBe("Paper Site");
     expect(adapter.host).toBe("example.com");
     expect(adapter.composer).toEqual(["textarea.chat"]);
     expect(adapter.answers).toEqual([
       "article.answer",
       "[class*='_markdown'].markdown",
+      ".chat-content-item-assistant .segment-content-box > .markdown-container > .markdown",
     ]);
+    expect(adapter.pageNoticeFallback).toBe(true);
     expect(() =>
       customProviderDefinition({
         id: "bad",
@@ -98,6 +147,86 @@ describe("Web Agent provider adapters", () => {
         },
       }),
     ).toThrow();
+  });
+
+  it("selects Kimi's final answer without importing its thinking panel", () => {
+    const adapter = customProviderDefinition({
+      id: "kimi-com",
+      name: "kimi.com",
+      template: "chatgpt-like",
+      homeUrl: "https://www.kimi.com/",
+      selectors: {
+        composer: ["[contenteditable='true']"],
+        send: ["button[type='submit']"],
+        answers: ["article"],
+      },
+    });
+    const assistant = document.createElement("div");
+    assistant.className = "chat-content-item-assistant";
+    assistant.innerHTML = `
+      <div class="segment-content-box">
+        <div class="thinking-container">
+          <div class="markdown-container"><div class="markdown">内部思考</div></div>
+        </div>
+        <div class="markdown-container"><div class="markdown">最终回答</div></div>
+      </div>`;
+    document.body.append(assistant);
+    const matches = document.querySelectorAll(adapter.answers.at(-1)!);
+    expect(matches).toHaveLength(1);
+    expect(matches[0].textContent).toBe("最终回答");
+  });
+
+  it("stages LaTeX as a real txt file only for third-party adapters", async () => {
+    const directory = await mkdtemp(join(tmpdir(), "zai-web-stage-test-"));
+    const source = join(directory, "source.tex");
+    const stage = join(directory, "stage");
+    await writeFile(source, "\\section{Method}", "utf8");
+    try {
+      const attachment = {
+        kind: "latex",
+        path: source,
+        name: "main.tex",
+        mimeType: "text/plain",
+      };
+      const custom = await stageWebAttachment(
+        attachment,
+        { latexUploadExtension: ".txt" },
+        stage,
+      );
+      expect(custom.name).toBe("main.txt");
+      expect(custom.path).toBe(join(stage, "main.txt"));
+      expect(await readFile(custom.path, "utf8")).toBe("\\section{Method}");
+      expect(
+        await stageWebAttachment(attachment, providerDefinition("chatgpt"), stage),
+      ).toBe(attachment);
+    } finally {
+      await rm(directory, { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades chatglm.cn custom entries with the dedicated site adapter", () => {
+    const adapter = customProviderDefinition({
+      id: "chatglm-cn",
+      name: "chatglm.cn",
+      template: "chatgpt-like",
+      homeUrl: "https://chatglm.cn/",
+      newConversationUrl: "https://chatglm.cn/",
+      selectors: {
+        composer: ["textarea", "[contenteditable='true']"],
+        send: ["button[type='submit']"],
+        stop: [],
+        answers: ["article"],
+        attachmentPreviews: [],
+        attachmentUploading: [],
+      },
+    });
+
+    expect(adapter.url).toBe("https://chatglm.cn/main/alltoolsdetail?lang=zh");
+    expect(adapter.send[0]).toBe(".enter-icon-container");
+    expect(adapter.send).toContain("div.enter");
+    expect(adapter.answers[0]).toBe('[class*="assistant"] [class*="markdown"]');
+    expect(adapter.answers).toContain(".markdown-body");
+    expect(adapter.attachmentTrigger.length).toBeGreaterThan(0);
   });
 
   it("recognizes the current unlabeled DeepSeek submit control", () => {
@@ -126,7 +255,7 @@ describe("Web Agent provider adapters", () => {
     expect(locator.selector).toBe(".stable-answer");
   });
 
-  it("pastes files into the composer without clicking an attachment button", () => {
+  it("pastes files into the composer with a guarded attachment-button fallback", () => {
     const source = readFileSync(
       resolve(process.cwd(), "web-agent/attachments.mjs"),
       "utf8",
@@ -140,14 +269,14 @@ describe("Web Agent provider adapters", () => {
     expect(source.indexOf("const uploadedThroughInput")).toBeLessThan(
       source.indexOf("await withClipboardLock("),
     );
-    expect(source).not.toContain(".click(");
+    expect(source).toContain("adapter.attachmentTrigger?.length");
     expect(source).toContain("请求过于频繁");
     expect(source).toContain("rate limit");
     const agent = readFileSync(
       resolve(process.cwd(), "web-agent/agent.mjs"),
       "utf8",
     );
-    expect(agent).toContain("allowClipboardFallback:");
+    expect(agent).toContain("allowClipboardFallback,");
     expect(agent).toContain(
       '!["DeepSeek", "ChatGPT"].includes(adapter.name)',
     );
@@ -168,6 +297,70 @@ describe("Web Agent provider adapters", () => {
     ).resolves.toBe(true);
     expect(page.locator).toHaveBeenCalledWith("input[type='file']");
     expect(setInputFiles).toHaveBeenCalledWith("/tmp/paper.pdf");
+  });
+
+  it("skips image-only file inputs when attaching a PDF", async () => {
+    const imageInput = {
+      getAttribute: vi.fn(async () => "image/*"),
+      setInputFiles: vi.fn(async () => undefined),
+    };
+    const documentInput = {
+      getAttribute: vi.fn(async () => ".pdf,.txt,.doc,.docx"),
+      setInputFiles: vi.fn(async () => undefined),
+    };
+    const inputs = [imageInput, documentInput];
+    const page = {
+      locator: vi.fn(() => ({
+        count: vi.fn(async () => inputs.length),
+        nth: vi.fn((index: number) => inputs[index]),
+      })),
+    };
+
+    await expect(
+      setWebAttachmentInputFiles(page, "/tmp/paper.pdf"),
+    ).resolves.toBe(true);
+    expect(imageInput.setInputFiles).not.toHaveBeenCalled();
+    expect(documentInput.setInputFiles).toHaveBeenCalledWith("/tmp/paper.pdf");
+  });
+
+  it("recognizes ChatGLM attachment cards that omit extensions or truncate names", () => {
+    expect(attachmentPreviewMatchesName("main\nTEX 46.21KB", "main.tex")).toBe(
+      true,
+    );
+    expect(
+      attachmentPreviewMatchesName(
+        "zai-web-context-178…\nTXT 92B",
+        "zai-web-context-1787361234567-AbCdEf.txt",
+      ),
+    ).toBe(true);
+    expect(
+      attachmentPreviewMatchesName(
+        "unrelated-file\nTXT 1KB",
+        "zai-arxiv-toc-1787361234567-XyZ.txt",
+      ),
+    ).toBe(false);
+  });
+
+  it("derives the visible ChatGLM labels without relying on card CSS classes", () => {
+    expect(attachmentVisibleNameCandidates("main.tex")).toEqual([
+      { text: "main.tex", exact: true },
+      { text: "main", exact: true },
+    ]);
+    expect(
+      attachmentVisibleNameCandidates(
+        "zai-web-context-1787361234567-AbCdEf.txt",
+      ),
+    ).toContainEqual({ text: "zai-web-context-1787", exact: false });
+  });
+
+  it("opens ChatGLM's attachment chooser when no compatible input exists", () => {
+    const source = readFileSync(
+      resolve(process.cwd(), "web-agent/attachments.mjs"),
+      "utf8",
+    );
+    expect(source).toContain("adapter.attachmentTrigger");
+    expect(source).toContain('.waitForEvent("filechooser"');
+    expect(source).toContain("chooser.setFiles(attachment.path)");
   });
 
   it("extracts only a newly generated answer and returns it to Zotero", () => {

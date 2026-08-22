@@ -10,6 +10,7 @@ import {
 import {
   advanceWebProgressText,
   interruptStaleWebPromptTasks,
+  webPromptProviderForUserMessage,
   webPromptStatusBubbleContent,
   webPromptTaskPending,
 } from "../../src/modules/web-prompt-runtime";
@@ -20,6 +21,19 @@ const sidebar = readFileSync(
 );
 
 describe("WEB prompt runtime paint and send lock", () => {
+  it("recognizes current and legacy Kimi WEB tasks", () => {
+    expect(
+      webPromptProviderForUserMessage({ task: { webProvider: "kimi" } }),
+    ).toBe("kimi");
+    expect(
+      webPromptProviderForUserMessage({ task: { title: "Kimi Web" } }),
+    ).toBe("kimi");
+    expect(
+      webPromptProviderForUserMessage({
+        task: { webProvider: "custom:kimi-com" },
+      }),
+    ).toBe("kimi");
+  });
   it("keeps painting when a growing snapshot normalizes its prefix", () => {
     const painted = "## 回答\n\n已经显示给用户的完整段落";
     const normalized = "回答\n\n已经显示给用户的完整段落和新增内容";

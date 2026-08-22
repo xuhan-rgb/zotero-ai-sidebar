@@ -329,6 +329,24 @@ describe('chat history', () => {
     ]);
   });
 
+  it('preserves the abnormal webpage-content marker', async () => {
+    await saveChatMessages(42, [
+      {
+        role: 'assistant',
+        content: '网页未返回正常回答。',
+        webPageNotice: true,
+      },
+    ]);
+
+    expect(await loadChatMessages(42)).toEqual([
+      {
+        role: 'assistant',
+        content: '网页未返回正常回答。',
+        webPageNotice: true,
+      },
+    ]);
+  });
+
   it('preserves WEB batch annotation drafts independently of API drafts', async () => {
     await saveChatMessages(42, [
       {
@@ -462,6 +480,25 @@ describe('chat history', () => {
         },
       },
     ]);
+  });
+
+  it('migrates persisted custom Kimi tasks to the built-in provider', async () => {
+    await saveChatMessages(42, [
+      {
+        role: 'user',
+        content: 'hello',
+        task: {
+          id: 'web-kimi-1',
+          kind: 'general',
+          title: 'Kimi Web',
+          promptPreview: 'hello',
+          createdAt: 100,
+          webProvider: 'custom:kimi-com',
+        },
+      },
+    ]);
+
+    expect((await loadChatMessages(42))[0].task?.webProvider).toBe('kimi');
   });
 
   it('uses Windows separators for data-dir and old profile migration paths', async () => {

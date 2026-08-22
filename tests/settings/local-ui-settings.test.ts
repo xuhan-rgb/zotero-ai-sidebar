@@ -17,6 +17,45 @@ function memPrefs(): PrefsStore {
 }
 
 describe("local UI settings storage", () => {
+  it("keeps ChatGLM as a built-in WEB provider", () => {
+    expect(
+      normalizeLocalUiSettings({
+        chatSendMode: "web",
+        webPromptProvider: "chatglm",
+      }).webPromptProvider,
+    ).toBe("chatglm");
+  });
+
+  it("keeps Kimi as a built-in WEB provider and migrates the former custom entry", () => {
+    const settings = normalizeLocalUiSettings({
+      chatSendMode: "web",
+      webPromptProvider: "custom:kimi-com",
+      customWebProviders: [
+        {
+          id: "kimi-com",
+          name: "kimi.com",
+          template: "chatgpt-like",
+          homeUrl: "https://www.kimi.com/",
+          newConversationUrl: "https://www.kimi.com/",
+          selectors: {
+            composer: ["[contenteditable='true']"],
+            send: ["button[type='submit']"],
+            stop: [],
+            answers: ["article"],
+            attachmentPreviews: [],
+            attachmentUploading: [],
+          },
+        },
+      ],
+    });
+    expect(settings.webPromptProvider).toBe("kimi");
+    expect(settings.customWebProviders).toEqual([]);
+    expect(
+      normalizeLocalUiSettings({ webPromptProvider: "kimi" })
+        .webPromptProvider,
+    ).toBe("kimi");
+  });
+
   it("returns defaults for missing or invalid settings", () => {
     expect(loadLocalUiSettings(memPrefs())).toEqual(DEFAULT_LOCAL_UI_SETTINGS);
     const prefs = memPrefs();

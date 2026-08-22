@@ -15,7 +15,12 @@ export interface LocalUiSettings {
 
 export type ChatLayout = "classic" | "compact";
 export type ChatSendMode = "api" | "web";
-export type WebPromptProvider = "chatgpt" | "deepseek" | `custom:${string}`;
+export type WebPromptProvider =
+  | "chatgpt"
+  | "deepseek"
+  | "chatglm"
+  | "kimi"
+  | `custom:${string}`;
 export type CustomWebProviderTemplate = "chatgpt-like";
 export interface CustomWebProviderSelectors {
   composer: string[];
@@ -133,7 +138,15 @@ export function normalizeLocalUiSettings(value: unknown): LocalUiSettings {
   const legacyTarget = (input as Partial<LocalUiSettings> & {
     chatSendTarget?: unknown;
   }).chatSendTarget;
-  const customWebProviders = normalizeCustomWebProviders(input.customWebProviders);
+  const normalizedCustomWebProviders = normalizeCustomWebProviders(
+    input.customWebProviders,
+  );
+  const migrateLegacyKimi = normalizedCustomWebProviders.some(
+    isLegacyKimiCustomProvider,
+  );
+  const customWebProviders = normalizedCustomWebProviders.filter(
+    (provider) => !isLegacyKimiCustomProvider(provider),
+  );
   return {
     chatFontSizePx: normalizeChatFontSize(input.chatFontSizePx),
     chatLayout: oneOf(
@@ -152,6 +165,7 @@ export function normalizeLocalUiSettings(value: unknown): LocalUiSettings {
       input.webPromptProvider,
       customWebProviders,
       legacyTarget,
+      migrateLegacyKimi,
     ),
     hideWebBrowser:
       typeof input.hideWebBrowser === "boolean"
@@ -171,8 +185,17 @@ function normalizeWebPromptProvider(
   value: unknown,
   customProviders: CustomWebProvider[],
   legacyTarget: unknown,
+  migrateLegacyKimi = false,
 ): WebPromptProvider {
-  if (value === "chatgpt" || value === "deepseek") return value;
+  if (
+    value === "chatgpt" ||
+    value === "deepseek" ||
+    value === "chatglm" ||
+    value === "kimi"
+  ) {
+    return value;
+  }
+  if (migrateLegacyKimi && value === "custom:kimi-com") return "kimi";
   if (typeof value === "string" && value.startsWith("custom:")) {
     const id = value.slice("custom:".length);
     if (customProviders.some((provider) => provider.id === id)) {
@@ -198,7 +221,14 @@ function normalizeCustomWebProviders(value: unknown): CustomWebProvider[] {
       .replace(/[^a-z0-9_-]+/g, "-")
       .replace(/^-+|-+$/g, "")
       .slice(0, 48);
-    if (!id || seen.has(id) || id === "chatgpt" || id === "deepseek") continue;
+    if (
+      !id ||
+      seen.has(id) ||
+      id === "chatgpt" ||
+      id === "deepseek" ||
+      id === "chatglm" ||
+      id === "kimi"
+    ) continue;
     const name = cleanProviderText(input.name, 80);
     const homeUrl = normalizeProviderUrl(input.homeUrl);
     const newConversationUrl = normalizeProviderUrl(
@@ -232,6 +262,16 @@ function normalizeCustomWebProviders(value: unknown): CustomWebProvider[] {
     });
   }
   return result;
+}
+
+function isLegacyKimiCustomProvider(provider: CustomWebProvider): boolean {
+  if (provider.id !== "kimi-com") return false;
+  try {
+    const host = new URL(provider.homeUrl).hostname.toLowerCase();
+    return host === "kimi.com" || host === "www.kimi.com";
+  } catch {
+    return false;
+  }
 }
 
 function cleanProviderText(value: unknown, maxLength: number): string {

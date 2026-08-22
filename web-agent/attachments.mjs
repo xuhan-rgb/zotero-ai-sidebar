@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { stat } from "node:fs/promises";
+import { copyFile, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
@@ -41,6 +41,30 @@ export async function validateWebAttachment(value) {
   return { kind, path: filePath, name, mimeType };
 }
 
+export async function stageWebAttachment(
+  attachment,
+  adapter,
+  stagingDirectory,
+) {
+  const extension = adapter?.latexUploadExtension;
+  if (attachment?.kind !== "latex" || !extension) return attachment;
+  const sourceName = path.basename(attachment.name);
+  const sourceExtension = path.extname(sourceName);
+  const stem = sourceExtension
+    ? sourceName.slice(0, -sourceExtension.length)
+    : sourceName;
+  const targetName = `${stem}${extension}`;
+  await mkdir(stagingDirectory, { recursive: true });
+  const targetPath = path.join(stagingDirectory, targetName);
+  await copyFile(attachment.path, targetPath);
+  return {
+    ...attachment,
+    path: targetPath,
+    name: targetName,
+    mimeType: "text/plain",
+  };
+}
+
 export async function pasteWebAttachment(
   page,
   composer,
@@ -56,7 +80,10 @@ export async function pasteWebAttachment(
     page,
     attachment.path,
   );
-  if (!uploadedThroughInput) {
+  const uploadedThroughChooser = uploadedThroughInput
+    ? false
+    : await setWebAttachmentThroughChooser(page, adapter, attachment);
+  if (!uploadedThroughInput && !uploadedThroughChooser) {
     if (options.allowClipboardFallback === false) {
       throw new Error(
         `${adapter.name} attachment input is unavailable; clipboard fallback is disabled in hidden mode`,
@@ -88,13 +115,73 @@ export async function pasteWebAttachment(
 
 export async function setWebAttachmentInputFiles(page, filePath) {
   const inputs = page.locator("input[type='file']");
+  const candidates = [];
   for (let index = 0; index < (await inputs.count()); index += 1) {
+    const input = inputs.nth(index);
+    const accept =
+      typeof input.getAttribute === "function"
+        ? await input.getAttribute("accept").catch(() => "")
+        : "";
+    const score = attachmentInputScore(accept || "", filePath);
+    if (score >= 0) candidates.push({ input, score, index });
+  }
+  candidates.sort(
+    (left, right) => right.score - left.score || left.index - right.index,
+  );
+  for (const { input } of candidates) {
     try {
-      await inputs.nth(index).setInputFiles(filePath);
+      await input.setInputFiles(filePath);
       return true;
     } catch {}
   }
   return false;
+}
+
+async function setWebAttachmentThroughChooser(page, adapter, attachment) {
+  if (
+    !adapter.attachmentTrigger?.length ||
+    typeof page.waitForEvent !== "function"
+  ) {
+    return false;
+  }
+  const triggers = page.locator(selectorList(adapter.attachmentTrigger));
+  for (let index = 0; index < (await triggers.count()); index += 1) {
+    const trigger = triggers.nth(index);
+    if (!(await trigger.isVisible().catch(() => false))) continue;
+    const chooserPromise = page
+      .waitForEvent("filechooser", { timeout: 3_000 })
+      .catch(() => null);
+    if (
+      !(await trigger
+        .click({ force: true })
+        .then(() => true)
+        .catch(() => false))
+    ) {
+      await chooserPromise;
+      continue;
+    }
+    const chooser = await chooserPromise;
+    if (chooser) {
+      await chooser.setFiles(attachment.path);
+      return true;
+    }
+    if (await setWebAttachmentInputFiles(page, attachment.path)) return true;
+  }
+  return false;
+}
+
+function attachmentInputScore(accept, filePath) {
+  const values = String(accept)
+    .toLowerCase()
+    .split(",")
+    .map((value) => value.trim())
+    .filter(Boolean);
+  if (!values.length || values.includes("*/*")) return 0;
+  const extension = path.extname(filePath).toLowerCase();
+  const mimeType = extension === ".pdf" ? "application/pdf" : "text/plain";
+  if (values.includes(extension) || values.includes(mimeType)) return 2;
+  if (mimeType.startsWith("text/") && values.includes("text/*")) return 1;
+  return -1;
 }
 
 export async function waitForWebAttachment(page, adapter, attachment) {
@@ -175,18 +262,49 @@ async function visibleAttachmentPreviewCount(page, adapter) {
 }
 
 async function attachmentNameVisible(page, adapter, name) {
-  const named = page.getByText(name, { exact: false });
-  for (let index = 0; index < (await named.count()); index += 1) {
-    if (await named.nth(index).isVisible()) return true;
+  const nameCandidates = adapter.looseAttachmentNames
+    ? attachmentVisibleNameCandidates(name)
+    : [{ text: name, exact: false }];
+  for (const candidate of nameCandidates) {
+    const named = page.getByText(candidate.text, { exact: candidate.exact });
+    for (let index = 0; index < (await named.count()); index += 1) {
+      if (await named.nth(index).isVisible()) return true;
+    }
   }
   const previews = page.locator(selectorList(adapter.attachmentPreviews));
   for (let index = 0; index < (await previews.count()); index += 1) {
     const preview = previews.nth(index);
     if (!(await preview.isVisible())) continue;
     const text = await preview.innerText().catch(() => "");
-    if (text.includes(name)) return true;
+    if (attachmentPreviewMatchesName(text, name)) return true;
   }
   return false;
+}
+
+export function attachmentVisibleNameCandidates(name) {
+  const fileName = path.basename(String(name));
+  const extension = path.extname(fileName);
+  const stem = extension ? fileName.slice(0, -extension.length) : fileName;
+  const candidates = [{ text: fileName, exact: true }];
+  if (stem !== fileName) candidates.push({ text: stem, exact: true });
+  if (stem.length > 20) {
+    candidates.push({ text: stem.slice(0, 20), exact: false });
+  }
+  return candidates;
+}
+
+export function attachmentPreviewMatchesName(text, name) {
+  const visibleText = String(text).toLowerCase();
+  const fileName = path.basename(String(name)).toLowerCase();
+  const extension = path.extname(fileName);
+  const stem = extension ? fileName.slice(0, -extension.length) : fileName;
+  if (visibleText.includes(fileName) || visibleText.includes(stem)) return true;
+  const displayName = visibleText
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .find(Boolean) || "";
+  const truncatedPrefix = displayName.split(/(?:…|\.\.\.)/, 1)[0].trim();
+  return truncatedPrefix.length >= 8 && stem.startsWith(truncatedPrefix);
 }
 
 async function attachmentTextState(page, name) {

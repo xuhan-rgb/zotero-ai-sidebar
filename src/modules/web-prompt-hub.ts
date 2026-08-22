@@ -7,6 +7,7 @@ export interface WebPromptResult {
   answer: string;
   reasoning?: string;
   images?: MessageImage[];
+  pageNotice?: boolean;
   revision?: number;
 }
 
@@ -115,8 +116,8 @@ function renderHubPage(task: WebPromptTask): string {
 :root{font-family:system-ui,sans-serif;color:#24211d;background:#fbfaf7}*{box-sizing:border-box}body{margin:0}.shell{max-width:920px;margin:auto;padding:24px}.head{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}.badge{padding:5px 9px;border:1px solid #d8c9b6;border-radius:7px;background:#fff}.panel{border:1px solid #e1d7c9;border-radius:8px;background:#fff;padding:18px;margin-bottom:14px}h1{font-size:21px;margin:0}h2{font-size:15px;margin:0 0 10px}.prompt{max-height:42vh;overflow:auto;white-space:pre-wrap;font:12px/1.65 ui-monospace,monospace;background:#f7f4ef;padding:13px;border-radius:6px}textarea{width:100%;min-height:180px;border:1px solid #d8c9b6;border-radius:6px;padding:12px;font:13px/1.55 system-ui,sans-serif;resize:vertical}.actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}button{border:1px solid #d8c9b6;border-radius:7px;background:#fff;padding:8px 12px;cursor:pointer}button.primary{border-color:#a94e25;background:#a94e25;color:#fff}button.import{border-color:#2f7d51;background:#2f7d51;color:#fff}.status{color:#746b60;font-size:12px}
 </style></head><body><main class="shell"><header class="head"><div><h1>Web Prompt Hub</h1><div class="status" id="source"></div></div><span class="badge" id="provider"></span></header>
 <section class="panel"><h2>确认 Prompt</h2><div class="prompt" id="prompt"></div><div class="actions"><button class="primary" id="copyOpen">复制并打开网页</button><button id="copy">仅复制</button></div></section>
-<section class="panel"><h2>导入网页回答</h2><textarea id="answer" placeholder="从 ChatGPT 或 DeepSeek 网页复制完整回答后粘贴到这里"></textarea><div class="actions"><button id="paste">从剪贴板粘贴</button><button class="import" id="import">导回 Zotero</button><span class="status" id="status"></span></div></section></main>
-<script>const task=${data};const names={chatgpt:"ChatGPT Web",deepseek:"DeepSeek Web"};const urls={chatgpt:"https://chatgpt.com/",deepseek:"https://chat.deepseek.com/"};const provider=document.getElementById("provider"),source=document.getElementById("source"),prompt=document.getElementById("prompt"),answer=document.getElementById("answer"),status=document.getElementById("status"),copy=document.getElementById("copy"),copyOpen=document.getElementById("copyOpen"),paste=document.getElementById("paste"),importButton=document.getElementById("import");
+<section class="panel"><h2>导入网页回答</h2><textarea id="answer" placeholder="从 ChatGPT、DeepSeek、ChatGLM 或 Kimi 网页复制完整回答后粘贴到这里"></textarea><div class="actions"><button id="paste">从剪贴板粘贴</button><button class="import" id="import">导回 Zotero</button><span class="status" id="status"></span></div></section></main>
+<script>const task=${data};const names={chatgpt:"ChatGPT Web",deepseek:"DeepSeek Web",chatglm:"ChatGLM Web",kimi:"Kimi Web"};const urls={chatgpt:"https://chatgpt.com/",deepseek:"https://chat.deepseek.com/",chatglm:"https://chatglm.cn/main/alltoolsdetail?lang=zh",kimi:"https://www.kimi.com/"};const provider=document.getElementById("provider"),source=document.getElementById("source"),prompt=document.getElementById("prompt"),answer=document.getElementById("answer"),status=document.getElementById("status"),copy=document.getElementById("copy"),copyOpen=document.getElementById("copyOpen"),paste=document.getElementById("paste"),importButton=document.getElementById("import");
 provider.textContent=names[task.provider];source.textContent=task.sourceLabel;prompt.textContent=task.prompt;
 async function copyPrompt(){await navigator.clipboard.writeText(task.prompt)}
 copy.onclick=async()=>{await copyPrompt();status.textContent="Prompt 已复制"};copyOpen.onclick=async()=>{window.open(urls[task.provider],"_blank","noopener");await copyPrompt();status.textContent="已复制并打开网页"};
@@ -180,6 +181,7 @@ async function handleWebAgentCallback(
     answer: progressAnswer,
     ...(progressReasoning ? { reasoning: progressReasoning } : {}),
     ...(Array.isArray(data.images) ? { images: data.images as MessageImage[] } : {}),
+    ...(data.pageNotice === true ? { pageNotice: true } : {}),
     revision,
   };
   if (isNewSnapshot && (progressAnswer || progressReasoning || incoming.images)) {
@@ -188,6 +190,7 @@ async function handleWebAgentCallback(
       answer: progressAnswer || task.lastResult?.answer || "",
       reasoning: progressReasoning || task.lastResult?.reasoning,
       images: incoming.images || task.lastResult?.images,
+      pageNotice: incoming.pageNotice || task.lastResult?.pageNotice,
       revision,
     };
   }

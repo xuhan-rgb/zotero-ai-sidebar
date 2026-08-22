@@ -6,6 +6,8 @@ import {
   answerNodeRange,
   inPlaceStillBaseline,
   nextAnswerWaitState,
+  nextPageNoticeWaitState,
+  visiblePageTextDelta,
 } from "../../web-agent/answer-wait.mjs";
 
 const agent = readFileSync(
@@ -69,6 +71,55 @@ function collectWaitEvents(
 }
 
 describe("web answer wait (in-place DeepSeek)", () => {
+  it("returns newly visible page content without interpreting its language", () => {
+    const baseline = "ChatGLM\n用户问题\nhello";
+    const current =
+      "ChatGLM\n用户问题\nhello\n高峰期排队中\n本次回答已被终止\n重新回答";
+    expect(visiblePageTextDelta(baseline, current, ["hello"])).toBe(
+      "高峰期排队中\n本次回答已被终止\n重新回答",
+    );
+    expect(visiblePageTextDelta("Home", "Home\nSomething went wrong", [])).toBe(
+      "Something went wrong",
+    );
+  });
+
+  it("never completes from page content after a normal answer appears", () => {
+    expect(
+      nextPageNoticeWaitState({
+        content: "本次回答已被终止",
+        previousSignature: "本次回答已被终止",
+        stablePolls: 20,
+        pageReady: true,
+        normalAnswerObserved: true,
+      }).shouldComplete,
+    ).toBe(false);
+  });
+
+  it("completes stable page content only when the page is ready again", () => {
+    const waiting = nextPageNoticeWaitState({
+      content: "Something went wrong",
+      previousSignature: "Something went wrong",
+      stablePolls: 8,
+      pageReady: false,
+      normalAnswerObserved: false,
+    });
+    expect(waiting.shouldComplete).toBe(false);
+    const ready = nextPageNoticeWaitState({
+      content: "Something went wrong",
+      previousSignature: "Something went wrong",
+      stablePolls: 8,
+      pageReady: true,
+      normalAnswerObserved: false,
+    });
+    expect(ready.shouldComplete).toBe(true);
+  });
+
+  it("marks page-content fallback separately from a normal answer", () => {
+    expect(agent).toContain(
+      'return { answer: content, reasoning: "", pageNotice: true };',
+    );
+  });
+
   it("selects the last node when the assistant count does not grow", () => {
     expect(answerNodeRange(1, 1)).toEqual({
       start: 0,
@@ -209,6 +260,23 @@ describe("web answer wait (in-place DeepSeek)", () => {
       },
     ]);
     expect(events).toEqual([]);
+  });
+
+  it("completes a stable answer when its finished-action control is visible", () => {
+    const step = nextAnswerWaitState({
+      result: { answer: "完整回答", reasoning: "" },
+      previousSignature: JSON.stringify({
+        answer: "完整回答",
+        reasoning: "",
+      }),
+      generating: true,
+      completionReady: true,
+      host: "chatglm.cn",
+      stablePolls: 4,
+      inPlace: false,
+    });
+    expect(step.nextStable).toBe(5);
+    expect(step.shouldComplete).toBe(true);
   });
 
   it("wires the shipped agent to the in-place wait helpers", () => {

@@ -7,6 +7,7 @@ export interface ProviderDefinition {
   stop: string[];
   answers: string[];
   reasoning?: string[];
+  latexUploadExtension?: string;
 }
 
 export function providerDefinition(

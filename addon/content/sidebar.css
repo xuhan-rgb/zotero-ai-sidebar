@@ -2674,6 +2674,18 @@ button:disabled,
   user-select: text;
 }
 
+.bubble-web-page-notice .bubble-body {
+  color: #b42318;
+}
+
+.bubble-web-page-notice .bubble-body h1,
+.bubble-web-page-notice .bubble-body h2,
+.bubble-web-page-notice .bubble-body h3,
+.bubble-web-page-notice .bubble-body h4,
+.bubble-web-page-notice .bubble-body blockquote {
+  color: #b42318;
+}
+
 .bubble-usage {
   display: flex;
   align-items: center;
@@ -3763,6 +3775,10 @@ div.math-fallback {
 }
 
 .composer-footer-left:empty {
+  display: none;
+}
+
+.composer-footer-left[hidden] {
   display: none;
 }
 

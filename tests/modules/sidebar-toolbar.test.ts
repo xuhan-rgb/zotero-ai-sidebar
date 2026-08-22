@@ -65,6 +65,28 @@ const sidebarCSS = readFileSync(
 );
 
 describe("AI dialog toolbar", () => {
+  it("shows ChatGLM in the built-in WEB provider switcher", () => {
+    expect(sidebarSource).toContain('["chatglm", "ChatGLM"]');
+  });
+
+  it("shows Kimi in the built-in WEB provider switcher", () => {
+    expect(sidebarSource).toContain('["kimi", "Kimi"]');
+  });
+
+  it("explains that new webpage content is returned when no answer exists", () => {
+    expect(sidebarSource).toContain(
+      "网页未返回正常回答时，插件会将本轮新出现的网页内容原样同步到 Zotero",
+    );
+  });
+
+  it("renders only abnormal webpage-content messages in red", () => {
+    expect(bubbleSource).toContain(
+      'message.webPageNotice === true ? "bubble-web-page-notice" : ""',
+    );
+    expect(sidebarCSS).toContain(".bubble-web-page-notice .bubble-body {");
+    expect(sidebarCSS).toContain("color: #b42318;");
+  });
+
   it("shows dismissible signatures only in the empty normal conversation", () => {
     expect(messagesSource).toContain('state.messages.length === 0');
     expect(messagesSource).toContain('messages.classList.add("messages-empty")');
@@ -367,8 +389,14 @@ describe("AI dialog toolbar", () => {
     expect(sidebarCSS).toMatch(
       /\.composer-footer-left:empty\s*\{[^}]*display:\s*none;/s,
     );
+    expect(sidebarCSS).toMatch(
+      /\.composer-footer-left\[hidden\]\s*\{[^}]*display:\s*none;/s,
+    );
     expect(composerFooterSource).toContain(
       'footer.classList.toggle("composer-footer-status-empty", Boolean(left.hidden))',
+    );
+    expect(sidebarSource).toMatch(
+      /container\.parentElement\?\.classList\.toggle\(\s*"composer-footer-status-empty",\s*status\.hidden,?\s*\)/s,
     );
     expect(sidebarCSS).toMatch(
       /\.composer-footer\.composer-footer-status-empty\s*\{[^}]*grid-template-columns:\s*auto minmax\(0, 1fr\);/s,

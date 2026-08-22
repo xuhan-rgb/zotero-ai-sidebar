@@ -161,4 +161,63 @@ describe("Web Prompt Hub", () => {
     );
     expect(onStatus).not.toHaveBeenCalledWith("completed", undefined);
   });
+
+  it("offers Kimi on the manual Web Prompt Hub page", async () => {
+    registerWebPromptHub();
+    const task = createWebPromptTask({
+      provider: "kimi",
+      prompt: "Hello Kimi",
+      sourceLabel: "Paper · Conversation 1",
+      onImport: vi.fn(),
+    });
+    const Endpoint = Zotero.Server.Endpoints[
+      "/zai/web-prompt-hub"
+    ] as new () => {
+      init(options: unknown): Promise<[number, string, string]>;
+    };
+    const page = await new Endpoint().init({
+      method: "GET",
+      searchParams: new URLSearchParams({ id: task.id }),
+      data: null,
+    });
+    expect(page[2]).toContain('kimi:"Kimi Web"');
+    expect(page[2]).toContain('kimi:"https://www.kimi.com/"');
+  });
+
+  it("forwards the abnormal page-content marker to the importer", async () => {
+    const onImport = vi.fn();
+    registerWebPromptHub();
+    const task = createWebPromptTask({
+      provider: "chatglm",
+      prompt: "Explain the method.",
+      sourceLabel: "Paper · Conversation 1",
+      onImport,
+    });
+    const Endpoint = Zotero.Server.Endpoints[
+      "/zai/web-prompt-hub"
+    ] as new () => {
+      init(options: unknown): Promise<[number, string, string]>;
+    };
+    const endpoint = new Endpoint();
+
+    const completed = await endpoint.init({
+      headers: { authorization: "Bearer test-token" },
+      method: "POST",
+      searchParams: new URLSearchParams(),
+      data: {
+        id: task.id,
+        state: "completed",
+        answer: "本次回答已被终止",
+        pageNotice: true,
+      },
+    });
+
+    expect(completed[0]).toBe(200);
+    expect(onImport).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answer: "本次回答已被终止",
+        pageNotice: true,
+      }),
+    );
+  });
 });

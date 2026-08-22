@@ -494,6 +494,7 @@ function normalizeMessages(value: unknown): Message[] {
           : {}),
         ...(annotationDraft ? { annotationDraft } : {}),
         ...(webAnnotationBatch ? { webAnnotationBatch } : {}),
+        ...(m.webPageNotice === true ? { webPageNotice: true } : {}),
         ...(task ? { task } : {}),
       },
     ];
@@ -630,7 +631,13 @@ function normalizeWebTaskStatus(
 function normalizeWebPromptProvider(
   value: unknown,
 ): ChatTaskMeta['webProvider'] | undefined {
-  if (value === 'chatgpt' || value === 'deepseek') return value;
+  if (
+    value === 'chatgpt' ||
+    value === 'deepseek' ||
+    value === 'chatglm' ||
+    value === 'kimi'
+  ) return value;
+  if (value === 'custom:kimi-com') return 'kimi';
   if (typeof value !== 'string') return undefined;
   return /^custom:[a-z0-9_-]{1,48}$/.test(value)
     ? (value as `custom:${string}`)

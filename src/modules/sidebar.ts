@@ -2511,6 +2511,11 @@ function handleTaskEscape(
   if (state.queueOpen) {
     state.queueOpen = false;
     renderPanel(mount, state);
+  } else if (
+    state.localUiSettings.chatSendMode === "web" &&
+    webPromptTaskPending(state)
+  ) {
+    void cancelPendingWebPromptTask(mount, state);
   } else if (conversationIsSending(state, state.activeConversationID)) {
     cancelActiveChatTask(mount, state);
   } else {
@@ -3300,6 +3305,8 @@ async function sendWebPromptMessage(
     explainSelection?: boolean;
     annotationBatch?: boolean;
     taskTitle?: string;
+    retrySelectedText?: string;
+    retrySelectionSnapshot?: SelectionAnnotationDraft | null;
   } = {},
 ): Promise<void> {
   const content = text.trim();
@@ -3307,7 +3314,10 @@ async function sendWebPromptMessage(
   if (webPromptTaskPending(state)) return;
   const sourceItemID = state.itemID;
   let selectionSnapshot = options.explainSelection
-    ? cloneSelectionAnnotationDraft(getStoredSelectionAnnotation(sourceItemID))
+    ? cloneSelectionAnnotationDraft(
+        options.retrySelectionSnapshot ??
+          getStoredSelectionAnnotation(sourceItemID),
+      )
     : null;
   // Lock before the first await. Account checks and paper-material assembly
   // are asynchronous, so a second click could otherwise create another
@@ -3343,6 +3353,21 @@ async function sendWebPromptMessage(
       ? `未检测到 ${webProviderName(state, provider)} 的可用输入框，请先打开该网址并完成登录`
       : `尚未配置 ${webProviderName(state, provider)} 网页账号，请先点击账号配置按钮并手动登录`;
     renderPanel(mount, state);
+    const doc = mount.ownerDocument;
+    if (doc) {
+      configureWebAccount(
+        doc,
+        mount,
+        state,
+        provider,
+        webProviderName(state, provider),
+        customProvider,
+        () => {
+          if (states.get(mount) !== state) return;
+          void sendWebPromptMessage(mount, state, content, provider, options);
+        },
+      );
+    }
     return;
   }
   state.webAccountConfigured = true;
@@ -3360,6 +3385,7 @@ async function sendWebPromptMessage(
   }
   const chatQuote = state.chatSelectionQuote;
   const selectedText =
+    options.retrySelectedText?.trim() ||
     chatQuote?.excerpt.trim() ||
     selectionSnapshot?.text.trim() ||
     (await getSelectedTextForPrompt(mount, sourceItemID));
@@ -3669,10 +3695,18 @@ async function sendWebPromptMessage(
         (message) => message.role === "assistant" && message.task?.id === taskID,
       );
       if (!source || !target) return;
-      target.content = describeUnavailableGeneratedFiles(result.answer);
-      if (
-        options.annotationBatch || hasWebAnnotationProtocol(target.content)
+      const importedAnswer = describeUnavailableGeneratedFiles(result.answer);
+      if (result.pageNotice) {
+        target.webPageNotice = true;
+        target.content = [
+          "网页未返回正常回答。以下为网页本轮新增内容：",
+          importedAnswer,
+          '请点击底部“账号”检查登录状态、浏览器显示方式或网页配置后重试。',
+        ].join("\n\n");
+      } else if (
+        options.annotationBatch || hasWebAnnotationProtocol(importedAnswer)
       ) {
+        target.content = importedAnswer;
         const parsed = parseWebAnnotationBatch(target.content);
         target.content = parsed.body || "DeepSeek 已返回 PDF 标注草稿。";
         target.webAnnotationBatch = parsed.annotations.length
@@ -3685,8 +3719,11 @@ async function sendWebPromptMessage(
                   "WEB 回答未包含可解析的 Zotero 标注协议；正常回答已保留。",
                 entries: [],
               };
-      } else if (options.explainSelection && selectionSnapshot) {
-        attachAnnotationDraft(target, selectionSnapshot, true);
+      } else {
+        target.content = importedAnswer;
+        if (options.explainSelection && selectionSnapshot) {
+          attachAnnotationDraft(target, selectionSnapshot, true);
+        }
       }
       target.thinking = result.reasoning;
       target.images = result.images;
@@ -3706,7 +3743,6 @@ async function sendWebPromptMessage(
         state.messages = source.messages;
         state.scrollToBottom = true;
       }
-      await persistPanelConversations(state);
       if (
         target.annotationDraft &&
         state.activeConversationID === sourceConversationID
@@ -3715,6 +3751,7 @@ async function sendWebPromptMessage(
       } else {
         renderWebProgressBubble(source, target);
       }
+      await persistPanelConversations(state);
       if (target.webAnnotationBatch?.entries.length) {
         void locateWebAnnotationBatch(mount, state, target, sourceItemID);
       }
@@ -3771,7 +3808,7 @@ function webPromptStatusMessage(
   status: import("./web-prompt-hub").WebPromptTaskStatus,
   error?: string,
 ): string {
-  const name = provider === "chatgpt" ? "ChatGPT" : provider === "deepseek" ? "DeepSeek" : provider;
+  const name = webProviderDisplayName(provider);
   switch (status) {
     case "queued":
       return `等待执行 ${name} 网页任务。`;
@@ -3797,9 +3834,17 @@ function webPromptStatusMessage(
 }
 
 function webProviderName(state: PanelState, provider: WebPromptProvider): string {
+  const builtInName = webProviderDisplayName(provider);
+  if (builtInName !== provider) return builtInName;
+  return customWebProviderFor(state, provider)?.name || "自定义网页";
+}
+
+function webProviderDisplayName(provider: WebPromptProvider): string {
   if (provider === "chatgpt") return "ChatGPT";
   if (provider === "deepseek") return "DeepSeek";
-  return customWebProviderFor(state, provider)?.name || "自定义网页";
+  if (provider === "chatglm") return "ChatGLM";
+  if (provider === "kimi") return "Kimi";
+  return provider;
 }
 
 function customWebProviderFor(
@@ -4565,6 +4610,8 @@ function renderWebPromptProviderSwitcher(
   for (const [value, label] of [
     ["chatgpt", "ChatGPT"],
     ["deepseek", "DeepSeek"],
+    ["chatglm", "ChatGLM"],
+    ["kimi", "Kimi"],
   ] as const) {
     const option = doc.createElement("option");
     option.value = value;
@@ -4651,6 +4698,7 @@ function configureWebAccount(
   provider: WebPromptProvider,
   providerName: string,
   customProvider?: CustomWebProvider,
+  onConfigured?: () => void,
 ): void {
   const view = doc.defaultView;
   const layer = el(
@@ -4704,6 +4752,12 @@ function configureWebAccount(
     "zai-web-account-explanation",
     `请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示 Chrome。`,
   );
+  const pageNoticeExplanation = el(
+    doc,
+    "p",
+    "zai-web-account-explanation",
+    "网页未返回正常回答时，插件会将本轮新出现的网页内容原样同步到 Zotero；插件不会判断或改写其含义。",
+  );
   const visibilityOption = el(doc, "label", "zai-web-account-option");
   const checkbox = doc.createElement("input");
   checkbox.type = "checkbox";
@@ -4717,7 +4771,7 @@ function configureWebAccount(
   );
   optionText.append(optionHint);
   visibilityOption.append(checkbox, optionText);
-  body.append(status, explanation, visibilityOption);
+  body.append(status, explanation, pageNoticeExplanation, visibilityOption);
 
   const foot = el(
     doc,
@@ -4837,7 +4891,10 @@ function configureWebAccount(
         error instanceof Error ? error.message : String(error);
     } finally {
       layer.remove();
-      if (states.get(mount) === state) renderPanel(mount, state);
+      if (states.get(mount) === state) {
+        renderPanel(mount, state);
+        if (configured) onConfigured?.();
+      }
     }
   };
 
@@ -5253,6 +5310,10 @@ function renderInputStatus(
   const container = status.parentElement as HTMLElement | null;
   if (container?.classList.contains("composer-footer-left")) {
     container.hidden = status.hidden;
+    container.parentElement?.classList.toggle(
+      "composer-footer-status-empty",
+      status.hidden,
+    );
   }
 }
 
@@ -7263,6 +7324,26 @@ async function regenerateLastResponse(mount: HTMLElement, state: PanelState) {
   const history = isolatedHistory
     ? []
     : selectConversationHistory(availableHistory, state.historyMode);
+  const webProvider = webPromptProviderForUserMessage(userMessage);
+  if (webProvider) {
+    state.messages = availableHistory;
+    await persistPanelConversations(state);
+    if (states.get(mount) !== state) return;
+    await sendWebPromptMessage(mount, state, userMessage.content, webProvider, {
+      explainSelection: userMessage.context?.explainSelection === true,
+      annotationBatch: userMessage.task?.kind === "full_text",
+      taskTitle: userMessage.task?.title,
+      retrySelectedText: userMessage.context?.selectedText,
+      retrySelectionSnapshot: carriedSnapshot
+        ? {
+            text: carriedSnapshot.text,
+            attachmentID: carriedSnapshot.attachmentID,
+            annotation: { ...carriedSnapshot.annotation },
+          }
+        : null,
+    });
+    return;
+  }
   resetChatTaskForRetry(userMessage);
   state.messages = [...availableHistory, userMessage];
   void persistPanelConversations(state);
@@ -7891,6 +7972,10 @@ function updateMessageBubble(
   const shouldStickToBottom =
     state?.autoFollowMessages ?? isMessagesNearBottom(mount);
   preserveStreamingMessagesScroll(mount, shouldStickToBottom, () => {
+    root.classList.toggle(
+      "bubble-web-page-notice",
+      message.webPageNotice === true,
+    );
     if (state) {
       updateWebTaskProgress(root, body, state, index, message);
       updateAssistantProgress(
@@ -8070,6 +8155,7 @@ function bubble(
     [
       "bubble",
       `bubble-${message.role}`,
+      message.webPageNotice === true ? "bubble-web-page-notice" : "",
       `bubble-actions-${state.uiSettings.messageActionsPosition}`,
       `bubble-actions-${state.uiSettings.messageActionsLayout}`,
     ].join(" "),

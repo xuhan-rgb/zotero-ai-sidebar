@@ -15,6 +15,10 @@ const sendWebPrompt = sidebar.slice(
   sidebar.indexOf("async function sendWebPromptMessage("),
   sidebar.indexOf("function webPromptStatusMessage("),
 );
+const taskEscapeHandler = sidebar.slice(
+  sidebar.indexOf("function handleTaskEscape("),
+  sidebar.indexOf("function viewChatTask("),
+);
 const agent = readFileSync(
   resolve(process.cwd(), "web-agent/agent.mjs"),
   "utf8",
@@ -130,8 +134,8 @@ describe("WEB send flow", () => {
       /explainSelection,\s*annotationBatch: fullTextHighlight,\s*taskTitle: label/,
     );
     expect(sendWebPrompt).toContain("explainSelection?: boolean");
-    expect(sendWebPrompt).toContain(
-      "cloneSelectionAnnotationDraft(getStoredSelectionAnnotation(sourceItemID))",
+    expect(sendWebPrompt).toMatch(
+      /cloneSelectionAnnotationDraft\([\s\S]*?options\.retrySelectionSnapshot \?\?[\s\S]*?getStoredSelectionAnnotation\(sourceItemID\)/,
     );
     expect(sendWebPrompt).toContain(
       "selectionSnapshot = await rebuildWebSelectionAnnotationSnapshot(",
@@ -141,7 +145,7 @@ describe("WEB send flow", () => {
       "attachAnnotationDraft(target, selectionSnapshot, true)",
     );
     expect(sendWebPrompt).toContain(
-      "options.annotationBatch || hasWebAnnotationProtocol(target.content)",
+      "options.annotationBatch || hasWebAnnotationProtocol(importedAnswer)",
     );
     expect(sendWebPrompt).toMatch(
       /if \(\s*target\.annotationDraft &&\s*state\.activeConversationID === sourceConversationID\s*\) \{\s*renderPanel\(mount, state\);\s*\} else \{\s*renderWebProgressBubble\(source, target\);/,
@@ -186,6 +190,9 @@ describe("WEB send flow", () => {
       webPromptProviderForUserMessage({ task: { webProvider: "chatgpt" } }),
     ).toBe("chatgpt");
     expect(
+      webPromptProviderForUserMessage({ task: { webProvider: "chatglm" } }),
+    ).toBe("chatglm");
+    expect(
       webPromptProviderForUserMessage({
         task: { id: "1723-abc", title: "DeepSeek Web" },
       }),
@@ -194,7 +201,7 @@ describe("WEB send flow", () => {
       webPromptProviderForUserMessage({
         task: { id: "1723-abc", title: "Kimi Web" },
       }),
-    ).toBe("custom:legacy");
+    ).toBe("kimi");
     // Normal API queue tasks use "task-" ids and must stay out of the Web flow.
     expect(
       webPromptProviderForUserMessage({
@@ -204,7 +211,16 @@ describe("WEB send flow", () => {
     expect(webPromptProviderForUserMessage({ task: { id: "task-9" } })).toBeNull();
   });
 
-  it("requires a manually configured Web account before sending", () => {
+  it("retries a Web answer through its original Web provider", () => {
+    expect(sidebar).toContain(
+      "const webProvider = webPromptProviderForUserMessage(userMessage);",
+    );
+    expect(sidebar).toMatch(
+      /if \(webProvider\) \{[\s\S]*?await sendWebPromptMessage\([\s\S]*?webProvider,[\s\S]*?retrySelectionSnapshot:[\s\S]*?return;[\s\S]*?\}[\s\S]*?await streamAssistant/,
+    );
+  });
+
+  it("resumes the original message once initial Web account setup completes", () => {
     expect(sidebar).toContain("renderWebAccountButton(doc, mount, state)");
     expect(sidebar).toContain("openWebAccount(provider, customProvider)");
     expect(sidebar).toContain("尚未配置");
@@ -212,6 +228,10 @@ describe("WEB send flow", () => {
       "getWebAccountStatus(provider, undefined, customProvider)",
     );
     expect(sendWebPrompt).toContain("if (!account.configured)");
+    expect(sendWebPrompt).toContain("configureWebAccount(");
+    expect(sendWebPrompt).toContain("void sendWebPromptMessage(");
+    expect(sidebar).toContain("onConfigured?: () => void");
+    expect(sidebar).toContain("onConfigured?.();");
     expect(agent).toContain(
       'request.method === "POST" && request.url === "/browser/open"',
     );
@@ -227,6 +247,56 @@ describe("WEB send flow", () => {
     expect(agent).toContain("登录以获取");
   });
 
+  it("returns a visible custom-site message before starting uploads", () => {
+    const accountReady = agent.slice(
+      agent.indexOf("async function accountReady("),
+      agent.indexOf("const CHATGPT_REASONING_VALUES"),
+    );
+    expect(agent).toContain("async function blockingAccountDialogText(");
+    expect(agent).toContain("async function composerOverlayText(");
+    expect(agent).toContain("document.elementFromPoint(");
+    expect(agent).toContain('["fixed", "absolute"].includes(style.position)');
+    expect(agent).toMatch(/overlay = node;\s*break;/);
+    expect(accountReady).toContain('adapter.template === "chatgpt-like"');
+    expect(accountReady).toContain(
+      "await blockingAccountDialogVisible(page, adapter)",
+    );
+    expect(agent).toContain("task.earlyPageNotice = blockingDialog");
+    expect(agent).toMatch(
+      /task\.pageNotice\s*=[\s\S]*?await throwForBlockingAccountDialog\(task\);[\s\S]*?let loginReported/,
+    );
+  });
+
+  it("does not treat whole-page changes during upload as received messages", () => {
+    const operationMonitor = agent.slice(
+      agent.indexOf("async function runWithEarlyPageNotice("),
+      agent.indexOf("async function throwForBlockingAccountDialog("),
+    );
+    expect(operationMonitor).toContain("await throwForBlockingAccountDialog(task)");
+    expect(operationMonitor).not.toContain("visiblePageTextDelta(");
+    expect(operationMonitor).not.toContain("nextOperationPageNoticeState(");
+  });
+
+  it("refreshes the page baseline after account setup and gates early body fallback", () => {
+    const failedNotice = agent.slice(
+      agent.indexOf("async function failedTaskPageNotice("),
+      agent.indexOf("async function runWithEarlyPageNotice("),
+    );
+    expect(failedNotice).toContain("!task.submissionConfirmed");
+    expect(agent).toMatch(
+      /if \(task\.pageNotice\) \{[\s\S]*?task\.pageNotice\.baseline = await pageVisibleText\(page\);/,
+    );
+    expect(agent).toContain("task.submissionAttempted = true");
+    expect(agent).toContain("task.submissionConfirmed = true");
+  });
+
+  it("uses the semantic Kimi send icon for custom webpages without clicking a disabled control", () => {
+    expect(agent).toContain("async function sendControl(page, adapter)");
+    expect(agent).toContain("svg[name='Send']");
+    expect(agent).toContain('adapter.template === "chatgpt-like"');
+    expect(agent).toContain("await sendControlDisabled(send)");
+  });
+
   it("paints Web snapshots incrementally in the existing assistant bubble", () => {
     expect(sendWebPrompt).toContain("advanceWebProgressText");
     expect(sendWebPrompt).toContain(
@@ -234,8 +304,15 @@ describe("WEB send flow", () => {
     );
     expect(sendWebPrompt).toContain("schedule(flush, 35)");
     expect(sendWebPrompt).toContain("cancelWebProgress();");
+    expect(sidebar).toMatch(
+      /root\.classList\.toggle\(\s*"bubble-web-page-notice",\s*message\.webPageNotice === true,?\s*\)/,
+    );
+    const onImport = sendWebPrompt.slice(sendWebPrompt.indexOf("onImport:"));
+    expect(onImport.indexOf("renderWebProgressBubble(source, target)")).toBeLessThan(
+      onImport.indexOf("await persistPanelConversations(state)"),
+    );
     expect(sendWebPrompt).toContain(
-      "target.content = describeUnavailableGeneratedFiles(result.answer);",
+      "const importedAnswer = describeUnavailableGeneratedFiles(result.answer);",
     );
     expect(agent).toContain("await page.waitForTimeout(350);");
     expect(sidebar).toContain(
@@ -243,9 +320,32 @@ describe("WEB send flow", () => {
     );
   });
 
+  it("keeps abnormal webpage content out of the normal answer pipeline", () => {
+    expect(sendWebPrompt).toContain("if (result.pageNotice)");
+    expect(sendWebPrompt).toContain("target.webPageNotice = true");
+    expect(sendWebPrompt).toContain("网页未返回正常回答");
+    expect(sendWebPrompt).toContain(
+      '请点击底部“账号”检查登录状态、浏览器显示方式或网页配置后重试。',
+    );
+    expect(sendWebPrompt).toMatch(
+      /if \(result\.pageNotice\)[\s\S]*?else if \([\s\S]*?options\.annotationBatch/,
+    );
+  });
+
+  it("returns an independently received page notice when WEB automation fails", () => {
+    expect(agent).toContain("async function failedTaskPageNotice(task)");
+    expect(agent).toContain("const pageNotice = task.cancelled");
+    expect(agent).toContain('? "completed"');
+    expect(agent).toContain("pageNotice: true");
+    expect(agent).toContain("task.normalAnswerObserved");
+    expect(agent).toContain("async function runWithEarlyPageNotice(");
+    expect(agent).toContain("await throwForBlockingAccountDialog(task)");
+    expect(agent).toContain("await runWithEarlyPageNotice(task, async () => {");
+  });
+
   it("confirms ChatGPT submission and uses only one submit action per task", () => {
     expect(agent).toContain(
-      "async function submitPrompt(page, composer, adapter, previousAnswerCount)",
+      "async function submitPrompt(page, composer, adapter, previousAnswerCount, task)",
     );
     expect(agent).toContain("send.click({ force: true })");
     expect(agent).toContain('await composer.press("Enter")');
@@ -253,7 +353,7 @@ describe("WEB send flow", () => {
     expect(agent).toContain("knownTaskIDs.has(task.id)");
     expect(agent).toContain("未再次提交以避免重复发送");
     expect(agent).toContain(
-      "await submitPrompt(page, composer, adapter, previousAnswerCount)",
+      "await submitPrompt(page, composer, adapter, previousAnswerCount, task)",
     );
     expect(agent).toContain(
       "async function promptSubmissionStarted(",
@@ -270,6 +370,11 @@ describe("WEB send flow", () => {
     expect(agent).toContain("waitForWebAttachments(page, adapter, attachments)");
   });
 
+  it("uploads ChatGLM attachments serially so the site cannot drop a file", () => {
+    expect(agent).toContain("if (adapter.serialAttachments)");
+    expect(agent).toContain("waitForUpload: true");
+  });
+
   it("can cancel a stuck WEB upload without restarting Zotero", () => {
     expect(agent).toContain('request.url === "/tasks/cancel"');
     expect(agent).toContain("await cancelTask(");
@@ -277,8 +382,17 @@ describe("WEB send flow", () => {
     expect(agent).toContain("await task.page.close(");
     expect(webAgentClient).toContain("export async function cancelWebAgentTask(");
     expect(webAgentClient).toContain('`http://127.0.0.1:${config.port}/tasks/cancel`');
-    expect(sidebar).toContain("const webPromptStopping = webPromptBusy");
+    expect(sidebar).toMatch(/const webPromptStopping\s*=\s*webPromptBusy/);
     expect(sidebar).toContain("cancelPendingWebPromptTask(mount, state)");
+  });
+
+  it("routes Escape through the same WEB cancellation path", () => {
+    expect(taskEscapeHandler).toContain("webPromptTaskPending(state)");
+    expect(taskEscapeHandler).toContain(
+      "void cancelPendingWebPromptTask(mount, state)",
+    );
+    expect(taskEscapeHandler).toContain("event.preventDefault()");
+    expect(taskEscapeHandler).toContain("event.stopPropagation()");
   });
 
   it("allows bounded DeepSeek submit retries without retrying other providers", () => {
@@ -358,7 +472,7 @@ describe("WEB send flow", () => {
 
   it("degrades unusable sandbox file paths before storing a Web answer", () => {
     expect(sidebar).toContain(
-      "target.content = describeUnavailableGeneratedFiles(result.answer)",
+      "const importedAnswer = describeUnavailableGeneratedFiles(result.answer)",
     );
     expect(sidebar).toContain("describeUnavailableGeneratedFiles,");
   });

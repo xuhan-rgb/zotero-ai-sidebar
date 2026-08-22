@@ -1,5 +1,7 @@
 import { readFile } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
+import { mkdtemp } from "node:fs/promises";
+import { rm } from "node:fs/promises";
 import { unlink } from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
 import { spawn, spawnSync } from "node:child_process";
@@ -15,6 +17,7 @@ import {
 } from "./adapters.mjs";
 import {
   pasteWebAttachment,
+  stageWebAttachment,
   validateWebAttachment,
   waitForWebAttachments,
 } from "./attachments.mjs";
@@ -22,6 +25,8 @@ import {
   answerNodeRange,
   inPlaceStillBaseline,
   nextAnswerWaitState,
+  nextPageNoticeWaitState,
+  visiblePageTextDelta,
 } from "./answer-wait.mjs";
 import {
   showBrowserWindow,
@@ -140,8 +145,19 @@ async function runNext(provider) {
     // The failed-state callback can itself fail (e.g. Zotero was closed).
     // Letting it throw here would surface as an unhandled rejection and kill
     // the agent process, taking every queued task in other providers with it.
-    const state = task.cancelled ? "cancelled" : "failed";
-    const extra = task.cancelled ? {} : { error: errorMessage(error) };
+    const pageNotice = task.cancelled
+      ? ""
+      : await failedTaskPageNotice(task);
+    const state = task.cancelled
+      ? "cancelled"
+      : pageNotice
+        ? "completed"
+        : "failed";
+    const extra = task.cancelled
+      ? {}
+      : pageNotice
+        ? { answer: pageNotice, reasoning: "", pageNotice: true }
+        : { error: errorMessage(error) };
     await callback(task, state, extra).catch(
       (callbackError) =>
         console.warn(
@@ -149,6 +165,11 @@ async function runNext(provider) {
         ),
     );
   } finally {
+    if (task.attachmentStageDir) {
+      await rm(task.attachmentStageDir, { recursive: true, force: true }).catch(
+        () => undefined,
+      );
+    }
     visibleTaskIDs.delete(task.id);
     active.delete(provider);
     activeTasks.delete(task.id);
@@ -157,9 +178,70 @@ async function runNext(provider) {
   }
 }
 
+async function failedTaskPageNotice(task) {
+  if (task.earlyPageNotice) return task.earlyPageNotice;
+  const page = task.page;
+  if (
+    !task.pageNotice ||
+    !page ||
+    page.isClosed() ||
+    !task.submissionConfirmed ||
+    task.normalAnswerObserved ||
+    !task.adapter?.pageNoticeFallback
+  ) {
+    return "";
+  }
+  return visiblePageTextDelta(
+    task.pageNotice.baseline,
+    await pageVisibleText(page),
+    task.pageNotice.exclusions,
+  );
+}
+
+async function runWithEarlyPageNotice(task, operation) {
+  if (!task.pageNotice || !task.adapter?.pageNoticeFallback) {
+    return operation();
+  }
+  let operationFinished = false;
+  const operationPromise = Promise.resolve()
+    .then(operation)
+    .finally(() => {
+      operationFinished = true;
+    });
+  const noticePromise = (async () => {
+    while (!operationFinished && !task.cancelled) {
+      await throwForBlockingAccountDialog(task);
+      await task.page.waitForTimeout(350);
+    }
+    return undefined;
+  })();
+  try {
+    return await Promise.race([operationPromise, noticePromise]);
+  } finally {
+    operationFinished = true;
+  }
+}
+
+async function throwForBlockingAccountDialog(task) {
+  if (task.adapter?.template !== "chatgpt-like" || task.normalAnswerObserved) {
+    return;
+  }
+  const blockingDialog = await blockingAccountDialogText(
+    task.page,
+    task.adapter,
+  );
+  if (!blockingDialog) return;
+  task.earlyPageNotice = blockingDialog;
+  await task.page
+    .close({ runBeforeUnload: false })
+    .catch(() => undefined);
+  throw new Error(`${task.adapter.name} 网页需要人工处理后才能继续`);
+}
+
 async function runTask(task) {
   throwIfTaskCancelled(task);
   const adapter = providerDefinition(task.provider, task.customProvider);
+  task.adapter = adapter;
   await callback(task, "starting_browser");
   await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible");
   const browserContext = await ensureContext();
@@ -168,10 +250,25 @@ async function runTask(task) {
   task.page = page;
   throwIfTaskCancelled(task);
   await applyTaskWindowPolicy(page, task);
+  task.pageNotice = adapter.pageNoticeFallback
+    ? {
+        baseline: await pageVisibleText(page),
+        exclusions: [
+          task.prompt,
+          task.continuationPrompt,
+          task.attachment?.name,
+          task.contextAttachment?.name,
+          task.tocAttachment?.name,
+        ].filter(Boolean),
+      }
+    : null;
+
+  await throwForBlockingAccountDialog(task);
 
   let loginReported = false;
   const loginDeadline = Date.now() + 30 * 60_000;
   while (Date.now() < loginDeadline) {
+    await throwForBlockingAccountDialog(task);
     if (await accountReady(page, adapter)) break;
     if (!loginReported) {
       await callback(task, "needs_login");
@@ -188,6 +285,9 @@ async function runTask(task) {
   if (task.provider === "chatgpt") {
     await ensureChatGPTOptions(page, session, task.chatgptOptions);
   }
+  if (task.pageNotice) {
+    task.pageNotice.baseline = await pageVisibleText(page);
+  }
 
   const answers = await firstPopulatedLocator(page, adapter.answers);
   const previousAnswerCount = await answers.count();
@@ -203,24 +303,41 @@ async function runTask(task) {
     ? task.prompt
     : task.continuationPrompt;
   await composer.fill(submissionPrompt);
-  const attachments = [
+  const sourceAttachments = [
     ...(uploadMaterial && task.attachment ? [task.attachment] : []),
     ...(task.contextAttachment ? [task.contextAttachment] : []),
     ...(task.tocAttachment ? [task.tocAttachment] : []),
   ];
+  const attachments = await stageTaskAttachments(
+    task,
+    adapter,
+    sourceAttachments,
+  );
   if (attachments.length) {
     await callback(task, "uploading_attachment");
-    // Clipboard writes themselves stay sequential to avoid replacing one
-    // file URI with another. The expensive upload/processing waits run in
-    // parallel after all file pastes have been initiated.
-    for (const attachment of attachments) {
-      await pasteWebAttachment(page, composer, adapter, attachment, {
-        waitForUpload: false,
-        allowClipboardFallback:
-          !task.hideBrowser || !["DeepSeek", "ChatGPT"].includes(adapter.name),
-      });
-    }
-    await waitForWebAttachments(page, adapter, attachments);
+    await runWithEarlyPageNotice(task, async () => {
+      const allowClipboardFallback =
+        !task.hideBrowser || !["DeepSeek", "ChatGPT"].includes(adapter.name);
+      if (adapter.serialAttachments) {
+        for (const attachment of attachments) {
+          await pasteWebAttachment(page, composer, adapter, attachment, {
+            waitForUpload: true,
+            allowClipboardFallback,
+          });
+        }
+      } else {
+        // Clipboard writes themselves stay sequential to avoid replacing one
+        // file URI with another. The expensive upload/processing waits run in
+        // parallel after all file pastes have been initiated.
+        for (const attachment of attachments) {
+          await pasteWebAttachment(page, composer, adapter, attachment, {
+            waitForUpload: false,
+            allowClipboardFallback,
+          });
+        }
+        await waitForWebAttachments(page, adapter, attachments);
+      }
+    });
     if (uploadMaterial) session.materialUploaded = true;
   }
   // Pasting a file into a ChatGPT-like editor can replace its text selection.
@@ -228,7 +345,9 @@ async function runTask(task) {
   // submitted with only a PDF/TXT tile and no user question.
   await restoreComposerPrompt(composer, submissionPrompt);
   await callback(task, "submitting");
-  await submitPrompt(page, composer, adapter, previousAnswerCount);
+  task.submissionAttempted = true;
+  await submitPrompt(page, composer, adapter, previousAnswerCount, task);
+  task.submissionConfirmed = true;
 
   await callback(task, "generating");
   const result = await waitForAnswer(
@@ -237,6 +356,7 @@ async function runTask(task) {
     previousAnswerCount,
     previousCopyCount,
     task,
+    task.pageNotice,
   );
   await callback(task, "processing_answer");
   const copiedAnswer = result.answer
@@ -267,6 +387,23 @@ async function runTask(task) {
     result.answer,
   );
   await callback(task, "completed", result);
+}
+
+async function stageTaskAttachments(task, adapter, attachments) {
+  if (
+    !adapter.latexUploadExtension ||
+    !attachments.some((attachment) => attachment.kind === "latex")
+  ) {
+    return attachments;
+  }
+  task.attachmentStageDir = await mkdtemp(
+    `${config.profileDir}/zai-web-upload-`,
+  );
+  return Promise.all(
+    attachments.map((attachment) =>
+      stageWebAttachment(attachment, adapter, task.attachmentStageDir),
+    ),
+  );
 }
 
 async function cancelTask(id) {
@@ -301,15 +438,12 @@ async function restoreComposerPrompt(composer, prompt) {
   }
 }
 
-async function submitPrompt(page, composer, adapter, previousAnswerCount) {
+async function submitPrompt(page, composer, adapter, previousAnswerCount, task) {
   await waitForSendButton(page, adapter);
   // Re-locate after the upload settles. DeepSeek replaces the submit node
   // while processing an attachment, so a locator created before the wait may
   // point at the pre-upload control state.
-  const send = page
-    .locator(selectorList(adapter.send))
-    .filter({ visible: true })
-    .first();
+  const send = await sendControl(page, adapter);
   const attempts = adapter.name === "DeepSeek" ? 3 : 1;
   let submitMethod = "button";
   for (let attempt = 0; attempt < attempts; attempt += 1) {
@@ -321,7 +455,15 @@ async function submitPrompt(page, composer, adapter, previousAnswerCount) {
       submitMethod = "enter";
       await composer.press("Enter");
     }
-    if (await promptSubmissionStarted(page, composer, adapter, previousAnswerCount)) return;
+    if (
+      await promptSubmissionStarted(
+        page,
+        composer,
+        adapter,
+        previousAnswerCount,
+        task,
+      )
+    ) return;
     if (attempt + 1 < attempts) {
       await page.waitForTimeout(800);
       await waitForSendButton(page, adapter);
@@ -335,19 +477,36 @@ async function submitPrompt(page, composer, adapter, previousAnswerCount) {
 async function waitForSendButton(page, adapter) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
-    const send = page
-      .locator(selectorList(adapter.send))
-      .filter({ visible: true })
-      .first();
-    if (
-      (await send.count()) > 0 &&
-      (await send.isEnabled()) &&
-      !(await sendControlDisabled(send))
-    )
-      return;
+    if (await sendButtonReady(page, adapter)) return;
     await page.waitForTimeout(300);
   }
   throw new Error(`${adapter.name} 上传尚未完成，发送按钮仍未就绪`);
+}
+
+async function sendButtonReady(page, adapter) {
+  const send = await sendControl(page, adapter);
+  return !!(
+    (await send.count()) > 0 &&
+    (await send.isEnabled()) &&
+    !(await sendControlDisabled(send))
+  );
+}
+
+async function sendControl(page, adapter) {
+  const configured = page
+    .locator(selectorList(adapter.send))
+    .filter({ visible: true })
+    .first();
+  if ((await configured.count()) > 0) return configured;
+  if (adapter.template === "chatgpt-like") {
+    // Some third-party chat pages (including Kimi) expose the send action as
+    // a clickable div containing a semantic Send SVG, not as a button.
+    return page
+      .locator(".send-button-container:has(svg[name='Send'])")
+      .filter({ visible: true })
+      .first();
+  }
+  return configured;
 }
 
 async function promptSubmissionStarted(
@@ -355,9 +514,11 @@ async function promptSubmissionStarted(
   composer,
   adapter,
   previousAnswerCount,
+  task,
 ) {
   const deadline = Date.now() + 4_000;
   while (Date.now() < deadline) {
+    await throwForBlockingAccountDialog(task);
     if (await anyVisible(page, adapter.stop)) return true;
     const answerCount = await (
       await firstPopulatedLocator(page, adapter.answers)
@@ -365,10 +526,7 @@ async function promptSubmissionStarted(
     if (answerCount > previousAnswerCount) return true;
     const text = await composerText(composer);
     if (!text.trim()) return true;
-    const send = page
-      .locator(selectorList(adapter.send))
-      .filter({ visible: true })
-      .first();
+    const send = await sendControl(page, adapter);
     if (
       (await send.count()) === 0 ||
       !(await send.isEnabled()) ||
@@ -754,6 +912,12 @@ async function composerReady(page, adapter) {
 
 async function accountReady(page, adapter) {
   if (!(await composerReady(page, adapter))) return false;
+  if (
+    adapter.template === "chatgpt-like" &&
+    (await blockingAccountDialogVisible(page, adapter))
+  ) {
+    return false;
+  }
   if (adapter.host !== "chatgpt.com") return true;
 
   // ChatGPT exposes a usable composer before authentication. Treat visible
@@ -769,6 +933,88 @@ async function accountReady(page, adapter) {
     .getByText("登录以获取", { exact: false })
     .filter({ visible: true });
   return (await loggedOutPrompt.count()) === 0;
+}
+
+async function blockingAccountDialogVisible(page, adapter) {
+  return !!(await blockingAccountDialogText(page, adapter));
+}
+
+async function blockingAccountDialogText(page, adapter) {
+  if (!page || page.isClosed()) return "";
+  const dialogs = page
+    .locator(
+      "dialog, [role='dialog'], [aria-modal='true'], [class*='modal' i], [class*='dialog' i]",
+    )
+    .filter({ visible: true });
+  let best = "";
+  let bestArea = 0;
+  for (let index = 0; index < (await dialogs.count()); index += 1) {
+    const dialog = dialogs.nth(index);
+    const text = await dialog.innerText().catch(() => "");
+    const box = await dialog.boundingBox().catch(() => null);
+    const area = box ? box.width * box.height : 0;
+    if (
+      text.trim() &&
+      box &&
+      box.width >= 160 &&
+      box.height >= 80 &&
+      area > bestArea
+    ) {
+      best = text.trim();
+      bestArea = area;
+    }
+  }
+  if (best) return best.slice(0, 6_000);
+  return adapter?.template === "chatgpt-like"
+    ? composerOverlayText(page, adapter)
+    : "";
+}
+
+async function composerOverlayText(page, adapter) {
+  const composer = page
+    .locator(selectorList(adapter.composer))
+    .filter({ visible: true })
+    .first();
+  if ((await composer.count()) === 0) return "";
+  return composer
+    .evaluate((element) => {
+      const rect = element.getBoundingClientRect();
+      if (!rect.width || !rect.height) return "";
+      const x = Math.max(
+        0,
+        Math.min(window.innerWidth - 1, rect.left + rect.width / 2),
+      );
+      const y = Math.max(
+        0,
+        Math.min(window.innerHeight - 1, rect.top + rect.height / 2),
+      );
+      const top = document.elementFromPoint(x, y);
+      if (!top || top === element || element.contains(top)) return "";
+
+      let overlay = null;
+      for (
+        let node = top;
+        node && node !== document.body && node !== document.documentElement;
+        node = node.parentElement
+      ) {
+        const style = getComputedStyle(node);
+        const box = node.getBoundingClientRect();
+        if (
+          style.pointerEvents !== "none" &&
+          ["fixed", "absolute"].includes(style.position) &&
+          box.width >= window.innerWidth * 0.4 &&
+          box.height >= window.innerHeight * 0.3
+        ) {
+          overlay = node;
+          break;
+        }
+      }
+      if (!overlay) return "";
+      return (overlay.innerText || overlay.textContent || "")
+        .trim()
+        .slice(0, 6_000);
+    })
+    .catch(() => "");
 }
 
 const CHATGPT_REASONING_VALUES = {
@@ -832,10 +1078,14 @@ async function waitForAnswer(
   previousAnswerCount,
   previousCopyCount,
   task,
+  pageNotice,
 ) {
   const deadline = Date.now() + 10 * 60_000;
   let previousSignature = "";
   let stablePolls = 0;
+  let normalAnswerObserved = false;
+  let pageNoticeSignature = "";
+  let pageNoticeStablePolls = 0;
   const initialNodes = await (
     await firstPopulatedLocator(page, adapter.answers)
   ).all();
@@ -864,6 +1114,10 @@ async function waitForAnswer(
         range.end,
       );
       if (!inPlaceStillBaseline(range.inPlace, result, baseline)) {
+        if (result.answer || result.reasoning) {
+          normalAnswerObserved = true;
+          task.normalAnswerObserved = true;
+        }
         const generating = await anyVisible(page, adapter.stop);
         const completionReady = await answerCompletionReady(
           page,
@@ -885,11 +1139,37 @@ async function waitForAnswer(
         if (step.shouldComplete) return result;
       }
     }
+    if (!normalAnswerObserved) {
+      await throwForBlockingAccountDialog(task);
+    }
+    if (adapter.pageNoticeFallback && !normalAnswerObserved) {
+      const content = visiblePageTextDelta(
+        pageNotice?.baseline || "",
+        await pageVisibleText(page),
+        pageNotice?.exclusions || [],
+      );
+      const noticeStep = nextPageNoticeWaitState({
+        content,
+        previousSignature: pageNoticeSignature,
+        stablePolls: pageNoticeStablePolls,
+        pageReady: await sendButtonReady(page, adapter),
+        normalAnswerObserved,
+      });
+      pageNoticeSignature = noticeStep.signature;
+      pageNoticeStablePolls = noticeStep.nextStable;
+      if (noticeStep.shouldComplete) {
+        return { answer: content, reasoning: "", pageNotice: true };
+      }
+    }
     // Poll the live answer often enough for the Zotero sidebar to paint
     // growing Web output instead of receiving only large one-second chunks.
     await page.waitForTimeout(350);
   }
   throw new Error(`${adapter.name} answer timed out`);
+}
+
+async function pageVisibleText(page) {
+  return page.locator("body").innerText().catch(() => "");
 }
 
 async function snapshotAnswerSlice(answerNodes, adapter, start, end) {
