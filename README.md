@@ -30,6 +30,13 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
+### What's new in v0.8.2
+
+- **Kimi is now a built-in WEB provider**: existing `kimi.com` custom configurations migrate automatically, while ChatGPT, DeepSeek, ChatGLM, Kimi, and third-party sites retain isolated adapters and account sessions.
+- **WEB tasks recover and finish more reliably**: retry stays with the original website instead of falling through to the API path, completed answers no longer remain stuck behind a stale Stop state, and `Esc` or the composer Stop button releases interrupted tasks without restarting Zotero.
+- **Website failures are visible in Zotero**: login, quota, server, and unsupported-upload page notices are mirrored as clearly distinguished error responses, while normal answers continue to stream incrementally.
+- **The composer is tighter and mode-aware**: API-only controls no longer crowd WEB mode, footer status text remains readable in narrow sidebars, and hidden status rows no longer leave blank space.
+
 ### What's new in v0.8.1
 
 - **WEB paper context is cleaner**: the current paper is uploaded as a real LaTeX/PDF attachment, while the separate arXiv directory TXT contains only the section hierarchy, numbers, and titles.

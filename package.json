@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-sidebar",
   "type": "module",
-  "version": "0.8.1",
+  "version": "0.8.2",
   "description": "AI research sidebar for Zotero with API and local browser-backed web chat modes.",
   "config": {
     "addonName": "Zotero AI Sidebar",
