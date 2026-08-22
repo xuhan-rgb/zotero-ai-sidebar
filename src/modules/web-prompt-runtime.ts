@@ -107,7 +107,7 @@ export function webPromptStatusBubbleContent(input: {
   ) {
     return input.paintedAnswer.trim() || progress;
   }
-  if (input.status === "failed" && progress) {
+  if ((input.status === "failed" || input.status === "cancelled") && progress) {
     return `${progress}\n\n> ${input.statusMessage}`;
   }
   return input.statusMessage;

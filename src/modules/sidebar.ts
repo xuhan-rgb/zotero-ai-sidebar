@@ -221,6 +221,7 @@ import {
 } from "./web-task-progress";
 import { renderEmptySignatures } from "./empty-signatures";
 import {
+  cancelWebAgentTask,
   dispatchWebAgentTask,
   getWebAccountStatus,
   hideWebAccount,
@@ -2956,6 +2957,15 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     state.activeConversationID,
   );
   const webPromptBusy = webPromptTarget && webPromptTaskPending(state);
+  const webPromptStopping = webPromptBusy &&
+    state.messages.some(
+      (message) =>
+        isWebPromptUserMessage(message) &&
+        !!message.task &&
+        !message.task.completedAt &&
+        !message.task.cancelledAt &&
+        !message.task.error,
+    );
   const canSubmit =
     (state.networkDiagramTarget
       ? !!preset?.apiKey && !!preset.model
@@ -3160,11 +3170,15 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
       ),
   );
   row.append(send);
-  if (conversationSending) {
+  if (conversationSending || webPromptStopping) {
     const stop = buttonEl(doc, "停止");
     stop.className = "stop-btn";
     stop.addEventListener("click", () => {
-      cancelActiveChatTask(mount, state);
+      if (webPromptStopping) {
+        void cancelPendingWebPromptTask(mount, state);
+      } else {
+        cancelActiveChatTask(mount, state);
+      }
     });
     row.append(stop);
   }
@@ -3228,6 +3242,53 @@ async function sendComposerMessage(
   state.scrollToBottom = true;
   renderPanel(mount, state);
   await runNetworkDiagramRequest(sidebar, "", instruction, "refine");
+}
+
+async function cancelPendingWebPromptTask(
+  mount: HTMLElement,
+  state: PanelState,
+): Promise<void> {
+  const userMessage = [...state.messages]
+    .reverse()
+    .find(
+      (message) =>
+        isWebPromptUserMessage(message) &&
+        !!message.task &&
+        !message.task.completedAt &&
+        !message.task.cancelledAt &&
+        !message.task.error,
+    );
+  const taskID = userMessage?.task?.id;
+  if (!taskID) return;
+  const now = Date.now();
+  const provider = webPromptProviderForUserMessage(userMessage);
+  const statusMessage = `${provider ? webProviderName(state, provider) : "WEB"} 网页任务已取消，可以重新发送。`;
+  for (const message of state.messages) {
+    if (message.task?.id !== taskID) continue;
+    const partialAnswer =
+      message.role === "assistant" && message.task.webStatus === "generating"
+        ? message.content
+        : "";
+    if (message.role === "assistant") {
+      message.content = webPromptStatusBubbleContent({
+        status: "cancelled",
+        statusMessage,
+        paintedAnswer: partialAnswer,
+      });
+    }
+    message.task.cancelledAt ??= now;
+    message.task.completedAt ??= now;
+    delete message.task.webStatus;
+  }
+  state.webPromptBusy = false;
+  await persistPanelConversations(state);
+  renderPanel(mount, state);
+  try {
+    await cancelWebAgentTask(taskID);
+  } catch (error) {
+    state.webAccountNotice = `WEB 任务已在 Zotero 中释放；Web Agent 取消失败：${error instanceof Error ? error.message : String(error)}`;
+    renderPanel(mount, state);
+  }
 }
 
 async function sendWebPromptMessage(
@@ -3570,12 +3631,13 @@ async function sendWebPromptMessage(
             webProgressReasoning || latestWebProgress?.reasoning || undefined;
         }
       }
-      if (status === "failed") {
+      if (status === "failed" || status === "cancelled") {
         cancelWebProgress();
         releaseWebPromptLock();
+      }
+      if (status === "failed") {
         target.content += `\n\n[打开手动 Prompt Hub](${task.url})`;
       }
-      if (status === "cancelled") releaseWebPromptLock();
       if (target.task) target.task.error = error;
       if (status === "failed" || status === "cancelled") {
         const sourceUserMessage = source.messages.find(

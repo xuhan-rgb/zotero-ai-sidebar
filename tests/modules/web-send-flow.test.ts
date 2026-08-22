@@ -23,6 +23,10 @@ const browserMode = readFileSync(
   resolve(process.cwd(), "web-agent/browser-mode.mjs"),
   "utf8",
 );
+const webAgentClient = readFileSync(
+  resolve(process.cwd(), "src/modules/web-agent-client.ts"),
+  "utf8",
+);
 
 describe("WEB send flow", () => {
   it("migrates old DeepSeek reasoning out of the visible answer", () => {
@@ -264,6 +268,17 @@ describe("WEB send flow", () => {
   it("starts all Web attachment pastes before waiting for uploads", () => {
     expect(agent).toContain("waitForUpload: false");
     expect(agent).toContain("waitForWebAttachments(page, adapter, attachments)");
+  });
+
+  it("can cancel a stuck WEB upload without restarting Zotero", () => {
+    expect(agent).toContain('request.url === "/tasks/cancel"');
+    expect(agent).toContain("await cancelTask(");
+    expect(agent).toContain('callback(task, "cancelled"');
+    expect(agent).toContain("await task.page.close(");
+    expect(webAgentClient).toContain("export async function cancelWebAgentTask(");
+    expect(webAgentClient).toContain('`http://127.0.0.1:${config.port}/tasks/cancel`');
+    expect(sidebar).toContain("const webPromptStopping = webPromptBusy");
+    expect(sidebar).toContain("cancelPendingWebPromptTask(mount, state)");
   });
 
   it("allows bounded DeepSeek submit retries without retrying other providers", () => {

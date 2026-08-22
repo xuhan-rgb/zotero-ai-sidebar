@@ -34,9 +34,10 @@ import {
 const configPath = process.argv[2];
 if (!configPath) throw new Error("Web Agent config path is required");
 const config = JSON.parse(await readFile(configPath, "utf8"));
-const PROTOCOL_VERSION = 5;
+const PROTOCOL_VERSION = 6;
 const queues = new Map();
 const active = new Map();
+const activeTasks = new Map();
 const knownTaskIDs = new Set();
 const sessions = new Map();
 let context;
@@ -104,6 +105,12 @@ const server = http.createServer(async (request, response) => {
       void runNext(task.provider);
       return json(response, 202, { ok: true, id: task.id });
     }
+    if (request.method === "POST" && request.url === "/tasks/cancel") {
+      const value = await requestBody(request);
+      const id = typeof value?.id === "string" ? value.id : "";
+      if (!id) return json(response, 400, { error: "task id is required" });
+      return json(response, 200, await cancelTask(id));
+    }
     return json(response, 404, { error: "not_found" });
   } catch (error) {
     return json(response, 400, { error: errorMessage(error) });
@@ -125,6 +132,7 @@ async function runNext(provider) {
   const task = queueFor(provider).shift();
   if (!task) return;
   active.set(provider, task.id);
+  activeTasks.set(task.id, task);
   if (!task.hideBrowser) visibleTaskIDs.add(task.id);
   try {
     await runTask(task);
@@ -132,7 +140,9 @@ async function runNext(provider) {
     // The failed-state callback can itself fail (e.g. Zotero was closed).
     // Letting it throw here would surface as an unhandled rejection and kill
     // the agent process, taking every queued task in other providers with it.
-    await callback(task, "failed", { error: errorMessage(error) }).catch(
+    const state = task.cancelled ? "cancelled" : "failed";
+    const extra = task.cancelled ? {} : { error: errorMessage(error) };
+    await callback(task, state, extra).catch(
       (callbackError) =>
         console.warn(
           `[web-agent] failed-state callback undeliverable for ${task.id}: ${errorMessage(callbackError)}`,
@@ -141,18 +151,22 @@ async function runNext(provider) {
   } finally {
     visibleTaskIDs.delete(task.id);
     active.delete(provider);
+    activeTasks.delete(task.id);
     knownTaskIDs.delete(task.id);
     void runNext(provider);
   }
 }
 
 async function runTask(task) {
+  throwIfTaskCancelled(task);
   const adapter = providerDefinition(task.provider, task.customProvider);
   await callback(task, "starting_browser");
   await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible");
   const browserContext = await ensureContext();
   const session = await webSession(browserContext, task, adapter);
   const page = session.page;
+  task.page = page;
+  throwIfTaskCancelled(task);
   await applyTaskWindowPolicy(page, task);
 
   let loginReported = false;
@@ -164,6 +178,7 @@ async function runTask(task) {
       loginReported = true;
     }
     await page.waitForTimeout(1_000);
+    throwIfTaskCancelled(task);
   }
   if (!(await accountReady(page, adapter))) {
     throw new Error(
@@ -252,6 +267,30 @@ async function runTask(task) {
     result.answer,
   );
   await callback(task, "completed", result);
+}
+
+async function cancelTask(id) {
+  for (const [provider, tasks] of queues) {
+    const index = tasks.findIndex((task) => task.id === id);
+    if (index < 0) continue;
+    const [task] = tasks.splice(index, 1);
+    task.cancelled = true;
+    knownTaskIDs.delete(id);
+    await callback(task, "cancelled").catch(() => undefined);
+    if (!tasks.length) queues.delete(provider);
+    return { ok: true, id, state: "queued" };
+  }
+  const task = activeTasks.get(id);
+  if (!task) return { ok: true, id, state: "not_found" };
+  task.cancelled = true;
+  if (task.page && !task.page.isClosed()) {
+    await task.page.close({ runBeforeUnload: false }).catch(() => undefined);
+  }
+  return { ok: true, id, state: "active" };
+}
+
+function throwIfTaskCancelled(task) {
+  if (task.cancelled) throw new Error("WEB task cancelled");
 }
 
 async function restoreComposerPrompt(composer, prompt) {

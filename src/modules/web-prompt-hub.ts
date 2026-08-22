@@ -202,6 +202,7 @@ async function handleWebAgentCallback(
     return jsonResponse(200, { ok: true, ignored: true });
   } else if (status !== "completed") {
     await task.onStatus?.(status, error);
+    if (status === "failed" || status === "cancelled") tasks.delete(id);
   }
   if (status === "completed") {
     const answer = result.answer.trim();

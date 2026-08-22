@@ -31,7 +31,7 @@ export interface WebAccountStatus {
 }
 
 let cachedConfig: WebAgentConfig | null = null;
-const WEB_AGENT_PROTOCOL_VERSION = 5;
+const WEB_AGENT_PROTOCOL_VERSION = 6;
 
 type WebAgentProtocolStatus = "current" | "stale" | "offline";
 
@@ -86,6 +86,27 @@ export async function dispatchWebAgentTask(input: {
   });
   if (!response.ok) {
     throw new Error(`Web Agent 拒绝任务（HTTP ${response.status}）`);
+  }
+}
+
+export async function cancelWebAgentTask(id: string): Promise<void> {
+  const config = await loadWebAgentConfig();
+  const health = await webAgentHealth(config);
+  if (health === "offline") return;
+  if (health === "stale") throw staleWebAgentError();
+  const response = await fetch(
+    `http://127.0.0.1:${config.port}/tasks/cancel`,
+    {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.token}`,
+        "content-type": "application/json",
+      },
+      body: JSON.stringify({ id }),
+    },
+  );
+  if (!response.ok) {
+    throw new Error(`Web Agent 无法取消任务（HTTP ${response.status}）`);
   }
 }
 

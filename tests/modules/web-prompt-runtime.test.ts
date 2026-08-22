@@ -65,6 +65,14 @@ describe("WEB prompt runtime paint and send lock", () => {
         queuedAnswer: "已经同步的回答\n\n最后一段",
       }),
     ).toBe("已经同步的回答\n\n最后一段\n\n> DeepSeek 同步失败：连接中断");
+    expect(
+      webPromptStatusBubbleContent({
+        status: "cancelled",
+        statusMessage: "ChatGLM 网页任务已取消。",
+        paintedAnswer: "已经同步的部分回答",
+        queuedAnswer: "已经同步的部分回答\n\n最后一段",
+      }),
+    ).toBe("已经同步的部分回答\n\n最后一段\n\n> ChatGLM 网页任务已取消。");
   });
 
   it("unlocks WEB send after complete or fail, and holds it while a turn is open", () => {
@@ -281,5 +289,34 @@ describe("Web Prompt Hub empty completed unlocks the turn", () => {
       expect.objectContaining({ answer: "完整快照" }),
     );
     expect(onStatus).not.toHaveBeenCalledWith("completed", undefined);
+  });
+
+  it("removes a cancelled task so late callbacks cannot keep the turn alive", async () => {
+    const onStatus = vi.fn();
+    registerWebPromptHub();
+    const task = createWebPromptTask({
+      provider: "custom:chatglm-cn",
+      prompt: "你好",
+      sourceLabel: "Paper · Conversation 1",
+      onImport: vi.fn(),
+      onStatus,
+    });
+    const Endpoint = Zotero.Server.Endpoints[
+      "/zai/web-prompt-hub"
+    ] as new () => {
+      init(options: unknown): Promise<[number, string, string]>;
+    };
+    const endpoint = new Endpoint();
+    const post = (data: Record<string, unknown>) =>
+      endpoint.init({
+        headers: { authorization: "Bearer test-token" },
+        method: "POST",
+        searchParams: new URLSearchParams(),
+        data: { id: task.id, ...data },
+      });
+
+    expect((await post({ state: "cancelled" }))[0]).toBe(200);
+    expect(onStatus).toHaveBeenCalledWith("cancelled", undefined);
+    expect((await post({ state: "generating", answer: "迟到内容" }))[0]).toBe(404);
   });
 });
