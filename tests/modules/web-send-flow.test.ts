@@ -148,7 +148,7 @@ describe("WEB send flow", () => {
       "options.annotationBatch || hasWebAnnotationProtocol(importedAnswer)",
     );
     expect(sendWebPrompt).toMatch(
-      /if \(\s*target\.annotationDraft &&\s*state\.activeConversationID === sourceConversationID\s*\) \{\s*renderPanel\(mount, state\);\s*\} else \{\s*renderWebProgressBubble\(source, target\);/,
+      /if \(state\.activeConversationID === sourceConversationID\) \{\s*renderPanel\(mount, state\);/,
     );
   });
 
@@ -308,15 +308,25 @@ describe("WEB send flow", () => {
       /root\.classList\.toggle\(\s*"bubble-web-page-notice",\s*message\.webPageNotice === true,?\s*\)/,
     );
     const onImport = sendWebPrompt.slice(sendWebPrompt.indexOf("onImport:"));
-    expect(onImport.indexOf("renderWebProgressBubble(source, target)")).toBeLessThan(
+    expect(onImport.indexOf("renderPanel(mount, state)")).toBeLessThan(
       onImport.indexOf("await persistPanelConversations(state)"),
     );
     expect(sendWebPrompt).toContain(
       "const importedAnswer = describeUnavailableGeneratedFiles(result.answer);",
     );
-    expect(agent).toContain("await page.waitForTimeout(350);");
+    expect(agent).toContain("let pollDelay = 350;");
+    expect(agent).toContain("await page.waitForTimeout(pollDelay);");
     expect(sidebar).toContain(
       'if (message.role === "assistant") {\n    renderMessageImages(doc, root, message.images, placedCharts);',
+    );
+  });
+
+  it("clears the Web busy state and repaints the composer on completion", () => {
+    const onImport = sendWebPrompt.slice(sendWebPrompt.indexOf("onImport:"));
+    expect(onImport).toContain("delete target.task.webStatus");
+    expect(onImport).toContain("delete sourceUserMessage.task.webStatus");
+    expect(onImport.indexOf("renderPanel(mount, state);")).toBeLessThan(
+      onImport.indexOf("await persistPanelConversations(state)"),
     );
   });
 
@@ -359,8 +369,11 @@ describe("WEB send flow", () => {
       "async function promptSubmissionStarted(",
     );
     expect(agent).toContain("previousAnswerCount,");
+    expect(agent).toContain("previousCompletionCount,");
     expect(agent).toContain("answerCount > previousAnswerCount");
     expect(agent).toContain("send.isEnabled()");
+    expect(agent).toContain("await page.waitForTimeout(100);");
+    expect(agent).toContain("if (isRecoverablePageReadError(error)) return false;");
     expect(agent).toContain("button.click({ force: true, timeout: 3_000 })");
     expect(agent).toContain("const copiedAnswer = result.answer");
   });
@@ -384,6 +397,15 @@ describe("WEB send flow", () => {
     expect(webAgentClient).toContain('`http://127.0.0.1:${config.port}/tasks/cancel`');
     expect(sidebar).toMatch(/const webPromptStopping\s*=\s*webPromptBusy/);
     expect(sidebar).toContain("cancelPendingWebPromptTask(mount, state)");
+    const cancelWeb = sidebar.slice(
+      sidebar.indexOf("async function cancelPendingWebPromptTask("),
+      sidebar.indexOf("async function sendWebPromptMessage("),
+    );
+    expect(cancelWeb.indexOf("renderPanel(mount, state);")).toBeLessThan(
+      cancelWeb.indexOf("void persistPanelConversations(state)"),
+    );
+    expect(sendWebPrompt).toContain("if (target?.task?.cancelledAt)");
+    expect(sendWebPrompt).toContain("cancelWebProgress();");
   });
 
   it("routes Escape through the same WEB cancellation path", () => {
@@ -404,6 +426,7 @@ describe("WEB send flow", () => {
   it("locks Web submission before asynchronous preparation can duplicate bubbles", () => {
     expect(sendWebPrompt).toContain("webPromptTaskPending(state)");
     expect(sendWebPrompt).toContain("state.webPromptBusy = true");
+    expect(sendWebPrompt).toContain("state.webPromptBusyTaskID = taskID");
     expect(sendWebPrompt).toContain("releaseWebPromptLock();");
     expect(sidebar).toContain("const webPromptBusy = webPromptTarget");
     // Pending detection was extracted to web-prompt-runtime; assert behavior.

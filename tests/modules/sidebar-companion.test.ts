@@ -34,6 +34,19 @@ describe("optional docked sidebar layout", () => {
     expect(sidebarSource).toContain("mainWindow.innerHeight");
   });
 
+  it("shows the selected Zotero tab title in the docked titlebar", () => {
+    expect(sidebarSource).toContain("function installDockedWindowTitle(");
+    expect(sidebarSource).toContain('getElementById("titlebar")');
+    expect(sidebarSource).toContain("title.textContent = doc.title");
+    expect(sidebarSource).toContain("entry.titleCleanup?.()");
+    expect(sidebarSource).toContain(
+      "entry.titleCleanup = installDockedWindowTitle(entry)",
+    );
+    expect(sidebarCSS).toMatch(
+      /zai-docked-window-title\s*\{[^}]*text-overflow:\s*ellipsis;/s,
+    );
+  });
+
   it("docks the optional note column together with the AI column", () => {
     expect(sidebarSource).toContain(
       "root.append(\n    sidebar.noteSplitter,\n    sidebar.noteColumn,\n    sidebar.splitter,\n    sidebar.column,\n  )",

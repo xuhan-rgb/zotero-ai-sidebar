@@ -27,7 +27,7 @@ This document targets **end users** and is split in two halves:
   - [2.9 Back up and migrate config](#29-back-up-and-migrate-config)
   - [2.10 Use Quick Ask for a temporary multi-turn conversation](#210-use-quick-ask-for-a-temporary-multi-turn-conversation)
   - [2.11 Read an arXiv paper in full-document translation](#211-read-an-arxiv-paper-in-full-document-translation)
-  - [2.12 Use ChatGPT or DeepSeek through WEB mode](#212-use-chatgpt-or-deepseek-through-web-mode)
+  - [2.12 Use a built-in website through WEB mode](#212-use-a-built-in-website-through-web-mode)
 - [3. Reference Manual](#3-reference-manual)
   - [3.1 Model presets](#31-model-presets)
   - [3.2 Sidebar UI map](#32-sidebar-ui-map)
@@ -272,7 +272,7 @@ When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full t
 - The full-translation view can stay beside the AI sidebar. Select source or translated text and press `Alt+Q` to start a temporary multi-turn Quick Ask about it.
 - Click **返回 PDF (Back to PDF)** to exit the full-translation reader.
 
-### 2.12 Use ChatGPT or DeepSeek through WEB mode
+### 2.12 Use a built-in website through WEB mode
 
 WEB mode mirrors a real AI website into the Zotero conversation. It is useful when you want to use a website account instead of an API key. API mode remains independent and does not need Chrome or the companion process.
 
@@ -287,7 +287,7 @@ WEB mode mirrors a real AI website into the Zotero conversation. It is useful wh
    ```
 
    Replace `$HOME/Zotero` with the actual Zotero data directory when different.
-3. Restart Zotero. In the composer footer select **WEB**, choose **ChatGPT** or **DeepSeek**, then click **Account**.
+3. Restart Zotero. In the composer footer select **WEB**, choose **ChatGPT**, **DeepSeek**, **ChatGLM**, or **Kimi**, then click **Account**.
 4. Complete login in the temporary Chrome window. Keep **Hide browser in the background while chatting** checked to minimize the dedicated browser after setup; this is the default.
 
 **Daily use:**
@@ -297,6 +297,8 @@ WEB mode mirrors a real AI website into the Zotero conversation. It is useful wh
 3. Paper-reading tasks attach the current paper automatically through the website's real file input. A cached LaTeX main file is preferred when available; otherwise the PDF is used. For arXiv items, a separate TXT attachment contains only the section hierarchy, numbers, and titles—not Zotero tool instructions or section bodies. If a site has no usable file input, the task fails explicitly instead of flashing the browser and using clipboard fallback.
 4. Ask for **whole-paper highlights** or **selection explanation** when you want annotation suggestions. The prompt tells the web model how to return the structured manifest; the plugin parses it from the normal answer and builds a local draft. Review the matched page and quote before saving.
 5. A generated website file is exposed only when the site provides a real attachment or downloadable URL. A textual `sandbox:/...` path is not a downloadable file.
+
+Press `Esc` or the composer **Stop** button to cancel a running WEB task. Any answer already mirrored into Zotero is kept and marked as cancelled; retrying the message uses the same website again. Login, quota, server, and unsupported-upload notices detected on the website are shown as error responses instead of being mistaken for normal answers.
 
 The Web Agent uses a dedicated Chrome profile and a random localhost bearer token. It does not read your normal Chrome profile. Login, CAPTCHA, uploads, and website scripts still require a real browser, so “hidden” means minimized—not a headless API. Zotero does not change the site's fast/deep-thinking/search switches; the current website state is authoritative.
 
@@ -547,7 +549,7 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 
 | Control | API mode | WEB mode |
 |---|---|---|
-| Destination | A configured local model preset | ChatGPT, DeepSeek, or a custom ChatGPT-like site |
+| Destination | A configured local model preset | ChatGPT, DeepSeek, ChatGLM, Kimi, or a custom ChatGPT-like site |
 | Authentication | API key in Zotero prefs | Manual login in a dedicated Chrome profile |
 | Tools | Zotero/model tool loop is available | Website answer mirroring; no API tool loop |
 | Browser | Not used | Minimized by default after account setup |
@@ -558,7 +560,7 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 
 WEB footer controls are intentionally small:
 
-- **Service menu** — switches ChatGPT, DeepSeek, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection.
+- **Service menu** — switches ChatGPT, DeepSeek, ChatGLM, Kimi, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection. A legacy custom `kimi.com` entry is migrated to the built-in Kimi service to avoid duplicate entries.
 - **Account** — opens the current service for login and controls whether its dedicated browser stays minimized during chat.
 - **Send** — Enter and the arrow follow the same path and perform a live account check immediately before submission.
 - There are no Zotero-side fast/deep-thinking/search toggles. Change those on the website itself when the account window is visible.
@@ -591,6 +593,8 @@ Click **Account**, wait for the dedicated Chrome window, complete login, and mak
 ### "WEB mode is stuck / the answer does not update"
 
 Check whether the progress card is still advancing. A stale companion is rejected before submission; rerun `bash scripts/install-web-agent.sh "$HOME/Zotero"` and restart the Web Agent when the protocol warning appears. Closing Zotero during a running task can leave a persisted progress card, but it does not mean the website is still generating after the agent process has stopped.
+
+If a live task needs to be interrupted, press `Esc` or click the composer **Stop** button. The partial answer remains in the conversation and is marked as cancelled; you can retry it without switching away from the selected WEB service.
 
 ### "Chrome appears while I ask a WEB question"
 

@@ -217,6 +217,9 @@ export interface PanelState {
   // Prevent a second Web task while the first one is still preparing,
   // uploading, generating, or importing its answer.
   webPromptBusy?: boolean;
+  // Once a Web task exists, bind the preparation lock to that task so a
+  // stale boolean cannot keep the composer disabled after completion.
+  webPromptBusyTaskID?: string;
   abort?: AbortController;
   messagesScrollLock?: MessagesScrollLock;
   activeTaskID?: string;

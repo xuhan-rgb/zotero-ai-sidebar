@@ -89,6 +89,13 @@ export const PROVIDERS = {
       "[data-testid*='copy']",
       "[class*='copy']",
     ],
+    // DeepSeek's finished-answer toolbar uses unlabeled role buttons. Keep
+    // this separate from `copy`: the toolbar also contains regenerate, vote,
+    // and share actions, so it must never be used as a clipboard fallback.
+    completion: ["[role='button'].ds-button--iconLabelTertiary"],
+    responseRoots: [
+      ".ds-message:has(.ds-think-content), .ds-message:has(.ds-assistant-message-main-content)",
+    ],
     answers: [
       ".ds-message .ds-assistant-message-main-content",
       ".ds-assistant-message-main-content",
@@ -191,7 +198,10 @@ PROVIDERS.kimi = {
   accountUrl: "https://www.kimi.com/",
   host: "www.kimi.com",
   pageNoticeFallback: true,
-  composer: [".chat-input-editor[contenteditable='true']", "[contenteditable='true']"],
+  composer: [
+    ".chat-input-editor[contenteditable='true']",
+    "[contenteditable='true']",
+  ],
   send: [".send-button-container:has(svg[name='Send'])"],
   stop: [
     ".send-button-container:has(svg[name='Stop'])",
@@ -231,7 +241,9 @@ export function customProviderDefinition(value) {
     throw new Error("Invalid custom provider id or name");
   }
   const homeUrl = safeHttpUrl(value.homeUrl);
-  const newConversationUrl = safeHttpUrl(value.newConversationUrl || value.homeUrl);
+  const newConversationUrl = safeHttpUrl(
+    value.newConversationUrl || value.homeUrl,
+  );
   const selectors = value.selectors;
   if (!selectors || typeof selectors !== "object") {
     throw new Error("Custom provider selectors are required");
@@ -255,9 +267,18 @@ export function customProviderDefinition(value) {
     attachmentPreviews: safeSelectors(selectors.attachmentPreviews, false),
     attachmentUploading: safeSelectors(selectors.attachmentUploading, false),
   };
-  normalized.stop ||= ["button[aria-label*='Stop']", "button[aria-label*='停止']"];
-  normalized.attachmentPreviews ||= ["[class*='attachment']", "[class*='file']"];
-  normalized.attachmentUploading ||= ["[role='progressbar']", "[aria-busy='true']"];
+  normalized.stop ||= [
+    "button[aria-label*='Stop']",
+    "button[aria-label*='停止']",
+  ];
+  normalized.attachmentPreviews ||= [
+    "[class*='attachment']",
+    "[class*='file']",
+  ];
+  normalized.attachmentUploading ||= [
+    "[role='progressbar']",
+    "[aria-busy='true']",
+  ];
   const definition = {
     id,
     name,
@@ -283,7 +304,10 @@ export function customProviderDefinition(value) {
       "attachmentPreviews",
       "attachmentUploading",
     ]) {
-      definition[key] = prependSelectors(CHATGLM_CN_ADAPTER[key], definition[key]);
+      definition[key] = prependSelectors(
+        CHATGLM_CN_ADAPTER[key],
+        definition[key],
+      );
     }
     definition.attachmentTrigger = [...CHATGLM_CN_ADAPTER.attachmentTrigger];
   }
@@ -292,12 +316,16 @@ export function customProviderDefinition(value) {
 
 function cleanText(value, limit) {
   return typeof value === "string"
-    ? value.replace(/[\u0000-\u001f\u007f]/g, "").trim().slice(0, limit)
+    ? value
+        .replace(/[\u0000-\u001f\u007f]/g, "")
+        .trim()
+        .slice(0, limit)
     : "";
 }
 
 function safeHttpUrl(value) {
-  if (typeof value !== "string") throw new Error("Custom provider URL is required");
+  if (typeof value !== "string")
+    throw new Error("Custom provider URL is required");
   const url = new URL(value.trim());
   if (url.protocol !== "http:" && url.protocol !== "https:") {
     throw new Error("Custom provider URL must use http or https");
@@ -314,12 +342,16 @@ function safeSelectors(value, required) {
     if (
       !selector ||
       selector.length > 240 ||
-      /(?:javascript:|<script|=>|\b(?:eval|Function|setTimeout|setInterval)\s*\()/i.test(selector)
-    ) continue;
+      /(?:javascript:|<script|=>|\b(?:eval|Function|setTimeout|setInterval)\s*\()/i.test(
+        selector,
+      )
+    )
+      continue;
     if (!result.includes(selector)) result.push(selector);
     if (result.length >= 24) break;
   }
-  if (required && !result.length) throw new Error("Custom provider selector is required");
+  if (required && !result.length)
+    throw new Error("Custom provider selector is required");
   return result;
 }
 
@@ -342,4 +374,11 @@ export async function firstPopulatedLocator(page, selectors) {
     if ((await locator.count()) > 0) return locator;
   }
   return page.locator(":not(*)");
+}
+
+export function firstResponseLocator(page, adapter) {
+  return firstPopulatedLocator(
+    page,
+    adapter.responseRoots?.length ? adapter.responseRoots : adapter.answers,
+  );
 }

@@ -5,6 +5,8 @@ import { resolve } from "node:path";
 import {
   answerNodeRange,
   inPlaceStillBaseline,
+  isRecoverablePageReadError,
+  nextAnswerPollDelay,
   nextAnswerWaitState,
   nextPageNoticeWaitState,
   visiblePageTextDelta,
@@ -71,6 +73,40 @@ function collectWaitEvents(
 }
 
 describe("web answer wait (in-place DeepSeek)", () => {
+  it("only retries errors caused by an in-flight page refresh", () => {
+    expect(
+      isRecoverablePageReadError(
+        new Error(
+          "Execution context was destroyed, most likely because of a navigation",
+        ),
+      ),
+    ).toBe(true);
+    expect(
+      isRecoverablePageReadError(new Error("Target page has been closed")),
+    ).toBe(false);
+    expect(isRecoverablePageReadError(new Error("answer timed out"))).toBe(
+      false,
+    );
+  });
+
+  it("keeps a fresh snapshot flowing after a page navigation", () => {
+    expect(agent).toContain('page.on("framenavigated", onFrameNavigated)');
+    expect(agent).toContain("let pageRefreshPending = false;");
+    expect(agent).toContain(
+      "const refreshedSinceLastSnapshot = pageRefreshPending;",
+    );
+    expect(agent).toContain("refreshedSinceLastSnapshot ||");
+    expect(agent).toContain('previousSignature = "";');
+    expect(agent).toContain('page.off("framenavigated", onFrameNavigated)');
+  });
+
+  it("captures DeepSeek search and browse cards with the thinking transcript", () => {
+    expect(agent).toContain('if (adapter.name !== "DeepSeek")');
+    expect(agent).toContain('message.locator(":scope > div > div")');
+    expect(agent).toContain("搜索到|搜索结果|浏览\\s+\\d+");
+    expect(agent).toContain("processSignal");
+  });
+
   it("returns newly visible page content without interpreting its language", () => {
     const baseline = "ChatGLM\n用户问题\nhello";
     const current =
@@ -112,6 +148,19 @@ describe("web answer wait (in-place DeepSeek)", () => {
       normalAnswerObserved: false,
     });
     expect(ready.shouldComplete).toBe(true);
+  });
+
+  it("does not complete while DeepSeek is still reading an attachment", () => {
+    const content = "新对话\nPDF 3.77MB\n正在阅读\n内容由 AI 生成，请仔细甄别";
+    const waiting = nextPageNoticeWaitState({
+      content,
+      previousSignature: content,
+      stablePolls: 20,
+      pageReady: true,
+      normalAnswerObserved: false,
+    });
+    expect(waiting.shouldComplete).toBe(false);
+    expect(waiting.nextStable).toBe(0);
   });
 
   it("marks page-content fallback separately from a normal answer", () => {
@@ -168,7 +217,10 @@ describe("web answer wait (in-place DeepSeek)", () => {
   });
 
   it("emits generating snapshots and completes when DeepSeek streams in place", () => {
-    const events = collectWaitEvents({ answer: "上一轮总结", reasoning: "" }, 1, [
+    const events = collectWaitEvents(
+      { answer: "上一轮总结", reasoning: "" },
+      1,
+      [
       {
         currentCount: 1,
         answer: "上一轮总结",
@@ -227,11 +279,12 @@ describe("web answer wait (in-place DeepSeek)", () => {
         generating: false,
         completionReady: false,
       },
-    ]);
-
-    expect(events.some((event) => event.type === "generating" && event.answer)).toBe(
-      true,
+      ],
     );
+
+    expect(
+      events.some((event) => event.type === "generating" && event.answer),
+    ).toBe(true);
     expect(events.at(-1)).toMatchObject({
       type: "completed",
       answer: "flowchart TD\nA-->B",
@@ -239,7 +292,10 @@ describe("web answer wait (in-place DeepSeek)", () => {
   });
 
   it("does not complete a DeepSeek in-place poll that is still the previous turn", () => {
-    const events = collectWaitEvents({ answer: "上一轮总结", reasoning: "" }, 1, [
+    const events = collectWaitEvents(
+      { answer: "上一轮总结", reasoning: "" },
+      1,
+      [
       {
         currentCount: 1,
         answer: "上一轮总结",
@@ -258,8 +314,27 @@ describe("web answer wait (in-place DeepSeek)", () => {
         generating: false,
         completionReady: true,
       },
-    ]);
+      ],
+    );
     expect(events).toEqual([]);
+  });
+
+  it("never completes from a reasoning-only snapshot", () => {
+    const step = nextAnswerWaitState({
+      result: { answer: "", reasoning: "思考内容已经稳定" },
+      previousSignature: JSON.stringify({
+        answer: "",
+        reasoning: "思考内容已经稳定",
+      }),
+      generating: false,
+      completionReady: true,
+      host: "chat.deepseek.com",
+      stablePolls: 99,
+      inPlace: true,
+    });
+
+    expect(step.shouldComplete).toBe(false);
+    expect(step.nextStable).toBe(0);
   });
 
   it("completes a stable answer when its finished-action control is visible", () => {
@@ -279,8 +354,62 @@ describe("web answer wait (in-place DeepSeek)", () => {
     expect(step.shouldComplete).toBe(true);
   });
 
+  it("does not wait five polls after a finished-action control is visible", () => {
+    const step = nextAnswerWaitState({
+      result: { answer: "完整回答", reasoning: "" },
+      previousSignature: JSON.stringify({ answer: "完整回答", reasoning: "" }),
+      generating: true,
+      completionReady: true,
+      host: "chat.deepseek.com",
+      stablePolls: 2,
+      inPlace: false,
+    });
+    expect(step.shouldComplete).toBe(true);
+  });
+
+  it("finishes one poll sooner only when generation has also stopped", () => {
+    const stopped = nextAnswerWaitState({
+      result: { answer: "完整回答", reasoning: "" },
+      previousSignature: JSON.stringify({ answer: "完整回答", reasoning: "" }),
+      generating: false,
+      completionReady: true,
+      host: "chat.deepseek.com",
+      stablePolls: 1,
+      inPlace: false,
+    });
+    expect(stopped.shouldComplete).toBe(true);
+
+    const stillGenerating = nextAnswerWaitState({
+      result: { answer: "完整回答", reasoning: "" },
+      previousSignature: JSON.stringify({ answer: "完整回答", reasoning: "" }),
+      generating: true,
+      completionReady: true,
+      host: "chat.deepseek.com",
+      stablePolls: 1,
+      inPlace: false,
+    });
+    expect(stillGenerating.shouldComplete).toBe(false);
+  });
+
+  it("samples faster after a live answer change but keeps the idle interval", () => {
+    expect(
+      nextAnswerPollDelay({ generating: true, completionReady: false }),
+    ).toBe(150);
+    expect(
+      nextAnswerPollDelay({ generating: true, completionReady: true }),
+    ).toBe(100);
+    expect(
+      nextAnswerPollDelay({ generating: false, completionReady: true }),
+    ).toBe(100);
+    expect(
+      nextAnswerPollDelay({ generating: false, completionReady: false }),
+    ).toBe(350);
+  });
+
   it("wires the shipped agent to the in-place wait helpers", () => {
     expect(agent).toContain('from "./answer-wait.mjs"');
+    expect(agent).toContain("firstResponseLocator(page, adapter)");
+    expect(agent).toContain("snapshotResponseSlice(");
     expect(agent).toContain("answerNodeRange(");
     expect(agent).toContain("inPlaceStillBaseline(");
     expect(agent).toContain("nextAnswerWaitState(");
@@ -288,6 +417,9 @@ describe("web answer wait (in-place DeepSeek)", () => {
     expect(adapters).toContain(
       ".ds-message .ds-assistant-message-main-content",
     );
+    expect(adapters).toContain("[role='button'].ds-button--iconLabelTertiary");
+    expect(agent).toContain("responseNodes[range.end - 1]");
+    expect(agent).toContain("previousCompletionCount");
     expect(adapters).toContain("[class*='ds-assistant-message'] .ds-markdown");
   });
 });

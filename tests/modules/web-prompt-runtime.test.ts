@@ -9,6 +9,7 @@ import {
 } from "../../src/modules/web-prompt-hub";
 import {
   advanceWebProgressText,
+  advanceWebReasoningSnapshot,
   interruptStaleWebPromptTasks,
   webPromptProviderForUserMessage,
   webPromptStatusBubbleContent,
@@ -39,10 +40,23 @@ describe("WEB prompt runtime paint and send lock", () => {
     const normalized = "回答\n\n已经显示给用户的完整段落和新增内容";
 
     expect(advanceWebProgressText(painted, normalized)).toBe(normalized);
-    expect(
-      advanceWebProgressText(painted, `${painted}\n\n继续生成`),
-    ).toBe(`${painted}\n\n继续生成`.slice(0, painted.length + 28));
+    expect(advanceWebProgressText(painted, `${painted}\n\n继续生成`)).toBe(
+      `${painted}\n\n继续生成`.slice(0, painted.length + 28),
+    );
     expect(advanceWebProgressText(painted, "回答正在重新挂载")).toBe(painted);
+  });
+
+  it("paints a growing reasoning snapshot immediately without transient rollback", () => {
+    const current = "正在分析用户问题";
+    const largeSnapshot = `${current}\n${"浏览论文页面\n".repeat(300)}`;
+
+    expect(advanceWebReasoningSnapshot(current, largeSnapshot)).toBe(
+      largeSnapshot,
+    );
+    expect(
+      advanceWebReasoningSnapshot(largeSnapshot, "思考节点正在重新挂载"),
+    ).toBe(largeSnapshot);
+    expect(sidebar).toContain("advanceWebReasoningSnapshot(");
   });
 
   it("replaces the generating placeholder once a snapshot has arrived", () => {
@@ -96,6 +110,22 @@ describe("WEB prompt runtime paint and send lock", () => {
         messages: [],
       }),
     ).toBe(true);
+    expect(
+      webPromptTaskPending({
+        webPromptBusy: true,
+        webPromptBusyTaskID: "web-1",
+        messages: [
+          {
+            task: {
+              id: "web-1",
+              title: "DeepSeek Web",
+              webProvider: "deepseek",
+              completedAt: 1,
+            },
+          },
+        ],
+      }),
+    ).toBe(false);
     expect(
       webPromptTaskPending({
         webPromptBusy: false,
@@ -305,6 +335,47 @@ describe("Web Prompt Hub empty completed unlocks the turn", () => {
     expect(onStatus).not.toHaveBeenCalledWith("completed", undefined);
   });
 
+  it("forwards a reasoning snapshot before the final answer exists", async () => {
+    const onImport = vi.fn();
+    const onProgress = vi.fn();
+    registerWebPromptHub();
+    const task = createWebPromptTask({
+      provider: "deepseek",
+      prompt: "hello",
+      sourceLabel: "Paper · Conversation 1",
+      onImport,
+      onProgress,
+    });
+    const Endpoint = Zotero.Server.Endpoints[
+      "/zai/web-prompt-hub"
+    ] as new () => {
+      init(options: unknown): Promise<[number, string, string]>;
+    };
+    const endpoint = new Endpoint();
+
+    const response = await endpoint.init({
+      headers: { authorization: "Bearer test-token" },
+      method: "POST",
+      searchParams: new URLSearchParams(),
+      data: {
+        id: task.id,
+        state: "generating",
+        revision: 1,
+        answer: "",
+        reasoning: "正在分析用户问题",
+      },
+    });
+
+    expect(response[0]).toBe(200);
+    expect(onProgress).toHaveBeenCalledWith(
+      expect.objectContaining({
+        answer: "",
+        reasoning: "正在分析用户问题",
+      }),
+    );
+    expect(onImport).not.toHaveBeenCalled();
+  });
+
   it("removes a cancelled task so late callbacks cannot keep the turn alive", async () => {
     const onStatus = vi.fn();
     registerWebPromptHub();
@@ -331,6 +402,8 @@ describe("Web Prompt Hub empty completed unlocks the turn", () => {
 
     expect((await post({ state: "cancelled" }))[0]).toBe(200);
     expect(onStatus).toHaveBeenCalledWith("cancelled", undefined);
-    expect((await post({ state: "generating", answer: "迟到内容" }))[0]).toBe(404);
+    expect((await post({ state: "generating", answer: "迟到内容" }))[0]).toBe(
+      404,
+    );
   });
 });

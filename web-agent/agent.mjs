@@ -12,6 +12,7 @@ import { chromium } from "playwright-core";
 
 import {
   firstPopulatedLocator,
+  firstResponseLocator,
   providerDefinition,
   selectorList,
 } from "./adapters.mjs";
@@ -24,13 +25,13 @@ import {
 import {
   answerNodeRange,
   inPlaceStillBaseline,
+  isRecoverablePageReadError,
+  nextAnswerPollDelay,
   nextAnswerWaitState,
   nextPageNoticeWaitState,
   visiblePageTextDelta,
 } from "./answer-wait.mjs";
-import {
-  showBrowserWindow,
-} from "./window-visibility.mjs";
+import { showBrowserWindow } from "./window-visibility.mjs";
 import {
   browserModeFromVersion,
   chromeLaunchArguments,
@@ -39,7 +40,7 @@ import {
 const configPath = process.argv[2];
 if (!configPath) throw new Error("Web Agent config path is required");
 const config = JSON.parse(await readFile(configPath, "utf8"));
-const PROTOCOL_VERSION = 6;
+const PROTOCOL_VERSION = 7;
 const queues = new Map();
 const active = new Map();
 const activeTasks = new Map();
@@ -75,13 +76,19 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && request.url === "/browser/open") {
       const value = await requestBody(request);
       const provider = value?.provider;
-      const status = await openDedicatedBrowser(provider, value?.customProvider);
+      const status = await openDedicatedBrowser(
+        provider,
+        value?.customProvider,
+      );
       return json(response, 200, status);
     }
     if (request.method === "POST" && request.url === "/browser/hide") {
       const value = await requestBody(request);
       const provider = value?.provider;
-      const status = await hideDedicatedBrowser(provider, value?.customProvider);
+      const status = await hideDedicatedBrowser(
+        provider,
+        value?.customProvider,
+      );
       return json(response, 200, status);
     }
     if (
@@ -145,9 +152,7 @@ async function runNext(provider) {
     // The failed-state callback can itself fail (e.g. Zotero was closed).
     // Letting it throw here would surface as an unhandled rejection and kill
     // the agent process, taking every queued task in other providers with it.
-    const pageNotice = task.cancelled
-      ? ""
-      : await failedTaskPageNotice(task);
+    const pageNotice = task.cancelled ? "" : await failedTaskPageNotice(task);
     const state = task.cancelled
       ? "cancelled"
       : pageNotice
@@ -158,8 +163,7 @@ async function runNext(provider) {
       : pageNotice
         ? { answer: pageNotice, reasoning: "", pageNotice: true }
         : { error: errorMessage(error) };
-    await callback(task, state, extra).catch(
-      (callbackError) =>
+    await callback(task, state, extra).catch((callbackError) =>
         console.warn(
           `[web-agent] failed-state callback undeliverable for ${task.id}: ${errorMessage(callbackError)}`,
         ),
@@ -232,9 +236,7 @@ async function throwForBlockingAccountDialog(task) {
   );
   if (!blockingDialog) return;
   task.earlyPageNotice = blockingDialog;
-  await task.page
-    .close({ runBeforeUnload: false })
-    .catch(() => undefined);
+  await task.page.close({ runBeforeUnload: false }).catch(() => undefined);
   throw new Error(`${task.adapter.name} 网页需要人工处理后才能继续`);
 }
 
@@ -291,8 +293,22 @@ async function runTask(task) {
 
   const answers = await firstPopulatedLocator(page, adapter.answers);
   const previousAnswerCount = await answers.count();
+  const responses = await firstResponseLocator(page, adapter);
+  const previousResponseCount = await responses.count();
+  const previousResponseBaseline =
+    adapter.responseRoots?.length && previousResponseCount > 0
+      ? await snapshotResponseSlice(
+          [responses.nth(previousResponseCount - 1)],
+          adapter,
+          0,
+          1,
+        )
+      : undefined;
   const previousCopyCount = adapter.copy
     ? await page.locator(selectorList(adapter.copy)).count()
+    : 0;
+  const previousCompletionCount = adapter.completion
+    ? await completionLocator(page, adapter).count()
     : 0;
   const composer = page
     .locator(selectorList(adapter.composer))
@@ -354,7 +370,10 @@ async function runTask(task) {
     page,
     adapter,
     previousAnswerCount,
+    previousResponseCount,
+    previousResponseBaseline,
     previousCopyCount,
+    previousCompletionCount,
     task,
     task.pageNotice,
   );
@@ -463,7 +482,8 @@ async function submitPrompt(page, composer, adapter, previousAnswerCount, task) 
         previousAnswerCount,
         task,
       )
-    ) return;
+    )
+      return;
     if (attempt + 1 < attempts) {
       await page.waitForTimeout(800);
       await waitForSendButton(page, adapter);
@@ -478,18 +498,23 @@ async function waitForSendButton(page, adapter) {
   const deadline = Date.now() + 15_000;
   while (Date.now() < deadline) {
     if (await sendButtonReady(page, adapter)) return;
-    await page.waitForTimeout(300);
+    await page.waitForTimeout(100);
   }
   throw new Error(`${adapter.name} 上传尚未完成，发送按钮仍未就绪`);
 }
 
 async function sendButtonReady(page, adapter) {
+  try {
   const send = await sendControl(page, adapter);
   return !!(
     (await send.count()) > 0 &&
     (await send.isEnabled()) &&
     !(await sendControlDisabled(send))
   );
+  } catch (error) {
+    if (isRecoverablePageReadError(error)) return false;
+    throw error;
+  }
 }
 
 async function sendControl(page, adapter) {
@@ -518,6 +543,7 @@ async function promptSubmissionStarted(
 ) {
   const deadline = Date.now() + 4_000;
   while (Date.now() < deadline) {
+    try {
     await throwForBlockingAccountDialog(task);
     if (await anyVisible(page, adapter.stop)) return true;
     const answerCount = await (
@@ -533,7 +559,10 @@ async function promptSubmissionStarted(
       (await sendControlDisabled(send))
     )
       return true;
-    await page.waitForTimeout(300);
+    } catch (error) {
+      if (!isRecoverablePageReadError(error)) throw error;
+    }
+    await page.waitForTimeout(100);
   }
   return false;
 }
@@ -778,7 +807,8 @@ async function hideDedicatedBrowser(provider, customProvider) {
 }
 
 async function enforceHiddenWindowPolicy() {
-  if (accountWindowVisible || visibleTaskIDs.size > 0 || browserLaunching) return;
+  if (accountWindowVisible || visibleTaskIDs.size > 0 || browserLaunching)
+    return;
   const endpoint = await readDevToolsEndpoint();
   if (!endpoint) return;
   try {
@@ -814,11 +844,10 @@ async function ensureDedicatedBrowserMode(mode) {
 
 async function startDedicatedBrowser(mode) {
   await unlink(devToolsPortFile()).catch(() => undefined);
-  const child = spawn(
-    config.chromePath,
-    chromeLaunchArguments(config, mode),
-    { detached: true, stdio: "ignore" },
-  );
+  const child = spawn(config.chromePath, chromeLaunchArguments(config, mode), {
+    detached: true,
+    stdio: "ignore",
+  });
   child.unref();
   await waitForDevToolsEndpoint();
   browserMode = mode;
@@ -1076,111 +1105,207 @@ async function waitForAnswer(
   page,
   adapter,
   previousAnswerCount,
+  previousResponseCount,
+  previousResponseBaseline,
   previousCopyCount,
+  previousCompletionCount,
   task,
   pageNotice,
 ) {
   const deadline = Date.now() + 10 * 60_000;
   let previousSignature = "";
   let stablePolls = 0;
+  // A browser refresh rebuilds DeepSeek's answer DOM while the same task is
+  // still running. Force one fresh snapshot after the navigation so the
+  // Zotero sidebar catches up even when the text has not grown yet.
+  let pageRefreshPending = false;
+  const onFrameNavigated = (frame) => {
+    if (frame === page.mainFrame()) pageRefreshPending = true;
+  };
+  page.on("framenavigated", onFrameNavigated);
   let normalAnswerObserved = false;
   let pageNoticeSignature = "";
   let pageNoticeStablePolls = 0;
-  const initialNodes = await (
-    await firstPopulatedLocator(page, adapter.answers)
-  ).all();
-  const baselineRange = answerNodeRange(previousAnswerCount, initialNodes.length);
-  const baseline = baselineRange.inPlace
-    ? await snapshotAnswerSlice(
-        initialNodes,
-        adapter,
-        baselineRange.start,
-        baselineRange.end,
-      )
-    : { answer: "", reasoning: "" };
-  while (Date.now() < deadline) {
-    const answers = await firstPopulatedLocator(page, adapter.answers);
-    // Snapshot the current nodes. ChatGPT-like UIs replace message elements
-    // while streaming; repeatedly addressing nth() can otherwise wait for a
-    // node that disappeared during a render pass. DeepSeek often streams into
-    // the last assistant node without increasing the node count.
-    const answerNodes = await answers.all();
-    const range = answerNodeRange(previousAnswerCount, answerNodes.length);
-    if (range.end > range.start) {
-      const result = await snapshotAnswerSlice(
-        answerNodes,
-        adapter,
-        range.start,
-        range.end,
-      );
-      if (!inPlaceStillBaseline(range.inPlace, result, baseline)) {
-        if (result.answer || result.reasoning) {
-          normalAnswerObserved = true;
-          task.normalAnswerObserved = true;
-        }
-        const generating = await anyVisible(page, adapter.stop);
-        const completionReady = await answerCompletionReady(
-          page,
-          adapter,
-          previousCopyCount,
+  let pollDelay = 350;
+  try {
+    let initialNodes;
+    while (Date.now() < deadline && !initialNodes) {
+      try {
+        initialNodes = await (await firstResponseLocator(page, adapter)).all();
+      } catch (error) {
+        if (!isRecoverablePageReadError(error)) throw error;
+        pageRefreshPending = true;
+        await page.waitForTimeout(250);
+      }
+    }
+    if (!initialNodes) throw new Error(`${adapter.name} answer timed out`);
+    const baselineRange = answerNodeRange(
+      previousResponseCount,
+      initialNodes.length,
+    );
+    const baseline =
+      previousResponseBaseline ??
+      (baselineRange.inPlace
+        ? await snapshotResponseSlice(
+            initialNodes,
+            adapter,
+            baselineRange.start,
+            baselineRange.end,
+          )
+        : { answer: "", reasoning: "" });
+    while (Date.now() < deadline) {
+      try {
+        const responses = await firstResponseLocator(page, adapter);
+        // Snapshot the current nodes. ChatGPT-like UIs replace message elements
+        // while streaming; repeatedly addressing nth() can otherwise wait for a
+        // node that disappeared during a render pass. DeepSeek often streams into
+        // the last assistant node without increasing the node count.
+        const responseNodes = await responses.all();
+        const range = answerNodeRange(
+          previousResponseCount,
+          responseNodes.length,
         );
-        const step = nextAnswerWaitState({
-          result,
-          previousSignature,
-          generating,
-          completionReady,
-          host: adapter.host,
-          stablePolls,
-          inPlace: range.inPlace,
-        });
-        if (step.emitProgress) await callback(task, "generating", result);
-        previousSignature = step.signature;
-        stablePolls = step.nextStable;
-        if (step.shouldComplete) return result;
+        const refreshedSinceLastSnapshot = pageRefreshPending;
+        if (pageRefreshPending) {
+          previousSignature = "";
+          stablePolls = 0;
+          pageRefreshPending = false;
+        }
+        if (range.end > range.start) {
+          const result = await snapshotResponseSlice(
+            responseNodes,
+            adapter,
+            range.start,
+            range.end,
+          );
+          if (
+            refreshedSinceLastSnapshot ||
+            !inPlaceStillBaseline(range.inPlace, result, baseline)
+          ) {
+            if (result.answer || result.reasoning) {
+              normalAnswerObserved = true;
+              task.normalAnswerObserved = true;
+            }
+            const generating = await anyVisible(page, adapter.stop);
+            const completionReady = await answerCompletionReady(
+              page,
+              adapter,
+              previousCopyCount,
+              previousCompletionCount,
+              responseNodes[range.end - 1],
+            );
+            const step = nextAnswerWaitState({
+              result,
+              previousSignature,
+              generating,
+              completionReady,
+              host: adapter.host,
+              stablePolls,
+              inPlace: range.inPlace,
+            });
+            if (step.emitProgress) await callback(task, "generating", result);
+            previousSignature = step.signature;
+            stablePolls = step.nextStable;
+            if (step.shouldComplete) return result;
+            pollDelay = nextAnswerPollDelay({
+              generating,
+              completionReady,
+            });
+          }
+        }
+        if (!normalAnswerObserved) {
+          await throwForBlockingAccountDialog(task);
+        }
+        if (adapter.pageNoticeFallback && !normalAnswerObserved) {
+          const content = visiblePageTextDelta(
+            pageNotice?.baseline || "",
+            await pageVisibleText(page),
+            pageNotice?.exclusions || [],
+          );
+          const noticeStep = nextPageNoticeWaitState({
+            content,
+            previousSignature: pageNoticeSignature,
+            stablePolls: pageNoticeStablePolls,
+            pageReady: await sendButtonReady(page, adapter),
+            normalAnswerObserved,
+          });
+          pageNoticeSignature = noticeStep.signature;
+          pageNoticeStablePolls = noticeStep.nextStable;
+          if (noticeStep.shouldComplete) {
+            return { answer: content, reasoning: "", pageNotice: true };
+          }
+        }
+      } catch (error) {
+        if (!isRecoverablePageReadError(error)) throw error;
+        // A user refresh destroys the current execution context briefly. Keep
+        // the same task and baseline, then resume once the page has a context
+        // again; closed pages and browser disconnects still fail normally.
+        pageRefreshPending = true;
+        previousSignature = "";
+        stablePolls = 0;
+        await page.waitForTimeout(250);
       }
+      // Poll the live answer often enough for the Zotero sidebar to paint
+      // growing Web output instead of receiving only large one-second chunks.
+      await page.waitForTimeout(pollDelay);
     }
-    if (!normalAnswerObserved) {
-      await throwForBlockingAccountDialog(task);
-    }
-    if (adapter.pageNoticeFallback && !normalAnswerObserved) {
-      const content = visiblePageTextDelta(
-        pageNotice?.baseline || "",
-        await pageVisibleText(page),
-        pageNotice?.exclusions || [],
-      );
-      const noticeStep = nextPageNoticeWaitState({
-        content,
-        previousSignature: pageNoticeSignature,
-        stablePolls: pageNoticeStablePolls,
-        pageReady: await sendButtonReady(page, adapter),
-        normalAnswerObserved,
-      });
-      pageNoticeSignature = noticeStep.signature;
-      pageNoticeStablePolls = noticeStep.nextStable;
-      if (noticeStep.shouldComplete) {
-        return { answer: content, reasoning: "", pageNotice: true };
-      }
-    }
-    // Poll the live answer often enough for the Zotero sidebar to paint
-    // growing Web output instead of receiving only large one-second chunks.
-    await page.waitForTimeout(350);
+  } finally {
+    page.off("framenavigated", onFrameNavigated);
   }
   throw new Error(`${adapter.name} answer timed out`);
 }
 
 async function pageVisibleText(page) {
-  return page.locator("body").innerText().catch(() => "");
+  return page
+    .locator("body")
+    .innerText()
+    .catch(() => "");
+}
+
+async function snapshotResponseSlice(responseNodes, adapter, start, end) {
+  if (!adapter.responseRoots?.length) {
+    return snapshotAnswerSlice(responseNodes, adapter, start, end);
+  }
+  const answerChunks = [];
+  const reasoningChunks = [];
+  for (
+    let index = start;
+    index < end && index < responseNodes.length;
+    index += 1
+  ) {
+    const responseNode = responseNodes[index];
+    const answers = await firstPopulatedLocator(responseNode, adapter.answers);
+    for (const answerNode of await answers.all()) {
+      const chunk = await answerNodeMarkdown(answerNode).catch(() => "");
+      if (chunk) answerChunks.push(chunk);
+    }
+    const reasoning = await responseRootReasoningMarkdown(
+      responseNode,
+      adapter,
+    ).catch(() => "");
+    if (reasoning) reasoningChunks.push(reasoning);
+  }
+  return {
+    answer: answerChunks.join("\n\n").trim(),
+    reasoning: reasoningChunks.join("\n\n").trim(),
+  };
 }
 
 async function snapshotAnswerSlice(answerNodes, adapter, start, end) {
   const answerChunks = [];
   const reasoningChunks = [];
-  for (let index = start; index < end && index < answerNodes.length; index += 1) {
+  for (
+    let index = start;
+    index < end && index < answerNodes.length;
+    index += 1
+  ) {
     const answerNode = answerNodes[index];
     const chunk = await answerNodeMarkdown(answerNode).catch(() => "");
     if (chunk) answerChunks.push(chunk);
-    const reasoning = await answerNodeReasoningMarkdown(answerNode, adapter)
-      .catch(() => "");
+    const reasoning = await answerNodeReasoningMarkdown(
+      answerNode,
+      adapter,
+    ).catch(() => "");
     if (reasoning) reasoningChunks.push(reasoning);
   }
   return {
@@ -1219,12 +1344,18 @@ async function materializeAnswerDownloads(
   // Bound the work so one answer cannot spend minutes downloading files.
   const maxDownloads = 4;
   let attempts = 0;
-  for (let index = range.start; index < range.end && attempts < maxDownloads; index += 1) {
+  for (
+    let index = range.start;
+    index < range.end && attempts < maxDownloads;
+    index += 1
+  ) {
     const answerNode = answerNodes[index];
-    const buttons = answerNode.locator(
-      "button, [role='button'], a[download]",
-    );
-    for (let buttonIndex = 0; buttonIndex < (await buttons.count()); buttonIndex += 1) {
+    const buttons = answerNode.locator("button, [role='button'], a[download]");
+    for (
+      let buttonIndex = 0;
+      buttonIndex < (await buttons.count());
+      buttonIndex += 1
+    ) {
       if (attempts >= maxDownloads) break;
       const button = buttons.nth(buttonIndex);
       if (!(await button.isVisible().catch(() => false))) continue;
@@ -1291,8 +1422,9 @@ async function extractRenderedSvgImages(page, adapter, previousAnswerCount) {
         if (box.width < 160 || box.height < 120) return "";
         if (
           !element.querySelector("text, tspan") &&
-          element.querySelectorAll("path, rect, circle, ellipse, polygon, line")
-            .length < 12
+            element.querySelectorAll(
+              "path, rect, circle, ellipse, polygon, line",
+            ).length < 12
         ) {
           return "";
         }
@@ -1308,7 +1440,8 @@ async function extractRenderedSvgImages(page, adapter, previousAnswerCount) {
         // left an `onclick` on the element that Zotero renders.
         [clone, ...clone.querySelectorAll("*")].forEach((node) => {
           [...node.attributes].forEach((attribute) => {
-            if (/^on/i.test(attribute.name)) node.removeAttribute(attribute.name);
+              if (/^on/i.test(attribute.name))
+                node.removeAttribute(attribute.name);
             if (
               /^(href|xlink:href|src)$/i.test(attribute.name) &&
               /^https?:/i.test(attribute.value)
@@ -1374,7 +1507,9 @@ async function downloadAnswerButton(page, button, label) {
     const download = await Promise.race([downloadPromise, pagePromise]);
     return await saveDownloadedFile(download, label);
   } catch (error) {
-    console.warn(`[web-agent] file download failed for ${label}: ${errorMessage(error)}`);
+    console.warn(
+      `[web-agent] file download failed for ${label}: ${errorMessage(error)}`,
+    );
     await page.keyboard.press("Escape").catch(() => undefined);
     return null;
   } finally {
@@ -1437,8 +1572,9 @@ async function saveDownloadedFile(download, label) {
 
 function isDownloadableFileName(value) {
   return (
-    /\.(?:pdf|png|jpe?g|gif|webp|docx?|pptx?|xlsx?|csv|zip|tex|txt)$/i.test(value) &&
-    !isUUIDFileName(value)
+    /\.(?:pdf|png|jpe?g|gif|webp|docx?|pptx?|xlsx?|csv|zip|tex|txt)$/i.test(
+      value,
+    ) && !isUUIDFileName(value)
   );
 }
 
@@ -1460,7 +1596,27 @@ function escapeRegExp(value) {
   return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 
-async function answerCompletionReady(page, adapter, previousCopyCount) {
+async function answerCompletionReady(
+  page,
+  adapter,
+  previousCopyCount,
+  previousCompletionCount,
+  answerNode,
+) {
+  if (adapter.completion && answerNode) {
+    const messageItem = answerNode.locator(
+      "xpath=ancestor::*[@data-virtual-list-item-key][1]",
+    );
+    const buttons = messageItem.locator(selectorList(adapter.completion));
+    const total = await completionLocator(page, adapter).count();
+    if (total <= previousCompletionCount || (await buttons.count()) === 0) {
+      return false;
+    }
+    for (let index = 0; index < (await buttons.count()); index += 1) {
+      if (await buttons.nth(index).isVisible()) return true;
+    }
+    return false;
+  }
   if (!adapter.copy) return false;
   const buttons = page.locator(selectorList(adapter.copy));
   const count = await buttons.count();
@@ -1471,13 +1627,69 @@ async function answerCompletionReady(page, adapter, previousCopyCount) {
   return false;
 }
 
+function completionLocator(page, adapter) {
+  return page
+    .locator("[data-virtual-list-item-key]")
+    .locator(selectorList(adapter.completion));
+}
+
 async function answerNodeReasoningMarkdown(answer, adapter) {
   if (!adapter.reasoning?.length) return "";
   const message = answer.locator(
     "xpath=ancestor::*[contains(concat(' ', normalize-space(@class), ' '), ' ds-message ')][1]",
   );
-  const reasoning = message.locator(selectorList(adapter.reasoning)).last();
-  return (await reasoning.count()) > 0 ? answerNodeMarkdown(reasoning) : "";
+  return responseRootReasoningMarkdown(message, adapter);
+}
+
+async function responseRootReasoningMarkdown(message, adapter) {
+  if (!adapter.reasoning?.length) return "";
+  const reasoning = message.locator(selectorList(adapter.reasoning));
+  const parts = [];
+  for (let index = 0; index < (await reasoning.count()); index += 1) {
+    const chunk = await answerNodeMarkdown(reasoning.nth(index)).catch(
+      () => "",
+    );
+    if (chunk) parts.push(chunk);
+  }
+  if (adapter.name !== "DeepSeek") return parts.join("\n\n").trim();
+
+  // DeepSeek renders search results and browsed-page cards as siblings of the
+  // thinking Markdown, not inside `.ds-think-content`. Include those cards in
+  // the live reasoning transcript so a Zotero refresh does not leave the
+  // sidebar behind while the page is visibly searching or browsing.
+  const children = message.locator(":scope > div > div");
+  for (let index = 0; index < (await children.count()); index += 1) {
+    const child = children.nth(index);
+    const info = await child
+      .evaluate((element) => {
+        const text = (element.innerText || "").trim();
+        const className = String(element.className || "");
+        const isThinking = className.split(/\s+/).includes("ds-think-content");
+        const isAnswer =
+          className
+            .split(/\s+/)
+            .includes("ds-assistant-message-main-content") ||
+          !!element.querySelector(".ds-assistant-message-main-content");
+        const processSignal =
+          !!element.querySelector("a") ||
+          /搜索到|搜索结果|浏览\s+\d+\s*个页面|读取|调用工具|执行工具/.test(
+            text,
+          );
+        return { isThinking, isAnswer, processSignal, text };
+      })
+      .catch(() => ({
+        isThinking: false,
+        isAnswer: true,
+        processSignal: false,
+        text: "",
+      }));
+    if (!info.text || info.isThinking || info.isAnswer || !info.processSignal) {
+      continue;
+    }
+    const chunk = await answerNodeMarkdown(child).catch(() => "");
+    if (chunk) parts.push(chunk);
+  }
+  return parts.join("\n\n").trim();
 }
 
 async function answerNodeMarkdown(answer) {
@@ -1526,9 +1738,14 @@ async function answerNodeMarkdown(answer) {
       if (
         tag === "button" ||
         (tag !== "a" &&
-          ["button", "tab", "tablist", "toolbar", "menu", "menuitem"].includes(
-            role,
-          ))
+            [
+              "button",
+              "tab",
+              "tablist",
+              "toolbar",
+              "menu",
+              "menuitem",
+            ].includes(role))
       ) {
         return "";
       }

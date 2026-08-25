@@ -86,6 +86,28 @@
   margin-inline-end: var(--zai-docked-total-width);
 }
 
+:root.zai-docked-window #titlebar {
+  position: relative;
+}
+
+:root.zai-docked-window .zai-docked-window-title {
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 50%;
+  max-width: 52%;
+  overflow: hidden;
+  color: CaptionText;
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  user-select: none;
+  transform: translate(-50%, -50%);
+  -moz-window-dragging: drag;
+}
+
 :root.zai-docked-window #zai-column {
   position: fixed;
   inset-block: 0;

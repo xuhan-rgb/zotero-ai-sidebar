@@ -7,6 +7,7 @@ import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import {
+  firstResponseLocator,
   firstPopulatedLocator,
   providerDefinition,
   selectorList,
@@ -30,6 +31,10 @@ describe("Web Agent provider adapters", () => {
       ".ds-message .ds-assistant-message-main-content",
     );
     expect(deepseek.reasoning).toContain(".ds-think-content .ds-markdown");
+    expect(deepseek.completion).toEqual([
+      "[role='button'].ds-button--iconLabelTertiary",
+    ]);
+    expect(deepseek.completion).not.toEqual(deepseek.copy);
     expect(chatgpt.attachmentPreviews.length).toBeGreaterThan(0);
     expect(deepseek.attachmentPreviews.length).toBeGreaterThan(0);
     expect(chatgpt.attachmentUploading.length).toBeGreaterThan(0);
@@ -45,6 +50,40 @@ describe("Web Agent provider adapters", () => {
     );
   });
 
+  it("locates a DeepSeek response before its final answer node exists", () => {
+    document.body.innerHTML = `
+      <div class="ds-message">
+        <div class="ds-think-content">
+          <div class="ds-markdown">正在分析用户问题</div>
+        </div>
+      </div>`;
+
+    const deepseek = providerDefinition("deepseek");
+    const responses = document.querySelectorAll(
+      selectorList(deepseek.responseRoots),
+    );
+    const answers = document.querySelectorAll(selectorList(deepseek.answers));
+
+    expect(answers).toHaveLength(0);
+    expect(responses).toHaveLength(1);
+    expect(responses[0]?.textContent).toContain("正在分析用户问题");
+  });
+
+  it("selects a DeepSeek response root while its final answer is still empty", async () => {
+    const deepseek = providerDefinition("deepseek");
+    const responseSelector = deepseek.responseRoots?.[0] || "";
+    const page = {
+      locator: (selector: string) => ({
+        selector,
+        count: async () => (selector === responseSelector ? 1 : 0),
+      }),
+    };
+
+    const locator = await firstResponseLocator(page, deepseek);
+
+    expect(locator.selector).toBe(responseSelector);
+  });
+
   it("defines ChatGLM as a built-in provider", () => {
     const chatglm = providerDefinition("chatglm");
     expect(chatglm.name).toBe("ChatGLM");
@@ -56,9 +95,7 @@ describe("Web Agent provider adapters", () => {
     expect(chatglm.looseAttachmentNames).toBe(true);
     expect(chatglm.pageNoticeFallback).toBe(true);
     expect(chatglm.stop).not.toContain("[class*='stop']");
-    expect(chatglm.stop).toContain(
-      ".enter-icon-container [class*='stop']",
-    );
+    expect(chatglm.stop).toContain(".enter-icon-container [class*='stop']");
     expect(chatglm.attachmentUploading).not.toContain("[aria-busy='true']");
     expect(chatglm.attachmentUploading).not.toContain("[role='progressbar']");
   });
@@ -69,9 +106,7 @@ describe("Web Agent provider adapters", () => {
     expect(kimi.host).toBe("www.kimi.com");
     expect(kimi.template).toBe("chatgpt-like");
     expect(kimi.latexUploadExtension).toBe(".txt");
-    expect(kimi.send).toContain(
-      ".send-button-container:has(svg[name='Send'])",
-    );
+    expect(kimi.send).toContain(".send-button-container:has(svg[name='Send'])");
     expect(kimi.answers).toContain(
       ".chat-content-item-assistant .segment-content-box > .markdown-container > .markdown",
     );
@@ -197,7 +232,11 @@ describe("Web Agent provider adapters", () => {
       expect(custom.path).toBe(join(stage, "main.txt"));
       expect(await readFile(custom.path, "utf8")).toBe("\\section{Method}");
       expect(
-        await stageWebAttachment(attachment, providerDefinition("chatgpt"), stage),
+        await stageWebAttachment(
+          attachment,
+          providerDefinition("chatgpt"),
+          stage,
+        ),
       ).toBe(attachment);
     } finally {
       await rm(directory, { recursive: true, force: true });
@@ -277,9 +316,7 @@ describe("Web Agent provider adapters", () => {
       "utf8",
     );
     expect(agent).toContain("allowClipboardFallback,");
-    expect(agent).toContain(
-      '!["DeepSeek", "ChatGPT"].includes(adapter.name)',
-    );
+    expect(agent).toContain('!["DeepSeek", "ChatGPT"].includes(adapter.name)');
   });
 
   it("uploads through the hidden file input without focusing Chrome", async () => {
@@ -397,14 +434,18 @@ describe("Web Agent provider adapters", () => {
     expect(source).toContain("/^https?:\\/\\/sandbox:|^sandbox:/i");
     expect(source).toContain('await callback(task, "completed", result)');
     expect(source).toContain("async function composerText(composer)");
-    expect(source).toContain("composer.inputValue().catch(() => \"\")");
+    expect(source).toContain('composer.inputValue().catch(() => "")');
     expect(source).toContain(
       'element.hasAttribute("data-file-citation-group-identity")',
     );
     expect(source).toContain("hasCitationMarker");
     expect(source).toContain("data-testid*='file-citation'");
-    expect(source).toContain("const href = element.href || element.getAttribute(\"href\") || \"\";");
-    expect(source).toContain("const label = (element.textContent || \"\").trim() || href;");
+    expect(source).toContain(
+      'const href = element.href || element.getAttribute("href") || "";',
+    );
+    expect(source).toContain(
+      'const label = (element.textContent || "").trim() || href;',
+    );
     expect(source.indexOf('if (tag === "a")')).toBeLessThan(
       source.indexOf("const hasCitationMarker"),
     );

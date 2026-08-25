@@ -192,21 +192,29 @@ export async function waitForWebAttachments(page, adapter, attachments) {
   const names = attachments.map((attachment) => attachment.name);
   const deadline = Date.now() + 120_000;
   let stablePolls = 0;
-  const requiredStablePolls = adapter.name === "DeepSeek" ? 10 : 3;
+  // The send-control readiness check below remains the final gate. Three
+  // quiet polls keep a transient tile render from being submitted while
+  // avoiding an unconditional five-second DeepSeek delay.
+  const requiredStablePolls = 3;
   while (Date.now() < deadline) {
+    const bodyText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
+    const uploadingVisible = await anyVisible(
+      page,
+      adapter.attachmentUploading,
+    );
     let allVisible = true;
     let anyUploading = false;
     for (const name of names) {
       const visible = await attachmentNameVisible(page, adapter, name);
-      const state = await attachmentTextState(page, name);
+      const state = attachmentTextStateFromBody(bodyText, name);
       if (state === "failed") {
         throw new Error(`${adapter.name} rejected ${name}`);
       }
       allVisible = allVisible && visible;
-      anyUploading =
-        anyUploading ||
-        state === "uploading" ||
-        (await anyVisible(page, adapter.attachmentUploading));
+      anyUploading = anyUploading || state === "uploading" || uploadingVisible;
     }
     // Do not require the submit control here. DeepSeek can clear the
     // composer while a pasted file is being finalized; the prompt is
@@ -227,13 +235,20 @@ async function waitForAttachmentPreview(
 ) {
   const deadline = Date.now() + 120_000;
   let stablePolls = 0;
-  const requiredStablePolls = adapter.name === "DeepSeek" ? 10 : 3;
+  // The send-control readiness check in the caller remains the final gate.
+  // Three quiet polls keep a transient tile render from being submitted while
+  // avoiding an unconditional five-second DeepSeek delay.
+  const requiredStablePolls = 3;
   while (Date.now() < deadline) {
     const visible =
       (await attachmentNameVisible(page, adapter, name)) ||
       (await visibleAttachmentPreviewCount(page, adapter)) >
         previousPreviewCount;
-    const state = await attachmentTextState(page, name);
+    const bodyText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
+    const state = attachmentTextStateFromBody(bodyText, name);
     if (state === "failed") {
       throw new Error(`${adapter.name} rejected ${name}`);
     }
@@ -307,12 +322,8 @@ export function attachmentPreviewMatchesName(text, name) {
   return truncatedPrefix.length >= 8 && stem.startsWith(truncatedPrefix);
 }
 
-async function attachmentTextState(page, name) {
-  const body = await page
-    .locator("body")
-    .innerText()
-    .catch(() => "");
-  const related = body
+function attachmentTextStateFromBody(body, name) {
+  const related = String(body)
     .split("\n")
     .filter((line) => line.includes(name))
     .join("\n");

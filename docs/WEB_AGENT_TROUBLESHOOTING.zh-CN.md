@@ -1,7 +1,7 @@
 # Web Agent 当前问题与排障
 
-本文记录 Zotero AI Sidebar 的网页对话模式（ChatGPT Web、DeepSeek
-Web、ChatGPT-like 第三方网页）在实际运行中确认的问题、处理策略和当前
+本文记录 Zotero AI Sidebar 的网页对话模式（ChatGPT、DeepSeek、ChatGLM、
+Kimi 和 ChatGPT-like 第三方网页）在实际运行中确认的问题、处理策略和当前
 限制。普通 API 对话不使用 Web Agent，不应受这些规则影响。
 
 ## 运行边界

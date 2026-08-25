@@ -200,6 +200,7 @@ import {
 } from "./web-prompt-hub";
 import {
   advanceWebProgressText,
+  advanceWebReasoningSnapshot,
   interruptStaleWebPromptTasks,
   isWebPromptUserMessage,
   webPromptProviderForUserMessage,
@@ -215,10 +216,7 @@ import {
 } from "./web-annotation-batch";
 import { locateWebAnnotationQuote } from "./web-annotation-locate";
 import { locateWebSelectionAnnotationDraft } from "./web-selection-annotation";
-import {
-  renderWebTaskProgress,
-  webTaskProgressFor,
-} from "./web-task-progress";
+import { renderWebTaskProgress, webTaskProgressFor } from "./web-task-progress";
 import { renderEmptySignatures } from "./empty-signatures";
 import {
   cancelWebAgentTask,
@@ -664,6 +662,7 @@ interface DockedSidebarLayout {
   splitterDragCleanup?: () => void;
   noteSplitterDragCleanup?: () => void;
   frameCleanup?: () => void;
+  titleCleanup?: () => void;
 }
 
 const dockedSidebarLayouts = new WeakMap<
@@ -1468,8 +1467,7 @@ function renderConversationSwitcher(
   const remove = buttonEl(doc, "×");
   remove.className = "conversation-icon conversation-delete";
   remove.setAttribute("aria-label", "删除当前对话");
-  const defaultConversationActive =
-    activeConversation(state)?.id === "default";
+  const defaultConversationActive = activeConversation(state)?.id === "default";
   remove.disabled =
     conversationBusy ||
     !state.historyLoaded ||
@@ -1510,9 +1508,7 @@ function branchOriginConversationLabel(title: string): string {
   return /^对话\s*(\d+)$/.exec(title)?.[1] ?? "源";
 }
 
-function conversationHasUnreadAnswer(
-  conversation: ChatConversation,
-): boolean {
+function conversationHasUnreadAnswer(conversation: ChatConversation): boolean {
   return conversation.messages.some(
     (message) =>
       message.role === "user" &&
@@ -1569,10 +1565,7 @@ function switchConversation(
   state: PanelState,
   conversationID: string,
 ): void {
-  if (
-    !state.historyLoaded ||
-    conversationID === state.activeConversationID
-  ) {
+  if (!state.historyLoaded || conversationID === state.activeConversationID) {
     return;
   }
   capturePanelState(mount, state);
@@ -1656,8 +1649,7 @@ function deleteActiveConversation(mount: HTMLElement, state: PanelState): void {
     (conversation) => conversation.id !== current.id,
   );
   const next =
-    state.conversations[currentIndex] ??
-    state.conversations[currentIndex - 1];
+    state.conversations[currentIndex] ?? state.conversations[currentIndex - 1];
   state.activeConversationID = next.id;
   applyConversation(state, next);
   void persistPanelConversations(state);
@@ -2734,7 +2726,9 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
     if (current) current.messages = state.messages;
     void persistPanelConversations(state);
   }
-  const restoredWebBatches = migrateRestoredWebAnnotationBatches(state.messages);
+  const restoredWebBatches = migrateRestoredWebAnnotationBatches(
+    state.messages,
+  );
   if (restoredWebBatches.length) {
     void persistPanelConversations(state);
     for (const message of restoredWebBatches) {
@@ -2962,7 +2956,8 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     state.activeConversationID,
   );
   const webPromptBusy = webPromptTarget && webPromptTaskPending(state);
-  const webPromptStopping = webPromptBusy &&
+  const webPromptStopping =
+    webPromptBusy &&
     state.messages.some(
       (message) =>
         isWebPromptUserMessage(message) &&
@@ -3148,9 +3143,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     row.append(attachmentMenu);
   }
   const send = buttonEl(doc, conversationSending ? "↑ 排队" : "↑");
-  send.className = conversationSending
-    ? "send-btn send-queue-btn"
-    : "send-btn";
+  send.className = conversationSending ? "send-btn send-queue-btn" : "send-btn";
   send.disabled = !canSubmit;
   send.title = webPromptTarget
     ? "发送到 Web Prompt Hub；未登录时会提示配置网页账号"
@@ -3161,10 +3154,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
         ? "加入队列：当前回复结束后按顺序执行"
         : "发送"
       : "发送";
-  send.setAttribute(
-    "aria-label",
-    conversationSending ? "加入队列" : "发送",
-  );
+  send.setAttribute("aria-label", conversationSending ? "加入队列" : "发送");
   send.addEventListener(
     "click",
     () =>
@@ -3286,8 +3276,12 @@ async function cancelPendingWebPromptTask(
     delete message.task.webStatus;
   }
   state.webPromptBusy = false;
-  await persistPanelConversations(state);
+  state.webPromptBusyTaskID = undefined;
+  // Paint the cancelled state before persistence or the Web Agent response.
+  // Saving conversations can involve Zotero I/O and should not delay the
+  // stop button or the next Enter submission.
   renderPanel(mount, state);
+  void persistPanelConversations(state);
   try {
     await cancelWebAgentTask(taskID);
   } catch (error) {
@@ -3326,6 +3320,7 @@ async function sendWebPromptMessage(
   renderPanel(mount, state);
   const releaseWebPromptLock = () => {
     state.webPromptBusy = false;
+    state.webPromptBusyTaskID = undefined;
   };
   const customProvider = customWebProviderFor(state, provider);
   if (provider.startsWith("custom:") && !customProvider) {
@@ -3415,9 +3410,8 @@ async function sendWebPromptMessage(
   const arxivToc = await buildArxivTocFrontBlock(sourceItemID);
   const contextAttachment = await createWebContextAttachment(webHistory);
   const tocAttachment = await createWebTocAttachment(arxivToc);
-  const annotationColorGuide = loadToolSettings(
-    zoteroPrefs(),
-  ).annotationColorGuide;
+  const annotationColorGuide =
+    loadToolSettings(zoteroPrefs()).annotationColorGuide;
   const webContent = options.annotationBatch
     ? webAnnotationTaskQuestion()
     : content;
@@ -3429,7 +3423,8 @@ async function sendWebPromptMessage(
     history: webHistory,
     paperUrl: material.paperUrl,
     attachmentKind:
-      material.attachment?.kind === "latex" || material.attachment?.kind === "pdf"
+      material.attachment?.kind === "latex" ||
+      material.attachment?.kind === "pdf"
         ? material.attachment.kind
         : undefined,
     historyAttachmentAvailable: !!contextAttachment,
@@ -3449,7 +3444,8 @@ async function sendWebPromptMessage(
     history: webHistory,
     paperUrl: material.paperUrl,
     attachmentKind:
-      material.attachment?.kind === "latex" || material.attachment?.kind === "pdf"
+      material.attachment?.kind === "latex" ||
+      material.attachment?.kind === "pdf"
         ? material.attachment.kind
         : undefined,
     attachmentAlreadyAvailable: !!material.attachment,
@@ -3521,7 +3517,8 @@ async function sendWebPromptMessage(
   // Keep one Web conversation per paper and provider. A new Zotero chat for
   // the same paper continues the existing Web thread; changing papers starts
   // a separate Web conversation.
-  const paperSessionKey = sourceItemID != null
+  const paperSessionKey =
+    sourceItemID != null
     ? `item:${sourceItemID}`
     : `paper:${material.paperUrl || title || "global"}`;
   const webConversationKey = `${paperSessionKey}:${provider}`;
@@ -3566,7 +3563,7 @@ async function sendWebPromptMessage(
         webProgressAnswer,
         latestWebProgress.answer,
       );
-      const nextReasoning = advanceWebProgressText(
+      const nextReasoning = advanceWebReasoningSnapshot(
         webProgressReasoning,
         latestWebProgress.reasoning || "",
       );
@@ -3579,8 +3576,13 @@ async function sendWebPromptMessage(
         (candidate) => candidate.id === sourceConversationID,
       );
       const target = source?.messages.find(
-        (message) => message.role === "assistant" && message.task?.id === taskID,
+        (message) =>
+          message.role === "assistant" && message.task?.id === taskID,
       );
+      if (target?.task?.cancelledAt) {
+        cancelWebProgress();
+        return;
+      }
       if (source && target && changed) {
         target.content =
           webProgressAnswer ||
@@ -3629,14 +3631,11 @@ async function sendWebPromptMessage(
         (candidate) => candidate.id === sourceConversationID,
       );
       const target = source?.messages.find(
-        (message) => message.role === "assistant" && message.task?.id === taskID,
+        (message) =>
+          message.role === "assistant" && message.task?.id === taskID,
       );
       if (!source || !target) return;
-      if (
-        target.task &&
-        status !== "failed" &&
-        status !== "cancelled"
-      ) {
+      if (target.task && status !== "failed" && status !== "cancelled") {
         target.task.webStatus = status as WebTaskStatus;
       }
       if (status === "generating" && webProgressAnswer) {
@@ -3667,8 +3666,7 @@ async function sendWebPromptMessage(
       if (target.task) target.task.error = error;
       if (status === "failed" || status === "cancelled") {
         const sourceUserMessage = source.messages.find(
-          (message) =>
-            message.role === "user" && message.task?.id === taskID,
+          (message) => message.role === "user" && message.task?.id === taskID,
         );
         if (sourceUserMessage?.task) {
           if (status === "failed") sourceUserMessage.task.error = error;
@@ -3692,7 +3690,8 @@ async function sendWebPromptMessage(
         (candidate) => candidate.id === sourceConversationID,
       );
       const target = source?.messages.find(
-        (message) => message.role === "assistant" && message.task?.id === taskID,
+        (message) =>
+          message.role === "assistant" && message.task?.id === taskID,
       );
       if (!source || !target) return;
       const importedAnswer = describeUnavailableGeneratedFiles(result.answer);
@@ -3701,11 +3700,9 @@ async function sendWebPromptMessage(
         target.content = [
           "网页未返回正常回答。以下为网页本轮新增内容：",
           importedAnswer,
-          '请点击底部“账号”检查登录状态、浏览器显示方式或网页配置后重试。',
+          "请点击底部“账号”检查登录状态、浏览器显示方式或网页配置后重试。",
         ].join("\n\n");
-      } else if (
-        options.annotationBatch || hasWebAnnotationProtocol(importedAnswer)
-      ) {
+      } else if (options.annotationBatch || hasWebAnnotationProtocol(importedAnswer)) {
         target.content = importedAnswer;
         const parsed = parseWebAnnotationBatch(target.content);
         target.content = parsed.body || "DeepSeek 已返回 PDF 标注草稿。";
@@ -3729,6 +3726,7 @@ async function sendWebPromptMessage(
       target.images = result.images;
       if (target.task) {
         target.task.completedAt = Date.now();
+        delete target.task.webStatus;
         target.task.viewedAt =
           state.activeConversationID === sourceConversationID
             ? Date.now()
@@ -3737,19 +3735,21 @@ async function sendWebPromptMessage(
       const sourceUserMessage = source.messages.find(
         (message) => message.role === "user" && message.task?.id === taskID,
       );
-      if (sourceUserMessage?.task) sourceUserMessage.task.completedAt = Date.now();
+      if (sourceUserMessage?.task) {
+        sourceUserMessage.task.completedAt = Date.now();
+        delete sourceUserMessage.task.webStatus;
+      }
       source.updatedAt = new Date().toISOString();
       if (state.activeConversationID === sourceConversationID) {
         state.messages = source.messages;
         state.scrollToBottom = true;
       }
-      if (
-        target.annotationDraft &&
-        state.activeConversationID === sourceConversationID
-      ) {
+      // The completion callback updates the answer bubble in place, but the
+      // composer (including its Stop button and busy placeholder) is rendered
+      // separately. Paint the settled state immediately so the next Enter can
+      // be used without waiting for persistence or another UI event.
+      if (state.activeConversationID === sourceConversationID) {
         renderPanel(mount, state);
-      } else {
-        renderWebProgressBubble(source, target);
       }
       await persistPanelConversations(state);
       if (target.webAnnotationBatch?.entries.length) {
@@ -3758,6 +3758,7 @@ async function sendWebPromptMessage(
     },
   });
   taskID = task.id;
+  state.webPromptBusyTaskID = taskID;
   userMessage.task!.id = taskID;
   assistantMessage.task!.id = taskID;
   state.messages.push(userMessage, assistantMessage);
@@ -3780,9 +3781,7 @@ async function sendWebPromptMessage(
       paperUrl: material.paperUrl,
       hideBrowser: state.localUiSettings.hideWebBrowser,
       chatgptOptions:
-        provider === "chatgpt"
-          ? state.localUiSettings.chatgptWeb
-          : undefined,
+        provider === "chatgpt" ? state.localUiSettings.chatgptWeb : undefined,
       customProvider,
       attachment: material.attachment,
       contextAttachment,
@@ -3833,7 +3832,10 @@ function webPromptStatusMessage(
   }
 }
 
-function webProviderName(state: PanelState, provider: WebPromptProvider): string {
+function webProviderName(
+  state: PanelState,
+  provider: WebPromptProvider,
+): string {
   const builtInName = webProviderDisplayName(provider);
   if (builtInName !== provider) return builtInName;
   return customWebProviderFor(state, provider)?.name || "自定义网页";
@@ -3919,8 +3921,12 @@ function configureCustomWebProvider(
   };
   const formField = (label: string, control: HTMLElement, hint?: string) => {
     const wrapper = el(doc, "label", "zai-custom-web-provider-field");
-    wrapper.append(el(doc, "span", "zai-custom-web-provider-label", label), control);
-    if (hint) wrapper.append(el(doc, "small", "zai-custom-web-provider-hint", hint));
+    wrapper.append(
+      el(doc, "span", "zai-custom-web-provider-label", label),
+      control,
+    );
+    if (hint)
+      wrapper.append(el(doc, "small", "zai-custom-web-provider-hint", hint));
     return wrapper;
   };
 
@@ -4093,8 +4099,7 @@ function configureCustomWebProvider(
         .toLowerCase()
         .replace(/[^a-z0-9_-]+/g, "-")
         .replace(/^-+|-+$/g, "") || `site-${Date.now().toString(36)}`;
-    const id =
-      editingProvider
+    const id = editingProvider
         ? editingProvider.id
         : state.localUiSettings.customWebProviders.some(
               (provider) => provider.id === generatedId,
@@ -4107,15 +4112,16 @@ function configureCustomWebProvider(
       template: "chatgpt-like",
       homeUrl: providerHomeUrl,
       newConversationUrl: providerHomeUrl,
-      selectors:
-        editingProvider
+      selectors: editingProvider
           ? editingProvider.selectors
           : DEFAULT_CUSTOM_WEB_PROVIDER_SELECTORS,
     };
     const next = normalizeLocalUiSettings({
       ...state.localUiSettings,
       customWebProviders: [
-        ...state.localUiSettings.customWebProviders.filter((item) => item.id !== id),
+        ...state.localUiSettings.customWebProviders.filter(
+          (item) => item.id !== id,
+        ),
         candidate,
       ],
       webPromptProvider: `custom:${id}`,
@@ -4362,10 +4368,7 @@ function renderSelectionChip(
   fullText.type = "button";
   fullText.className = "zai-sel-chip-action";
   fullText.textContent = forced ? "取消原文" : "+本轮原文";
-  fullText.disabled = conversationIsSending(
-    state,
-    state.activeConversationID,
-  );
+  fullText.disabled = conversationIsSending(state, state.activeConversationID);
   fullText.title = forced
     ? "取消本轮全文，恢复只发送选区和附近上下文"
     : "仅本轮额外带入论文全文；发送后自动恢复";
@@ -4584,8 +4587,14 @@ function renderSendTargetSwitcher(
   ] as const) {
     const button = buttonEl(doc, label);
     button.className = "composer-send-mode-button";
-    button.classList.toggle("is-active", state.localUiSettings.chatSendMode === value);
-    button.setAttribute("aria-pressed", String(state.localUiSettings.chatSendMode === value));
+    button.classList.toggle(
+      "is-active",
+      state.localUiSettings.chatSendMode === value,
+    );
+    button.setAttribute(
+      "aria-pressed",
+      String(state.localUiSettings.chatSendMode === value),
+    );
     button.addEventListener("click", () => {
       state.localUiSettings = normalizeLocalUiSettings({
         ...state.localUiSettings,
@@ -4823,7 +4832,10 @@ function configureWebAccount(
       ? view.setTimeout(callback, 1_000)
       : (setTimeout(callback, 1_000) as unknown as number);
   };
-  const showResult = (result: { configured: boolean; browserOpen: boolean }) => {
+  const showResult = (result: {
+    configured: boolean;
+    browserOpen: boolean;
+  }) => {
     if (closed) return;
     configured = result.configured;
     state.webAccountConfigured = result.configured;
@@ -4836,10 +4848,13 @@ function configureWebAccount(
   };
   const refreshStatus = async () => {
     try {
-      showResult(await getWebAccountStatus(provider, undefined, customProvider));
+      showResult(
+        await getWebAccountStatus(provider, undefined, customProvider),
+      );
     } catch (error) {
       if (!closed) {
-        status.textContent = error instanceof Error ? error.message : String(error);
+        status.textContent =
+          error instanceof Error ? error.message : String(error);
         status.classList.add("is-error");
       }
     } finally {
@@ -4855,7 +4870,8 @@ function configureWebAccount(
       .then(showResult)
       .catch((error) => {
         if (!closed) {
-          status.textContent = error instanceof Error ? error.message : String(error);
+          status.textContent =
+            error instanceof Error ? error.message : String(error);
           status.classList.add("is-error");
         }
       })
@@ -4959,7 +4975,8 @@ function renderPresetSwitcher(
     option.textContent = presetSelectLabel(preset);
     select.append(option);
   }
-  select.value = selectedChatPreset(state)?.id ?? selectedPreset(state)?.id ?? "";
+  select.value =
+    selectedChatPreset(state)?.id ?? selectedPreset(state)?.id ?? "";
   select.addEventListener("change", () => {
     state.selectedId = select.value;
     state.agentPermissionMode = agentPermissionMode(
@@ -5192,10 +5209,7 @@ function renderModelSwitcher(
   trigger.className = "model-switcher-trigger";
   trigger.textContent = active;
   trigger.title = "切换当前预设的模型";
-  trigger.disabled = conversationIsSending(
-    state,
-    state.activeConversationID,
-  );
+  trigger.disabled = conversationIsSending(state, state.activeConversationID);
   trigger.setAttribute("aria-haspopup", "menu");
   trigger.setAttribute("aria-expanded", "false");
 
@@ -8014,7 +8028,8 @@ function updateWebTaskProgress(
   const existing = root.querySelector(
     ".web-task-progress",
   ) as HTMLElement | null;
-  const sourceUser = state.messages[findPreviousUserIndex(state.messages, index)];
+  const sourceUser =
+    state.messages[findPreviousUserIndex(state.messages, index)];
   const provider = webPromptProviderForUserMessage(sourceUser);
   const progress = provider
     ? webTaskProgressFor(message.task, webProviderName(state, provider))
@@ -8220,10 +8235,7 @@ function bubble(
     index === findLastAssistantIndex(state.messages)
   ) {
     const retry = buttonEl(doc, "重试");
-    retry.disabled = conversationIsSending(
-      state,
-      state.activeConversationID,
-    );
+    retry.disabled = conversationIsSending(state, state.activeConversationID);
     retry.addEventListener(
       "click",
       () => void regenerateLastResponse(mount, state),
@@ -8396,8 +8408,6 @@ function renderUserPdfSelectionContext(
   card.append(head, sourceBody);
   root.append(card);
 }
-
-
 
 function chatCitationLocation(
   state: PanelState,
@@ -12052,9 +12062,7 @@ function renderMessageImages(
   placedCharts?: Set<number>,
 ) {
   if (!images?.length) return;
-  const remaining = images.filter(
-    (_, index) => !placedCharts?.has(index + 1),
-  );
+  const remaining = images.filter((_, index) => !placedCharts?.has(index + 1));
   if (!remaining.length) return;
   const tray = el(doc, "div", "message-images");
   for (const image of remaining) {
@@ -12339,6 +12347,31 @@ function installDockedFrameSync(
   };
 }
 
+function installDockedWindowTitle(entry: DockedSidebarLayout): () => void {
+  const { document: doc } = entry.mainWindow;
+  const titlebar = doc.getElementById("titlebar");
+  if (!titlebar) return () => {};
+
+  const title = doc.createElementNS(XHTML_NS, "div") as HTMLDivElement;
+  title.className = "zai-docked-window-title";
+  const syncTitle = () => {
+    title.textContent = doc.title;
+    title.title = doc.title;
+  };
+  syncTitle();
+  titlebar.append(title);
+
+  const observer = new entry.mainWindow.MutationObserver(syncTitle);
+  observer.observe(doc.documentElement, {
+    attributes: true,
+    attributeFilter: ["title"],
+  });
+  return () => {
+    observer.disconnect();
+    title.remove();
+  };
+}
+
 function closeSidebarNoteColumn(sidebar: WindowSidebarState): void {
   sidebar.noteItemID = undefined;
   sidebar.noteEditorCleanup?.();
@@ -12403,6 +12436,7 @@ function leaveDockedSidebarLayout(
     entry.splitterDragCleanup?.();
     entry.noteSplitterDragCleanup?.();
     entry.frameCleanup?.();
+    entry.titleCleanup?.();
     const root = entry.mainWindow.document
       .documentElement as HTMLElement | null;
     root?.classList.remove("zai-docked-window");
@@ -12469,6 +12503,7 @@ function enterDockedSidebarLayout(
   entry.splitterDragCleanup = installDockedSplitterDrag(entry, sidebar);
   entry.noteSplitterDragCleanup = installDockedNoteSplitterDrag(entry, sidebar);
   entry.frameCleanup = installDockedFrameSync(entry, sidebar);
+  entry.titleCleanup = installDockedWindowTitle(entry);
   alignDockedColumnToWindow(entry, sidebar);
   fitDockedWorkspaceToWindow(entry, sidebar);
   updateToggleButton(sidebar);
@@ -13457,7 +13492,9 @@ function openWebGeneratedFileContextMenu(
     )
       .then((attachmentID) => {
         save.textContent = "已保存";
-        save.title = attachmentID ? `已添加为附件 #${attachmentID}` : "已添加为附件";
+        save.title = attachmentID
+          ? `已添加为附件 #${attachmentID}`
+          : "已添加为附件";
         link.title = "已保存到当前论文的 Zotero 附件";
       })
       .catch((error) => {

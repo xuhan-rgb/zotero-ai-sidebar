@@ -11,7 +11,7 @@
 ## 能做什么
 
 - **对正在读的论文随便问** —— *"帮我总结"*、*"核心贡献是什么"*、*"和 X 比较"*。模型自动取它需要的 PDF 内容，并在工具 trace 里把过程显式展示。
-- **每个对话可选 API 或 WEB** —— API 直接使用本地配置的模型预设；WEB 通过本机 Web Agent 对接 ChatGPT、DeepSeek 或自定义 ChatGPT-like 网页，保留网页当前的模型/搜索/思考状态，并把分阶段进度和持续增长的回答同步显示在 Zotero 中。
+- **每个对话可选 API 或 WEB** —— API 直接使用本地配置的模型预设；WEB 通过本机 Web Agent 对接 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义 ChatGPT-like 网页，保留网页当前的模型/搜索/思考状态，并把分阶段进度和持续增长的回答同步显示在 Zotero 中。
 - **随时打开 Quick Ask 连续追问** —— 默认按 `Alt+Q` 在 Zotero 任意页面打开临时对话；本窗口内会保留上下文，关闭即销毁，也可把整段问答显式转入当前论文的研究对话。
 - **arXiv 论文公式不破** —— 公式和插图从 LaTeX 源码取，不再是 PDF 文本层里的乱码。*"解释 Eq. (3)"* 和 *"讲一下 Figure 2"* 都能精确命中。
 - **PDF 沉浸式翻译** —— 开启沉浸模式后点句子即在原文旁出译文卡；`Enter` / `Shift+Enter` 在句子间穿行，`/` 把光标移进追问框，`Esc` 关卡后该句仍标为「在读高亮」可继续切句。
@@ -28,6 +28,13 @@
 5. 选择刚下载的 `.xpi` 文件，按提示重启 Zotero。
 
 已安装的插件也会自动更新：每次发布都会把 `update.json` / `update-beta.json` 发布到固定的 `release` Release，插件的 `update_url` 会检查它，因此正式版与预览版安装都能就地收到新版本提示。
+
+### v0.8.2 更新内容
+
+- **Kimi 成为内置 WEB 服务**：旧版保存的 `kimi.com` 自定义配置会自动迁移；ChatGPT、DeepSeek、ChatGLM、Kimi 和第三方站点继续使用互相隔离的适配器与账号会话。
+- **WEB 任务恢复与收尾更可靠**：重试会留在原网页服务，不会误走 API；已完成回答不会卡在过期的停止状态；按 `Esc` 或输入框的停止按钮即可释放被中断的任务，无需重启 Zotero。
+- **网页错误会明确同步到 Zotero**：登录、额度、服务器和不支持上传等页面提示会显示为区分明确的错误回答，正常回答仍会持续增量同步。
+- **输入区更紧凑且能区分模式**：WEB 模式不再挤入 API 专用控件，窄侧边栏中的底部状态仍可读，隐藏状态行也不会留下空白。
 
 ### v0.8.1 更新内容
 
@@ -68,7 +75,7 @@ sudo apt install xclip
 bash scripts/install-web-agent.sh "$HOME/Zotero"
 ```
 
-如果 Zotero 数据目录不在 `$HOME/Zotero`，请替换为实际路径。安装后在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek 或自定义服务，再点击**账号**。在临时显示的 Chrome 窗口中完成登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
+如果 Zotero 数据目录不在 `$HOME/Zotero`，请替换为实际路径。安装后在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义服务，再点击**账号**。在临时显示的 Chrome 窗口中完成登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
 
 这里的“隐藏”是最小化独立浏览器，而不是用 headless API 替代网页：登录、验证码、附件上传和网页脚本仍由该 Chrome 配置运行。插件不会切换网页的快速/深度思考/智能搜索开关。服务下拉菜单末尾提供**管理第三方网页…**，打开管理窗口不会改变当前服务。当前兼容边界见 [Web Agent 排障文档](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)。
 
@@ -79,7 +86,7 @@ WEB 模式会在论文阅读任务中自动附加论文材料。输入框里的�
 ### 对话与界面
 
 - **Zotero 内置 AI 对话**：直接在专属侧边栏与当前论文对话，无需离开 Zotero。
-- **稳定的网页 WEB 对话**：通过带本地令牌认证的伴随进程连接 ChatGPT、DeepSeek 或自定义 ChatGPT-like 网页；账号从 Zotero 内配置，专用浏览器在对话时默认隐藏，侧边栏持续显示分阶段进度和增量回答。
+- **稳定的网页 WEB 对话**：通过带本地令牌认证的伴随进程连接 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义 ChatGPT-like 网页；账号从 Zotero 内配置，专用浏览器在对话时默认隐藏，侧边栏持续显示分阶段进度和增量回答。
 - **Quick Ask 临时连续对话**：默认按 `Alt+Q` 快速打开；可在同一窗口连续追问、复制最后回答或把全部轮次转入研究对话。它不读取研究对话历史，关闭后也不会保存。
 - **多提供商可配置**：通过 Zotero 本地偏好支持 Anthropic、OpenAI 以及任何 OpenAI 兼容端点。账号预设支持连通性测试，可为每个预设配置独立的模型列表并通过底部切换器快速切换。
 - **快捷提示词与 Slash 命令**：在输入框旁边可自定义提示词按钮，并内置 `/arxiv-search`、`/web-search` 等 slash 命令，这些命令会被展开成给模型的明确指令。
@@ -165,7 +172,7 @@ flowchart TB
         ZoteroOrg[(zotero.org<br/>元数据同步)]
         FileDAV[(WebDAV<br/>Zotero File Sync)]
         PluginDAV[(插件 WebDAV<br/>state.json)]
-        WebApps[(AI 网页<br/>ChatGPT / DeepSeek / 自定义)]
+        WebApps[(AI 网页<br/>ChatGPT / DeepSeek / ChatGLM / Kimi / 自定义)]
     end
 
     User -->|提问 / 选区 / 截图| Side

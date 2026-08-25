@@ -11,8 +11,11 @@ afterEach(() => {
 
 describe("Web Agent protocol health", () => {
   it("distinguishes the current agent from a stale running process", () => {
-    expect(webAgentProtocolStatus({ ok: true, protocolVersion: 6 })).toBe(
+    expect(webAgentProtocolStatus({ ok: true, protocolVersion: 7 })).toBe(
       "current",
+    );
+    expect(webAgentProtocolStatus({ ok: true, protocolVersion: 6 })).toBe(
+      "stale",
     );
     expect(webAgentProtocolStatus({ ok: true, protocolVersion: 1 })).toBe(
       "stale",
@@ -40,7 +43,7 @@ describe("Web Agent protocol health", () => {
       .fn()
       .mockResolvedValueOnce({
         ok: true,
-        json: async () => ({ ok: true, protocolVersion: 6 }),
+        json: async () => ({ ok: true, protocolVersion: 7 }),
       })
       .mockResolvedValueOnce({
         ok: true,

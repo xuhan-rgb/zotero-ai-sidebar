@@ -18,10 +18,14 @@ export interface WebPromptPendingMessage {
 
 export interface WebPromptPendingState {
   webPromptBusy?: boolean;
+  webPromptBusyTaskID?: string;
   messages: WebPromptPendingMessage[];
 }
 
-export function advanceWebProgressText(current: string, target: string): string {
+export function advanceWebProgressText(
+  current: string,
+  target: string,
+): string {
   if (!target || target === current) return current;
   if (target.startsWith(current)) {
     return target.slice(0, Math.min(target.length, current.length + 28));
@@ -37,6 +41,14 @@ export function advanceWebProgressText(current: string, target: string): string 
   return current;
 }
 
+export function advanceWebReasoningSnapshot(
+  current: string,
+  target: string,
+): string {
+  if (!target || target === current) return current;
+  return target.length > current.length ? target : current;
+}
+
 export function webPromptProviderForUserMessage(
   message: WebPromptPendingMessage | undefined,
 ): WebPromptProvider | null {
@@ -48,11 +60,12 @@ export function webPromptProviderForUserMessage(
   if (message?.task?.title === "DeepSeek Web") return "deepseek";
   if (message?.task?.title === "ChatGLM Web") return "chatglm";
   const task = message?.task;
+  if (task?.title === "Kimi Web" && !String(task.id || "").startsWith("task-"))
+    return "kimi";
   if (
-    task?.title === "Kimi Web" &&
+    task?.title?.endsWith(" Web") &&
     !String(task.id || "").startsWith("task-")
-  ) return "kimi";
-  if (task?.title?.endsWith(" Web") && !String(task.id || "").startsWith("task-")) {
+  ) {
     return "custom:legacy";
   }
   return null;
@@ -65,8 +78,7 @@ export function isWebPromptUserMessage(
 }
 
 export function webPromptTaskPending(state: WebPromptPendingState): boolean {
-  if (state.webPromptBusy) return true;
-  return state.messages.some(
+  const pending = state.messages.some(
     (message) =>
       isWebPromptUserMessage(message) &&
       !!message.task &&
@@ -74,6 +86,15 @@ export function webPromptTaskPending(state: WebPromptPendingState): boolean {
       !message.task.cancelledAt &&
       !message.task.error,
   );
+  if (!state.webPromptBusy) return pending;
+  // Before task creation there is no ID yet, so retain the preparation lock.
+  // Once bound, a settled task is authoritative and clears a stale boolean.
+  if (!state.webPromptBusyTaskID) return true;
+  return state.messages.some((message) => {
+    const task = message.task;
+    if (!task || task.id !== state.webPromptBusyTaskID) return false;
+    return !task.completedAt && !task.cancelledAt && !task.error;
+  });
 }
 
 export function interruptStaleWebPromptTasks(
@@ -107,10 +128,7 @@ export function webPromptStatusBubbleContent(input: {
 }): string {
   const progress =
     (input.queuedAnswer || "").trim() || input.paintedAnswer.trim();
-  if (
-    input.status === "generating" &&
-    progress
-  ) {
+  if (input.status === "generating" && progress) {
     return input.paintedAnswer.trim() || progress;
   }
   if ((input.status === "failed" || input.status === "cancelled") && progress) {

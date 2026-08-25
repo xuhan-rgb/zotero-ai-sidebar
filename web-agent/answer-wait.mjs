@@ -38,13 +38,25 @@ export function nextAnswerWaitState(input) {
       : 0;
   const shouldComplete = !!(
     answer &&
-    ((completionReady && nextStable >= 5) ||
+    ((completionReady && nextStable >= (generating ? 3 : 2)) ||
       (!generating &&
         ((!isDeepSeek && nextStable >= 3) ||
           (inPlace && nextStable >= 5) ||
           nextStable >= 12)))
   );
   return { emitProgress, shouldComplete, signature, nextStable, payload };
+}
+
+export function nextAnswerPollDelay(input) {
+  if (input?.completionReady) return 100;
+  return input?.generating ? 150 : 350;
+}
+
+export function isRecoverablePageReadError(value) {
+  const message = String(value?.message || value || "").toLowerCase();
+  return /execution context was destroyed|frame was detached|navigation (?:was )?interrupted/.test(
+    message,
+  );
 }
 
 export function visiblePageTextDelta(baseline, current, exclusions = []) {
@@ -82,6 +94,11 @@ export function nextPageNoticeWaitState(input) {
   if (input?.normalAnswerObserved || !content) {
     return { shouldComplete: false, signature, nextStable: 0 };
   }
+  // DeepSeek exposes upload/reading progress in the page body before an
+  // assistant node exists. It must not be mirrored as a finished answer.
+  if (isTransientPageNotice(content)) {
+    return { shouldComplete: false, signature, nextStable: 0 };
+  }
   const nextStable =
     input?.pageReady && signature === input?.previousSignature
       ? (Number(input?.stablePolls) || 0) + 1
@@ -91,6 +108,20 @@ export function nextPageNoticeWaitState(input) {
     signature,
     nextStable,
   };
+}
+
+function isTransientPageNotice(content) {
+  const text = String(content).toLowerCase();
+  const failure =
+    /失败|错误|出错|不支持|额度|频繁|error|failed|unsupported|quota|rate limit|too many requests|server unavailable|login required|sign in/.test(
+      text,
+    );
+  return (
+    !failure &&
+    /上传中|解析中|处理中|正在阅读|生成中|思考中|uploading|processing|reading|generating|thinking/.test(
+      text,
+    )
+  );
 }
 
 function textLines(value) {
