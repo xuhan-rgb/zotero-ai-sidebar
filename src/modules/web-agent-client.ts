@@ -31,7 +31,7 @@ export interface WebAccountStatus {
 }
 
 let cachedConfig: WebAgentConfig | null = null;
-const WEB_AGENT_PROTOCOL_VERSION = 7;
+const WEB_AGENT_PROTOCOL_VERSION = 24;
 
 type WebAgentProtocolStatus = "current" | "stale" | "offline";
 

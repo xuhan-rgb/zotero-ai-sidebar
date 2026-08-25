@@ -18,17 +18,21 @@ import {
 } from "./adapters.mjs";
 import {
   pasteWebAttachment,
+  setWebAttachmentsAsBatch,
   stageWebAttachment,
   validateWebAttachment,
   waitForWebAttachments,
 } from "./attachments.mjs";
 import {
   answerNodeRange,
+  chatGLMResponseSnapshot,
   inPlaceStillBaseline,
   isRecoverablePageReadError,
   nextAnswerPollDelay,
   nextAnswerWaitState,
   nextPageNoticeWaitState,
+  pageShowsChatGLMAnswerPhase,
+  pageShowsGenerationProgress,
   visiblePageTextDelta,
 } from "./answer-wait.mjs";
 import { showBrowserWindow } from "./window-visibility.mjs";
@@ -40,7 +44,7 @@ import {
 const configPath = process.argv[2];
 if (!configPath) throw new Error("Web Agent config path is required");
 const config = JSON.parse(await readFile(configPath, "utf8"));
-const PROTOCOL_VERSION = 7;
+const PROTOCOL_VERSION = 24;
 const queues = new Map();
 const active = new Map();
 const activeTasks = new Map();
@@ -334,7 +338,24 @@ async function runTask(task) {
     await runWithEarlyPageNotice(task, async () => {
       const allowClipboardFallback =
         !task.hideBrowser || !["DeepSeek", "ChatGPT"].includes(adapter.name);
-      if (adapter.serialAttachments) {
+      if (adapter.batchAttachmentInput?.length) {
+        const uploadedAsBatch = await setWebAttachmentsAsBatch(
+          page,
+          adapter,
+          attachments,
+        );
+        if (!uploadedAsBatch) {
+          for (const attachment of attachments) {
+            await pasteWebAttachment(page, composer, adapter, attachment, {
+              waitForUpload: adapter.serialAttachments === true,
+              waitForAcceptance:
+                adapter.waitForAttachmentAcceptance === true,
+              allowClipboardFallback,
+            });
+          }
+        }
+        await waitForWebAttachments(page, adapter, attachments);
+      } else if (adapter.serialAttachments) {
         for (const attachment of attachments) {
           await pasteWebAttachment(page, composer, adapter, attachment, {
             waitForUpload: true,
@@ -1124,6 +1145,8 @@ async function waitForAnswer(
   };
   page.on("framenavigated", onFrameNavigated);
   let normalAnswerObserved = false;
+  let chatGLMReasoningNodeEnd;
+  let chatGLMAnswerPhaseObserved = false;
   let pageNoticeSignature = "";
   let pageNoticeStablePolls = 0;
   let pollDelay = 350;
@@ -1169,14 +1192,43 @@ async function waitForAnswer(
         if (pageRefreshPending) {
           previousSignature = "";
           stablePolls = 0;
+          chatGLMReasoningNodeEnd = undefined;
+          chatGLMAnswerPhaseObserved = false;
           pageRefreshPending = false;
         }
         if (range.end > range.start) {
+          const pageState = await pageGenerationSnapshot(
+            page,
+            adapter,
+            pageNotice?.baseline,
+          );
+          const generating = pageState.generating;
+          if (adapter.host === "chatglm.cn") {
+            if (!pageState.chatGLMAnswerPhase) {
+              chatGLMReasoningNodeEnd = range.end;
+              chatGLMAnswerPhaseObserved = false;
+            } else if (!chatGLMAnswerPhaseObserved) {
+              chatGLMReasoningNodeEnd = range.end;
+              chatGLMAnswerPhaseObserved = true;
+            }
+            if (
+              !generating &&
+              Number.isInteger(chatGLMReasoningNodeEnd) &&
+              chatGLMReasoningNodeEnd >= range.end
+            ) {
+              chatGLMReasoningNodeEnd = Math.max(
+                range.start,
+                range.end - 1,
+              );
+            }
+            pageState.chatGLMReasoningNodeEnd = chatGLMReasoningNodeEnd;
+          }
           const result = await snapshotResponseSlice(
             responseNodes,
             adapter,
             range.start,
             range.end,
+            pageState,
           );
           if (
             refreshedSinceLastSnapshot ||
@@ -1186,7 +1238,6 @@ async function waitForAnswer(
               normalAnswerObserved = true;
               task.normalAnswerObserved = true;
             }
-            const generating = await anyVisible(page, adapter.stop);
             const completionReady = await answerCompletionReady(
               page,
               adapter,
@@ -1227,6 +1278,13 @@ async function waitForAnswer(
             previousSignature: pageNoticeSignature,
             stablePolls: pageNoticeStablePolls,
             pageReady: await sendButtonReady(page, adapter),
+            pageGenerating: (
+              await pageGenerationSnapshot(
+                page,
+                adapter,
+                pageNotice?.baseline,
+              )
+            ).generating,
             normalAnswerObserved,
           });
           pageNoticeSignature = noticeStep.signature;
@@ -1262,9 +1320,35 @@ async function pageVisibleText(page) {
     .catch(() => "");
 }
 
-async function snapshotResponseSlice(responseNodes, adapter, start, end) {
+async function pageGenerationSnapshot(page, adapter, baseline = "") {
+  const generating = await anyVisible(page, adapter.stop);
+  if (adapter.host !== "chatglm.cn") {
+    return { generating, chatGLMAnswerPhase: false };
+  }
+  const content = await pageVisibleText(page);
+  const chatGLMAnswerPhase = pageShowsChatGLMAnswerPhase(
+    adapter.host,
+    content,
+    baseline,
+  );
+  return {
+    generating:
+      generating ||
+      pageShowsGenerationProgress(adapter.host, content) ||
+      !chatGLMAnswerPhase,
+    chatGLMAnswerPhase,
+  };
+}
+
+async function snapshotResponseSlice(
+  responseNodes,
+  adapter,
+  start,
+  end,
+  options = {},
+) {
   if (!adapter.responseRoots?.length) {
-    return snapshotAnswerSlice(responseNodes, adapter, start, end);
+    return snapshotAnswerSlice(responseNodes, adapter, start, end, options);
   }
   const answerChunks = [];
   const reasoningChunks = [];
@@ -1291,7 +1375,13 @@ async function snapshotResponseSlice(responseNodes, adapter, start, end) {
   };
 }
 
-async function snapshotAnswerSlice(answerNodes, adapter, start, end) {
+async function snapshotAnswerSlice(
+  answerNodes,
+  adapter,
+  start,
+  end,
+  options = {},
+) {
   const answerChunks = [];
   const reasoningChunks = [];
   for (
@@ -1301,12 +1391,29 @@ async function snapshotAnswerSlice(answerNodes, adapter, start, end) {
   ) {
     const answerNode = answerNodes[index];
     const chunk = await answerNodeMarkdown(answerNode).catch(() => "");
-    if (chunk) answerChunks.push(chunk);
+    if (chunk || adapter.host === "chatglm.cn") answerChunks.push(chunk);
     const reasoning = await answerNodeReasoningMarkdown(
       answerNode,
       adapter,
     ).catch(() => "");
     if (reasoning) reasoningChunks.push(reasoning);
+  }
+  if (adapter.host === "chatglm.cn") {
+    const snapshot = chatGLMResponseSnapshot(
+      answerChunks,
+      !!options.generating,
+      !!options.chatGLMAnswerPhase,
+      Number.isInteger(options.chatGLMReasoningNodeEnd)
+        ? Math.max(0, options.chatGLMReasoningNodeEnd - start)
+        : undefined,
+    );
+    return {
+      answer: snapshot.answer,
+      reasoning: [snapshot.reasoning, ...reasoningChunks]
+        .filter(Boolean)
+        .join("\n\n")
+        .trim(),
+    };
   }
   return {
     answer: answerChunks.join("\n\n").trim(),

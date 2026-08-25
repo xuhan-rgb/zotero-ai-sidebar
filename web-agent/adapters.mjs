@@ -185,6 +185,9 @@ PROVIDERS.chatglm = {
   host: "chatglm.cn",
   ...CHATGLM_CN_ADAPTER,
   copy: CUSTOM_COPY_SELECTORS,
+  batchAttachmentInput: ["input[type='file'][multiple]"],
+  // Keep the proven one-by-one path only as a compatibility fallback when
+  // ChatGLM no longer exposes its native multiple-file input.
   serialAttachments: true,
   looseAttachmentNames: true,
   pageNoticeFallback: true,
@@ -194,6 +197,12 @@ PROVIDERS.kimi = {
   name: "Kimi",
   template: "chatgpt-like",
   latexUploadExtension: ".txt",
+  waitForAttachmentAcceptance: true,
+  previewScopedAttachmentNames: true,
+  batchAttachmentTrigger: [".toolkit-trigger-btn"],
+  batchAttachmentInput: [
+    ".toolkit-popover input[type='file'][multiple]",
+  ],
   url: "https://www.kimi.com/",
   accountUrl: "https://www.kimi.com/",
   host: "www.kimi.com",

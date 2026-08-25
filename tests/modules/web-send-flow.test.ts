@@ -383,7 +383,19 @@ describe("WEB send flow", () => {
     expect(agent).toContain("waitForWebAttachments(page, adapter, attachments)");
   });
 
-  it("uploads ChatGLM attachments serially so the site cannot drop a file", () => {
+  it("selects all Kimi attachments together with a guarded serial fallback", () => {
+    expect(agent).toContain("setWebAttachmentsAsBatch(");
+    expect(agent).toContain("if (!uploadedAsBatch)");
+    expect(agent).toContain("adapter.waitForAttachmentAcceptance");
+    expect(agent).toContain(
+      "adapter.waitForAttachmentAcceptance === true",
+    );
+    expect(agent).toContain("waitForWebAttachments(page, adapter, attachments)");
+    expect(agent).not.toContain("adapter.bundleTextAttachments");
+  });
+
+  it("tries one ChatGLM multi-file selection before its serial fallback", () => {
+    expect(agent).toContain("if (adapter.batchAttachmentInput?.length)");
     expect(agent).toContain("if (adapter.serialAttachments)");
     expect(agent).toContain("waitForUpload: true");
   });

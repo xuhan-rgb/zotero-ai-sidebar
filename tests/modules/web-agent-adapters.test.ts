@@ -16,8 +16,11 @@ import {
 import {
   attachmentVisibleNameCandidates,
   attachmentPreviewMatchesName,
+  attachmentTextStateFromBody,
+  setWebAttachmentsAsBatch,
   setWebAttachmentInputFiles,
   stageWebAttachment,
+  waitForWebAttachmentAcceptance,
 } from "../../web-agent/attachments.mjs";
 
 describe("Web Agent provider adapters", () => {
@@ -92,6 +95,9 @@ describe("Web Agent provider adapters", () => {
     expect(chatglm.send[0]).toBe(".enter-icon-container");
     expect(chatglm.attachmentTrigger.length).toBeGreaterThan(0);
     expect(chatglm.serialAttachments).toBe(true);
+    expect(chatglm.batchAttachmentInput).toEqual([
+      "input[type='file'][multiple]",
+    ]);
     expect(chatglm.looseAttachmentNames).toBe(true);
     expect(chatglm.pageNoticeFallback).toBe(true);
     expect(chatglm.stop).not.toContain("[class*='stop']");
@@ -106,6 +112,15 @@ describe("Web Agent provider adapters", () => {
     expect(kimi.host).toBe("www.kimi.com");
     expect(kimi.template).toBe("chatgpt-like");
     expect(kimi.latexUploadExtension).toBe(".txt");
+    expect(kimi.waitForAttachmentAcceptance).toBe(true);
+    expect(kimi.previewScopedAttachmentNames).toBe(true);
+    expect(kimi.batchAttachmentTrigger).toEqual([".toolkit-trigger-btn"]);
+    expect(kimi.batchAttachmentInput).toEqual([
+      ".toolkit-popover input[type='file'][multiple]",
+    ]);
+    expect(kimi.bundleTextAttachments).toBeUndefined();
+    expect(kimi.serialAttachments).toBeUndefined();
+    expect(kimi.batchAttachments).toBeUndefined();
     expect(kimi.send).toContain(".send-button-container:has(svg[name='Send'])");
     expect(kimi.answers).toContain(
       ".chat-content-item-assistant .segment-content-box > .markdown-container > .markdown",
@@ -334,6 +349,148 @@ describe("Web Agent provider adapters", () => {
     ).resolves.toBe(true);
     expect(page.locator).toHaveBeenCalledWith("input[type='file']");
     expect(setInputFiles).toHaveBeenCalledWith("/tmp/paper.pdf");
+  });
+
+  it("selects every Kimi material through one multiple-file input call", async () => {
+    let menuOpen = false;
+    const setInputFiles = vi.fn(async () => undefined);
+    const input = {
+      getAttribute: vi.fn(async () => ""),
+      setInputFiles,
+    };
+    const trigger = {
+      isVisible: vi.fn(async () => true),
+      click: vi.fn(async () => {
+        menuOpen = true;
+      }),
+    };
+    const page = {
+      locator: vi.fn((selector: string) => {
+        const items =
+          selector === ".toolkit-trigger-btn"
+            ? [trigger]
+            : menuOpen
+              ? [input]
+              : [];
+        return {
+          count: vi.fn(async () => items.length),
+          nth: vi.fn((index: number) => items[index]),
+        };
+      }),
+    };
+    const attachments = [
+      { path: "/tmp/main.txt" },
+      { path: "/tmp/context.txt" },
+      { path: "/tmp/toc.txt" },
+    ];
+
+    await expect(
+      setWebAttachmentsAsBatch(
+        page,
+        {
+          batchAttachmentTrigger: [".toolkit-trigger-btn"],
+          batchAttachmentInput: [
+            ".toolkit-popover input[type='file'][multiple]",
+          ],
+        },
+        attachments,
+      ),
+    ).resolves.toBe(true);
+    expect(trigger.click).toHaveBeenCalledTimes(1);
+    expect(setInputFiles).toHaveBeenCalledTimes(1);
+    expect(setInputFiles).toHaveBeenCalledWith([
+      "/tmp/main.txt",
+      "/tmp/context.txt",
+      "/tmp/toc.txt",
+    ]);
+  });
+
+  it("selects all ChatGLM materials through its existing multiple-file input", async () => {
+    const setInputFiles = vi.fn(async () => undefined);
+    const input = {
+      getAttribute: vi.fn(async () => ""),
+      setInputFiles,
+    };
+    const page = {
+      locator: vi.fn(() => ({
+        count: vi.fn(async () => 1),
+        nth: vi.fn(() => input),
+      })),
+    };
+
+    await expect(
+      setWebAttachmentsAsBatch(
+        page,
+        { batchAttachmentInput: ["input[type='file'][multiple]"] },
+        [
+          { path: "/tmp/main.tex" },
+          { path: "/tmp/context.txt" },
+          { path: "/tmp/toc.txt" },
+        ],
+      ),
+    ).resolves.toBe(true);
+    expect(setInputFiles).toHaveBeenCalledTimes(1);
+    expect(setInputFiles).toHaveBeenCalledWith([
+      "/tmp/main.tex",
+      "/tmp/context.txt",
+      "/tmp/toc.txt",
+    ]);
+  });
+
+  it("ignores a Kimi filename in the prompt until its file card appears", async () => {
+    let previewVisible = false;
+    const waitForTimeout = vi.fn(async () => {
+      previewVisible = true;
+    });
+    const named = {
+      count: vi.fn(async () => 1),
+      nth: vi.fn(() => ({ isVisible: vi.fn(async () => true) })),
+    };
+    const previews = {
+      count: vi.fn(async () => (previewVisible ? 1 : 0)),
+      nth: vi.fn(() => ({
+        isVisible: vi.fn(async () => true),
+        innerText: vi.fn(async () => "main.txt\n等待解析"),
+      })),
+    };
+    const page = {
+      getByText: vi.fn(() => named),
+      locator: vi.fn((selector: string) =>
+        selector === "body"
+          ? { innerText: vi.fn(async () => "Prompt 提到了 main.txt") }
+          : previews,
+      ),
+      waitForTimeout,
+    };
+
+    await expect(
+      waitForWebAttachmentAcceptance(
+        page,
+        {
+          name: "Kimi",
+          attachmentPreviews: [".file-card"],
+          previewScopedAttachmentNames: true,
+        },
+        "main.txt",
+        0,
+      ),
+    ).resolves.toBeUndefined();
+    expect(waitForTimeout).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps waiting when Kimi renders the parse status below the file name", () => {
+    expect(
+      attachmentTextStateFromBody(
+        "e2e-context.txt\n等待解析\ne2e-toc.txt\nTXT 2 KB",
+        "e2e-context.txt",
+      ),
+    ).toBe("uploading");
+    expect(
+      attachmentTextStateFromBody(
+        "e2e-context.txt\nTXT 2 KB\ne2e-toc.txt\n等待解析",
+        "e2e-context.txt",
+      ),
+    ).toBe("ready");
   });
 
   it("skips image-only file inputs when attaching a PDF", async () => {

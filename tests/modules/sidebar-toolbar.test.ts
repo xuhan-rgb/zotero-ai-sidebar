@@ -255,6 +255,15 @@ describe("AI dialog toolbar", () => {
     expect(sidebarCSS).toContain(".conversation-branch-origin");
   });
 
+  it("hides ChatGLM message actions until the active response finishes", () => {
+    expect(bubbleSource).toContain(
+      'const deferActions = webProvider === "chatglm" && !!progress;',
+    );
+    expect(bubbleSource).toContain(
+      "if (!deferActions) head.append(actions);",
+    );
+  });
+
   it("marks branch conversation tabs with their source conversation", () => {
     expect(conversationSource).toContain("conversation.branchOrigin");
     expect(conversationSource).toContain('"conversation-tab-branch-origin"');

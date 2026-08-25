@@ -4,11 +4,14 @@ import { resolve } from "node:path";
 
 import {
   answerNodeRange,
+  chatGLMResponseSnapshot,
   inPlaceStillBaseline,
   isRecoverablePageReadError,
   nextAnswerPollDelay,
   nextAnswerWaitState,
   nextPageNoticeWaitState,
+  pageShowsChatGLMAnswerPhase,
+  pageShowsGenerationProgress,
   visiblePageTextDelta,
 } from "../../web-agent/answer-wait.mjs";
 
@@ -73,6 +76,112 @@ function collectWaitEvents(
 }
 
 describe("web answer wait (in-place DeepSeek)", () => {
+  it("separates ChatGLM thinking from its final answer while generation is active", () => {
+    expect(chatGLMResponseSnapshot(["正在分析用户问题"], true)).toEqual({
+      answer: "",
+      reasoning: "正在分析用户问题",
+    });
+    expect(
+      chatGLMResponseSnapshot(["当前轮首帧思考内容"], false, false),
+    ).toEqual({
+      answer: "",
+      reasoning: "当前轮首帧思考内容",
+    });
+    expect(
+      chatGLMResponseSnapshot(
+        ["正在分析用户问题", "你好！我们继续讨论这篇论文。"],
+        true,
+        true,
+      ),
+    ).toEqual({
+      answer: "你好！我们继续讨论这篇论文。",
+      reasoning: "正在分析用户问题",
+    });
+    expect(chatGLMResponseSnapshot(["直接回答"], false, true)).toEqual({
+      answer: "直接回答",
+      reasoning: "",
+    });
+  });
+
+  it("keeps ChatGLM text appended at the thinking-finished transition out of the answer", () => {
+    const firstThinking =
+      "Actually, given this is just a greeting, a search would be performative.";
+    const lateThinking =
+      "The user just said hello. I should give a brief, natural, warm greeting.";
+    const finalAnswer = "你好！我已经读取了论文材料，可以继续帮你解读。";
+
+    expect(
+      chatGLMResponseSnapshot(
+        [firstThinking, lateThinking],
+        true,
+        true,
+        2,
+      ),
+    ).toEqual({
+      answer: "",
+      reasoning: `${firstThinking}\n\n${lateThinking}`,
+    });
+    expect(
+      chatGLMResponseSnapshot(
+        [firstThinking, lateThinking, finalAnswer],
+        true,
+        true,
+        2,
+      ),
+    ).toEqual({
+      answer: finalAnswer,
+      reasoning: `${firstThinking}\n\n${lateThinking}`,
+    });
+  });
+
+  it("collapses duplicate ChatGLM thinking snapshots rendered in the same node", () => {
+    const earlier = [
+      "用户问的是第一章是什么意思，即论文的第一章是什么意思。根据 arXiv 目录，第一章是引言。",
+      "让我搜索一下以确认我对论文第一章的理解，然后根据已加载的 LaTeX 源文件给出回答。",
+    ].join("\n\n");
+    const newer = `${earlier}\n\n让我查看 LaTeX 源文件中的引言部分并梳理关键点。`;
+
+    expect(chatGLMResponseSnapshot([`${newer}\n\n${earlier}`], true)).toEqual({
+      answer: "",
+      reasoning: newer,
+    });
+    expect(chatGLMResponseSnapshot([`${earlier}\n\n${newer}`], true)).toEqual({
+      answer: "",
+      reasoning: newer,
+    });
+  });
+
+  it("does not paint a growing duplicate ChatGLM thinking node as the answer", () => {
+    const duplicatePrefix = [
+      "The user just said hello with a bunch of context about a paper. This is a greeting, not an actual question about the paper.",
+      "Let me think about what is appropriate here. The user has sent a hello message in the context of a Zotero academic reading task.",
+    ].join("\n\n");
+    const completeThinking = `${duplicatePrefix}\n\nLet me do a quick search to confirm the paper details so my greeting is grounded.`;
+
+    expect(
+      chatGLMResponseSnapshot(
+        [completeThinking, duplicatePrefix],
+        true,
+      ),
+    ).toEqual({
+      answer: "",
+      reasoning: completeThinking,
+    });
+
+    const rewrittenThinking =
+      'The user just said "hello" - a casual greeting. I have confirmed the paper is current, but I should still answer briefly and naturally.';
+    expect(
+      chatGLMResponseSnapshot(
+        [completeThinking, rewrittenThinking],
+        true,
+        false,
+      ),
+    ).toEqual({
+      answer: "",
+      reasoning: completeThinking,
+    });
+  });
+
   it("only retries errors caused by an in-flight page refresh", () => {
     expect(
       isRecoverablePageReadError(
@@ -150,6 +259,20 @@ describe("web answer wait (in-place DeepSeek)", () => {
     expect(ready.shouldComplete).toBe(true);
   });
 
+  it("never completes page-content fallback while the provider is generating", () => {
+    const content = "附件列表已经显示";
+    const waiting = nextPageNoticeWaitState({
+      content,
+      previousSignature: content,
+      stablePolls: 20,
+      pageReady: true,
+      pageGenerating: true,
+      normalAnswerObserved: false,
+    });
+    expect(waiting.shouldComplete).toBe(false);
+    expect(waiting.nextStable).toBe(0);
+  });
+
   it("does not complete while DeepSeek is still reading an attachment", () => {
     const content = "新对话\nPDF 3.77MB\n正在阅读\n内容由 AI 生成，请仔细甄别";
     const waiting = nextPageNoticeWaitState({
@@ -161,6 +284,105 @@ describe("web answer wait (in-place DeepSeek)", () => {
     });
     expect(waiting.shouldComplete).toBe(false);
     expect(waiting.nextStable).toBe(0);
+  });
+
+  it("does not treat ChatGLM attachment cards and its stop control as a page notice", () => {
+    const content = [
+      "许瀚",
+      "展开",
+      "main111 TEX 76.23KB",
+      "zai-web-context-1787661964845-N03GSpm4X7111 308B",
+      "zai-arxiv-toc-1787661964855-MjyB8yBPNQ111 931B",
+      "停止对话",
+    ].join("\n");
+    const waiting = nextPageNoticeWaitState({
+      content,
+      previousSignature: content,
+      stablePolls: 20,
+      pageReady: true,
+      normalAnswerObserved: false,
+    });
+    expect(waiting.shouldComplete).toBe(false);
+    expect(waiting.nextStable).toBe(0);
+  });
+
+  it("keeps ChatGLM search progress out of page-content fallback", () => {
+    const content = [
+      "搜索中...",
+      "正在查询 π0.5 Vision-Language-Action Model arxiv",
+    ].join("\n");
+    const waiting = nextPageNoticeWaitState({
+      content,
+      previousSignature: content,
+      stablePolls: 20,
+      pageReady: true,
+      normalAnswerObserved: false,
+    });
+    expect(waiting.shouldComplete).toBe(false);
+    expect(waiting.nextStable).toBe(0);
+  });
+
+  it("uses ChatGLM page progress as a fallback generation signal without changing DeepSeek", () => {
+    const content = "搜索中...\n正在查询 π0.5\n停止对话";
+    expect(pageShowsGenerationProgress("chatglm.cn", content)).toBe(true);
+    expect(pageShowsGenerationProgress("chatglm.cn", "回答完成")).toBe(false);
+    expect(
+      pageShowsGenerationProgress(
+        "chatglm.cn",
+        "I was thinking about the paper and searching for a concise answer.",
+      ),
+    ).toBe(false);
+    expect(pageShowsGenerationProgress("chat.deepseek.com", content)).toBe(
+      false,
+    );
+    expect(pageShowsChatGLMAnswerPhase("chatglm.cn", "思考结束\n回答正文")).toBe(
+      true,
+    );
+    expect(pageShowsChatGLMAnswerPhase("chatglm.cn", content)).toBe(false);
+    expect(
+      pageShowsChatGLMAnswerPhase("chat.deepseek.com", "思考结束"),
+    ).toBe(false);
+    const previousTurn = [
+      "上一轮",
+      "思考结束",
+      "上一轮回答",
+    ].join("\n");
+    const currentTurnFirstFrame = [
+      previousTurn,
+      "当前轮第一段思考内容已经出现，但状态标题尚未挂载",
+    ].join("\n");
+    expect(
+      pageShowsChatGLMAnswerPhase(
+        "chatglm.cn",
+        currentTurnFirstFrame,
+        previousTurn,
+      ),
+    ).toBe(false);
+    const currentTurnThinking = [
+      previousTurn,
+      "当前轮",
+      "思考中...",
+      "正在分析当前问题",
+    ].join("\n");
+    expect(
+      pageShowsChatGLMAnswerPhase(
+        "chatglm.cn",
+        currentTurnThinking,
+        previousTurn,
+      ),
+    ).toBe(false);
+    expect(
+      pageShowsChatGLMAnswerPhase(
+        "chatglm.cn",
+        `${currentTurnThinking}\n思考结束\n当前轮回答`,
+        previousTurn,
+      ),
+    ).toBe(true);
+    expect(agent).toContain("pageShowsGenerationProgress(");
+    expect(agent).toContain("let chatGLMReasoningNodeEnd;");
+    expect(agent).toContain(
+      "pageState.chatGLMReasoningNodeEnd = chatGLMReasoningNodeEnd",
+    );
   });
 
   it("marks page-content fallback separately from a normal answer", () => {
@@ -337,8 +559,8 @@ describe("web answer wait (in-place DeepSeek)", () => {
     expect(step.nextStable).toBe(0);
   });
 
-  it("completes a stable answer when its finished-action control is visible", () => {
-    const step = nextAnswerWaitState({
+  it("keeps ChatGLM active until its answer stays stable after early finished actions", () => {
+    const stillGenerating = nextAnswerWaitState({
       result: { answer: "完整回答", reasoning: "" },
       previousSignature: JSON.stringify({
         answer: "完整回答",
@@ -350,8 +572,53 @@ describe("web answer wait (in-place DeepSeek)", () => {
       stablePolls: 4,
       inPlace: false,
     });
-    expect(step.nextStable).toBe(5);
-    expect(step.shouldComplete).toBe(true);
+    expect(stillGenerating.nextStable).toBe(5);
+    expect(stillGenerating.shouldComplete).toBe(false);
+
+    const earlyFinishedActions = nextAnswerWaitState({
+      result: { answer: "完整回答", reasoning: "" },
+      previousSignature: JSON.stringify({
+        answer: "完整回答",
+        reasoning: "",
+      }),
+      generating: false,
+      completionReady: true,
+      host: "chatglm.cn",
+      stablePolls: 4,
+      inPlace: false,
+    });
+    expect(earlyFinishedActions.nextStable).toBe(5);
+    expect(earlyFinishedActions.shouldComplete).toBe(false);
+
+    const stableAfterFinishedActions = nextAnswerWaitState({
+      result: { answer: "完整回答", reasoning: "" },
+      previousSignature: JSON.stringify({
+        answer: "完整回答",
+        reasoning: "",
+      }),
+      generating: false,
+      completionReady: true,
+      host: "chatglm.cn",
+      stablePolls: 24,
+      inPlace: false,
+    });
+    expect(stableAfterFinishedActions.nextStable).toBe(25);
+    expect(stableAfterFinishedActions.shouldComplete).toBe(true);
+
+    const stableWithoutFinishedActions = nextAnswerWaitState({
+      result: { answer: "完整回答", reasoning: "" },
+      previousSignature: JSON.stringify({
+        answer: "完整回答",
+        reasoning: "",
+      }),
+      generating: false,
+      completionReady: false,
+      host: "chatglm.cn",
+      stablePolls: 7,
+      inPlace: false,
+    });
+    expect(stableWithoutFinishedActions.nextStable).toBe(8);
+    expect(stableWithoutFinishedActions.shouldComplete).toBe(true);
   });
 
   it("does not wait five polls after a finished-action control is visible", () => {

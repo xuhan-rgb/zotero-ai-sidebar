@@ -11,6 +11,11 @@ export interface ProviderDefinition {
   copy?: string[];
   reasoning?: string[];
   latexUploadExtension?: string;
+  serialAttachments?: boolean;
+  waitForAttachmentAcceptance?: boolean;
+  previewScopedAttachmentNames?: boolean;
+  batchAttachmentTrigger?: string[];
+  batchAttachmentInput?: string[];
 }
 
 export function providerDefinition(

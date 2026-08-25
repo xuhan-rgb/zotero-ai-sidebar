@@ -103,7 +103,14 @@ export async function pasteWebAttachment(
       }
     });
   }
-  if (options.waitForUpload !== false) {
+  if (options.waitForAcceptance === true) {
+    await waitForWebAttachmentAcceptance(
+      page,
+      adapter,
+      attachment.name,
+      previousPreviewCount,
+    );
+  } else if (options.waitForUpload !== false) {
     await waitForAttachmentPreview(
       page,
       adapter,
@@ -111,6 +118,31 @@ export async function pasteWebAttachment(
       previousPreviewCount,
     );
   }
+}
+
+export async function waitForWebAttachmentAcceptance(
+  page,
+  adapter,
+  name,
+  previousPreviewCount,
+) {
+  const deadline = Date.now() + 30_000;
+  while (Date.now() < deadline) {
+    const visible =
+      (await attachmentNameVisible(page, adapter, name)) ||
+      (await visibleAttachmentPreviewCount(page, adapter)) >
+        previousPreviewCount;
+    const bodyText = await page
+      .locator("body")
+      .innerText()
+      .catch(() => "");
+    if (attachmentTextStateFromBody(bodyText, name) === "failed") {
+      throw new Error(`${adapter.name} rejected ${name}`);
+    }
+    if (visible) return;
+    await page.waitForTimeout(100);
+  }
+  throw new Error(`${adapter.name} did not accept ${name}`);
 }
 
 export async function setWebAttachmentInputFiles(page, filePath) {
@@ -133,6 +165,45 @@ export async function setWebAttachmentInputFiles(page, filePath) {
       await input.setInputFiles(filePath);
       return true;
     } catch {}
+  }
+  return false;
+}
+
+export async function setWebAttachmentsAsBatch(page, adapter, attachments) {
+  if (
+    !attachments.length ||
+    !adapter.batchAttachmentInput?.length
+  ) {
+    return false;
+  }
+  const filePaths = attachments.map((attachment) => attachment.path);
+  const uploadThroughInput = async () => {
+    const inputs = page.locator(selectorList(adapter.batchAttachmentInput));
+    for (let index = 0; index < (await inputs.count()); index += 1) {
+      const input = inputs.nth(index);
+      const multiple = await input
+        .getAttribute("multiple")
+        .catch(() => null);
+      if (filePaths.length > 1 && multiple === null) continue;
+      try {
+        await input.setInputFiles(filePaths);
+        return true;
+      } catch {}
+    }
+    return false;
+  };
+  if (await uploadThroughInput()) return true;
+  if (!adapter.batchAttachmentTrigger?.length) return false;
+  const triggers = page.locator(
+    selectorList(adapter.batchAttachmentTrigger),
+  );
+  for (let triggerIndex = 0; triggerIndex < (await triggers.count()); triggerIndex += 1) {
+    const trigger = triggers.nth(triggerIndex);
+    if (!(await trigger.isVisible().catch(() => false))) continue;
+    if (!(await trigger.click({ force: true }).then(() => true).catch(() => false))) {
+      continue;
+    }
+    if (await uploadThroughInput()) return true;
   }
   return false;
 }
@@ -277,13 +348,15 @@ async function visibleAttachmentPreviewCount(page, adapter) {
 }
 
 async function attachmentNameVisible(page, adapter, name) {
-  const nameCandidates = adapter.looseAttachmentNames
-    ? attachmentVisibleNameCandidates(name)
-    : [{ text: name, exact: false }];
-  for (const candidate of nameCandidates) {
-    const named = page.getByText(candidate.text, { exact: candidate.exact });
-    for (let index = 0; index < (await named.count()); index += 1) {
-      if (await named.nth(index).isVisible()) return true;
+  if (!adapter.previewScopedAttachmentNames) {
+    const nameCandidates = adapter.looseAttachmentNames
+      ? attachmentVisibleNameCandidates(name)
+      : [{ text: name, exact: false }];
+    for (const candidate of nameCandidates) {
+      const named = page.getByText(candidate.text, { exact: candidate.exact });
+      for (let index = 0; index < (await named.count()); index += 1) {
+        if (await named.nth(index).isVisible()) return true;
+      }
     }
   }
   const previews = page.locator(selectorList(adapter.attachmentPreviews));
@@ -322,10 +395,12 @@ export function attachmentPreviewMatchesName(text, name) {
   return truncatedPrefix.length >= 8 && stem.startsWith(truncatedPrefix);
 }
 
-function attachmentTextStateFromBody(body, name) {
-  const related = String(body)
-    .split("\n")
-    .filter((line) => line.includes(name))
+export function attachmentTextStateFromBody(body, name) {
+  const lines = String(body).split("\n");
+  const related = lines
+    .flatMap((line, index) =>
+      line.includes(name) ? lines.slice(index, index + 2) : [],
+    )
     .join("\n");
   if (
     /上传失败|解析失败|不支持|unsupported|failed|请求过于频繁|too many requests|rate limit|temporarily restricted|访问对话记录/i.test(
@@ -334,7 +409,11 @@ function attachmentTextStateFromBody(body, name) {
   ) {
     return "failed";
   }
-  if (/上传中|解析中|处理中|uploading|processing/i.test(related)) {
+  if (
+    /上传中|解析中|处理中|等待解析|uploading|processing|waiting to parse|queued for parsing/i.test(
+      related,
+    )
+  ) {
     return "uploading";
   }
   return "ready";

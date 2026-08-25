@@ -8176,6 +8176,17 @@ function bubble(
     ].join(" "),
   );
   root.dataset.messageIndex = String(index);
+  const sourceUser =
+    message.role === "assistant"
+      ? state.messages[findPreviousUserIndex(state.messages, index)]
+      : undefined;
+  const webProvider = webPromptProviderForUserMessage(sourceUser);
+  const progress = assistantProgressForActiveConversation(
+    state,
+    index,
+    message,
+  );
+  const deferActions = webProvider === "chatglm" && !!progress;
   const head = el(doc, "div", "bubble-head");
   head.append(renderBubbleIdentity(doc, message.role, state.uiSettings));
 
@@ -8251,26 +8262,16 @@ function bubble(
     renderPanel(mount, state);
   });
   actions.append(del);
-  head.append(actions);
+  if (!deferActions) head.append(actions);
 
   root.append(head);
   if (message.role === "user") {
     renderMessageImages(doc, root, message.images);
     renderUserPdfSelectionContext(doc, mount, state, root, message);
   }
-  const sourceUser =
-    message.role === "assistant"
-      ? state.messages[findPreviousUserIndex(state.messages, index)]
-      : undefined;
   if (message.role === "assistant") {
     renderAssistantProcess(doc, mount, state, root, sourceUser);
   }
-  const webProvider = webPromptProviderForUserMessage(sourceUser);
-  const progress = assistantProgressForActiveConversation(
-    state,
-    index,
-    message,
-  );
   if (progress) {
     root.append(renderAssistantProgress(doc, progress));
   }
