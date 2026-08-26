@@ -130,7 +130,24 @@ describe("Web Agent browser window visibility", () => {
     expect(sidebar).toContain("await hideWebAccount(provider, customProvider)");
     expect(sidebar).toContain("完成并隐藏");
     expect(sidebar).toContain("getWebAccountStatus(");
-    expect(sidebar).toContain("检查并修复 Web Agent");
+    expect(sidebar).toContain("重新检查环境");
+    expect(sidebar).toContain("安装 Web Agent");
+    expect(sidebar).toContain("修复 Web Agent");
+    expect(sidebar).toContain("打开 Node.js 下载页");
+    expect(sidebar).toContain("打开 Chrome 下载页");
+    expect(sidebar).toContain("复制 xclip 安装说明");
+    expect(sidebar).toContain("https://nodejs.org/en/download");
+    expect(sidebar).toContain("https://www.google.com/chrome/");
+    expect(sidebar).toContain("sudo apt install xclip");
+    expect(sidebar).toContain(
+      "系统依赖需要由用户安装，插件不会自动执行安装程序或系统命令。",
+    );
+    expect(sidebar).toMatch(
+      /if \(report\.state !== "blocked"\) return;[\s\S]*?dependencyActions\.hidden = false/,
+    );
+    expect(sidebar).toMatch(
+      /report\.state === "blocked"[\s\S]*?\? "重新检查环境"/,
+    );
     expect(sidebar).toContain("inspectWebAgentInstallation()");
     expect(sidebar).toContain("repairWebAgentInstallation()");
     expect(sidebar).toContain("WebAgentRuntimeDownloadError");

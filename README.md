@@ -4,7 +4,7 @@
 
 An AI research assistant that lives inside Zotero. Ask about the paper you're reading; the sidebar reads its PDF (or the arXiv LaTeX source when available), shows its work, and writes back to your notes.
 
-> 👀 **[Illustrated usage guide →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)** (pure-HTML, product-faithful UI: overview · model config · chat · Quick Ask · immersive/full translation · notes & overview · shortcuts)
+> 👀 **[Illustrated usage guide →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)** (pure-HTML diagrams following the current UI structure: overview · model config · chat · Quick Ask · immersive/full translation · notes & overview · shortcuts)
 
 📖 [Full usage guide](docs/USAGE.md) ([中文](docs/USAGE.zh-CN.md)) — quick start, workflows, reference, and troubleshooting.
 
@@ -80,7 +80,7 @@ Requirements: Node.js 20 or newer and Google Chrome. Linux additionally needs `x
 sudo apt install xclip
 ```
 
-After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Kimi, or a custom service, and click **Account** and **Check and repair Web Agent**. The plugin downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Missing system dependencies are listed explicitly. Complete login in the temporary Chrome window and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
+After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Kimi, or a custom service, and click **Account**. The dialog checks the environment automatically. Missing Node.js or Chrome dependencies include official download buttons, while a missing Linux `xclip` dependency includes copyable installation guidance; the plugin never runs an installer or system command. Once the environment is ready, **Install**, **Repair**, or **Upgrade Web Agent** downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Complete login in the temporary Chrome window and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
 
 The browser is minimized rather than replaced by a headless API: login, CAPTCHA, uploads, and each site's scripts still run in the dedicated Chrome profile. The plugin does not switch the site's fast/deep-thinking/search controls. The footer's service menu also contains **Manage third-party web pages…**; opening it does not change the active service. See [Web Agent troubleshooting](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md) for current compatibility limits.
 

@@ -94,6 +94,27 @@
   .footbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;color:var(--faint);font-size:11.5px;border-top:1px dashed var(--line);padding-top:8px}
   .footbar .mono{font-family:ui-monospace,monospace}
   .footbar .model{color:var(--orange-ink);font-weight:700}
+  .current-toolbar{flex-wrap:wrap;gap:6px}
+  .current-toolbar .btn{padding:3px 8px}
+  .current-toolbar .strong{font-weight:700}
+  .translation-badge{background:#fff5ec;color:var(--orange-ink);border:1px solid #f2c6a5;border-radius:999px;padding:0 7px;font-size:11px;font-weight:600}
+  .empty-flow{min-height:250px;justify-content:space-between}
+  .ready-message{color:var(--ink);line-height:1.55}
+  .ready-message .ai-av{margin-bottom:5px}
+  .empty-signatures{display:flex;flex-direction:column;gap:7px;color:#7f684f;padding:8px 16px 18px}
+  .empty-signatures span::before{content:"—";margin-right:10px;color:#c6a17e}
+  .conversation-row{display:flex;align-items:center;gap:6px}
+  .conversation-tabs{display:flex;gap:6px}
+  .conversation-tab{min-width:28px;text-align:center;border:1px solid var(--line);border-radius:7px;padding:3px 8px;background:#fff}
+  .conversation-tab.active{border-color:var(--blue);color:var(--blue);background:var(--blue-soft);font-weight:700}
+  .history-select{border:1px solid var(--line);border-radius:7px;padding:3px 8px;background:#fff;color:var(--ink)}
+  .icon-btn{min-width:27px;text-align:center;border:1px solid var(--line);border-radius:7px;padding:3px 6px;background:#fff}
+  .icon-btn.danger{color:#d94841}.icon-btn.disabled{color:#c8cdd5;background:#f7f8fa}
+  .quick-actions{display:grid;grid-template-columns:1fr 1fr 1fr auto;gap:6px}
+  .quick-actions .chip{text-align:center;padding:4px 6px}
+  .current-input{min-height:92px;display:flex;flex-direction:column;gap:12px}
+  .current-input .ctx{margin-top:auto}
+  .footbar .status-ok{margin-left:auto;color:#168c8c;font-weight:600}
 
   /* ====== mock: reader + immersive card ====== */
   .reader{background:var(--reader);border-radius:10px;padding:18px;position:relative;font-family:Georgia,"Times New Roman",serif;color:#222;line-height:1.7;border:1px solid #d7dccb}
@@ -232,67 +253,52 @@
   <!-- ============ 1. 界面总览 ============ -->
   <section id="overview">
     <h2><span class="n">1</span>界面总览</h2>
-    <p class="lead">侧栏从上到下：标题栏 → 工具栏 → 论文条目 → 对话流 → 输入区。下图是还原的真实界面，右侧逐个解释。</p>
+    <p class="lead">当前侧栏从上到下分为：全局工具栏 → 当前论文 → 对话区 → 会话与任务控制 → 输入区 → API / WEB 状态栏。下图按当前结构重绘；论文标题仍使用 Lite-Mono 作为示例。</p>
 
     <div class="grid2">
       <!-- faithful sidebar mock -->
       <div class="win" aria-label="插件侧栏">
         <div class="win-bar"><span class="dot r"></span><span class="dot y"></span><span class="dot g"></span><span class="win-title">Zotero — AI 对话侧栏</span></div>
         <div class="sb">
-          <div class="sb-row top">
-            <span class="sb-label">AI 对话</span>
-            <span class="select">GPT (openai) ▾</span>
-            <span class="spacer"></span>
-            <span class="btn">复制MD</span><span class="btn">清空</span><span class="btn ghost">»</span>
-          </div>
-          <div class="sb-row">
+          <div class="sb-row current-toolbar">
             <span class="btn">打开笔记</span>
-            <span class="btn active">沉浸 ✓</span>
+            <span class="btn strong">模式</span>
+            <span class="btn">沉浸</span>
             <span class="btn">设置</span>
             <span class="btn ghost" title="字号"><svg width="17" height="13" viewBox="0 0 17 13" fill="none" stroke="#6b7280" stroke-width="1.5" stroke-linecap="round" style="vertical-align:middle"><line x1="2.5" y1="4" x2="14.5" y2="4"/><line x1="2.5" y1="9" x2="14.5" y2="9"/><circle cx="11" cy="4" r="2.1" fill="#fff"/><circle cx="6" cy="9" r="2.1" fill="#fff"/></svg></span>
             <span class="spacer"></span>
-            <span style="color:var(--muted)">调试</span><span class="toggle"></span>
+            <span style="color:var(--muted)">调试</span><span class="toggle"></span><span class="btn ghost">»</span>
           </div>
           <div class="sb-item">
             <div class="t">Lite-Mono: A Lightweight CNN and Transformer Architectur…</div>
-            <div class="m">Item ID: 928 <span class="badge">LaTeX 源</span></div>
+            <div class="m">Item ID: 928 <span class="badge">LaTeX 源</span><span class="translation-badge">全文翻译</span></div>
           </div>
-          <div class="flow">
-            <div class="msg-user">
-              <div class="who"><span>YOU</span><span class="av"></span></div>
-              <div class="bubble">解释一下 figure5</div>
+          <div class="flow empty-flow">
+            <div class="ready-message">
+              <div class="ai-av"><span class="av">AI</span></div>
+              已就绪。配置模型预设后，可以直接询问当前 Zotero 条目或 PDF 内容。
             </div>
-            <div>
-              <div class="ai-av"><span class="av">🤖</span><span>AI</span></div>
-              <div class="collapse">▾ 思考与上下文 · 已随本轮发送 arXiv LaTeX 源码 1678 字</div>
-              <span class="pill">已随本轮发送 arXiv LaTeX 源码 1678 字</span>
-              <div class="tool"><span class="gd"></span><code>arxiv_get_figure</code><span class="desc">读取 arXiv Figure 5（含图像）</span></div>
-              <div class="tool"><span class="gd"></span><code>arxiv_get_section</code><span class="desc">读取 arXiv §4.4 Make3D…</span></div>
-              <div class="collapse" style="margin-top:8px">▾ 思考过程</div>
-              <div class="think">Preparing explanation for figure 5 in Chinese…</div>
-              <div class="answer">Figure 5 是 Lite-Mono 在 Make3D 数据集上的定性可视化结果，用来展示模型在跨数据集场景中的泛化能力和深度感知效果。</div>
-              <div class="src-label">论文原文依据：</div>
-              <div class="quote">The proposed method is evaluated on the Make3D dataset to show its generalization ability in different outdoor scenes. <span class="raw">原文</span></div>
+            <div class="empty-signatures">
+              <span>Why am I reading this paper? Keep the question in sight.</span>
+              <span>Answers can be borrowed, but the thinking must be your own.</span>
             </div>
           </div>
           <div class="composer">
-            <div class="chips">
-              <span class="chip">总结论文</span>
-              <span class="chip">✦ 全文重点</span>
-              <span class="chip disabled">解释选区</span>
-              <span class="chip warn">未读 1</span>
+            <div class="conversation-row">
+              <div class="conversation-tabs"><span class="conversation-tab">1</span><span class="conversation-tab active">2</span></div>
+              <span class="spacer"></span>
+              <span class="history-select">无</span><span class="icon-btn">＋</span><span class="icon-btn danger">×</span><span class="icon-btn disabled">⧉</span><span class="icon-btn disabled">⌫</span>
             </div>
-            <div class="input">问点什么…（Enter 发送，Shift+Enter 换行）</div>
-            <div class="ctx">
-              <span class="chip">+ 联网</span>
-              <span class="chip active" style="border-color:var(--blue);color:var(--blue);background:var(--blue-soft)">📄 原文</span>
-              <span class="send">↑</span>
+            <div class="quick-actions">
+              <span class="chip">总结论文</span><span class="chip">🔖 全文重点</span><span class="chip disabled">解释选区</span><span class="chip warn">队列 0</span>
+            </div>
+            <div class="input current-input">
+              <span>发送到 DeepSeek…（Enter 发送）</span>
+              <div class="ctx"><span class="icon-btn">＋</span><span class="chip disabled">＋ 联网</span><span class="chip disabled">📄 原文</span><span class="send">↑</span></div>
             </div>
             <div class="footbar">
-              <span class="btn">API</span><span class="btn ghost">WEB</span>
-              <span class="model">GPT (openai)</span>
-              <span>gpt-5.6-terra</span>
-              <span>YOLO</span><span class="toggle on"></span>
+              <span class="btn ghost">API</span><span class="btn active">WEB</span>
+              <span class="select">DeepSeek</span><span class="btn">♙ 账号</span><span class="status-ok">DeepSeek 已就绪</span>
             </div>
           </div>
         </div>
@@ -300,19 +306,18 @@
 
       <!-- legend -->
       <ul class="legend">
-        <li><span class="k">模型下拉</span><span class="d">切换已配置的<b>模型预设</b>（Base URL / API key / 模型 ID 在「设置」里配）。</span></li>
-        <li><span class="k">复制MD / 清空</span><span class="d">把整段对话复制为 Markdown；清空当前论文的对话线程。</span></li>
-        <li><span class="k">»</span><span class="d">折叠 / 展开侧栏。</span></li>
         <li><span class="k">打开笔记</span><span class="d">打开<b>笔记列</b>：AI 笔记 / 阅读路线 / 总览三个标签。</span></li>
-        <li><span class="k">沉浸 ✓</span><span class="d">开 / 关 <b>PDF 沉浸式翻译</b>（点亮即开，见第 5 节）。</span></li>
-        <li><span class="k">设置 · 字号 · 调试</span><span class="d">完整设置页；中间的滑杆图标改<b>字号</b>；调试开关让复制带工具上下文与思考过程。</span></li>
-        <li><span class="k">LaTeX 源</span><span class="d">arXiv 论文徽章：公式 / 插图从 LaTeX 源取，不吃 PDF 乱码。</span></li>
-        <li><span class="k">思考与上下文</span><span class="d">可折叠：本轮自动发了哪些上下文、调用了哪些<b>本地工具</b>（带绿点的 trace）。</span></li>
-        <li><span class="k">论文原文依据</span><span class="d">回答末尾给出引用的<b>PDF 原文</b>，可溯源、可跳回。</span></li>
-        <li><span class="k">总结论文 / 全文重点</span><span class="d">一键快捷提示词；<b>解释选区</b>在 PDF 有选中文本时才可点。</span></li>
-        <li><span class="k">📄 原文 / + 联网</span><span class="d">是否把整篇论文固定进每轮上下文；是否允许联网检索。</span></li>
-        <li><span class="k">API / WEB</span><span class="d">API 使用本地模型预设和 Zotero 工具；WEB 使用已登录的 ChatGPT、DeepSeek 或自定义网页账号。</span></li>
-        <li><span class="k">API 底栏</span><span class="d">当前账号、模型和 <b>YOLO</b>（放开写操作权限）；思考程度在账号预设中配置，不在这里临时切换。</span></li>
+        <li><span class="k">模式</span><span class="d">切换<b>原始排版 / 专注模式</b>，以及<b>阅读器侧栏 / 右侧并排</b>。它控制布局，不是模型选择器。</span></li>
+        <li><span class="k">沉浸</span><span class="d">开 / 关 PDF 沉浸式阅读；单击句子后可“问 AI”或翻译。</span></li>
+        <li><span class="k">设置 · 字号 · 调试 · »</span><span class="d">打开完整设置、调整对话字号、控制复制时是否包含调试上下文，以及收起侧栏。</span></li>
+        <li><span class="k">论文条目</span><span class="d">显示当前条目、Item ID 和 LaTeX 状态；有可用源码时可点<b>全文翻译</b>。</span></li>
+        <li><span class="k">对话区</span><span class="d">空对话先显示就绪提示和阅读提醒；发送后，这里才出现提问、回答、工具过程和原文依据。</span></li>
+        <li><span class="k">1 / 2</span><span class="d">切换独立对话。不同对话可分别保留草稿和消息，正在生成与未读状态也会标在标签上。</span></li>
+        <li><span class="k">无 / 1轮 / 全部</span><span class="d">决定本次向模型附带多少历史：不带历史、上一轮或当前对话全部历史；不会删除界面消息。</span></li>
+        <li><span class="k">＋ / × / ⧉ / ⌫</span><span class="d">依次为新建对话、删除当前对话、复制当前对话 Markdown、清空当前对话。</span></li>
+        <li><span class="k">快捷任务 / 队列</span><span class="d">一键总结、提取全文重点或解释 PDF 选区；“队列”显示等待、运行、未读或失败的任务。</span></li>
+        <li><span class="k">输入区</span><span class="d">输入自然语言问题；左下“＋”添加截图或图片。“联网 / 原文”在 WEB 模式由网页附件流程接管，因此会置灰。</span></li>
+        <li><span class="k">API / WEB</span><span class="d">模式、模型或网页服务、账号入口都移到了底栏；最右侧文字显示当前服务是否已就绪。</span></li>
       </ul>
     </div>
   </section>
@@ -405,7 +410,8 @@
       </div>
 
       <ul class="legend">
-        <li><span class="k">首次安装</span><span class="d">Windows / Linux / macOS 需要 Node.js 20+ 和 Google Chrome，Linux 另需 <code>xclip</code>；点“账号”里的“<b>检查并修复 Web Agent</b>”，插件会下载并校验同版本预构建运行包，用户电脑不执行 npm。下载失败时可用链接和本地 ZIP 入口。</span></li>
+        <li><span class="k">首次安装</span><span class="d">Windows / Linux / macOS 需要 Node.js 20+ 和 Google Chrome，Linux 另需 <code>xclip</code>。点“账号”后会自动检查：缺少依赖时给出下载或安装说明；满足条件后按状态显示“<b>安装 / 修复 / 升级 Web Agent</b>”。用户电脑不执行 npm。</span></li>
+        <li><span class="k">检查与恢复</span><span class="d">处理完系统依赖后点“<b>重新检查环境</b>”。运行包自动下载失败时，可打开 Release、复制下载链接，或选择已经下载的 ZIP 本地安装。</span></li>
         <li><span class="k">ChatGPT ▾</span><span class="d">切换 ChatGPT、DeepSeek 和自定义站点；末尾“<b>管理第三方网页…</b>”只打开网址管理，不改变当前服务。</span></li>
         <li><span class="k">账号</span><span class="d">临时显示专用 Chrome 完成登录，并设置“对话时在后台隐藏浏览器”；默认勾选。</span></li>
         <li><span class="k">进度卡</span><span class="d">依次显示准备、上传、提交、生成、同步；网页回答增长时左侧同步刷新。</span></li>
@@ -426,10 +432,10 @@
       <div class="step"><b>整篇提问</b><p>“帮我总结”“核心贡献是什么”“和 X 比较”。不选任何东西时，默认带<b>整篇论文</b>上下文（📄 原文 打开时）。</p></div>
       <div class="step"><b>聚焦某段</b><p>在 PDF 里选中一段，输入框上方出现<b>选中片段 chip</b>，提问时选区会叠加在全文之上；想<b>只看选区</b>就关掉「📄 原文」。</p></div>
       <div class="step"><b>截图 / 贴图</b><p>底栏「截图 / 图片」把画面作为图片附件发给多模态模型——既显示在对话里，也真正发给模型。</p></div>
-      <div class=”step”><b>公式 / 图表也能直接问</b><p>带 <span class=”badge”>LaTeX 源</span> 的论文，问「公式1是什么意思」「figure1 在讲什么」会从 <b>LaTeX 源</b>精确命中（含图像），而不是 PDF 文本层乱码——同样是自然语言，不用记任何指令。</p></div>
-      <div class=”step”><b>让 AI 高亮 / 加注释</b><p>给 PDF 加高亮 / 批注是 Agent <b>已内置的写入工具</b>，直接用自然语言喊就行：「<b>把这段的重点句子高亮</b>」「给这段加条注释说明它在讲什么」。模型会自己选中对应段落、按颜色分类上高亮或加文本批注，trace 里能看到它选了哪段、上了什么色。颜色分类在设置的「PDF 注释颜色预设」里统一定义。</p></div>
+      <div class="step"><b>公式 / 图表也能直接问</b><p>带 <span class="badge">LaTeX 源</span> 的论文，问「公式1是什么意思」「figure1 在讲什么」会从 <b>LaTeX 源</b>精确命中（含图像），而不是 PDF 文本层乱码——同样是自然语言，不用记任何指令。</p></div>
+      <div class="step"><b>让 AI 高亮 / 加注释</b><p>给 PDF 加高亮 / 批注是 Agent <b>已内置的写入工具</b>，直接用自然语言喊就行：「<b>把这段的重点句子高亮</b>」「给这段加条注释说明它在讲什么」。模型会自己选中对应段落、按颜色分类上高亮或加文本批注，trace 里能看到它选了哪段、上了什么色。颜色分类在设置的「PDF 注释颜色预设」里统一定义。</p></div>
     </div>
-    <div class=”tip”>✍️ 这类「写回 PDF」都是 Agent <b>显式工具调用</b>、过程可见、且受权限控制——默认模式会先确认，开 <b>YOLO</b> 可直接执行，不会偷偷改你的 PDF。</div>
+    <div class="tip">✍️ 这类「写回 PDF」都是 Agent <b>显式工具调用</b>、过程可见、且受权限控制——默认模式会先确认，开 <b>YOLO</b> 可直接执行，不会偷偷改你的 PDF。</div>
   </section>
 
   <!-- ============ 5. Quick Ask ============ -->
@@ -614,10 +620,10 @@
   <section id="steps">
     <h2><span class="n">8</span>四步上手</h2>
     <div class="steps">
-      <div class="step"><b>选择 API 或 WEB</b><p>API 使用模型预设和 Zotero 工具；WEB 使用 ChatGPT / DeepSeek 网页账号。两条路线可在输入框底部随时切换。</p></div>
-      <div class="step"><b>完成配置</b><p>API 在「设置」新增模型预设；WEB 先安装 Web Agent，再点「账号」登录专用 Chrome，并按需保持后台隐藏。还可在「显示设置」用多行列表配置空对话中央的阅读提醒。</p></div>
-      <div class="step"><b>开读 + 提问</b><p>在 Reader 打开 PDF，侧栏直接问，或点「总结论文 / 全文重点」。需要逐句精读时点「沉浸」。</p></div>
-      <div class="step"><b>写回 / 同步</b><p>把回答追加进论文笔记，或让模型给 PDF 加按颜色分类的高亮；需要换机时在设置里导出 JSON，或开 WebDAV 同步单个 <span class="kbd">state.json</span>。</p></div>
+      <div class="step"><b>先选 API 或 WEB</b><p>在输入区底栏切换。API 使用模型预设和 Zotero 本地工具；WEB 使用 ChatGPT / DeepSeek 等网页账号。</p></div>
+      <div class="step"><b>完成对应配置</b><p>API 点顶部「设置」新增模型预设；WEB 选择网页服务后点「账号」，按检查结果补齐依赖、安装 Web Agent，再登录专用 Chrome。</p></div>
+      <div class="step"><b>确定对话与上下文</b><p>用数字标签切换对话，用“无 / 1轮 / 全部”决定发送多少历史；API 模式还可开关“联网 / 原文”。</p></div>
+      <div class="step"><b>提问并查看任务</b><p>直接输入问题，或点「总结论文 / 全文重点 / 解释选区」。生成中的任务可在“队列”查看；精读时点顶部「沉浸」，结果可继续写入笔记或 PDF 标注。</p></div>
     </div>
     <div class="tip">💡 数据本地优先：不开同步时什么都不出本机；开了 WebDAV 才会把含预设（含 API key）、对话、批注、翻译缓存的 <b>state.json</b> 推到<b>你自己的</b>端点，不发给 zotero.org 或第三方。</div>
   </section>
@@ -639,7 +645,7 @@
     <div class="tip">Quick Ask、切句、选区快译等快捷键都能在「设置 → 沉浸阅读」里修改。</div>
   </section>
 
-  <footer>Zotero AI Sidebar v0.8.0 · 本页为离线使用教程，界面为 HTML 还原，非真实截图。</footer>
+  <footer>Zotero AI Sidebar v0.8.6 · 本页为离线使用教程，示意图按当前界面结构重绘，尺寸与系统字体可能略有不同。</footer>
 </div>
 </body>
 </html>

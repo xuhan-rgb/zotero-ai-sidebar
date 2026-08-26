@@ -4772,6 +4772,26 @@ function configureWebAccount(
     "zai-web-account-status",
     "正在检查 Web Agent…",
   );
+  const dependencyActions = el(
+    doc,
+    "div",
+    "zai-web-account-dependency-actions",
+  );
+  dependencyActions.hidden = true;
+  dependencyActions.append(
+    el(
+      doc,
+      "p",
+      "zai-web-account-dependency-note",
+      "系统依赖需要由用户安装，插件不会自动执行安装程序或系统命令。",
+    ),
+  );
+  const dependencyList = el(
+    doc,
+    "div",
+    "zai-web-account-dependency-list",
+  );
+  dependencyActions.append(dependencyList);
   const downloadActions = el(doc, "div", "zai-web-account-download-actions");
   downloadActions.hidden = true;
   const downloadHint = el(
@@ -4819,6 +4839,7 @@ function configureWebAccount(
   visibilityOption.append(checkbox, optionText);
   body.append(
     status,
+    dependencyActions,
     downloadActions,
     explanation,
     pageNoticeExplanation,
@@ -4830,7 +4851,7 @@ function configureWebAccount(
     "footer",
     "zai-custom-web-provider-foot zai-web-account-foot",
   );
-  const repair = buttonEl(doc, "检查并修复 Web Agent");
+  const repair = buttonEl(doc, "检查环境");
   repair.type = "button";
   const reopen = buttonEl(doc, "重新显示登录网页");
   reopen.type = "button";
@@ -4853,6 +4874,63 @@ function configureWebAccount(
   const runtimeRelease = webAgentRuntimeRelease();
   let runtimeDownloadUrl = runtimeRelease.downloadUrl;
   let runtimeReleaseUrl = runtimeRelease.releaseUrl;
+  const nodeDownloadUrl = "https://nodejs.org/en/download";
+  const chromeDownloadUrl = "https://www.google.com/chrome/";
+  const xclipInstallGuide = [
+    "Ubuntu / Debian: sudo apt install xclip",
+    "Fedora: sudo dnf install xclip",
+    "Arch Linux: sudo pacman -S xclip",
+  ].join("\n");
+
+  const hideDependencyActions = () => {
+    dependencyActions.hidden = true;
+    dependencyList.replaceChildren();
+  };
+  const showDependencyActions = (report: WebAgentInstallationReport) => {
+    hideDependencyActions();
+    if (report.state !== "blocked") return;
+    for (const missing of report.missing) {
+      const item = el(doc, "div", "zai-web-account-dependency-item");
+      const copy = el(doc, "div", "zai-web-account-dependency-copy");
+      let action: HTMLButtonElement;
+      if (missing === "Node.js 20+") {
+        copy.append(
+          el(doc, "strong", "", "Node.js 20+ 未找到"),
+          el(doc, "small", "", "推荐安装 Node.js 24 LTS 后重新检查。"),
+        );
+        action = buttonEl(doc, "打开 Node.js 下载页");
+        action.addEventListener("click", () => {
+          (Zotero as any).launchURL(nodeDownloadUrl);
+        });
+      } else if (missing === "Google Chrome") {
+        copy.append(
+          el(doc, "strong", "", "Google Chrome 未找到"),
+          el(doc, "small", "", "请安装到系统默认位置或加入 PATH。"),
+        );
+        action = buttonEl(doc, "打开 Chrome 下载页");
+        action.addEventListener("click", () => {
+          (Zotero as any).launchURL(chromeDownloadUrl);
+        });
+      } else {
+        copy.append(
+          el(doc, "strong", "", "Linux 剪贴板依赖 xclip 未找到"),
+          el(doc, "small", "", "请按所用 Linux 发行版安装后重新检查。"),
+        );
+        action = buttonEl(doc, "复制 xclip 安装说明");
+        action.addEventListener("click", () => {
+          void copyToClipboard(
+            doc,
+            xclipInstallGuide,
+            "web-agent-xclip-install-guide",
+          ).then(() => flashButton(action, "已复制"));
+        });
+      }
+      action.type = "button";
+      item.append(copy, action);
+      dependencyList.append(item);
+    }
+    dependencyActions.hidden = false;
+  };
 
   const hideDownloadActions = () => {
     downloadActions.hidden = true;
@@ -4945,6 +5023,7 @@ function configureWebAccount(
   const showInstallation = (report: WebAgentInstallationReport) => {
     if (closed) return;
     hideDownloadActions();
+    showDependencyActions(report);
     webAgentReady =
       report.state === "ready" || report.state === "compatible";
     status.classList.toggle("is-ready", webAgentReady);
@@ -4952,11 +5031,15 @@ function configureWebAccount(
     status.textContent = report.message;
     reopen.disabled = !webAgentReady;
     repair.textContent =
-      report.state === "compatible"
-        ? "升级 Web Agent"
-        : webAgentReady
-          ? "重新检查 Web Agent"
-          : "检查并修复 Web Agent";
+      report.state === "blocked"
+        ? "重新检查环境"
+        : report.state === "compatible"
+          ? "升级 Web Agent"
+          : webAgentReady
+            ? "重新检查 Web Agent"
+            : report.configPresent
+              ? "修复 Web Agent"
+              : "安装 Web Agent";
   };
   const checkAndRepair = async (
     repairIfNeeded: boolean,
@@ -4968,6 +5051,7 @@ function configureWebAccount(
     repair.disabled = true;
     reopen.disabled = true;
     chooseRuntime.disabled = true;
+    hideDependencyActions();
     hideDownloadActions();
     status.classList.remove("is-ready", "is-error");
     status.textContent = localRuntimePath

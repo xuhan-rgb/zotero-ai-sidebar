@@ -4,7 +4,7 @@
 
 一个住在 Zotero 里的 AI 论文助手。对正在读的论文问任何问题，侧边栏会自己读 PDF（或者 arXiv 论文的 LaTeX 源），展示推理过程，并把答案写回笔记。
 
-> 👀 **[图解使用教程 →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)**（纯 HTML 1:1 还原真实界面：界面总览 · 配置模型 · 对话 · Quick Ask · 沉浸/全文翻译 · 笔记与总览 · 快捷键）
+> 👀 **[图解使用教程 →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)**（纯 HTML 按当前界面结构重绘：界面总览 · 配置模型 · 对话 · Quick Ask · 沉浸/全文翻译 · 笔记与总览 · 快捷键）
 
 📖 [完整使用指南](docs/USAGE.zh-CN.md) ([English](docs/USAGE.md)) —— 上手、常用场景、功能手册、故障排查。
 
@@ -79,7 +79,7 @@ WEB 模式使用一个本地伴随进程和独立的 Google Chrome 配置目录�
 sudo apt install xclip
 ```
 
-安装 XPI 后，在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义服务，再点击**账号**和**检查并修复 Web Agent**。插件会从同版本 GitHub Release 下载预构建运行包，校验大小与 SHA-256，并在健康检查通过后打开登录网页；用户电脑不执行 npm。自动下载失败时，窗口会提供 Release 页面、直接下载链接和本地 ZIP 选择入口。系统依赖缺失时，检查结果会明确列出缺少的程序。在临时显示的 Chrome 窗口中完成登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
+安装 XPI 后，在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义服务，再点击**账号**。窗口会自动检查环境：缺少 Node.js 或 Chrome 时提供官方下载按钮，Linux 缺少 `xclip` 时提供可复制的安装说明；插件不会自动运行安装程序或系统命令。环境满足后，按状态点击**安装 / 修复 / 升级 Web Agent**，插件会从同版本 GitHub Release 下载预构建运行包，校验大小与 SHA-256，并在健康检查通过后打开登录网页；用户电脑不执行 npm。自动下载失败时，窗口会提供 Release 页面、直接下载链接和本地 ZIP 选择入口。在临时显示的 Chrome 窗口中完成登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
 
 这里的“隐藏”是最小化独立浏览器，而不是用 headless API 替代网页：登录、验证码、附件上传和网页脚本仍由该 Chrome 配置运行。插件不会切换网页的快速/深度思考/智能搜索开关。服务下拉菜单末尾提供**管理第三方网页…**，打开管理窗口不会改变当前服务。当前兼容边界见 [Web Agent 排障文档](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)。
 

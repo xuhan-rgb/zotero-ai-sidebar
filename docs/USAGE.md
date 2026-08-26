@@ -285,7 +285,7 @@ WEB mode mirrors a real AI website into the Zotero conversation. It is useful wh
    ```
 
 2. Install the XPI. In the composer footer select **WEB**, choose **ChatGPT**, **DeepSeek**, **ChatGLM**, or **Kimi**, then click **Account**.
-3. Click **Check and repair Web Agent**. The plugin downloads the matching prebuilt runtime from the version's GitHub Release, verifies its size and SHA-256, and continues only after the protocol and runtime-version health check passes. The user's computer does not run npm. If automatic download fails, open or copy the provided link, download the ZIP in a browser, and select it in the same dialog. The dialog lists a missing Node, Chrome, or Linux `xclip` dependency explicitly.
+3. The account dialog checks the environment automatically. When Node.js or Chrome is missing it provides an official download button; when Linux `xclip` is missing it provides copyable installation guidance. The plugin never runs an installer or system command. After resolving the dependency, click **Check environment again**, then use **Install**, **Repair**, or **Upgrade Web Agent** as shown. The plugin downloads the matching prebuilt runtime from the version's GitHub Release, verifies its size and SHA-256, and continues only after the protocol and runtime-version health check passes. The user's computer does not run npm. If automatic download fails, open or copy the provided link, download the ZIP in a browser, and select it in the same dialog.
 4. Complete login in the temporary Chrome window. Keep **Hide browser in the background while chatting** checked to minimize the dedicated browser after setup; this is the default.
 
 **Daily use:**
