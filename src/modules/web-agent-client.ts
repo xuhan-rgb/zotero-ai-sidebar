@@ -273,11 +273,13 @@ function webAgentConfigPath(): string {
   const Z = Zotero as any;
   const root = Z.DataDirectory?.dir ?? Z.DataDirectory?.path ?? Z.Profile?.dir;
   if (!root) throw new Error("无法定位 Zotero 数据目录");
-  return appendPath(root, "zai-web-agent-config.json");
+  return appendPath(root, "zai-web-agent-config.json", Z.isWin === true);
 }
 
-function appendPath(root: string, name: string): string {
-  return `${root.replace(/[\\/]$/, "")}/${name}`;
+function appendPath(root: string, name: string, windows: boolean): string {
+  const normalizedRoot = windows ? root.replace(/\//g, "\\") : root;
+  const separator = windows ? "\\" : "/";
+  return `${normalizedRoot.replace(/[\\/]+$/, "")}${separator}${name}`;
 }
 
 function ioUtils(): { readUTF8(path: string): Promise<string> } {
