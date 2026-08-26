@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-sidebar",
   "type": "module",
-  "version": "0.8.3",
+  "version": "0.8.6",
   "description": "AI research sidebar for Zotero with API and local browser-backed web chat modes.",
   "config": {
     "addonName": "Zotero AI Sidebar",
@@ -21,11 +21,15 @@
   "homepage": "https://github.com/xuhan-rgb/zotero-ai-sidebar#readme",
   "license": "AGPL-3.0-or-later",
   "scripts": {
+    "prepare:web-agent": "npm ci --prefix web-agent --omit=dev --ignore-scripts",
+    "prestart": "npm run prepare:web-agent",
     "start": "zotero-plugin serve",
+    "prebuild": "npm run prepare:web-agent",
     "build": "zotero-plugin build && tsc --noEmit",
     "lint:check": "prettier --check . && eslint .",
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
+    "pretest": "npm run prepare:web-agent",
     "test": "vitest run",
     "test:zotero": "zotero-plugin test",
     "test:watch": "vitest",

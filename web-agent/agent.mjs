@@ -4,7 +4,7 @@ import { mkdtemp } from "node:fs/promises";
 import { rm } from "node:fs/promises";
 import { unlink } from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
-import { spawn, spawnSync } from "node:child_process";
+import { spawn } from "node:child_process";
 import http from "node:http";
 import process from "node:process";
 import { pathToFileURL } from "node:url";
@@ -40,6 +40,7 @@ import {
   browserModeFromVersion,
   chromeLaunchArguments,
 } from "./browser-mode.mjs";
+import { readClipboardText } from "./clipboard.mjs";
 
 const configPath = process.argv[2];
 if (!configPath) throw new Error("Web Agent config path is required");
@@ -68,6 +69,7 @@ const server = http.createServer(async (request, response) => {
         ok: true,
         version: "0.1.0",
         protocolVersion: PROTOCOL_VERSION,
+        runtimeVersion: config.runtimeVersion || null,
         active: Object.fromEntries(active),
         sessions: sessions.size,
         queued: Object.fromEntries(
@@ -76,6 +78,11 @@ const server = http.createServer(async (request, response) => {
         browserConnected: !!context,
         browserMode: await currentBrowserMode(),
       });
+    }
+    if (request.method === "POST" && request.url === "/shutdown") {
+      json(response, 202, { ok: true });
+      globalThis.setTimeout(() => void shutdown(), 0);
+      return;
     }
     if (request.method === "POST" && request.url === "/browser/open") {
       const value = await requestBody(request);
@@ -2152,19 +2159,6 @@ async function requestBody(request) {
 function json(response, status, body) {
   response.writeHead(status, { "content-type": "application/json" });
   response.end(JSON.stringify(body));
-}
-
-function readClipboardText() {
-  try {
-    const result = spawnSync(
-      "xclip",
-      ["-selection", "clipboard", "-o", "-target", "UTF8_STRING"],
-      { encoding: "utf8", timeout: 3_000 },
-    );
-    return result.status === 0 ? result.stdout || "" : "";
-  } catch {
-    return "";
-  }
 }
 
 function errorMessage(error) {

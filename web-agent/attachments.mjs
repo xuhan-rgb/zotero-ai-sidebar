@@ -1,13 +1,17 @@
-import { spawnSync } from "node:child_process";
 import { copyFile, mkdir, stat } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
 import { selectorList } from "./adapters.mjs";
+import {
+  clipboardPasteShortcut,
+  readClipboardText,
+  writeClipboard,
+} from "./clipboard.mjs";
 
 const MAX_ATTACHMENT_BYTES = 100 * 1024 * 1024;
 
-// Tasks for different providers run concurrently, but the X11 clipboard is a
+// Tasks for different providers run concurrently, but the system clipboard is a
 // single global resource. Serialize each write→paste→restore critical section
 // so a ChatGPT task cannot replace the file URI a DeepSeek task is pasting.
 let clipboardTurn = Promise.resolve();
@@ -97,7 +101,7 @@ export async function pasteWebAttachment(
           `${pathToFileURL(attachment.path).href}\r\n`,
         );
         await composer.focus();
-        await page.keyboard.press("Control+V");
+        await page.keyboard.press(clipboardPasteShortcut());
       } finally {
         writeClipboard("UTF8_STRING", savedText ?? "");
       }
@@ -417,26 +421,6 @@ export function attachmentTextStateFromBody(body, name) {
     return "uploading";
   }
   return "ready";
-}
-
-function readClipboardText() {
-  const result = spawnSync(
-    "xclip",
-    ["-selection", "clipboard", "-o", "-target", "UTF8_STRING"],
-    { encoding: "utf8", timeout: 3_000 },
-  );
-  return result.status === 0 ? result.stdout : null;
-}
-
-function writeClipboard(target, input) {
-  const result = spawnSync(
-    "xclip",
-    ["-selection", "clipboard", "-i", "-target", target],
-    { input, encoding: "utf8", timeout: 3_000 },
-  );
-  if (result.status !== 0) {
-    throw new Error(result.stderr?.trim() || "xclip failed");
-  }
 }
 
 async function anyVisible(page, selectors) {

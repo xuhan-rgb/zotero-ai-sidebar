@@ -276,18 +276,16 @@ When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full t
 
 WEB mode mirrors a real AI website into the Zotero conversation. It is useful when you want to use a website account instead of an API key. API mode remains independent and does not need Chrome or the companion process.
 
-**One-time installation (currently Linux/X11):**
+**One-time installation (Windows / Linux / macOS):**
 
-1. Install Node.js 20 or newer, Google Chrome, and `xclip`.
-2. From this repository checkout, run:
+1. Install Node.js 20 or newer and Google Chrome. Linux additionally needs `xclip`:
 
    ```bash
    sudo apt install xclip
-   bash scripts/install-web-agent.sh "$HOME/Zotero"
    ```
 
-   Replace `$HOME/Zotero` with the actual Zotero data directory when different.
-3. Restart Zotero. In the composer footer select **WEB**, choose **ChatGPT**, **DeepSeek**, **ChatGLM**, or **Kimi**, then click **Account**.
+2. Install the XPI. In the composer footer select **WEB**, choose **ChatGPT**, **DeepSeek**, **ChatGLM**, or **Kimi**, then click **Account**.
+3. Click **Check and repair Web Agent**. The plugin downloads the matching prebuilt runtime from the version's GitHub Release, verifies its size and SHA-256, and continues only after the protocol and runtime-version health check passes. The user's computer does not run npm. If automatic download fails, open or copy the provided link, download the ZIP in a browser, and select it in the same dialog. The dialog lists a missing Node, Chrome, or Linux `xclip` dependency explicitly.
 4. Complete login in the temporary Chrome window. Keep **Hide browser in the background while chatting** checked to minimize the dedicated browser after setup; this is the default.
 
 **Daily use:**
@@ -592,7 +590,7 @@ Click **Account**, wait for the dedicated Chrome window, complete login, and mak
 
 ### "WEB mode is stuck / the answer does not update"
 
-Check whether the progress card is still advancing. A stale companion is rejected before submission; rerun `bash scripts/install-web-agent.sh "$HOME/Zotero"` and restart the Web Agent when the protocol warning appears. Closing Zotero during a running task can leave a persisted progress card, but it does not mean the website is still generating after the agent process has stopped.
+Check whether the progress card is still advancing. A stale companion is rejected before submission; open **Account** and click **Check and repair Web Agent** when the protocol warning appears. Closing Zotero during a running task can leave a persisted progress card, but it does not mean the website is still generating after the agent process has stopped.
 
 If a live task needs to be interrupted, press `Esc` or click the composer **Stop** button. The partial answer remains in the conversation and is marked as cancelled; you can retry it without switching away from the selected WEB service.
 

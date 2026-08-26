@@ -30,6 +30,11 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
+### What's new in v0.8.6
+
+- **The XPI stays lightweight**: each version Release carries a separate, prebuilt `zai-web-agent-runtime.zip`; the plugin downloads and verifies the matching asset without running npm on the user's computer.
+- **Web Agent setup is recoverable**: failed downloads expose the Release page, direct link, and local-ZIP picker; checksum, version, protocol, and health checks complete before a new runtime replaces a working compatible version.
+
 ### What's new in v0.8.2
 
 - **Kimi is now a built-in WEB provider**: existing `kimi.com` custom configurations migrate automatically, while ChatGPT, DeepSeek, ChatGLM, Kimi, and third-party sites retain isolated adapters and account sessions.
@@ -65,18 +70,17 @@ Quick Ask opens with `Alt+Q` by default. It initially uses the active AI-chat mo
 
 Do not hardcode personal API keys, base URLs, or private model IDs in this repository.
 
-### Optional WEB mode (Linux/X11)
+### Optional WEB mode (Windows / Linux / macOS)
 
 WEB mode uses a local companion process and a dedicated Google Chrome profile. API mode does not need these components and is unaffected if the Web Agent is not installed.
 
-Requirements: Node.js 20 or newer, Google Chrome, and `xclip`. From a checkout of this repository, install the companion into your Zotero data directory:
+Requirements: Node.js 20 or newer and Google Chrome. Linux additionally needs `xclip`:
 
 ```bash
 sudo apt install xclip
-bash scripts/install-web-agent.sh "$HOME/Zotero"
 ```
 
-Replace `$HOME/Zotero` if your Zotero data directory is elsewhere. Then select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Kimi, or a custom service, and click **Account**. Complete login in the temporary Chrome window and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
+After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Kimi, or a custom service, and click **Account** and **Check and repair Web Agent**. The plugin downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Missing system dependencies are listed explicitly. Complete login in the temporary Chrome window and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
 
 The browser is minimized rather than replaced by a headless API: login, CAPTCHA, uploads, and each site's scripts still run in the dedicated Chrome profile. The plugin does not switch the site's fast/deep-thinking/search controls. The footer's service menu also contains **Manage third-party web pages…**; opening it does not change the active service. See [Web Agent troubleshooting](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md) for current compatibility limits.
 
@@ -242,7 +246,7 @@ flowchart LR
 
 ## Development
 
-Install dependencies:
+Install development dependencies (end users do not run npm):
 
 ```bash
 npm install
@@ -260,7 +264,7 @@ Build a local XPI:
 npm run build
 ```
 
-The build output is written to `.scaffold/build/`. Local `.xpi` files are ignored by Git and should not be committed.
+The build writes `zotero-ai-sidebar.xpi` and the separate `zai-web-agent-runtime.zip` to `.scaffold/build/`. Local release artifacts are ignored by Git and should not be committed.
 
 ### Code structure
 

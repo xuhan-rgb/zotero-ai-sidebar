@@ -19,6 +19,7 @@ install -m 0644 "$project_root/web-agent/attachments.mjs" "$install_dir/attachme
 install -m 0644 "$project_root/web-agent/answer-wait.mjs" "$install_dir/answer-wait.mjs"
 install -m 0644 "$project_root/web-agent/window-visibility.mjs" "$install_dir/window-visibility.mjs"
 install -m 0644 "$project_root/web-agent/browser-mode.mjs" "$install_dir/browser-mode.mjs"
+install -m 0644 "$project_root/web-agent/clipboard.mjs" "$install_dir/clipboard.mjs"
 npm install --prefix "$install_dir" --omit=dev --ignore-scripts
 node "$project_root/web-agent/write-config.mjs" \
   "$config_path" "$node_path" "$chrome_path" \

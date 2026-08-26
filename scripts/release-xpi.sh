@@ -12,11 +12,11 @@ Usage:
 What it does:
   1. Read the release version from package.json.
   2. Verify the working tree is clean.
-  3. Run tests and build the XPI locally.
+  3. Run tests and build the XPI and Web Agent runtime locally.
   4. Create an annotated git tag v<package.version> if needed.
   5. Push the current branch and tag.
   6. Wait for GitHub Actions Release XPI.
-  7. Print the final GitHub Release and XPI URL.
+  7. Print the final GitHub Release and asset URLs.
 
 Options:
   --no-watch     Do not wait for the GitHub Actions release run.

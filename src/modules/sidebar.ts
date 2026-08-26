@@ -227,6 +227,14 @@ import {
   openWebAccount,
 } from "./web-agent-client";
 import {
+  installLocalWebAgentRuntime,
+  inspectWebAgentInstallation,
+  repairWebAgentInstallation,
+  webAgentRuntimeRelease,
+  WebAgentRuntimeDownloadError,
+  type WebAgentInstallationReport,
+} from "./web-agent-installer";
+import {
   createWebContextAttachment,
   createWebTocAttachment,
   resolveWebPaperMaterial,
@@ -4762,7 +4770,27 @@ function configureWebAccount(
     doc,
     "div",
     "zai-web-account-status",
-    `正在打开 ${providerName} 登录网页…`,
+    "正在检查 Web Agent…",
+  );
+  const downloadActions = el(doc, "div", "zai-web-account-download-actions");
+  downloadActions.hidden = true;
+  const downloadHint = el(
+    doc,
+    "span",
+    "",
+    "自动下载失败，可手动下载 ZIP 后选择本地安装。",
+  );
+  const openDownloadPage = buttonEl(doc, "打开下载页面");
+  openDownloadPage.type = "button";
+  const copyDownloadLink = buttonEl(doc, "复制下载链接");
+  copyDownloadLink.type = "button";
+  const chooseRuntime = buttonEl(doc, "选择已下载的运行包");
+  chooseRuntime.type = "button";
+  downloadActions.append(
+    downloadHint,
+    openDownloadPage,
+    copyDownloadLink,
+    chooseRuntime,
   );
   const explanation = el(
     doc,
@@ -4789,19 +4817,28 @@ function configureWebAccount(
   );
   optionText.append(optionHint);
   visibilityOption.append(checkbox, optionText);
-  body.append(status, explanation, pageNoticeExplanation, visibilityOption);
+  body.append(
+    status,
+    downloadActions,
+    explanation,
+    pageNoticeExplanation,
+    visibilityOption,
+  );
 
   const foot = el(
     doc,
     "footer",
     "zai-custom-web-provider-foot zai-web-account-foot",
   );
+  const repair = buttonEl(doc, "检查并修复 Web Agent");
+  repair.type = "button";
   const reopen = buttonEl(doc, "重新显示登录网页");
   reopen.type = "button";
+  reopen.disabled = true;
   const done = buttonEl(doc, "完成并隐藏");
   done.type = "submit";
   done.className = "zai-custom-web-provider-primary";
-  foot.append(reopen, done);
+  foot.append(repair, reopen, done);
   form.append(body, foot);
   dialog.append(head, form);
   layer.append(dialog);
@@ -4809,8 +4846,22 @@ function configureWebAccount(
 
   let closed = false;
   let configured = false;
+  let webAgentReady = false;
+  let repairing = false;
   let pollTimer: number | undefined;
   let opening: Promise<void> | undefined;
+  const runtimeRelease = webAgentRuntimeRelease();
+  let runtimeDownloadUrl = runtimeRelease.downloadUrl;
+  let runtimeReleaseUrl = runtimeRelease.releaseUrl;
+
+  const hideDownloadActions = () => {
+    downloadActions.hidden = true;
+  };
+  const showDownloadActions = (error?: WebAgentRuntimeDownloadError) => {
+    runtimeDownloadUrl = error?.downloadUrl || runtimeRelease.downloadUrl;
+    runtimeReleaseUrl = error?.releaseUrl || runtimeRelease.releaseUrl;
+    downloadActions.hidden = false;
+  };
 
   const updateDoneLabel = () => {
     done.textContent = checkbox.checked ? "完成并隐藏" : "完成并保持显示";
@@ -4832,7 +4883,7 @@ function configureWebAccount(
     pollTimer = undefined;
   };
   const schedulePoll = () => {
-    if (closed || pollTimer != null) return;
+    if (closed || !webAgentReady || pollTimer != null) return;
     const callback = () => {
       pollTimer = undefined;
       void refreshStatus();
@@ -4847,6 +4898,7 @@ function configureWebAccount(
   }) => {
     if (closed) return;
     configured = result.configured;
+    status.classList.remove("is-error");
     state.webAccountConfigured = result.configured;
     status.classList.toggle("is-ready", result.configured);
     status.textContent = result.configured
@@ -4871,7 +4923,7 @@ function configureWebAccount(
     }
   };
   const openLoginPage = () => {
-    if (opening || closed) return;
+    if (opening || closed || !webAgentReady) return;
     reopen.disabled = true;
     status.classList.remove("is-error");
     status.textContent = `正在打开 ${providerName} 登录网页…`;
@@ -4890,27 +4942,93 @@ function configureWebAccount(
         schedulePoll();
       });
   };
+  const showInstallation = (report: WebAgentInstallationReport) => {
+    if (closed) return;
+    hideDownloadActions();
+    webAgentReady =
+      report.state === "ready" || report.state === "compatible";
+    status.classList.toggle("is-ready", webAgentReady);
+    status.classList.toggle("is-error", report.state === "blocked");
+    status.textContent = report.message;
+    reopen.disabled = !webAgentReady;
+    repair.textContent =
+      report.state === "compatible"
+        ? "升级 Web Agent"
+        : webAgentReady
+          ? "重新检查 Web Agent"
+          : "检查并修复 Web Agent";
+  };
+  const checkAndRepair = async (
+    repairIfNeeded: boolean,
+    localRuntimePath?: string,
+  ) => {
+    if (closed || repairing) return;
+    repairing = true;
+    let usableBeforeRepair = false;
+    repair.disabled = true;
+    reopen.disabled = true;
+    chooseRuntime.disabled = true;
+    hideDownloadActions();
+    status.classList.remove("is-ready", "is-error");
+    status.textContent = localRuntimePath
+      ? "正在校验并安装本地 Web Agent 运行包…"
+      : repairIfNeeded
+        ? "正在检查并修复 Web Agent…"
+        : "正在检查 Web Agent…";
+    try {
+      let report = await inspectWebAgentInstallation();
+      usableBeforeRepair =
+        report.state === "ready" || report.state === "compatible";
+      if (localRuntimePath && report.state !== "ready") {
+        report = await installLocalWebAgentRuntime(localRuntimePath);
+      } else if (
+        repairIfNeeded &&
+        (report.state === "repairable" || report.state === "compatible")
+      ) {
+        report = await repairWebAgentInstallation();
+      }
+      showInstallation(report);
+      if (report.state === "ready" || report.state === "compatible") {
+        openLoginPage();
+      }
+    } catch (error) {
+      webAgentReady = usableBeforeRepair;
+      status.textContent = error instanceof Error ? error.message : String(error);
+      status.classList.add("is-error");
+      reopen.disabled = !webAgentReady;
+      showDownloadActions(
+        error instanceof WebAgentRuntimeDownloadError ? error : undefined,
+      );
+    } finally {
+      repairing = false;
+      if (!closed) {
+        repair.disabled = false;
+        chooseRuntime.disabled = false;
+      }
+    }
+  };
   const closeDialog = async () => {
     if (closed) return;
     closed = true;
     stopPolling();
     reopen.disabled = true;
+    repair.disabled = true;
     done.disabled = true;
     done.textContent = checkbox.checked ? "正在隐藏…" : "正在保存…";
     await opening?.catch(() => undefined);
     try {
-      if (checkbox.checked) {
+      if (checkbox.checked && webAgentReady) {
         const result = await hideWebAccount(provider, customProvider);
         configured = result.configured || configured;
         state.webAccountConfigured = configured;
         state.webAccountNotice = configured
           ? `${providerName} 已就绪`
           : `${providerName} 登录网页已隐藏，尚未检测到登录`;
-      } else {
+      } else if (webAgentReady) {
         state.webAccountNotice = configured
           ? `${providerName} 已就绪`
           : `${providerName} 登录网页保持显示，尚未检测到登录`;
-      }
+      } else state.webAccountNotice = status.textContent || "Web Agent 尚未就绪";
     } catch (error) {
       state.webAccountNotice =
         error instanceof Error ? error.message : String(error);
@@ -4927,6 +5045,22 @@ function configureWebAccount(
     event.preventDefault();
     void closeDialog();
   });
+  repair.addEventListener("click", () => void checkAndRepair(true));
+  openDownloadPage.addEventListener("click", () => {
+    (Zotero as any).launchURL(runtimeReleaseUrl);
+  });
+  copyDownloadLink.addEventListener("click", () => {
+    void copyToClipboard(
+      doc,
+      runtimeDownloadUrl,
+      "web-agent-runtime-download-link",
+    ).then(() => flashButton(copyDownloadLink, "已复制"));
+  });
+  chooseRuntime.addEventListener("click", () => {
+    void pickWebAgentRuntimeFile(doc).then((path) => {
+      if (path) void checkAndRepair(true, path);
+    });
+  });
   reopen.addEventListener("click", openLoginPage);
   close.addEventListener("click", () => void closeDialog());
   layer.addEventListener("mousedown", (event) => {
@@ -4938,7 +5072,32 @@ function configureWebAccount(
     event.stopPropagation();
     void closeDialog();
   });
-  openLoginPage();
+  void checkAndRepair(false);
+}
+
+async function pickWebAgentRuntimeFile(doc: Document): Promise<string | null> {
+  const win = doc.defaultView;
+  if (!win?.browsingContext) throw new Error("当前窗口不支持文件选择器");
+  const nsFilePicker = Components.interfaces.nsIFilePicker;
+  const filePickerClass = (
+    Components.classes as unknown as Record<
+      string,
+      { createInstance(iid: typeof nsFilePicker): nsIFilePicker }
+    >
+  )["@mozilla.org/filepicker;1"];
+  const picker = filePickerClass.createInstance(nsFilePicker);
+  picker.init(
+    win.browsingContext,
+    "选择 Web Agent 运行包",
+    nsFilePicker.modeOpen,
+  );
+  picker.appendFilter("Web Agent ZIP", "*.zip");
+  picker.appendFilters(nsFilePicker.filterAll ?? 1);
+  const result = await new Promise<nsIFilePicker.ResultCode>((resolve) => {
+    picker.open({ done: resolve });
+  });
+  if (result !== nsFilePicker.returnOK) return null;
+  return picker.file?.path ?? null;
 }
 
 function webAccountIcon(doc: Document): Element {

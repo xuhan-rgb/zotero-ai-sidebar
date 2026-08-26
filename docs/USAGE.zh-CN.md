@@ -278,18 +278,16 @@ Quick Ask 不读取已有研究对话历史，也不调用写入类工具。按 
 
 WEB 模式把真实 AI 网页的回答同步进 Zotero 对话，适合使用网页账号而不是 API Key。API 模式与它完全独立，不需要 Chrome 或伴随进程。
 
-**首次安装（当前支持 Linux/X11）：**
+**首次安装（Windows / Linux / macOS）：**
 
-1. 安装 Node.js 20 或更高版本、Google Chrome 和 `xclip`。
-2. 在本仓库检出目录运行：
+1. 安装 Node.js 20 或更高版本和 Google Chrome。Linux 还需要 `xclip`：
 
    ```bash
    sudo apt install xclip
-   bash scripts/install-web-agent.sh "$HOME/Zotero"
    ```
 
-   Zotero 数据目录不在 `$HOME/Zotero` 时，请替换为实际路径。
-3. 重启 Zotero，在输入框底栏选择 **WEB**，选择 **ChatGPT**、**DeepSeek**、**ChatGLM** 或 **Kimi**，再点**账号**。
+2. 安装 XPI，在输入框底栏选择 **WEB**，选择 **ChatGPT**、**DeepSeek**、**ChatGLM** 或 **Kimi**，再点**账号**。
+3. 点**检查并修复 Web Agent**。插件会从当前版本的 GitHub Release 下载预构建运行包，校验大小与 SHA-256，并在协议和版本健康检查通过后继续；用户电脑不执行 npm。自动下载失败时，可打开或复制窗口提供的链接，用浏览器下载 ZIP 后在同一窗口选择安装。若 Node、Chrome 或 Linux 的 `xclip` 缺失，窗口会列出具体依赖。
 4. 在临时显示的 Chrome 窗口中完成登录。保留“**对话时在后台隐藏浏览器**”勾选，即可在配置完成后最小化专用浏览器；该选项默认开启。
 
 **日常使用：**
@@ -594,7 +592,7 @@ WEB 底栏只保留两个紧密关联的控件：
 
 ### "WEB 模式一直等待 / 回答不刷新"
 
-先看进度卡是否仍在推进。伴随进程版本过旧时，插件会在提交前拒绝任务；出现协议提示后重新运行 `bash scripts/install-web-agent.sh "$HOME/Zotero"` 并重启 Web Agent。任务进行中关闭 Zotero 可能保留上次进度卡，但如果 Agent 进程已经停止，并不代表网页仍在后台生成。
+先看进度卡是否仍在推进。伴随进程版本过旧时，插件会在提交前拒绝任务；出现协议提示后打开**账号**并点击**检查并修复 Web Agent**。任务进行中关闭 Zotero 可能保留上次进度卡，但如果 Agent 进程已经停止，并不代表网页仍在后台生成。
 
 需要中断仍在运行的任务时，按 `Esc` 或点击输入框的**停止**按钮。已同步的部分回答会留在对话中并标记为已取消，之后可直接重试，仍会使用当前选中的 WEB 服务。
 

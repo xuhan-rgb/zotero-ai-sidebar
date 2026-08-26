@@ -316,9 +316,9 @@ describe("Web Agent provider adapters", () => {
     );
     expect(source).toContain('"text/uri-list"');
     expect(source).toContain("writeClipboard(");
-    // The X11 clipboard is global; concurrent provider tasks must serialize.
+    // The system clipboard is global; concurrent provider tasks must serialize.
     expect(source).toContain("withClipboardLock(");
-    expect(source).toContain('page.keyboard.press("Control+V")');
+    expect(source).toContain("page.keyboard.press(clipboardPasteShortcut())");
     expect(source).toContain("options.allowClipboardFallback === false");
     expect(source.indexOf("const uploadedThroughInput")).toBeLessThan(
       source.indexOf("await withClipboardLock("),

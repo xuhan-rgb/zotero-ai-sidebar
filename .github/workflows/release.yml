@@ -73,14 +73,16 @@ jobs:
       - name: Run tests
         run: npm test
 
-      - name: Build XPI
+      - name: Build release artifacts
         run: npm run build
 
       - name: Upload workflow artifact
         uses: actions/upload-artifact@v4
         with:
           name: zotero-ai-sidebar-${{ env.RELEASE_TAG }}
-          path: .scaffold/build/*.xpi
+          path: |
+            .scaffold/build/zotero-ai-sidebar.xpi
+            .scaffold/build/zai-web-agent-runtime.zip
           if-no-files-found: error
 
       - name: Publish version release
@@ -88,12 +90,21 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           IS_PRERELEASE: ${{ github.event.inputs.prerelease || 'false' }}
         run: |
+          XPI_ASSET=".scaffold/build/zotero-ai-sidebar.xpi"
+          RUNTIME_ASSET=".scaffold/build/zai-web-agent-runtime.zip"
+          RELEASE_ASSETS=("$XPI_ASSET" "$RUNTIME_ASSET")
+          for asset in "${RELEASE_ASSETS[@]}"; do
+            if [ ! -f "$asset" ]; then
+              echo "Missing release asset: $asset" >&2
+              exit 1
+            fi
+          done
           if gh release view "$RELEASE_TAG" >/dev/null 2>&1; then
-            gh release upload "$RELEASE_TAG" .scaffold/build/*.xpi --clobber
+            gh release upload "$RELEASE_TAG" "${RELEASE_ASSETS[@]}" --clobber
           else
             args=(
               release create "$RELEASE_TAG"
-              .scaffold/build/*.xpi
+              "${RELEASE_ASSETS[@]}"
               --title "Zotero AI Sidebar $RELEASE_TAG"
               --generate-notes
             )

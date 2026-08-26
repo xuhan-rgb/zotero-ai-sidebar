@@ -1094,6 +1094,35 @@
   color: var(--zai-red, #a53f32);
 }
 
+.zai-web-account-download-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  margin: -5px 0 14px;
+  color: var(--zai-muted, #756454);
+  font-size: 10.5px;
+}
+
+.zai-web-account-download-actions[hidden] {
+  display: none;
+}
+
+.zai-web-account-download-actions span {
+  flex-basis: 100%;
+}
+
+.zai-web-account-download-actions button {
+  min-height: 27px;
+  padding: 0 9px;
+  border: 1px solid var(--zai-border, #d8c9b6);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.82);
+  color: var(--zai-text, #292621);
+  cursor: pointer;
+  font: 10.5px/1 var(--zai-font);
+}
+
 .zai-web-account-explanation {
   margin: 0;
   color: var(--zai-muted, #756454);

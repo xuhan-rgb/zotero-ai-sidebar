@@ -29,6 +29,11 @@
 
 已安装的插件也会自动更新：每次发布都会把 `update.json` / `update-beta.json` 发布到固定的 `release` Release，插件的 `update_url` 会检查它，因此正式版与预览版安装都能就地收到新版本提示。
 
+### v0.8.6 更新内容
+
+- **XPI 保持轻量**：每个具体版本 Release 同时提供预构建的 `zai-web-agent-runtime.zip`；插件下载并校验同版本资产，用户电脑不执行 npm。
+- **Web Agent 安装可恢复**：自动下载失败时提供 Release 页面、直接下载链接和本地 ZIP 选择；大小、SHA-256、版本、协议与健康检查全部通过后才切换运行版本，失败则保留兼容旧版本。
+
 ### v0.8.2 更新内容
 
 - **Kimi 成为内置 WEB 服务**：旧版保存的 `kimi.com` 自定义配置会自动迁移；ChatGPT、DeepSeek、ChatGLM、Kimi 和第三方站点继续使用互相隔离的适配器与账号会话。
@@ -64,18 +69,17 @@ Quick Ask 默认用 `Alt+Q` 打开。首次使用时采用当前 AI 对话模型
 
 请勿在本仓库中硬编码个人 API Key、Base URL 或私有模型 ID。
 
-### 可选 WEB 模式（Linux/X11）
+### 可选 WEB 模式（Windows / Linux / macOS）
 
 WEB 模式使用一个本地伴随进程和独立的 Google Chrome 配置目录。API 模式不依赖这些组件；未安装 Web Agent 时，普通 API 对话不受影响。
 
-需要 Node.js 20 或更高版本、Google Chrome 和 `xclip`。在本仓库检出目录中运行：
+需要 Node.js 20 或更高版本和 Google Chrome；Linux 还需要 `xclip`：
 
 ```bash
 sudo apt install xclip
-bash scripts/install-web-agent.sh "$HOME/Zotero"
 ```
 
-如果 Zotero 数据目录不在 `$HOME/Zotero`，请替换为实际路径。安装后在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义服务，再点击**账号**。在临时显示的 Chrome 窗口中完成登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
+安装 XPI 后，在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义服务，再点击**账号**和**检查并修复 Web Agent**。插件会从同版本 GitHub Release 下载预构建运行包，校验大小与 SHA-256，并在健康检查通过后打开登录网页；用户电脑不执行 npm。自动下载失败时，窗口会提供 Release 页面、直接下载链接和本地 ZIP 选择入口。系统依赖缺失时，检查结果会明确列出缺少的程序。在临时显示的 Chrome 窗口中完成登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
 
 这里的“隐藏”是最小化独立浏览器，而不是用 headless API 替代网页：登录、验证码、附件上传和网页脚本仍由该 Chrome 配置运行。插件不会切换网页的快速/深度思考/智能搜索开关。服务下拉菜单末尾提供**管理第三方网页…**，打开管理窗口不会改变当前服务。当前兼容边界见 [Web Agent 排障文档](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)。
 
@@ -241,7 +245,7 @@ flowchart LR
 
 ## 开发
 
-安装依赖：
+安装开发依赖（普通用户不需要运行 npm）：
 
 ```bash
 npm install
@@ -259,7 +263,7 @@ npm test
 npm run build
 ```
 
-构建产物在 `.scaffold/build/`。本地 `.xpi` 文件已被 `.gitignore` 忽略，不要提交。
+构建会在 `.scaffold/build/` 同时生成 `zotero-ai-sidebar.xpi` 和独立的 `zai-web-agent-runtime.zip`。本地发布产物已被 `.gitignore` 忽略，不要提交。
 
 ### 代码结构
 

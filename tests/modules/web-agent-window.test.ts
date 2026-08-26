@@ -130,5 +130,15 @@ describe("Web Agent browser window visibility", () => {
     expect(sidebar).toContain("await hideWebAccount(provider, customProvider)");
     expect(sidebar).toContain("完成并隐藏");
     expect(sidebar).toContain("getWebAccountStatus(");
+    expect(sidebar).toContain("检查并修复 Web Agent");
+    expect(sidebar).toContain("inspectWebAgentInstallation()");
+    expect(sidebar).toContain("repairWebAgentInstallation()");
+    expect(sidebar).toContain("WebAgentRuntimeDownloadError");
+    expect(sidebar).toContain("installLocalWebAgentRuntime(");
+    expect(sidebar).toContain("pickWebAgentRuntimeFile(");
+    expect(sidebar).toContain("打开下载页面");
+    expect(sidebar).toContain("复制下载链接");
+    expect(sidebar).toContain("选择已下载的运行包");
+    expect(sidebar).toContain('report.state === "compatible"');
   });
 });

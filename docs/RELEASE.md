@@ -1,6 +1,6 @@
 # Release Flow
 
-This project releases XPI files from Git tags. The local machine only commits and pushes a tag; GitHub Actions builds and publishes the XPI asset.
+This project releases a lightweight XPI and a separate prebuilt Web Agent runtime from Git tags. The local machine only commits and pushes a tag; GitHub Actions builds and publishes both assets.
 
 ## One-time setup
 
@@ -34,9 +34,9 @@ pass the expected tag explicitly:
 npm run release:xpi -- v0.1.2
 ```
 
-The script verifies the working tree is clean, runs tests, builds the XPI locally,
+The script verifies the working tree is clean, runs tests, builds both assets locally,
 creates the annotated tag if needed, pushes the current branch, pushes the tag,
-waits for GitHub Actions, and prints the final release asset URL.
+waits for GitHub Actions, and prints the final release asset URLs.
 
 ## Republish an existing tag
 
@@ -61,7 +61,7 @@ When the tag reaches GitHub, `.github/workflows/release.yml` automatically runs:
 - `npm ci`
 - `npm test`
 - `npm run build`
-- uploads `.scaffold/build/*.xpi` to the version release
+- uploads `.scaffold/build/zotero-ai-sidebar.xpi` and `.scaffold/build/zai-web-agent-runtime.zip` to the version release
 - publishes `update.json` / `update-beta.json` to the fixed `release` Release (auto-update)
 
 ## Manual release from GitHub UI
@@ -70,7 +70,9 @@ The same workflow also supports `workflow_dispatch`. Run **Release XPI** in GitH
 
 ## Notes
 
-- Do not commit local XPI build artifacts. `*.xpi` is ignored by `.gitignore`.
+- Do not commit local XPI or Web Agent runtime build artifacts.
+- End-user computers never run npm; GitHub Actions installs and packages `playwright-core` into the runtime ZIP.
+- Every version Release must contain both the XPI and the matching runtime ZIP. The workflow fails when either asset is missing.
 - Each release also publishes `update.json` / `update-beta.json` to a fixed `release` Release (the plugin's `update_url` target) for Zotero auto-update. Do not delete that `release` Release.
 - Local provider configuration such as API keys, Base URL, and model IDs stays in Zotero prefs, not source code.
 - Release tags should start with `v`, for example `v0.1.0`.

@@ -11,14 +11,20 @@ export interface WebAgentAttachment {
   mimeType: "text/plain" | "application/pdf";
 }
 
-interface WebAgentConfig {
+export interface WebAgentConfig {
+  runtimeVersion?: string;
   token: string;
   nodePath: string;
   chromePath: string;
   agentScript: string;
   profileDir: string;
+  cdpPort?: number;
   port: number;
   callbackUrl: string;
+}
+
+export function clearWebAgentConfigCache(): void {
+  cachedConfig = null;
 }
 
 export interface WebAccountStatus {
@@ -31,7 +37,7 @@ export interface WebAccountStatus {
 }
 
 let cachedConfig: WebAgentConfig | null = null;
-const WEB_AGENT_PROTOCOL_VERSION = 24;
+export const WEB_AGENT_PROTOCOL_VERSION = 24;
 
 type WebAgentProtocolStatus = "current" | "stale" | "offline";
 
