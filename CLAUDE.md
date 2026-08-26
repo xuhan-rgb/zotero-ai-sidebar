@@ -61,7 +61,7 @@ cd ~/Downloads/Zotero_linux-x86_64
 ## Development Lessons
 
 - Zotero versions share the same user profile unless launched with `./zotero -P`; installed XPIs live under `~/.zotero/zotero/<profile>/extensions/`, not inside the Zotero binary folder.
-- One XPI should support Zotero 7/8/9 when APIs are compatible; keep compatibility in `addon/manifest.json` with `strict_min_version` and `strict_max_version`.
+- One XPI should support Zotero 7/8/9/10 when APIs are compatible; keep compatibility in `addon/manifest.json` with `strict_min_version` and `strict_max_version`.
 - Keep provider config local in Zotero prefs. API keys, model IDs, Base URLs, max tokens, reasoning settings, and YOLO mode must not be hardcoded in source.
 - For OpenAI Responses with `store: false`, do not rely on persisted response item IDs. Replay only the current conversation inputs, function calls, and function-call outputs.
 - Selected PDF text is explicit UI context, not semantic intent routing. It may be attached to the next user message, dismissed by the user, and shown in a stable composer chip rather than causing sidebar layout jumps.

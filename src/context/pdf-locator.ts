@@ -740,7 +740,7 @@ async function waitForPdfSource(
 }
 
 // Walks the Zotero Reader object graph looking for any PDF text source.
-// GOTCHA: Zotero 7/8/9 expose this differently and even pre-release builds
+// GOTCHA: Zotero 7/8/9/10 expose this differently and even pre-release builds
 // switch between `_internalReader._primaryView` and direct `_iframeWindow`.
 // We try every shape we know and take the first that yields pageCount > 0.
 // REF: Zotero source `chrome/content/zotero/elements/reader.js`.
