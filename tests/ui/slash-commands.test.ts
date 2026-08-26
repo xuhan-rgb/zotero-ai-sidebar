@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   expandSlashCommandMessage,
   matchingSlashCommands,
+  matchingSlashCommandsForSendMode,
 } from '../../src/ui/slash-commands';
 
 describe('slash commands', () => {
@@ -9,6 +10,15 @@ describe('slash commands', () => {
     expect(matchingSlashCommands('/ar').map((command) => command.name)).toEqual(
       ['/arxiv-search'],
     );
+  });
+
+  it('offers slash commands in API mode but not WEB mode', () => {
+    expect(
+      matchingSlashCommandsForSendMode('/', 'api').map(
+        (command) => command.name,
+      ),
+    ).toEqual(['/arxiv-search', '/web-search']);
+    expect(matchingSlashCommandsForSendMode('/', 'web')).toEqual([]);
   });
 
   it('expands arxiv search into an explicit model instruction', () => {

@@ -105,7 +105,7 @@ import {
 } from "../settings/types";
 import {
   expandSlashCommandMessage,
-  matchingSlashCommands,
+  matchingSlashCommandsForSendMode,
   type SlashCommand,
 } from "../ui/slash-commands";
 import { serializeSelectionAsMarkdown } from "../ui/selection-serialize";
@@ -214,7 +214,8 @@ import {
   type WebAnnotationCandidate,
   webAnnotationTaskQuestion,
 } from "./web-annotation-batch";
-import { locateWebAnnotationQuote } from "./web-annotation-locate";
+import { locateWebAnnotationQuoteSegments } from "./web-annotation-locate";
+import { saveWebAnnotationEntry } from "./web-annotation-save";
 import { locateWebSelectionAnnotationDraft } from "./web-selection-annotation";
 import { renderWebTaskProgress, webTaskProgressFor } from "./web-task-progress";
 import { renderEmptySignatures } from "./empty-signatures";
@@ -2644,7 +2645,7 @@ function restoreReaderTextSelection(
       view._setSelectionRanges(scopedRanges);
       view._scrollSelectionHeadIntoView?.(scopedRanges);
       view._render?.(true);
-      setReaderTextLayerSelection(view, scopedRanges);
+      setReaderTextLayerSelection(view, scopedRanges, locator.selectedText);
       return (
         selectionAnnotationFromView(view, scopedRanges, locator) ??
         selectionAnnotationFromRanges(scopedRanges, locator)
@@ -3006,7 +3007,10 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   input.addEventListener("keydown", (event: KeyboardEvent) => {
     const slashTarget = activeSlashCommandTarget(input);
     const slashMatches = slashTarget
-      ? matchingSlashCommands(slashTarget.token)
+      ? matchingSlashCommandsForSendMode(
+          slashTarget.token,
+          state.localUiSettings.chatSendMode,
+        )
       : [];
     if (
       slashTarget &&
@@ -4248,7 +4252,12 @@ function renderSlashCommandMenu(
   state: PanelState,
 ) {
   const target = activeSlashCommandTarget(input);
-  const matches = target ? matchingSlashCommands(target.token) : [];
+  const matches = target
+    ? matchingSlashCommandsForSendMode(
+        target.token,
+        state.localUiSettings.chatSendMode,
+      )
+    : [];
   if (matches.length === 0) {
     menu.style.display = "none";
     menu.replaceChildren();
@@ -6987,39 +6996,36 @@ async function locateWebAnnotationBatch(
     for (const entry of batch.entries) {
       if (entry.locateState !== "pending") continue;
       try {
-        const result = await locateWebAnnotationQuote(
+        const results = await locateWebAnnotationQuoteSegments(
           locator,
           entry.quote,
           DEFAULT_CONTEXT_POLICY.minLocateConfidence,
         );
-        if (!result) {
+        if (!results?.length) {
           entry.locateState = "not_found";
           continue;
         }
+        const result = results[0]!;
         entry.locateState = "located";
-        entry.confidence = result.confidence;
-        entry.pageLabel = result.pageLabel;
+        entry.confidence = Math.min(
+          ...results.map((located) => located.confidence),
+        );
+        entry.pageLabel =
+          results.length > 1
+            ? `${result.pageLabel}–${results[results.length - 1]!.pageLabel}`
+            : result.pageLabel;
         entry.color = allowedAnnotationColor(entry.color ?? null) ?? undefined;
-        entry.snapshot = {
-          text: result.matchedText,
-          attachmentID: locator.attachmentID,
-          annotation: {
-            type: "highlight",
-            text: result.matchedText,
-            pageLabel: result.pageLabel,
-            sortIndex: result.sortIndex,
-            position: {
-              pageIndex: result.pageIndex,
-              rects: result.rects,
-              ...(result.anchorOffset != null
-                ? { zaiAnchorOffset: result.anchorOffset }
-                : {}),
-              ...(result.headOffset != null
-                ? { zaiHeadOffset: result.headOffset }
-                : {}),
-            },
-          },
-        };
+        const snapshots = results.map((located) =>
+          webAnnotationSnapshotFromLocateResult(locator!.attachmentID, located),
+        );
+        entry.snapshot = snapshots[0];
+        entry.segments =
+          snapshots.length > 1
+            ? snapshots.map((snapshot) => ({
+                snapshot,
+                state: { kind: "idle" },
+              }))
+            : undefined;
       } catch (error) {
         entry.locateState = "failed";
         entry.state = {
@@ -7038,6 +7044,32 @@ async function locateWebAnnotationBatch(
   }
   await persistPanelConversations(state);
   renderPanel(mount, state);
+}
+
+function webAnnotationSnapshotFromLocateResult(
+  attachmentID: number,
+  result: LocateResult,
+): AssistantAnnotationDraft["snapshot"] {
+  return {
+    text: result.matchedText,
+    attachmentID,
+    annotation: {
+      type: "highlight",
+      text: result.matchedText,
+      pageLabel: result.pageLabel,
+      sortIndex: result.sortIndex,
+      position: {
+        pageIndex: result.pageIndex,
+        rects: result.rects,
+        ...(result.anchorOffset != null
+          ? { zaiAnchorOffset: result.anchorOffset }
+          : {}),
+        ...(result.headOffset != null
+          ? { zaiHeadOffset: result.headOffset }
+          : {}),
+      },
+    },
+  };
 }
 
 function markMessageTaskCompleted(message: Message) {
@@ -11533,6 +11565,8 @@ function renderWebAnnotationBatch(
     const status =
       entry.state.kind === "saved"
         ? "✓"
+        : entry.state.kind === "failed"
+          ? "⚠"
         : entry.locateState === "located"
           ? "●"
           : entry.locateState === "pending"
@@ -11554,11 +11588,15 @@ function renderWebAnnotationBatch(
       doc,
       "small",
       "web-annotation-batch-entry-meta",
-      entry.snapshot
+      entry.segments?.length && entry.state.kind === "failed"
+        ? `已保存 ${entry.segments.filter((segment) => segment.state.kind === "saved").length}/${entry.segments.length} · 保存失败`
+        : entry.snapshot
         ? `第 ${entry.pageLabel || "?"} 页 · ${
-            entry.confidence === 1
-              ? "精确匹配"
-              : `相似度 ${Math.round((entry.confidence ?? 0) * 100)}%`
+            entry.segments?.length
+              ? "跨页精确匹配"
+              : entry.confidence === 1
+                ? "精确匹配"
+                : `相似度 ${Math.round((entry.confidence ?? 0) * 100)}%`
           }`
         : webAnnotationLocateLabel(entry.locateState),
     );
@@ -11600,10 +11638,16 @@ function renderWebAnnotationBatch(
   );
   retry.addEventListener("click", () => {
     for (const entry of batch.entries) {
-      if (entry.state.kind === "saved") continue;
+      if (
+        entry.state.kind === "saved" ||
+        entry.segments?.some((segment) => segment.state.kind === "saved")
+      ) {
+        continue;
+      }
       entry.locateState = "pending";
       entry.state = { kind: "idle" };
       delete entry.snapshot;
+      delete entry.segments;
       delete entry.pageLabel;
       delete entry.confidence;
     }
@@ -11688,6 +11732,10 @@ async function saveWebAnnotationBatch(
   renderPanel(mount, state);
   scheduleMessagesScrollRestore(mount, scrollSnapshot);
   for (const entry of targets) {
+    if (entry.segments?.length) {
+      await saveWebAnnotationEntry(entry, saveSelectionAnnotation);
+      continue;
+    }
     try {
       const saved = await saveSelectionAnnotation(entry.snapshot!, {
         comment: entry.comment,

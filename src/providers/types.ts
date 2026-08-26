@@ -56,6 +56,12 @@ export interface WebAnnotationBatchEntry {
   confidence?: number;
   pageLabel?: string;
   snapshot?: AssistantAnnotationDraft["snapshot"];
+  segments?: WebAnnotationBatchSegment[];
+  state: AssistantAnnotationDraftState;
+}
+
+export interface WebAnnotationBatchSegment {
+  snapshot: AssistantAnnotationDraft["snapshot"];
   state: AssistantAnnotationDraftState;
 }
 

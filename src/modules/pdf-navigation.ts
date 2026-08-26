@@ -26,6 +26,9 @@ import {
   charOffsetsForPdfRects,
   charOffsetsForReaderText,
   clonePlainForScope,
+  normalizedReaderCharsWithMap,
+  normalizedReaderTextWithMap,
+  normalizedReaderTokensWithMap,
   pdfRects,
   rectsFromReaderChars,
   selectionSortIndex,
@@ -896,7 +899,11 @@ export function restoreReaderTextSelectionQuiet(
       // Keep the visible selection but close Zotero's native selection popup.
       view._onSetSelectionPopup?.();
       view._render?.();
-      const visible = setReaderTextLayerSelection(view, scopedRanges);
+      const visible = setReaderTextLayerSelection(
+        view,
+        scopedRanges,
+        locator.selectedText,
+      );
       return visible;
     } catch (err) {
       debugZai("task.pdf-location.quiet-selection.failed", {
@@ -922,6 +929,7 @@ export function focusReaderViewForSelection(view: any) {
 export function setReaderTextLayerSelection(
   view: any,
   selectionRanges: any[],
+  expectedText = "",
 ): boolean {
   const win = view?._iframeWindow as Window | undefined;
   const doc = win?.document;
@@ -930,26 +938,28 @@ export function setReaderTextLayerSelection(
   try {
     const first = selectionRanges[0];
     const last = selectionRanges[selectionRanges.length - 1];
-    const start = readerTextLayerNodeOffset(
-      doc,
-      selectionRangePageIndex(first),
-      Math.min(
-        selectionRangeOffset(first?.anchorOffset),
-        selectionRangeOffset(first?.headOffset),
-      ),
+    const startOffset = Math.min(
+      selectionRangeOffset(first?.anchorOffset),
+      selectionRangeOffset(first?.headOffset),
     );
-    const end = readerTextLayerNodeOffset(
-      doc,
-      selectionRangePageIndex(last),
-      Math.max(
-        selectionRangeOffset(last?.anchorOffset),
-        selectionRangeOffset(last?.headOffset),
-      ),
-    );
-    if (!start || !end) return false;
-    const range = doc.createRange();
-    range.setStart(start.node, start.offset);
-    range.setEnd(end.node, end.offset);
+    const range =
+      readerTextLayerRangeForText(
+        doc,
+        selectionRangePageIndex(first),
+        expectedText,
+        startOffset,
+      ) ??
+      readerTextLayerRangeForOffsets(
+        doc,
+        selectionRangePageIndex(first),
+        startOffset,
+        selectionRangePageIndex(last),
+        Math.max(
+          selectionRangeOffset(last?.anchorOffset),
+          selectionRangeOffset(last?.headOffset),
+        ),
+      );
+    if (!range) return false;
     const selection = win.getSelection();
     if (!selection) return false;
     selection.removeAllRanges();
@@ -960,13 +970,93 @@ export function setReaderTextLayerSelection(
       rangeCount: selection.rangeCount,
       text: textDebugInfo(visibleText, 120),
     });
-    return selection.rangeCount > 0 && !!visibleText;
+    const expected = normalizedReaderTextWithMap(expectedText).text;
+    const actual = normalizedReaderTextWithMap(visibleText).text;
+    const matchesExpected = !expected || actual === expected;
+    if (!matchesExpected) selection.removeAllRanges();
+    return selection.rangeCount > 0 && !!visibleText && matchesExpected;
   } catch (err) {
     debugZai("task.pdf-location.dom-selection.failed", {
       error: errorMessage(err),
     });
     return false;
   }
+}
+
+function readerTextLayerRangeForOffsets(
+  doc: Document,
+  startPageIndex: number,
+  startOffset: number,
+  endPageIndex: number,
+  endOffset: number,
+): Range | null {
+  const start = readerTextLayerNodeOffset(doc, startPageIndex, startOffset);
+  const end = readerTextLayerNodeOffset(doc, endPageIndex, endOffset);
+  if (!start || !end) return null;
+  const range = doc.createRange();
+  range.setStart(start.node, start.offset);
+  range.setEnd(end.node, end.offset);
+  return range;
+}
+
+function readerTextLayerRangeForText(
+  doc: Document,
+  pageIndex: number,
+  text: string,
+  preferredOffset: number,
+): Range | null {
+  const needle = normalizedReaderTextWithMap(text).text;
+  if (!needle) return null;
+  const container = doc.querySelector(
+    `[data-page-number="${pageIndex + 1}"] .textLayer`,
+  );
+  if (!container) return null;
+
+  const points: Array<{ node: Node; offset: number; length: number }> = [];
+  const tokens: Array<{ char: string; index: number }> = [];
+  const textNodeType = doc.defaultView?.Node?.TEXT_NODE ?? 3;
+  const stack: Node[] = [container];
+  while (stack.length) {
+    const node = stack.pop()!;
+    if (node.nodeType === textNodeType) {
+      let nodeOffset = 0;
+      for (const char of Array.from(node.nodeValue ?? "")) {
+        const index = points.length;
+        points.push({ node, offset: nodeOffset, length: char.length });
+        tokens.push({ char, index });
+        nodeOffset += char.length;
+      }
+      continue;
+    }
+    for (let index = node.childNodes.length - 1; index >= 0; index--) {
+      const child = node.childNodes.item(index);
+      if (child) stack.push(child);
+    }
+  }
+
+  const haystack = normalizedReaderTokensWithMap(tokens);
+  let bestStart = -1;
+  let bestDistance = Infinity;
+  for (
+    let start = haystack.text.indexOf(needle);
+    start >= 0;
+    start = haystack.text.indexOf(needle, start + 1)
+  ) {
+    const distance = Math.abs(start - preferredOffset);
+    if (distance < bestDistance) {
+      bestStart = start;
+      bestDistance = distance;
+    }
+  }
+  if (bestStart < 0) return null;
+
+  const firstPoint = points[haystack.map[bestStart]!];
+  const lastPoint = points[haystack.map[bestStart + needle.length - 1]!];
+  if (!firstPoint || !lastPoint) return null;
+  const range = doc.createRange();
+  range.setStart(firstPoint.node, firstPoint.offset);
+  range.setEnd(lastPoint.node, lastPoint.offset + lastPoint.length);
+  return range;
 }
 
 type ReaderScrollContainer = {
@@ -1228,8 +1318,15 @@ export function selectionRangesFromLocator(
   const chars = Array.isArray(page?.chars) ? page.chars : [];
   if (!chars.length) return [];
 
+  const storedOffsets = selectionOffsetsFromLocatorPosition(
+    position,
+    chars.length,
+  );
   const offsets =
-    selectionOffsetsFromLocatorPosition(position, chars.length) ??
+    (storedOffsets &&
+    selectionOffsetsMatchReaderText(chars, storedOffsets, locator.selectedText)
+      ? storedOffsets
+      : null) ??
     charOffsetsForReaderText(chars, locator.selectedText, rects) ??
     charOffsetsForPdfRects(chars, rects);
   if (!offsets) {
@@ -1262,6 +1359,19 @@ export function selectionRangesFromLocator(
     position: { pageIndex, rects: rangeRects },
   };
   return range.collapsed ? [] : [range];
+}
+
+function selectionOffsetsMatchReaderText(
+  chars: any[],
+  offsets: [number, number],
+  selectedText: string,
+): boolean {
+  const expected = normalizedReaderTextWithMap(selectedText).text;
+  if (!expected) return false;
+  const actual = normalizedReaderCharsWithMap(
+    chars.slice(offsets[0], offsets[1]),
+  ).text;
+  return actual === expected;
 }
 
 export function selectionOffsetsFromLocatorPosition(

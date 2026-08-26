@@ -518,6 +518,19 @@ function normalizeWebAnnotationBatch(
       ? (entry.locateState as 'pending' | 'located' | 'not_found' | 'failed')
       : 'pending';
     const snapshot = normalizeAnnotationSnapshot(entry.snapshot);
+    const segments = Array.isArray(entry.segments)
+      ? entry.segments.flatMap((segment) => {
+          if (!isRecord(segment)) return [];
+          const segmentSnapshot = normalizeAnnotationSnapshot(segment.snapshot);
+          if (!segmentSnapshot) return [];
+          return [
+            {
+              snapshot: segmentSnapshot,
+              state: normalizeAnnotationDraftState(segment.state),
+            },
+          ];
+        })
+      : [];
     const effectiveLocateState =
       locateState === 'located' && !snapshot ? 'pending' : locateState;
     const color = normalizeAnnotationColor(entry.color);
@@ -533,6 +546,7 @@ function normalizeWebAnnotationBatch(
         ...(confidence != null ? { confidence } : {}),
         ...(pageLabel ? { pageLabel } : {}),
         ...(snapshot ? { snapshot } : {}),
+        ...(segments.length > 1 ? { segments } : {}),
         state: normalizeAnnotationDraftState(entry.state),
       },
     ];

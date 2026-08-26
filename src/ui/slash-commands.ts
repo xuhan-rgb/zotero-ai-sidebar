@@ -44,6 +44,13 @@ export function matchingSlashCommands(token: string): SlashCommand[] {
   );
 }
 
+export function matchingSlashCommandsForSendMode(
+  token: string,
+  sendMode: 'api' | 'web',
+): SlashCommand[] {
+  return sendMode === 'web' ? [] : matchingSlashCommands(token);
+}
+
 export function expandSlashCommandMessage(content: string): string {
   const trimmedStart = content.match(/^\s*/)?.[0] ?? '';
   const rest = content.slice(trimmedStart.length);

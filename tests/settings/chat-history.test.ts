@@ -396,6 +396,72 @@ describe('chat history', () => {
     });
   });
 
+  it('preserves cross-page WEB annotation segment save states', async () => {
+    const firstSnapshot = {
+      text: 'first page fragment',
+      attachmentID: 7,
+      annotation: {
+        pageLabel: '1',
+        position: { pageIndex: 0, rects: [[1, 2, 3, 4]] },
+      },
+    };
+    const secondSnapshot = {
+      text: 'second page fragment',
+      attachmentID: 7,
+      annotation: {
+        pageLabel: '2',
+        position: { pageIndex: 1, rects: [[5, 6, 7, 8]] },
+      },
+    };
+    await saveChatMessages(42, [
+      {
+        role: 'assistant',
+        content: 'cross-page draft',
+        webAnnotationBatch: {
+          createdAt: 1234,
+          entries: [
+            {
+              quote: 'full cross-page sentence',
+              comment: '关键限制',
+              locateState: 'located',
+              confidence: 1,
+              pageLabel: '1–2',
+              snapshot: firstSnapshot,
+              segments: [
+                {
+                  snapshot: firstSnapshot,
+                  state: {
+                    kind: 'saved',
+                    annotationID: 11,
+                    savedAt: 100,
+                  },
+                },
+                {
+                  snapshot: secondSnapshot,
+                  state: { kind: 'failed', error: 'second page failed' },
+                },
+              ],
+              state: { kind: 'failed', error: 'second page failed' },
+            },
+          ],
+        },
+      },
+    ]);
+
+    expect(
+      (await loadChatMessages(42))[0]?.webAnnotationBatch?.entries[0]?.segments,
+    ).toEqual([
+      {
+        snapshot: firstSnapshot,
+        state: { kind: 'saved', annotationID: 11, savedAt: 100 },
+      },
+      {
+        snapshot: secondSnapshot,
+        state: { kind: 'failed', error: 'second page failed' },
+      },
+    ]);
+  });
+
   it('preserves assistant token usage', async () => {
     await saveChatMessages(42, [
       {
