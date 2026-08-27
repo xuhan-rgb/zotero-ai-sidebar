@@ -60,7 +60,7 @@
     "@zotero-plugin/eslint-config": "^0.6.7",
     "chai": "^6.2.1",
     "esbuild": "^0.28.0",
-    "eslint": "^9.39.2",
+    "eslint": "^10.2.1",
     "happy-dom": "^20.9.0",
     "mocha": "^11.7.5",
     "prettier": "^3.7.4",
