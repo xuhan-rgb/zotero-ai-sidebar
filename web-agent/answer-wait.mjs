@@ -30,9 +30,14 @@ export function chatGLMResponseSnapshot(
     const answerParts = collapseChatGLMNodeCopies(
       rawParts.slice(boundary).filter(Boolean),
     );
+    const rawAnswer = answerParts.join("\n\n");
+    const reasoning = removeChatGLMAnswerSuffix(
+      reasoningParts.join("\n\n"),
+      rawAnswer,
+    );
     return {
-      answer: answerParts.join("\n\n"),
-      reasoning: reasoningParts.join("\n\n"),
+      answer: removeChatGLMReasoningPrefix(rawAnswer, reasoning),
+      reasoning,
     };
   }
   const parts = collapseChatGLMNodeCopies(rawParts.filter(Boolean));
@@ -52,6 +57,46 @@ export function chatGLMResponseSnapshot(
     answer: parts[parts.length - 1],
     reasoning: parts.slice(0, -1).join("\n\n"),
   };
+}
+
+function removeChatGLMAnswerSuffix(reasoning, answer) {
+  const reasoningText = String(reasoning || "").trim();
+  const answerText = String(answer || "").trim();
+  if (!reasoningText || !answerText || !reasoningText.endsWith(answerText)) {
+    return reasoningText;
+  }
+  return reasoningText.slice(0, -answerText.length).trim();
+}
+
+function removeChatGLMReasoningPrefix(answer, reasoning) {
+  const answerText = String(answer || "").trim();
+  const reasoningText = String(reasoning || "").trim();
+  if (reasoningText.length < 80 || !answerText) return answerText;
+  const prefixEnd = whitespaceTolerantPrefixEnd(answerText, reasoningText);
+  if (prefixEnd < 0) return answerText;
+  const remainder = answerText.slice(prefixEnd);
+  if (/^\s*\n\s*\n/.test(remainder)) return remainder.trim();
+  const nextParagraph = remainder.search(/\n\s*\n/);
+  return nextParagraph >= 0
+    ? remainder.slice(nextParagraph).trim()
+    : answerText;
+}
+
+function whitespaceTolerantPrefixEnd(value, prefix) {
+  let valueIndex = 0;
+  let prefixIndex = 0;
+  while (prefixIndex < prefix.length) {
+    if (/\s/.test(prefix[prefixIndex])) {
+      if (!/\s/.test(value[valueIndex] || "")) return -1;
+      while (/\s/.test(prefix[prefixIndex] || "")) prefixIndex += 1;
+      while (/\s/.test(value[valueIndex] || "")) valueIndex += 1;
+      continue;
+    }
+    if (value[valueIndex] !== prefix[prefixIndex]) return -1;
+    valueIndex += 1;
+    prefixIndex += 1;
+  }
+  return valueIndex;
 }
 
 function collapseChatGLMNodeCopies(parts) {

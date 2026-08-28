@@ -134,6 +134,58 @@ describe("web answer wait (in-place DeepSeek)", () => {
     });
   });
 
+  it("removes a final answer duplicated at the end of ChatGLM reasoning", () => {
+    const thinking = [
+      "The user greets again after discussing Equation 14b.",
+      "I should answer briefly and offer to continue.",
+    ].join("\n\n");
+    const finalAnswer = [
+      "你好！我们刚聊完公式（14b）——解模糊后的波向量如何提取方位角。",
+      "接下来可以继续承接公式，也可以分析实验结果。",
+    ].join("\n\n");
+
+    expect(
+      chatGLMResponseSnapshot(
+        [`${thinking}\n\n${finalAnswer}`, finalAnswer],
+        false,
+        true,
+        1,
+      ),
+    ).toEqual({
+      answer: finalAnswer,
+      reasoning: thinking,
+    });
+  });
+
+  it("removes a truncated ChatGLM reasoning prefix from the final answer", () => {
+    const sharedPrefix = [
+      'The user just said “hello” - a simple greeting.',
+      "I should respond naturally and offer to help with the paper.",
+    ].join("\n\n");
+    const thinking = `${sharedPrefix}\n\nI can respond in English and mention that I’ve read\u00a0the\u00a0p`;
+    const finalAnswer = [
+      "Hello! 👋",
+      "I’ve read the paper and I’m ready to answer your questions.",
+    ].join("\n\n");
+    const combinedNode = [
+      sharedPrefix,
+      "I can respond in English and mention that I’ve read the paper.",
+      finalAnswer,
+    ].join("\n\n");
+
+    expect(
+      chatGLMResponseSnapshot(
+        [thinking, combinedNode],
+        false,
+        true,
+        1,
+      ),
+    ).toEqual({
+      answer: finalAnswer,
+      reasoning: thinking,
+    });
+  });
+
   it("collapses duplicate ChatGLM thinking snapshots rendered in the same node", () => {
     const earlier = [
       "用户问的是第一章是什么意思，即论文的第一章是什么意思。根据 arXiv 目录，第一章是引言。",
