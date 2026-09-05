@@ -2,7 +2,7 @@ export function chromeLaunchArguments(config, mode) {
   return [
     `--user-data-dir=${config.profileDir}`,
     "--remote-debugging-address=127.0.0.1",
-    `--remote-debugging-port=${config.cdpPort || 9224}`,
+    "--remote-debugging-port=0",
     "--no-first-run",
     "--no-default-browser-check",
     ...(mode === "headless" ? ["--headless=new"] : []),

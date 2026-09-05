@@ -156,6 +156,5 @@ describe("Web Agent browser window visibility", () => {
     expect(sidebar).toContain("打开下载页面");
     expect(sidebar).toContain("复制下载链接");
     expect(sidebar).toContain("选择已下载的运行包");
-    expect(sidebar).toContain('report.state === "compatible"');
   });
 });

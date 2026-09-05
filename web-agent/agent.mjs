@@ -4,6 +4,8 @@ import { mkdtemp } from "node:fs/promises";
 import { rm } from "node:fs/promises";
 import { unlink } from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
+import { rename } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import http from "node:http";
 import process from "node:process";
@@ -45,6 +47,8 @@ import { readClipboardText } from "./clipboard.mjs";
 const configPath = process.argv[2];
 if (!configPath) throw new Error("Web Agent config path is required");
 const config = JSON.parse(await readFile(configPath, "utf8"));
+config.instanceId = process.argv[3] || randomUUID();
+config.cdpPort = 0;
 const PROTOCOL_VERSION = 24;
 const queues = new Map();
 const active = new Map();
@@ -67,9 +71,10 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "GET" && request.url === "/health") {
       return json(response, 200, {
         ok: true,
-        version: "0.1.0",
+        service: "zotero-ai-sidebar-web-agent",
+        instanceId: config.instanceId,
         protocolVersion: PROTOCOL_VERSION,
-        runtimeVersion: config.runtimeVersion || null,
+        runtimeSha256: config.runtimeSha256 || null,
         active: Object.fromEntries(active),
         sessions: sessions.size,
         queued: Object.fromEntries(
@@ -80,6 +85,11 @@ const server = http.createServer(async (request, response) => {
       });
     }
     if (request.method === "POST" && request.url === "/shutdown") {
+      if (
+        request.headers["x-zai-instance-id"] &&
+        request.headers["x-zai-instance-id"] !== config.instanceId
+      )
+        return json(response, 409, { error: "instance_mismatch" });
       json(response, 202, { ok: true });
       globalThis.setTimeout(() => void shutdown(), 0);
       return;
@@ -140,9 +150,24 @@ const server = http.createServer(async (request, response) => {
   }
 });
 
-server.listen(config.port, "127.0.0.1", () => {
-  console.log(`[web-agent] listening on 127.0.0.1:${config.port}`);
+await new Promise((resolve, reject) => {
+  server.once("error", reject);
+  server.listen(0, "127.0.0.1", resolve);
 });
+config.port = server.address().port;
+// Publish only after binding; readers never see a partially written config.
+const pendingConfigPath = `${configPath}.${process.pid}.tmp`;
+try {
+  await writeFile(pendingConfigPath, `${JSON.stringify(config, null, 2)}\n`, {
+    mode: 0o600,
+  });
+  await rename(pendingConfigPath, configPath);
+} catch (error) {
+  server.close();
+  await unlink(pendingConfigPath).catch(() => undefined);
+  throw error;
+}
+console.log(`[web-agent] listening on 127.0.0.1:${config.port}`);
 
 const hiddenWindowWatchdog = setInterval(() => {
   void enforceHiddenWindowPolicy();
@@ -934,17 +959,27 @@ function devToolsPortFile() {
 }
 
 async function readDevToolsEndpoint() {
-  let port = Number(config.cdpPort) || 9224;
   try {
     const raw = await readFile(devToolsPortFile(), "utf8");
-    const filePort = Number.parseInt(raw.split(/\s+/)[0], 10);
-    if (Number.isInteger(filePort) && filePort > 0) port = filePort;
-  } catch {}
-  if (!Number.isInteger(port) || port <= 0) return "";
-  const endpoint = `http://127.0.0.1:${port}`;
-  try {
-    const response = await fetch(`${endpoint}/json/version`);
-    return response.ok ? endpoint : "";
+    const [portLine, browserPath] = raw.trim().split(/\r?\n/);
+    const port = Number(portLine);
+    if (
+      !Number.isInteger(port) || port < 1 || port > 65535 ||
+      !browserPath?.startsWith("/devtools/browser/")
+    ) return "";
+    const endpoint = `http://127.0.0.1:${port}`;
+    const response = await globalThis.fetch(`${endpoint}/json/version`, {
+      signal: globalThis.AbortSignal.timeout(1_000),
+    });
+    if (!response.ok) return "";
+    const version = await response.json();
+    const socket = new globalThis.URL(version.webSocketDebuggerUrl);
+    // A reused port alone is not proof that this is our dedicated browser.
+    return socket.pathname === browserPath &&
+      Number(socket.port) === port &&
+      ["127.0.0.1", "localhost"].includes(socket.hostname)
+      ? endpoint
+      : "";
   } catch {
     return "";
   }

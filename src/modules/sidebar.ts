@@ -5024,8 +5024,7 @@ function configureWebAccount(
     if (closed) return;
     hideDownloadActions();
     showDependencyActions(report);
-    webAgentReady =
-      report.state === "ready" || report.state === "compatible";
+    webAgentReady = report.state === "ready";
     status.classList.toggle("is-ready", webAgentReady);
     status.classList.toggle("is-error", report.state === "blocked");
     status.textContent = report.message;
@@ -5033,13 +5032,11 @@ function configureWebAccount(
     repair.textContent =
       report.state === "blocked"
         ? "重新检查环境"
-        : report.state === "compatible"
-          ? "升级 Web Agent"
-          : webAgentReady
-            ? "重新检查 Web Agent"
-            : report.configPresent
-              ? "修复 Web Agent"
-              : "安装 Web Agent";
+        : webAgentReady
+          ? "重新检查 Web Agent"
+          : report.configPresent
+            ? "修复 Web Agent"
+            : "安装 Web Agent";
   };
   const checkAndRepair = async (
     repairIfNeeded: boolean,
@@ -5061,18 +5058,14 @@ function configureWebAccount(
         : "正在检查 Web Agent…";
     try {
       let report = await inspectWebAgentInstallation();
-      usableBeforeRepair =
-        report.state === "ready" || report.state === "compatible";
-      if (localRuntimePath && report.state !== "ready") {
+      usableBeforeRepair = report.state === "ready";
+      if (localRuntimePath) {
         report = await installLocalWebAgentRuntime(localRuntimePath);
-      } else if (
-        repairIfNeeded &&
-        (report.state === "repairable" || report.state === "compatible")
-      ) {
+      } else if (repairIfNeeded && report.state !== "blocked") {
         report = await repairWebAgentInstallation();
       }
       showInstallation(report);
-      if (report.state === "ready" || report.state === "compatible") {
+      if (report.state === "ready") {
         openLoginPage();
       }
     } catch (error) {

@@ -1,4 +1,6 @@
 import { initLocale } from "./utils/locale";
+import { shutdownWebAgent } from "./modules/web-agent-client";
+import { checkWebAgentAfterXpiUpdate } from "./modules/web-agent-installer";
 import { createZToolkit } from "./utils/ztoolkit";
 import { zoteroContextSource } from "./context/zotero-source";
 import {
@@ -162,6 +164,11 @@ async function onStartup() {
   ]);
 
   initLocale();
+  await checkWebAgentAfterXpiUpdate().catch((error) =>
+    Zotero.debug(
+      `[Zotero AI Sidebar] Web Agent package check failed: ${String(error)}`,
+    ),
+  );
   registerWebPromptHub();
 
   // Per-window setup BEFORE the global `registerSidebar` so each window
@@ -198,7 +205,9 @@ async function onMainWindowUnload(win: Window): Promise<void> {
   ztoolkit.unregisterAll();
 }
 
-function onShutdown(): void {
+async function onShutdown(isAppShutdown = false): Promise<void> {
+  await shutdownWebAgent();
+  if (isAppShutdown) return;
   unregisterWebPromptHub();
   stopAutoSyncTimer();
   stopPreferenceWatchers();

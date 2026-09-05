@@ -12,7 +12,11 @@ export interface WebAgentAttachment {
 }
 
 export interface WebAgentConfig {
+  runtimeSha256?: string;
+  checkedXpiVersion?: string;
+  needsRuntimeUpdate?: boolean;
   runtimeVersion?: string;
+  instanceId?: string;
   token: string;
   nodePath: string;
   chromePath: string;
@@ -37,7 +41,19 @@ export interface WebAccountStatus {
 }
 
 let cachedConfig: WebAgentConfig | null = null;
+let startingAgent: Promise<WebAgentConfig> | undefined;
+let shuttingDown = false;
 export const WEB_AGENT_PROTOCOL_VERSION = 24;
+
+export interface WebAgentHealth {
+  ok: boolean;
+  protocolVersion?: number;
+  runtimeVersion?: string;
+  runtimeSha256?: string;
+  version?: string;
+  service?: string;
+  instanceId?: string;
+}
 
 type WebAgentProtocolStatus = "current" | "stale" | "offline";
 
@@ -100,17 +116,14 @@ export async function cancelWebAgentTask(id: string): Promise<void> {
   const health = await webAgentHealth(config);
   if (health === "offline") return;
   if (health === "stale") throw staleWebAgentError();
-  const response = await fetch(
-    `http://127.0.0.1:${config.port}/tasks/cancel`,
-    {
-      method: "POST",
-      headers: {
-        authorization: `Bearer ${config.token}`,
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({ id }),
+  const response = await fetch(`http://127.0.0.1:${config.port}/tasks/cancel`, {
+    method: "POST",
+    headers: {
+      authorization: `Bearer ${config.token}`,
+      "content-type": "application/json",
     },
-  );
+    body: JSON.stringify({ id }),
+  });
   if (!response.ok) {
     throw new Error(`Web Agent 无法取消任务（HTTP ${response.status}）`);
   }
@@ -132,7 +145,9 @@ export async function openWebAccount(
     },
     body: JSON.stringify({ provider, customProvider }),
   });
-  const result = (await response.json().catch(() => ({}))) as WebAccountStatus & {
+  const result = (await response
+    .json()
+    .catch(() => ({}))) as WebAccountStatus & {
     error?: string;
   };
   if (!response.ok) {
@@ -164,7 +179,9 @@ export async function hideWebAccount(
     },
     body: JSON.stringify({ provider, customProvider }),
   });
-  const result = (await response.json().catch(() => ({}))) as WebAccountStatus & {
+  const result = (await response
+    .json()
+    .catch(() => ({}))) as WebAccountStatus & {
     error?: string;
   };
   if (!response.ok) {
@@ -204,8 +221,10 @@ export async function getWebAccountStatus(
   return result;
 }
 
-export async function loadWebAgentConfig(): Promise<WebAgentConfig> {
-  if (cachedConfig) return cachedConfig;
+export async function loadWebAgentConfig(
+  refresh = false,
+): Promise<WebAgentConfig> {
+  if (cachedConfig && !refresh) return cachedConfig;
   const path = webAgentConfigPath();
   const raw = await ioUtils().readUTF8(path);
   const value = JSON.parse(raw) as Partial<WebAgentConfig>;
@@ -215,7 +234,9 @@ export async function loadWebAgentConfig(): Promise<WebAgentConfig> {
     !value.chromePath ||
     !value.agentScript ||
     !value.profileDir ||
-    !value.port ||
+    !Number.isInteger(value.port) ||
+    value.port! < 0 ||
+    value.port! > 65535 ||
     !value.callbackUrl
   ) {
     throw new Error("Web Agent 配置不完整，请先运行安装脚本");
@@ -236,36 +257,153 @@ export async function webAgentAuthorizationMatches(
   }
 }
 
-async function startWebAgent(config: WebAgentConfig): Promise<void> {
+export async function startWebAgent(config: WebAgentConfig): Promise<void> {
+  if (shuttingDown) throw new Error("Zotero AI Sidebar 正在关闭");
+  if (config.needsRuntimeUpdate !== false) throw staleWebAgentError();
+  startingAgent ??= launchWebAgent(config).finally(() => {
+    startingAgent = undefined;
+  });
+  Object.assign(config, await startingAgent);
+}
+
+async function launchWebAgent(config: WebAgentConfig): Promise<WebAgentConfig> {
+  // Another caller or a manually started Agent may already have published its port.
+  const saved = await loadWebAgentConfig(true);
+  if ((await webAgentHealth(saved)) === "current") return saved;
   const exec = (Zotero as any)?.Utilities?.Internal?.exec;
   if (typeof exec !== "function") {
     throw new Error("当前 Zotero 无法启动 Web Agent");
   }
-  void exec(config.nodePath, [config.agentScript, webAgentConfigPath()]);
+  const instanceId = globalThis.crypto.randomUUID();
+  let startError: unknown;
+  void exec(config.nodePath, [
+    config.agentScript,
+    webAgentConfigPath(),
+    instanceId,
+  ])
+    .then((ok: boolean) => {
+      if (!ok) startError = new Error("Web Agent 进程启动失败");
+    })
+    .catch((error: unknown) => {
+      startError = error;
+    });
   for (let attempt = 0; attempt < 40; attempt += 1) {
     await delay(250);
-    if ((await webAgentHealth(config)) === "current") return;
+    if (startError) throw startError;
+    const published = await loadWebAgentConfig(true);
+    if (
+      (published.instanceId === instanceId || !published.instanceId) &&
+      (await webAgentHealth(published)) === "current"
+    )
+      return published;
   }
-  throw new Error("Web Agent 启动超时，请检查本地日志");
+  throw new Error(
+    "Web Agent 启动超时，请检查本地日志；旧运行包遇到端口冲突时请升级 Web Agent",
+  );
 }
 
 async function webAgentHealth(
   config: WebAgentConfig,
 ): Promise<WebAgentProtocolStatus> {
+  if (config.needsRuntimeUpdate !== false) return "stale";
+  return webAgentProtocolStatus(await readWebAgentHealth(config));
+}
+
+export async function readWebAgentHealth(
+  config: WebAgentConfig,
+): Promise<WebAgentHealth | null> {
+  if (!config.port) return null;
   try {
-    const response = await fetch(`http://127.0.0.1:${config.port}/health`, {
+    const response = await webAgentControlRequest(config, "/health", {
       headers: { authorization: `Bearer ${config.token}` },
     });
-    if (!response.ok) return "stale";
-    return webAgentProtocolStatus(await response.json().catch(() => null));
+    if (!response.ok) return null;
+    const health = response.body as WebAgentHealth;
+    if (
+      !health ||
+      health.ok !== true ||
+      !Number.isInteger(health.protocolVersion)
+    )
+      return null;
+    if (config.instanceId) {
+      return health.service === "zotero-ai-sidebar-web-agent" &&
+        health.instanceId === config.instanceId
+        ? health
+        : null;
+    }
+    // Legacy Agents do not publish an instance ID. Recognize their health schema.
+    return health.version === "0.1.0" &&
+      (typeof health.runtimeVersion === "string" ||
+        health.runtimeVersion === null)
+      ? health
+      : null;
   } catch {
-    return "offline";
+    return null;
+  }
+}
+
+export async function stopWebAgent(config: WebAgentConfig): Promise<boolean> {
+  if (!(await readWebAgentHealth(config))) return false;
+  try {
+    if (!config.instanceId) {
+      // Legacy health has no instance ID; confirm that it enforces our token.
+      const unauthenticated = await webAgentControlRequest(
+        config,
+        "/health",
+        {},
+      );
+      if (unauthenticated.status !== 401) return false;
+    }
+    const response = await webAgentControlRequest(config, "/shutdown", {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${config.token}`,
+        ...(config.instanceId
+          ? { "x-zai-instance-id": config.instanceId }
+          : {}),
+      },
+    });
+    return response.status === 202;
+  } catch {
+    return false;
+  }
+}
+
+export async function shutdownWebAgent(): Promise<void> {
+  shuttingDown = true;
+  try {
+    await startingAgent;
+    await stopWebAgent(await loadWebAgentConfig(true));
+  } catch {
+    // No installed or running Agent needs cleanup.
+  }
+}
+
+async function webAgentControlRequest(
+  config: WebAgentConfig,
+  path: string,
+  options: RequestInit,
+): Promise<{ ok: boolean; status: number; body: unknown }> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 2_000);
+  try {
+    const response = await fetch(`http://127.0.0.1:${config.port}${path}`, {
+      ...options,
+      signal: controller.signal,
+    });
+    return {
+      ok: response.ok,
+      status: response.status,
+      body: await response.json().catch(() => null),
+    };
+  } finally {
+    clearTimeout(timeout);
   }
 }
 
 function staleWebAgentError(): Error {
   return new Error(
-    "Web Agent 版本过旧，已停止提交以避免任务卡住。请重新运行安装脚本并重启 Web Agent。",
+    "Web Agent 运行包与当前插件不匹配，请在账号配置中安装当前插件的配套运行包。",
   );
 }
 

@@ -34,6 +34,18 @@ pass the expected tag explicitly:
 npm run release:xpi -- v0.1.2
 ```
 
+The product version comes from the root `package.json`. Web Agent has no
+independent release version: each XPI release includes its paired runtime ZIP,
+and the XPI embeds that ZIP's SHA-256 and download URL. Identical Agent contents
+produce identical ZIP bytes regardless of build time or XPI version. Installation
+and manual updates validate downloaded or selected ZIPs; after an XPI update,
+the recorded installation checksum is compared once. Ordinary use only performs
+local health checks. Bump the protocol number only for incompatible communication
+changes. Legacy installations without a checksum receipt require a paired install.
+
+Pushing a code branch alone does not publish these artifacts. Releases are triggered
+by pushing a `v*` tag or manually running the release workflow.
+
 The script verifies the working tree is clean, runs tests, builds both assets locally,
 creates the annotated tag if needed, pushes the current branch, pushes the tag,
 waits for GitHub Actions, and prints the final release asset URLs.

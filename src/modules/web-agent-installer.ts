@@ -2,6 +2,9 @@ import { version as ADDON_VERSION } from "../../package.json";
 import { unzipSync } from "fflate";
 import {
   clearWebAgentConfigCache,
+  readWebAgentHealth,
+  startWebAgent,
+  stopWebAgent,
   WEB_AGENT_PROTOCOL_VERSION,
   type WebAgentConfig,
 } from "./web-agent-client";
@@ -23,11 +26,10 @@ export interface WebAgentExecutableCandidates {
 export interface WebAgentHealth {
   ok: boolean;
   protocolVersion?: number;
-  runtimeVersion?: string;
+  runtimeSha256?: string;
 }
 
 export interface WebAgentRuntimeRelease {
-  runtimeVersion: string;
   protocolVersion: number;
   assetName: string;
   downloadUrl: string;
@@ -72,7 +74,7 @@ export interface WebAgentInstallerHost {
 }
 
 export interface WebAgentInstallationReport {
-  state: "ready" | "compatible" | "repairable" | "blocked";
+  state: "ready" | "repairable" | "blocked";
   action: "none" | "install" | "upgrade";
   message: string;
   nodePath?: string;
@@ -83,8 +85,37 @@ export interface WebAgentInstallationReport {
   missing: string[];
 }
 
+export async function checkWebAgentAfterXpiUpdate(
+  host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
+  release: WebAgentRuntimeRelease = webAgentRuntimeRelease(),
+  xpiVersion = ADDON_VERSION,
+): Promise<void> {
+  const path = nativeJoin(
+    host.platform,
+    host.dataDir,
+    "zai-web-agent-config.json",
+  );
+  const config = await readConfig(host, path);
+  if (!config || config.checkedXpiVersion === xpiVersion) return;
+  await recordPackageMatch(host, path, config, release.sha256, xpiVersion);
+}
+
+async function recordPackageMatch(
+  host: WebAgentInstallerHost,
+  path: string,
+  config: WebAgentConfig,
+  expectedSha256: string,
+  xpiVersion = ADDON_VERSION,
+): Promise<void> {
+  config.checkedXpiVersion = xpiVersion;
+  config.needsRuntimeUpdate = config.runtimeSha256 !== expectedSha256;
+  await host.writeUTF8(path, `${JSON.stringify(config, null, 2)}\n`);
+  clearWebAgentConfigCache();
+}
+
 export async function inspectWebAgentInstallation(
   host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
+  release?: WebAgentRuntimeRelease,
 ): Promise<WebAgentInstallationReport> {
   const configPath = nativeJoin(
     host.platform,
@@ -92,6 +123,10 @@ export async function inspectWebAgentInstallation(
     "zai-web-agent-config.json",
   );
   const config = await readConfig(host, configPath);
+  // Only explicit installation/update checks supply a release. Ordinary use
+  // reads the saved result without comparing ZIP identities or hashing files.
+  if (config && release)
+    await recordPackageMatch(host, configPath, config, release.sha256);
   const candidates = webAgentExecutableCandidates(host);
   const node = await findSupportedNode(host, [
     config?.nodePath,
@@ -124,23 +159,32 @@ export async function inspectWebAgentInstallation(
     };
   }
 
-  if (config && (await configRuntimeExists(host, config))) {
-    const health = await host.health(config);
+  if (
+    config &&
+    config.needsRuntimeUpdate === false &&
+    (await configRuntimeExists(host, config))
+  ) {
+    let health = await host.health(config);
+    if (!health) {
+      const started = await host.start(config).catch(() => false);
+      if (started) {
+        for (let attempt = 0; attempt < 40; attempt += 1) {
+          await refreshStartedConfig(host, configPath, config);
+          health = await host.health(config);
+          if (health) break;
+          await host.delay(250);
+        }
+      }
+    }
     if (
       health?.ok === true &&
-      health.protocolVersion === WEB_AGENT_PROTOCOL_VERSION
+      health.protocolVersion === WEB_AGENT_PROTOCOL_VERSION &&
+      (!release || health.runtimeSha256 === release.sha256)
     ) {
-      const current =
-        config.runtimeVersion === ADDON_VERSION &&
-        health.runtimeVersion === ADDON_VERSION;
-      const installedVersion =
-        health.runtimeVersion || config.runtimeVersion || "旧版本";
       return {
-        state: current ? "ready" : "compatible",
-        action: current ? "none" : "upgrade",
-        message: current
-          ? `Web Agent ${ADDON_VERSION} 已就绪`
-          : `Web Agent ${installedVersion} 可继续使用，建议升级到 ${ADDON_VERSION}`,
+        state: "ready",
+        action: "none",
+        message: "Web Agent 已就绪",
         nodePath: node?.path,
         nodeVersion: node?.version,
         chromePath,
@@ -154,9 +198,12 @@ export async function inspectWebAgentInstallation(
   return {
     state: "repairable",
     action: config ? "upgrade" : "install",
-    message: config
-      ? "Web Agent 需要检查或升级"
-      : "尚未安装 Web Agent，可以在线下载并安装",
+    message:
+      config && config.needsRuntimeUpdate !== false
+        ? "Web Agent 运行包与当前插件不匹配，请安装配套运行包"
+        : config
+          ? "Web Agent 需要检查或修复"
+          : "尚未安装 Web Agent，可以在线下载并安装",
     nodePath: node?.path,
     nodeVersion: node?.version,
     chromePath,
@@ -170,7 +217,7 @@ export async function repairWebAgentInstallation(
   host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
   release: WebAgentRuntimeRelease = webAgentRuntimeRelease(),
 ): Promise<WebAgentInstallationReport> {
-  const report = await inspectWebAgentInstallation(host);
+  const report = await inspectWebAgentInstallation(host, release);
   if (report.state === "blocked") throw new Error(report.message);
   if (report.state === "ready") return report;
 
@@ -193,9 +240,8 @@ export async function installLocalWebAgentRuntime(
   host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
   release: WebAgentRuntimeRelease = webAgentRuntimeRelease(),
 ): Promise<WebAgentInstallationReport> {
-  const report = await inspectWebAgentInstallation(host);
+  const report = await inspectWebAgentInstallation(host, release);
   if (report.state === "blocked") throw new Error(report.message);
-  if (report.state === "ready") return report;
   return installWebAgentRuntimeArchive(
     host,
     report,
@@ -227,25 +273,29 @@ async function installWebAgentRuntimeArchive(
     throw new Error("Web Agent 运行包 SHA-256 校验失败");
   }
   const archive = validateRuntimeArchive(unzipSync(archiveBytes), release);
+  if (report.state === "ready" && previous?.runtimeSha256 === release.sha256)
+    return report;
   const runtimeDir = nativeJoin(
     host.platform,
     host.profileDir,
     "zai-web-agent",
-    `runtime-${ADDON_VERSION}`,
+    `runtime-${release.sha256}`,
   );
   await writeRuntimeArchive(host, runtimeDir, archive);
 
-  let port = validPort(previous?.port) ? previous.port : 23120;
   const previousRunning = previous
     ? Boolean(await host.health(previous))
     : false;
   let previousStopped = false;
   if (previous && previousRunning) {
     previousStopped = await host.stop(previous).catch(() => false);
-    if (!previousStopped) port = port >= 23129 ? 23120 : port + 1;
+    if (!previousStopped)
+      throw new Error("旧 Web Agent 未能停止，请关闭 WEB 任务后重试升级");
   }
   const config: WebAgentConfig = {
-    runtimeVersion: ADDON_VERSION,
+    runtimeSha256: release.sha256,
+    checkedXpiVersion: ADDON_VERSION,
+    needsRuntimeUpdate: false,
     token: previous?.token || host.randomToken(),
     nodePath: report.nodePath!,
     chromePath: report.chromePath!,
@@ -258,8 +308,8 @@ async function installWebAgentRuntimeArchive(
         "zai-web-agent",
         "browser-profile",
       ),
-    cdpPort: validPort(previous?.cdpPort) ? previous.cdpPort : 9224,
-    port,
+    cdpPort: 0,
+    port: 0,
     callbackUrl:
       previous?.callbackUrl || "http://127.0.0.1:23119/zai/web-prompt-hub",
   };
@@ -275,16 +325,17 @@ async function installWebAgentRuntimeArchive(
       throw new Error("Web Agent 启动失败，请检查 Node.js 和 Chrome 路径");
     }
     for (let attempt = 0; attempt < 40; attempt += 1) {
+      await refreshStartedConfig(host, configPath, config);
       const health = await host.health(config);
       if (
         health?.ok === true &&
         health.protocolVersion === WEB_AGENT_PROTOCOL_VERSION &&
-        health.runtimeVersion === ADDON_VERSION
+        health.runtimeSha256 === release.sha256
       ) {
         return {
           state: "ready",
           action: "none",
-          message: `Web Agent ${ADDON_VERSION} 已安装并通过健康检查`,
+          message: "Web Agent 配套运行包已安装并通过健康检查",
           nodePath: report.nodePath,
           nodeVersion: report.nodeVersion,
           chromePath: report.chromePath,
@@ -305,7 +356,12 @@ async function installWebAgentRuntimeArchive(
       await host.setPermissions(configPath, 0o600).catch(() => undefined);
     }
     clearWebAgentConfigCache();
-    if (previous && previousRunning && previousStopped) {
+    if (
+      previous &&
+      !previous.needsRuntimeUpdate &&
+      previousRunning &&
+      previousStopped
+    ) {
       await host.start(previous).catch(() => false);
     }
     throw error;
@@ -449,6 +505,21 @@ async function readConfig(
   }
 }
 
+async function refreshStartedConfig(
+  host: WebAgentInstallerHost,
+  path: string,
+  config: WebAgentConfig,
+): Promise<void> {
+  const published = await readConfig(host, path);
+  if (
+    published?.token === config.token &&
+    published.agentScript === config.agentScript
+  ) {
+    Object.assign(config, published);
+    clearWebAgentConfigCache();
+  }
+}
+
 async function readOptionalUTF8(
   host: WebAgentInstallerHost,
   path: string,
@@ -522,14 +593,12 @@ function validateRuntimeArchive(
   }
   const manifest = JSON.parse(
     new TextDecoder().decode(files["runtime-manifest.json"]),
-  ) as { runtimeVersion?: unknown; protocolVersion?: unknown };
+  ) as { protocolVersion?: unknown };
   if (
-    manifest.runtimeVersion !== release.runtimeVersion ||
     manifest.protocolVersion !== release.protocolVersion ||
-    release.runtimeVersion !== ADDON_VERSION ||
     release.protocolVersion !== WEB_AGENT_PROTOCOL_VERSION
   ) {
-    throw new Error("Web Agent 运行包版本与插件不匹配");
+    throw new Error("Web Agent 运行包协议与插件不匹配");
   }
   return files;
 }
@@ -569,10 +638,6 @@ async function writeRuntimeArchive(
   }
 }
 
-function validPort(value: unknown): value is number {
-  return Number.isInteger(value) && Number(value) > 0 && Number(value) < 65536;
-}
-
 export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
   const Z = Zotero as any;
   const services = Services as any;
@@ -602,21 +667,8 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
       (name) => [name, processEnvironment.get(name) || undefined],
     ),
   );
-  const configPath = nativeJoin(platform, dataDir, "zai-web-agent-config.json");
 
-  const health = async (
-    config: WebAgentConfig,
-  ): Promise<WebAgentHealth | null> => {
-    try {
-      const response = await fetch(`http://127.0.0.1:${config.port}/health`, {
-        headers: { authorization: `Bearer ${config.token}` },
-      });
-      if (!response.ok) return null;
-      return (await response.json()) as unknown as WebAgentHealth;
-    } catch {
-      return null;
-    }
-  };
+  const health = readWebAgentHealth;
   const delay = (milliseconds: number) =>
     new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
 
@@ -694,14 +746,7 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
     randomToken: () => secureRandomToken(),
     stop: async (config) => {
       try {
-        const response = await fetch(
-          `http://127.0.0.1:${config.port}/shutdown`,
-          {
-            method: "POST",
-            headers: { authorization: `Bearer ${config.token}` },
-          },
-        );
-        if (response.status !== 202) return false;
+        if (!(await stopWebAgent(config))) return false;
         for (let attempt = 0; attempt < 20; attempt += 1) {
           await delay(100);
           if (!(await health(config))) return true;
@@ -712,15 +757,13 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
       }
     },
     start: async (config) => {
-      const exec = Z.Utilities?.Internal?.exec;
-      if (typeof exec !== "function") return false;
-      void exec(config.nodePath, [config.agentScript, configPath]).catch(
-        (error: unknown) =>
-          Z.debug(
-            `[Zotero AI Sidebar] Web Agent start failed: ${String(error)}`,
-          ),
-      );
-      return true;
+      try {
+        await startWebAgent(config);
+        return true;
+      } catch (error) {
+        Z.debug(`[Zotero AI Sidebar] Web Agent start failed: ${String(error)}`);
+        return false;
+      }
     },
     delay,
   };
@@ -728,7 +771,6 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
 
 export function webAgentRuntimeRelease(): WebAgentRuntimeRelease {
   return {
-    runtimeVersion: __webAgentRuntimeVersion__,
     protocolVersion: __webAgentRuntimeProtocolVersion__,
     assetName: __webAgentRuntimeAssetName__,
     downloadUrl: __webAgentRuntimeDownloadUrl__,

@@ -5,12 +5,12 @@ import { zipSync } from "fflate";
 
 interface RuntimeArchiveOptions {
   projectRoot: string;
-  runtimeVersion: string;
   protocolVersion: number;
 }
 
 interface RuntimeReleaseOptions extends RuntimeArchiveOptions {
   repository: string;
+  releaseVersion: string;
 }
 
 export interface WebAgentRuntimeRelease {
@@ -27,11 +27,11 @@ export async function buildWebAgentRuntimeRelease(
 ): Promise<WebAgentRuntimeRelease> {
   const archive = await buildWebAgentRuntimeArchive(options);
   const assetName = "zai-web-agent-runtime.zip" as const;
-  const releaseUrl = `https://github.com/${options.repository}/releases/tag/v${options.runtimeVersion}`;
+  const releaseUrl = `https://github.com/${options.repository}/releases/tag/v${options.releaseVersion}`;
   return {
     archive,
     assetName,
-    downloadUrl: `https://github.com/${options.repository}/releases/download/v${options.runtimeVersion}/${assetName}`,
+    downloadUrl: `https://github.com/${options.repository}/releases/download/v${options.releaseVersion}/${assetName}`,
     releaseUrl,
     sha256: createHash("sha256").update(archive).digest("hex"),
     size: archive.byteLength,
@@ -61,11 +61,11 @@ export async function buildWebAgentRuntimeArchive(
   );
   entries["runtime-manifest.json"] = new TextEncoder().encode(
     JSON.stringify({
-      runtimeVersion: options.runtimeVersion,
       protocolVersion: options.protocolVersion,
     }),
   );
-  return zipSync(entries, { level: 9 });
+  // ZIP identity must reflect content, not the time of the XPI build.
+  return zipSync(entries, { level: 9, mtime: new Date(2000, 0, 1) });
 }
 
 async function collectDirectory(

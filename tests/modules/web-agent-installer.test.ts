@@ -159,8 +159,9 @@ describe("Web Agent installation", () => {
     });
   });
 
-  it("keeps an older protocol-compatible runtime available while offering an upgrade", async () => {
+  it("does not use legacy runtime versions to decide updates during ordinary inspection", async () => {
     const config = {
+      needsRuntimeUpdate: false,
       runtimeVersion: "0.8.4",
       token: "e".repeat(64),
       nodePath: "/home/ada/.local/bin/node",
@@ -195,15 +196,117 @@ describe("Web Agent installation", () => {
     } as WebAgentInstallerHost;
 
     await expect(inspectWebAgentInstallation(host)).resolves.toMatchObject({
-      state: "compatible",
-      action: "upgrade",
-      message: `Web Agent 0.8.4 可继续使用，建议升级到 ${addonVersion}`,
+      state: "ready",
+      action: "none",
+      message: "Web Agent 已就绪",
       configPresent: true,
       missing: [],
     });
   });
 
-  it("downloads the matching release runtime and verifies its health before reporting ready", async () => {
+  it("does not offer an Agent upgrade merely because the XPI version changed", async () => {
+    const config = {
+      needsRuntimeUpdate: false,
+      runtimeSha256: "f".repeat(64),
+      token: "f".repeat(64),
+      nodePath: "/home/ada/.local/bin/node",
+      chromePath: "/usr/bin/google-chrome",
+      agentScript: "/home/ada/runtime-current/agent.mjs",
+      profileDir: "/home/ada/browser-profile",
+      port: 23120,
+      callbackUrl: "http://127.0.0.1:23119/zai/web-prompt-hub",
+    };
+    const existing = new Set([
+      "/home/ada/Zotero/zai-web-agent-config.json",
+      config.nodePath,
+      config.chromePath,
+      config.agentScript,
+      "/usr/bin/xclip",
+    ]);
+    const host = {
+      platform: "linux" as const,
+      homeDir: "/home/ada",
+      dataDir: "/home/ada/Zotero",
+      profileDir: "/home/ada/.zotero/profile",
+      env: {},
+      exists: async (path: string) => existing.has(path),
+      readUTF8: async () => JSON.stringify(config),
+      probeNodeVersion: async (path: string) =>
+        path === config.nodePath ? "v22.23.1" : null,
+      health: async () => ({
+        ok: true,
+        protocolVersion: 24,
+        runtimeSha256: "f".repeat(64),
+      }),
+    } as WebAgentInstallerHost;
+
+    await expect(inspectWebAgentInstallation(host)).resolves.toMatchObject({
+      state: "ready",
+      action: "none",
+      message: "Web Agent 已就绪",
+    });
+  });
+
+  it("restarts an approved offline Agent before offering a repair", async () => {
+    const config = {
+      needsRuntimeUpdate: false,
+      runtimeVersion: "0.8.4",
+      token: "1".repeat(64),
+      nodePath: "/home/ada/.local/bin/node",
+      chromePath: "/usr/bin/google-chrome",
+      agentScript: "/home/ada/runtime-0.8.4/agent.mjs",
+      profileDir: "/home/ada/browser-profile",
+      port: 23120,
+      callbackUrl: "http://127.0.0.1:23119/zai/web-prompt-hub",
+    };
+    const existing = new Set([
+      "/home/ada/Zotero/zai-web-agent-config.json",
+      config.nodePath,
+      config.chromePath,
+      config.agentScript,
+      "/usr/bin/xclip",
+    ]);
+    let started = false;
+    let savedConfig = JSON.stringify(config);
+    const host = {
+      platform: "linux" as const,
+      homeDir: "/home/ada",
+      dataDir: "/home/ada/Zotero",
+      profileDir: "/home/ada/.zotero/profile",
+      env: {},
+      exists: async (path: string) => existing.has(path),
+      readUTF8: async () => savedConfig,
+      writeUTF8: async (_path: string, value: string) => {
+        savedConfig = value;
+      },
+      probeNodeVersion: async (path: string) =>
+        path === config.nodePath ? "v22.23.1" : null,
+      health: async () =>
+        started
+          ? {
+              ok: true,
+              protocolVersion: 24,
+              runtimeVersion: "0.8.4",
+            }
+          : null,
+      start: async () => {
+        started = true;
+        return true;
+      },
+      delay: async () => undefined,
+    } as WebAgentInstallerHost;
+
+    await expect(inspectWebAgentInstallation(host)).resolves.toMatchObject({
+      state: "ready",
+      action: "none",
+      message: "Web Agent 已就绪",
+    });
+    expect(started).toBe(true);
+    expect(JSON.parse(savedConfig)).toMatchObject(config);
+  });
+
+  it("checks the port published by the installed runtime before reporting success", async () => {
+    const expectedPort = 41357;
     const files = new Map<string, Uint8Array | string>();
     const existing = new Set([
       "/home/ada/.local/bin/node",
@@ -216,7 +319,6 @@ describe("Web Agent installation", () => {
       "agent.mjs": new TextEncoder().encode("// bundled agent"),
       "runtime-manifest.json": new TextEncoder().encode(
         JSON.stringify({
-          runtimeVersion: addonVersion,
           protocolVersion: 24,
         }),
       ),
@@ -225,7 +327,6 @@ describe("Web Agent installation", () => {
       ),
     });
     const release = {
-      runtimeVersion: addonVersion,
       protocolVersion: 24,
       assetName: "zai-web-agent-runtime.zip",
       downloadUrl: `https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/download/v${addonVersion}/zai-web-agent-runtime.zip`,
@@ -249,11 +350,11 @@ describe("Web Agent installation", () => {
       probeNodeVersion: async (path) =>
         path === "/home/ada/.local/bin/node" ? "v22.23.1" : null,
       health: async (config) =>
-        started && config === startedConfig
+        started && config.port === expectedPort
           ? {
               ok: true,
               protocolVersion: 24,
-              runtimeVersion: addonVersion,
+              runtimeSha256: release.sha256,
             }
           : null,
       fetchRuntimeArchive: async (url) => {
@@ -262,6 +363,9 @@ describe("Web Agent installation", () => {
       },
       sha256: async (value) => createHash("sha256").update(value).digest("hex"),
       makeDirectory: async () => undefined,
+      remove: async (path) => {
+        files.delete(path);
+      },
       write: async (path, value) => {
         files.set(path, value);
       },
@@ -272,7 +376,16 @@ describe("Web Agent installation", () => {
       randomToken: () => "a".repeat(64),
       stop: async () => true,
       start: async (config) => {
-        startedConfig = config;
+        expect(config.port).toBe(0);
+        startedConfig = { ...config };
+        files.set(
+          "/home/ada/Zotero/zai-web-agent-config.json",
+          JSON.stringify({
+            ...config,
+            port: expectedPort,
+            instanceId: "installed-instance",
+          }),
+        );
         started = true;
         return true;
       },
@@ -287,17 +400,19 @@ describe("Web Agent installation", () => {
       nodeVersion: "22.23.1",
     });
     expect(startedConfig).toMatchObject({
-      runtimeVersion: addonVersion,
+      runtimeSha256: release.sha256,
+      checkedXpiVersion: addonVersion,
+      needsRuntimeUpdate: false,
       nodePath: "/home/ada/.local/bin/node",
       chromePath: "/usr/bin/google-chrome",
-      agentScript: `/home/ada/.zotero/profile/zai-web-agent/runtime-${addonVersion}/agent.mjs`,
+      agentScript: `/home/ada/.zotero/profile/zai-web-agent/runtime-${release.sha256}/agent.mjs`,
       profileDir: "/home/ada/.zotero/profile/zai-web-agent/browser-profile",
       token: "a".repeat(64),
-      port: 23120,
+      port: 0,
     });
     expect(
       files.has(
-        `/home/ada/.zotero/profile/zai-web-agent/runtime-${addonVersion}/node_modules/playwright-core/package.json`,
+        `/home/ada/.zotero/profile/zai-web-agent/runtime-${release.sha256}/node_modules/playwright-core/package.json`,
       ),
     ).toBe(true);
     expect(
@@ -305,8 +420,9 @@ describe("Web Agent installation", () => {
         String(files.get("/home/ada/Zotero/zai-web-agent-config.json")),
       ),
     ).toMatchObject({
-      runtimeVersion: addonVersion,
-      agentScript: `/home/ada/.zotero/profile/zai-web-agent/runtime-${addonVersion}/agent.mjs`,
+      agentScript: `/home/ada/.zotero/profile/zai-web-agent/runtime-${release.sha256}/agent.mjs`,
+      port: expectedPort,
+      callbackUrl: "http://127.0.0.1:23119/zai/web-prompt-hub",
     });
   });
 
@@ -315,7 +431,6 @@ describe("Web Agent installation", () => {
       "agent.mjs": new TextEncoder().encode("// downloaded agent"),
       "runtime-manifest.json": new TextEncoder().encode(
         JSON.stringify({
-          runtimeVersion: addonVersion,
           protocolVersion: 24,
         }),
       ),
@@ -324,7 +439,6 @@ describe("Web Agent installation", () => {
       ),
     });
     const release = {
-      runtimeVersion: addonVersion,
       protocolVersion: 24,
       assetName: "zai-web-agent-runtime.zip",
       downloadUrl: "https://example.invalid/zai-web-agent-runtime.zip",
@@ -360,7 +474,7 @@ describe("Web Agent installation", () => {
           ? {
               ok: true,
               protocolVersion: 24,
-              runtimeVersion: addonVersion,
+              runtimeSha256: release.sha256,
             }
           : null,
       fetchRuntimeArchive: async () => {
@@ -394,7 +508,7 @@ describe("Web Agent installation", () => {
     ).resolves.toMatchObject({ state: "ready", action: "none" });
   });
 
-  it("restores the previous runtime when the downloaded upgrade fails its health check", async () => {
+  it("preserves the previous files and login config without approving an unmatched runtime after a failed update", async () => {
     const configPath = "/home/ada/Zotero/zai-web-agent-config.json";
     const previousConfig = {
       runtimeVersion: "0.8.4",
@@ -412,7 +526,6 @@ describe("Web Agent installation", () => {
       "agent.mjs": new TextEncoder().encode("// broken upgrade"),
       "runtime-manifest.json": new TextEncoder().encode(
         JSON.stringify({
-          runtimeVersion: addonVersion,
           protocolVersion: 24,
         }),
       ),
@@ -421,7 +534,6 @@ describe("Web Agent installation", () => {
       ),
     });
     const release = {
-      runtimeVersion: addonVersion,
       protocolVersion: 24,
       assetName: "zai-web-agent-runtime.zip",
       downloadUrl: "https://example.invalid/zai-web-agent-runtime.zip",
@@ -485,8 +597,11 @@ describe("Web Agent installation", () => {
     await expect(repairWebAgentInstallation(host, release)).rejects.toThrow(
       "健康检查未通过",
     );
-    expect(files.get(configPath)).toBe(previousRaw);
-    expect(started).toHaveLength(2);
-    expect(started[1]).toMatchObject(previousConfig);
+    expect(JSON.parse(String(files.get(configPath)))).toEqual({
+      ...previousConfig,
+      checkedXpiVersion: addonVersion,
+      needsRuntimeUpdate: true,
+    });
+    expect(started).toHaveLength(1);
   });
 });

@@ -1,6 +1,6 @@
 import path from "node:path";
 import { createHash } from "node:crypto";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { unzipSync } from "fflate";
 import { version as addonVersion } from "../../package.json";
 import {
@@ -9,10 +9,34 @@ import {
 } from "../../scripts/web-agent-runtime-archive";
 
 describe("Web Agent runtime archive", () => {
+  it("keeps the same ZIP identity across build times and XPI releases when the Agent is unchanged", async () => {
+    vi.useFakeTimers();
+    try {
+      const options = {
+        projectRoot: path.resolve("."),
+        protocolVersion: 24,
+        repository: "xuhan-rgb/zotero-ai-sidebar",
+      };
+      vi.setSystemTime(new Date("2025-01-01T00:00:00Z"));
+      const first = await buildWebAgentRuntimeRelease({
+        ...options,
+        releaseVersion: "0.8.6",
+      });
+      vi.setSystemTime(new Date("2026-09-06T12:00:00Z"));
+      const second = await buildWebAgentRuntimeRelease({
+        ...options,
+        releaseVersion: "0.8.7",
+      });
+      expect(second.sha256).toBe(first.sha256);
+      expect(second.downloadUrl).not.toBe(first.downloadUrl);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("packages the agent, its pinned browser driver, and a matching manifest", async () => {
     const archive = await buildWebAgentRuntimeArchive({
       projectRoot: path.resolve("."),
-      runtimeVersion: addonVersion,
       protocolVersion: 24,
     });
     const files = unzipSync(archive);
@@ -24,13 +48,16 @@ describe("Web Agent runtime archive", () => {
     );
     expect(
       JSON.parse(new TextDecoder().decode(files["runtime-manifest.json"])),
-    ).toEqual({ runtimeVersion: addonVersion, protocolVersion: 24 });
+    ).toEqual({ protocolVersion: 24 });
+    expect(
+      JSON.parse(new TextDecoder().decode(files["package.json"])),
+    ).not.toHaveProperty("version");
   });
 
   it("builds a versioned GitHub Release asset with integrity metadata", async () => {
     const release = await buildWebAgentRuntimeRelease({
       projectRoot: path.resolve("."),
-      runtimeVersion: addonVersion,
+      releaseVersion: addonVersion,
       protocolVersion: 24,
       repository: "xuhan-rgb/zotero-ai-sidebar",
     });

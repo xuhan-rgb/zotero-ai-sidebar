@@ -8,6 +8,15 @@ import {
 } from "../../web-agent/browser-mode.mjs";
 
 describe("Web Agent browser modes", () => {
+  it("lets Chrome bind an unused port even when the saved CDP port is occupied", () => {
+    const args = chromeLaunchArguments(
+      { profileDir: "/profile", cdpPort: 9224 },
+      "headless",
+    );
+    expect(args).toContain("--remote-debugging-port=0");
+    expect(args).not.toContain("--remote-debugging-port=9224");
+  });
+
   it("starts hidden conversations in a browser with no desktop window", () => {
     const args = chromeLaunchArguments(
       { profileDir: "/profile", cdpPort: 9224 },
