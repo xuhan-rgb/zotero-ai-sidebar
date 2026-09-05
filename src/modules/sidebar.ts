@@ -3356,9 +3356,11 @@ async function sendWebPromptMessage(
   if (!account.configured) {
     releaseWebPromptLock();
     state.webAccountConfigured = false;
-    state.webAccountNotice = provider.startsWith("custom:")
-      ? `未检测到 ${webProviderName(state, provider)} 的可用输入框，请先打开该网址并完成登录`
-      : `尚未配置 ${webProviderName(state, provider)} 网页账号，请先点击账号配置按钮并手动登录`;
+    state.webAccountNotice = account.verificationRequired
+      ? `${webProviderName(state, provider)} 网站要求访问验证，请在专用 Chrome 中手动完成验证`
+      : provider.startsWith("custom:")
+        ? `未检测到 ${webProviderName(state, provider)} 的可用输入框，请先打开该网址并完成登录`
+        : `尚未配置 ${webProviderName(state, provider)} 网页账号，请先点击账号配置按钮并手动登录`;
     renderPanel(mount, state);
     const doc = mount.ownerDocument;
     if (doc) {
@@ -3826,7 +3828,7 @@ function webPromptStatusMessage(
     case "starting_browser":
       return `正在打开 ${name} 专用浏览器。`;
     case "needs_login":
-      return `等待你在专用浏览器中人工完成 ${name} 登录。登录后任务会自动继续。`;
+      return `等待你在专用浏览器中人工完成 ${name} 登录或网页验证。完成后任务会自动继续。`;
     case "uploading_attachment":
       return `正在向 ${name} 对话框粘贴论文文件并等待上传。`;
     case "submitting":
@@ -4973,17 +4975,21 @@ function configureWebAccount(
   const showResult = (result: {
     configured: boolean;
     browserOpen: boolean;
+    verificationRequired?: boolean;
   }) => {
     if (closed) return;
     configured = result.configured;
     status.classList.remove("is-error");
     state.webAccountConfigured = result.configured;
+    done.disabled = result.verificationRequired === true;
     status.classList.toggle("is-ready", result.configured);
     status.textContent = result.configured
       ? `${providerName} 已登录，可以完成并隐藏网页`
-      : result.browserOpen
-        ? `等待在 ${providerName} 网页中完成登录…`
-        : `${providerName} 登录网页尚未打开`;
+      : result.verificationRequired
+        ? `${providerName} 网站要求访问验证，请在专用 Chrome 中手动完成验证…`
+        : result.browserOpen
+          ? `等待在 ${providerName} 网页中完成登录…`
+          : `${providerName} 登录网页尚未打开`;
   };
   const refreshStatus = async () => {
     try {
@@ -5096,11 +5102,14 @@ function configureWebAccount(
     try {
       if (checkbox.checked && webAgentReady) {
         const result = await hideWebAccount(provider, customProvider);
-        configured = result.configured || configured;
+        configured =
+          !result.verificationRequired && (result.configured || configured);
         state.webAccountConfigured = configured;
-        state.webAccountNotice = configured
-          ? `${providerName} 已就绪`
-          : `${providerName} 登录网页已隐藏，尚未检测到登录`;
+        state.webAccountNotice = result.verificationRequired
+          ? `${providerName} 网站要求访问验证，专用 Chrome 已保持显示，请手动完成验证`
+          : configured
+            ? `${providerName} 已就绪`
+            : `${providerName} 登录网页已隐藏，尚未检测到登录`;
       } else if (webAgentReady) {
         state.webAccountNotice = configured
           ? `${providerName} 已就绪`

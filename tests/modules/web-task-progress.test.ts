@@ -19,6 +19,12 @@ function task(status: string) {
 }
 
 describe("WEB task progress", () => {
+  it("tells the user to complete login or website verification while the task waits", () => {
+    expect(webTaskProgressFor(task("needs_login"), "ChatGLM")?.label).toBe(
+      "等待完成 ChatGLM 登录或网页验证",
+    );
+  });
+
   it("maps real callbacks onto five visible phases", () => {
     expect(webTaskProgressFor(task("starting_browser"), "DeepSeek")?.index).toBe(0);
     expect(webTaskProgressFor(task("uploading_attachment"), "DeepSeek")?.index).toBe(1);

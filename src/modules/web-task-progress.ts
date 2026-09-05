@@ -98,7 +98,7 @@ function webTaskProgressLabel(
     case "starting_browser":
       return `正在连接 ${providerName} 专用浏览器`;
     case "needs_login":
-      return `等待完成 ${providerName} 登录`;
+      return `等待完成 ${providerName} 登录或网页验证`;
     case "uploading_attachment":
       return "正在上传论文和对话材料";
     case "submitting":

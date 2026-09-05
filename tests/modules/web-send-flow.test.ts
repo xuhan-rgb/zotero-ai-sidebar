@@ -237,10 +237,7 @@ describe("WEB send flow", () => {
     );
     expect(agent).toContain('request.url?.startsWith("/browser/status")');
     expect(agent).toContain("chromium.connectOverCDP(endpoint)");
-    expect(browserMode).toContain(
-      "--remote-debugging-port=${config.cdpPort || 9224}",
-    );
-    expect(agent).toContain("let port = Number(config.cdpPort) || 9224");
+    expect(browserMode).toContain("--remote-debugging-port=0");
     expect(agent).not.toContain("chromium.launchPersistentContext");
     expect(agent).toContain("async function accountReady(page, adapter)");
     expect(agent).toContain("button[data-testid='login-button']");

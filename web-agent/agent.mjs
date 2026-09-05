@@ -37,7 +37,7 @@ import {
   pageShowsGenerationProgress,
   visiblePageTextDelta,
 } from "./answer-wait.mjs";
-import { showBrowserWindow } from "./window-visibility.mjs";
+import { hideBrowserWindow, showBrowserWindow } from "./window-visibility.mjs";
 import {
   browserModeFromVersion,
   chromeLaunchArguments,
@@ -62,6 +62,8 @@ let browserLaunching;
 let browserTransition;
 let browserMode;
 let accountWindowVisible = false;
+// Keep the browser used for manual verification for this Agent session.
+let preserveBrowserSession = false;
 const visibleTaskIDs = new Set();
 
 const server = http.createServer(async (request, response) => {
@@ -283,8 +285,8 @@ async function runTask(task) {
   await callback(task, "starting_browser");
   await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible");
   const browserContext = await ensureContext();
-  const session = await webSession(browserContext, task, adapter);
-  const page = session.page;
+  let session = await webSession(browserContext, task, adapter);
+  let page = session.page;
   task.page = page;
   throwIfTaskCancelled(task);
   await applyTaskWindowPolicy(page, task);
@@ -304,8 +306,22 @@ async function runTask(task) {
   await throwForBlockingAccountDialog(task);
 
   let loginReported = false;
+  let verificationShown = false;
   const loginDeadline = Date.now() + 30 * 60_000;
   while (Date.now() < loginDeadline) {
+    if (!verificationShown && (await pageVerificationRequired(page, adapter))) {
+      // Keep manual verification visible, including across account-status polls.
+      visibleTaskIDs.add(task.id);
+      if ((await currentBrowserMode()) !== "visible") {
+        await ensureDedicatedBrowserMode("visible");
+        session = await webSession(await ensureContext(), task, adapter);
+        page = session.page;
+        task.page = page;
+      }
+      preserveBrowserSession = true;
+      await showBrowserWindow(page);
+      verificationShown = true;
+    }
     await throwForBlockingAccountDialog(task);
     if (await accountReady(page, adapter)) break;
     if (!loginReported) {
@@ -737,6 +753,8 @@ async function ensureContext() {
 async function applyTaskWindowPolicy(page, task) {
   if (!task.hideBrowser) {
     await showBrowserWindow(page);
+  } else if (preserveBrowserSession && !accountWindowVisible) {
+    await hideBrowserWindow(page);
   }
 }
 
@@ -766,12 +784,15 @@ async function openDedicatedBrowser(provider, customProvider) {
           timeout: 60_000,
         });
       }
+      const verificationRequired = await pageVerificationRequired(page, adapter);
+      if (verificationRequired) preserveBrowserSession = true;
       return {
         ok: true,
         provider,
         browserOpen: true,
         url: page.url(),
         configured: await accountReady(page, adapter),
+        verificationRequired,
       };
     })();
   }
@@ -789,7 +810,8 @@ async function browserAccountStatus(provider, customProvider) {
   const adapter = providerDefinition(provider, customProvider);
   try {
     await ensureDedicatedBrowserMode(
-      accountWindowVisible ? "visible" : "headless",
+      (await currentBrowserMode()) ||
+        (accountWindowVisible ? "visible" : "headless"),
     );
     const connectedContext = await ensureContext();
     const pages = connectedContext
@@ -811,12 +833,15 @@ async function browserAccountStatus(provider, customProvider) {
       });
       if (await accountReady(page, adapter)) configuredPage = page;
     }
+    const verificationRequired = await pageVerificationRequired(page, adapter);
+    if (verificationRequired) preserveBrowserSession = true;
     return {
       ok: true,
       provider,
       browserOpen: true,
       configured: !!configuredPage,
       url: page?.url() || "",
+      verificationRequired,
     };
   } catch (error) {
     return {
@@ -830,10 +855,10 @@ async function browserAccountStatus(provider, customProvider) {
 }
 
 async function hideDedicatedBrowser(provider, customProvider) {
-  accountWindowVisible = false;
   const adapter = providerDefinition(provider, customProvider);
   const endpoint = await readDevToolsEndpoint();
   if (!endpoint) {
+    accountWindowVisible = false;
     return { ok: true, provider, browserOpen: false, configured: false };
   }
   const connectedContext = await ensureContext();
@@ -846,8 +871,25 @@ async function hideDedicatedBrowser(provider, customProvider) {
   let configured = false;
   for (const page of pages) {
     if (page.url().includes(adapter.host)) {
+      if (await pageVerificationRequired(page, adapter)) {
+        accountWindowVisible = true;
+        preserveBrowserSession = true;
+        return {
+          ok: true,
+          provider,
+          browserOpen: true,
+          configured: false,
+          verificationRequired: true,
+          hidden: false,
+        };
+      }
       configured = (await accountReady(page, adapter)) || configured;
     }
+  }
+  accountWindowVisible = false;
+  if (preserveBrowserSession) {
+    await minimizeDedicatedBrowser();
+    return { ok: true, provider, browserOpen: true, configured, hidden: true };
   }
   await stopDedicatedBrowser();
   return {
@@ -866,11 +908,24 @@ async function enforceHiddenWindowPolicy() {
   if (!endpoint) return;
   try {
     if ((await currentBrowserMode()) === "headless") return;
+    if (preserveBrowserSession) {
+      await minimizeDedicatedBrowser();
+      return;
+    }
     await stopDedicatedBrowser();
   } catch (error) {
     console.warn(
       `[web-agent] hidden-window watchdog failed: ${errorMessage(error)}`,
     );
+  }
+}
+
+async function minimizeDedicatedBrowser() {
+  const connectedContext = await ensureContext();
+  for (const page of connectedContext.pages()) {
+    if (!(await hideBrowserWindow(page))) {
+      throw new Error("无法将专用 Chrome 最小化，请保持显示或手动最小化");
+    }
   }
 }
 
@@ -881,8 +936,11 @@ async function ensureDedicatedBrowserMode(mode) {
   }
   browserTransition = (async () => {
     const runningMode = await currentBrowserMode();
-    if (runningMode === mode) {
-      browserMode = mode;
+    if (
+      runningMode === mode ||
+      (runningMode === "visible" && mode === "headless" && preserveBrowserSession)
+    ) {
+      browserMode = runningMode;
       return;
     }
     if (runningMode) await stopDedicatedBrowser();
@@ -1025,6 +1083,21 @@ async function accountReady(page, adapter) {
     .getByText("登录以获取", { exact: false })
     .filter({ visible: true });
   return (await loggedOutPrompt.count()) === 0;
+}
+
+async function pageVerificationRequired(page, adapter) {
+  if (!page || page.isClosed()) return false;
+  if (await composerReady(page, adapter)) return false;
+  const title = page
+    .getByText("访问验证", { exact: true })
+    .filter({ visible: true });
+  if ((await title.count()) === 0) return false;
+  return (
+    (await page
+      .getByText(/请按住滑块|拖动到最右/)
+      .filter({ visible: true })
+      .count()) > 0
+  );
 }
 
 async function blockingAccountDialogVisible(page, adapter) {

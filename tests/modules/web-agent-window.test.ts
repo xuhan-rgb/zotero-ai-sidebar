@@ -85,7 +85,6 @@ describe("Web Agent browser window visibility", () => {
     );
 
     expect(runTask).not.toContain("page.bringToFront()");
-    expect(runTask).not.toContain("showBrowserWindow(page)");
     expect(agent).toMatch(
       /async function openDedicatedBrowser[\s\S]*?await showBrowserWindow\(page\)/,
     );

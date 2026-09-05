@@ -36,6 +36,7 @@ export interface WebAccountStatus {
   provider: WebPromptProvider;
   browserOpen: boolean;
   configured: boolean;
+  verificationRequired?: boolean;
   url?: string;
   error?: string;
 }
@@ -93,9 +94,11 @@ export async function dispatchWebAgentTask(input: {
   );
   if (!account.configured) {
     throw new Error(
-      input.customProvider
-        ? `${input.customProvider.name} 未检测到可用输入框，请先打开该网址并完成登录`
-        : `${webProviderName(input.provider)} 网页账号未配置，请先点击账号配置按钮并手动登录`,
+      account.verificationRequired
+        ? `${input.customProvider?.name || webProviderName(input.provider)} 网站要求访问验证，请在专用 Chrome 中手动完成验证`
+        : input.customProvider
+          ? `${input.customProvider.name} 未检测到可用输入框，请先打开该网址并完成登录`
+          : `${webProviderName(input.provider)} 网页账号未配置，请先点击账号配置按钮并手动登录`,
     );
   }
   const response = await fetch(`http://127.0.0.1:${config.port}/tasks`, {

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   clearWebAgentConfigCache,
+  dispatchWebAgentTask,
   hideWebAccount,
   loadWebAgentConfig,
   openWebAccount,
@@ -15,6 +16,58 @@ afterEach(() => {
 });
 
 describe("Web Agent protocol health", () => {
+  it("explains website verification and does not dispatch an unready account", async () => {
+    vi.stubGlobal("Zotero", { DataDirectory: { dir: "/data" } });
+    vi.stubGlobal("IOUtils", {
+      readUTF8: async () =>
+        JSON.stringify({
+          instanceId: "fixture",
+          token: "token",
+          nodePath: "/node",
+          chromePath: "/chrome",
+          agentScript: "/agent.mjs",
+          profileDir: "/profile",
+          port: 23120,
+          callbackUrl: "http://127.0.0.1:23119/callback",
+          needsRuntimeUpdate: false,
+        }),
+    });
+    const requests: string[] = [];
+    vi.stubGlobal("fetch", async (url: string) => {
+      requests.push(url);
+      return {
+        ok: true,
+        status: 200,
+        json: async () =>
+          url.endsWith("/health")
+            ? {
+                ok: true,
+                protocolVersion: 24,
+                service: "zotero-ai-sidebar-web-agent",
+                instanceId: "fixture",
+              }
+            : {
+                ok: true,
+                configured: false,
+                browserOpen: true,
+                verificationRequired: true,
+              },
+      };
+    });
+    await expect(
+      dispatchWebAgentTask({
+        id: "glm-verification",
+        provider: "chatglm",
+        sessionKey: "glm",
+        prompt: "test",
+        continuationPrompt: "test",
+        paperUrl: "",
+        hideBrowser: true,
+      }),
+    ).rejects.toThrow("网站要求访问验证");
+    expect(requests.some((url) => url.endsWith("/tasks"))).toBe(false);
+  });
+
   it.each([true, undefined])(
     "uses the saved update result to block an unapproved package without a ZIP check or network request (%s)",
     async (needsRuntimeUpdate) => {
