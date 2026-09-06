@@ -802,6 +802,10 @@ async function webSession(browserContext, task, adapter) {
         return session;
       await page.waitForTimeout(100);
     }
+    if (await zaiConversationMissing(page, adapter, session.conversationUrl)) {
+      await saveConversationBinding(session.slot, null);
+      return webSession(browserContext, task, adapter);
+    }
     throw new Error(
       `${adapter.name} 原网页对话暂时无法恢复，已保留论文绑定并停止发送；请检查登录或网络后重试`,
     );
@@ -812,6 +816,31 @@ async function webSession(browserContext, task, adapter) {
     );
   }
   return session;
+}
+
+async function zaiConversationMissing(page, adapter, boundURL) {
+  if (adapter.host !== "chat.z.ai") return false;
+  const bound = new URL(boundURL);
+  const id = /^\/c\/([\w-]+)$/.exec(bound.pathname)?.[1];
+  if (!id || new URL(page.url()).origin !== bound.origin) return false;
+  // Z.ai redirects home on every history-load error. Only its explicit
+  // missing-chat response for this ID permits rebinding, not a generic 500.
+  return page
+    .evaluate(async (id) => {
+      const token = globalThis.localStorage.getItem("token");
+      if (!token) return false;
+      const response = await globalThis.fetch(
+        `/api/v1/chats/${encodeURIComponent(id)}`,
+        {
+          headers: { Accept: "application/json", authorization: `Bearer ${token}` },
+          signal: globalThis.AbortSignal.timeout(3_000),
+        },
+      );
+      if (response.status !== 500) return false;
+      const body = await response.json();
+      return body?.detail === `failed to get chat: chat not found: ${id}`;
+    }, id)
+    .catch(() => false);
 }
 
 async function conversationDeletedNotice(page, adapter) {

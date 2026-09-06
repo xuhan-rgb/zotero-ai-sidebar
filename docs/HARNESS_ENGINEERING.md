@@ -47,9 +47,13 @@ inspected on 2026-09-07: [ChatGLM history controls](https://chatglm.cn/2660.f894
 These are website implementation details; isolated browser fixtures exercise
 the controls and response contracts without using real accounts.
 
-Only HTTP 410 or an explicit deletion notice outside assistant messages permits
-rebinding and re-uploading the paper. Login failures, HTTP 404, redirects, and
-empty history preserve the binding and stop the task. A submission without a
+HTTP 410 or an explicit deletion notice outside assistant messages permits
+rebinding and re-uploading the paper. Z.ai redirects home on history API errors;
+after restoration fails, a read-only check of the bound `/api/v1/chats/<id>`
+also permits rebinding when HTTP 500 explicitly returns
+`failed to get chat: chat not found: <id>` for that exact ID (observed on
+2026-09-07). Other server errors, login failures, generic HTTP 404, redirects,
+and empty history preserve the binding and stop the task. A submission without a
 recoverable URL is recorded before clicking Send, so a restart cannot silently
 create another conversation. No historical binding can be inferred from older
 runtimes that saved only a live tab; binding begins with the first new task.

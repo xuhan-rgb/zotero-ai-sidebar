@@ -18,8 +18,11 @@ const conversationURL = (cid: string) =>
   `https://chatglm.cn/main/alltoolsdetail?t=fixture&cid=${cid}&lang=zh`;
 
 async function fixtureAgent(
-  options: { publishURL?: boolean; rename?: boolean } = {},
+  options: { publishURL?: boolean; rename?: boolean; provider?: "zai" } = {},
 ) {
+  const isZai = options.provider === "zai";
+  const threadURL = (cid: string) =>
+    isZai ? `https://chat.z.ai/c/${cid}` : conversationURL(cid);
   const dir = await mkdtemp(path.join(os.tmpdir(), "zai-conversation-test-"));
   const callbacks: Record<string, any>[] = [];
   const submissions: { cid: string; prompt: string }[] = [];
@@ -29,6 +32,7 @@ async function fixtureAgent(
     ["manual-thread", ["Other paper"]],
   ]);
   const failures = new Map<string, number | "redirect" | "deleted" | "empty">();
+  const historyFailures = new Map<string, { status: number; detail: string }>();
   let uploads = 0;
   let nextID = 0;
   let uploadGate: Promise<void> | undefined;
@@ -39,6 +43,23 @@ async function fixtureAgent(
     if (url.pathname === "/callback") {
       callbacks.push(JSON.parse(Buffer.concat(chunks).toString()));
       response.end("ok");
+    } else if (url.pathname.startsWith("/api/v1/chats/")) {
+      const cid = url.pathname.split("/").at(-1)!;
+      const failure =
+        historyFailures.get(cid) ||
+        (!threads.has(cid)
+          ? {
+              status: 500,
+              detail: `failed to get chat: chat not found: ${cid}`,
+            }
+          : null);
+      response.setHeader("content-type", "application/json");
+      response.statusCode = failure?.status || 200;
+      response.end(
+        JSON.stringify(
+          failure ? { detail: failure.detail } : { messages: threads.get(cid) },
+        ),
+      );
     } else if (url.pathname === "/submit") {
       const body = JSON.parse(Buffer.concat(chunks).toString());
       const cid = body.cid || `thread-${++nextID}`;
@@ -57,7 +78,9 @@ async function fixtureAgent(
       await uploadGate;
       response.end("ok");
     } else {
-      const cid = url.searchParams.get("cid") || "";
+      const cid = isZai
+        ? /^\/c\/([^/]+)$/.exec(url.pathname)?.[1] || ""
+        : url.searchParams.get("cid") || "";
       response.setHeader("content-type", "text/html; charset=utf-8");
       const failure = failures.get(cid);
       if (failure === "redirect") {
@@ -75,13 +98,14 @@ async function fixtureAgent(
         return;
       }
       response.end(`<!doctype html><meta charset="utf-8">
-        <a href="${conversationURL("manual-thread")}">Other conversation</a>
-        <main></main><textarea></textarea>
-        <input type="file" multiple><button aria-label="发送">Send</button>
+        <a href="${threadURL("manual-thread")}">Other conversation</a>
+        <div id="chat-container" data-guest="false"><main></main><div class="messageInputContainer"><textarea id="chat-input"></textarea>
+        <input type="file" multiple><button id="send-message-button" aria-label="发送">Send</button></div></div>
         ${options.rename ? `<aside id="aside-history-list"><div class="history-item selected"><div class="title"></div><div class="option">...</div><div class="operate" hidden><div class="operate-item">重命名</div><div class="operate-item">删除对话</div></div></div></aside><div class="changename_inner" hidden><textarea placeholder="输入名称"></textarea><div class="sure">确认</div><div class="cancel">取消</div></div>` : ""}
         <script>
           let cid = ${JSON.stringify(cid)};
           const composer = document.querySelector('textarea');
+          localStorage.setItem('token', 'fixture-session');
           const titleNode = document.querySelector('.title');
           if (titleNode) {
             titleNode.textContent = ${JSON.stringify(titles.get(cid) || "Auto title")};
@@ -105,10 +129,21 @@ async function fixtureAgent(
             node.className = 'markdown-body';
             node.textContent = text;
             document.querySelector('main').insertAdjacentHTML('beforeend', '<p>思考结束</p>');
-            document.querySelector('main').append(node);
-            document.querySelector('main').insertAdjacentHTML('beforeend', '<button aria-label="Copy">Copy</button>');
+            const wrapper = document.createElement('div');
+            wrapper.className = 'chat-assistant';
+            node.id = 'response-content-container';
+            wrapper.append(node);
+            document.querySelector('main').append(wrapper);
+            document.querySelector('main').insertAdjacentHTML('beforeend', '<button class="copy-response-button" aria-label="Copy">Copy</button>');
           }
-          ${JSON.stringify(failure === "empty" ? [] : threads.get(cid) || [])}.forEach(answer);
+          if (${isZai} && cid) {
+            // The document loads normally; the frontend redirects home when
+            // its separate history API fails, including a deleted chat's 500.
+            fetch('/api/v1/chats/' + cid).then(async response => {
+              if (!response.ok) { cid = ''; history.replaceState({}, '', '/'); return; }
+              (await response.json()).messages.forEach(answer);
+            });
+          } else ${JSON.stringify(failure === "empty" ? [] : threads.get(cid) || [])}.forEach(answer);
           document.querySelector('a').onclick = event => {
             event.preventDefault();
             cid = 'manual-thread';
@@ -119,10 +154,10 @@ async function fixtureAgent(
           document.querySelector('input').onchange = async event => {
             await fetch('/upload', { method: 'POST' });
             for (const file of event.target.files) {
-              const card = document.createElement('div');
-              card.className = 'file-item';
+              const card = document.createElement(${isZai} ? 'button' : 'div');
+              card.className = ${isZai} ? 'relative group' : 'file-item';
               card.textContent = file.name;
-              document.body.append(card);
+              document.querySelector('.messageInputContainer').append(card);
             }
           };
           document.querySelector('[aria-label="发送"]').onclick = async () => {
@@ -131,7 +166,7 @@ async function fixtureAgent(
               method: 'POST', body: JSON.stringify({ cid, prompt: composer.value })
             })).json();
             cid = result.cid;
-            if (${options.publishURL !== false}) history.replaceState({}, '', '/main/alltoolsdetail?t=fixture&cid=' + cid + '&lang=zh');
+            if (${options.publishURL !== false}) history.replaceState({}, '', ${isZai} ? '/c/' + cid : '/main/alltoolsdetail?t=fixture&cid=' + cid + '&lang=zh');
             composer.value = '';
             answer(result.answer);
           };
@@ -151,7 +186,7 @@ async function fixtureAgent(
     import { spawn } from 'node:child_process';
     const child = spawn(${JSON.stringify(chromePath)}, [
       ...process.argv.slice(2), '--headless=new', '--disable-background-networking'
-    ]);
+    ], { stdio: ['ignore', 'ignore', 'inherit'] });
     child.on('exit', code => process.exit(code || 0));
     process.on('SIGTERM', () => child.kill('SIGTERM'));
   `,
@@ -319,6 +354,7 @@ async function fixtureAgent(
     renames,
     threads,
     failures,
+    historyFailures,
     callbacks,
     request,
     start,
@@ -348,6 +384,80 @@ async function fixtureAgent(
 describe.skipIf(!existsSync(chromePath))(
   "paper to WEB conversation binding",
   () => {
+    it("rebinds a deleted Z.ai chat when its history API reports chat not found with HTTP 500", async () => {
+      const agent = await fixtureAgent({ provider: "zai" });
+      try {
+        expect(await agent.send("first-a", "paper-a", "zai")).toMatchObject({
+          state: "completed",
+        });
+        const original = agent.submissions[0].cid;
+        expect(await agent.send("first-b", "paper-b", "zai")).toMatchObject({
+          state: "completed",
+        });
+        const other = agent.submissions[1].cid;
+        agent.threads.delete(original);
+        expect(
+          await agent.send("after-delete", "paper-a", "zai"),
+        ).toMatchObject({ state: "completed" });
+        const replacement = agent.submissions[2].cid;
+        expect(replacement).not.toBe(original);
+        expect(agent.submissions[2].prompt).toBe("Full paper: after-delete");
+        expect(await agent.send("continue-a", "paper-a", "zai")).toMatchObject({
+          state: "completed",
+        });
+        expect(await agent.send("continue-b", "paper-b", "zai")).toMatchObject({
+          state: "completed",
+        });
+        expect(agent.submissions.slice(-2)).toEqual([
+          { cid: replacement, prompt: "continue-a" },
+          { cid: other, prompt: "continue-b" },
+        ]);
+        expect(agent.uploads()).toBe(3);
+      } finally {
+        await agent.close();
+      }
+    }, 60_000);
+
+    it("keeps the Z.ai binding for generic history errors, login failures, and another chat's missing-ID error", async () => {
+      const agent = await fixtureAgent({ provider: "zai" });
+      try {
+        expect(await agent.send("original", "paper-a", "zai")).toMatchObject({
+          state: "completed",
+        });
+        const original = agent.submissions[0].cid;
+        const failures = [
+          { status: 500, detail: "upstream temporarily unavailable" },
+          {
+            status: 500,
+            detail: "failed to get chat: chat not found: another-id",
+          },
+          {
+            status: 401,
+            detail: `failed to get chat: chat not found: ${original}`,
+          },
+          { status: 404, detail: "Not Found" },
+        ];
+        for (const [index, failure] of failures.entries()) {
+          agent.historyFailures.set(original, failure);
+          expect(
+            await agent.send(`unavailable-${index}`, "paper-a", "zai"),
+          ).toMatchObject({ state: "failed" });
+          expect(agent.submissions).toHaveLength(1);
+        }
+        agent.historyFailures.delete(original);
+        expect(await agent.send("recovered", "paper-a", "zai")).toMatchObject({
+          state: "completed",
+        });
+        expect(agent.submissions.at(-1)).toEqual({
+          cid: original,
+          prompt: "recovered",
+        });
+        expect(agent.uploads()).toBe(1);
+      } finally {
+        await agent.close();
+      }
+    }, 60_000);
+
     it("names the website conversation after the paper once and preserves later manual names", async () => {
       const agent = await fixtureAgent({ rename: true });
       try {
