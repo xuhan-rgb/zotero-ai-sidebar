@@ -61,6 +61,7 @@ let contextConnecting;
 let browserLaunching;
 let browserTransition;
 let browserMode;
+let manualLogin;
 let accountWindowVisible = false;
 // GLM uses visible Chrome from the first visit; background means minimized.
 let preserveBrowserSession = false;
@@ -99,10 +100,9 @@ const server = http.createServer(async (request, response) => {
     if (request.method === "POST" && request.url === "/browser/open") {
       const value = await requestBody(request);
       const provider = value?.provider;
-      const status = await openDedicatedBrowser(
-        provider,
-        value?.customProvider,
-      );
+      const status = value?.manualLogin
+        ? await openManualLoginBrowser(provider)
+        : await openDedicatedBrowser(provider, value?.customProvider);
       return json(response, 200, status);
     }
     if (request.method === "POST" && request.url === "/browser/hide") {
@@ -131,6 +131,9 @@ const server = http.createServer(async (request, response) => {
       );
     }
     if (request.method === "POST" && request.url === "/tasks") {
+      if (manualLogin) {
+        throw new Error("Z.ai 正在手动登录，请完成登录并关闭专用 Chrome 后再发送任务");
+      }
       const task = await validateTask(await requestBody(request));
       if (knownTaskIDs.has(task.id)) {
         return json(response, 202, { ok: true, id: task.id, duplicate: true });
@@ -761,6 +764,7 @@ async function applyTaskWindowPolicy(page, task) {
 }
 
 async function openDedicatedBrowser(provider, customProvider) {
+  if (manualLogin) throw new Error("Z.ai 正在手动登录，请先关闭手动登录窗口");
   accountWindowVisible = true;
   const adapter = providerDefinition(provider, customProvider);
   if (!browserLaunching) {
@@ -808,8 +812,69 @@ async function openDedicatedBrowser(provider, customProvider) {
   }
 }
 
+function manualLoginStatus(provider) {
+  return {
+    ok: true,
+    provider,
+    browserOpen: !manualLogin.closed,
+    configured: false,
+    ...(provider === "zai"
+      ? { manualLogin: true }
+      : { error: "Z.ai 正在手动登录，请先关闭手动登录窗口" }),
+  };
+}
+
+async function openManualLoginBrowser(provider) {
+  if (provider !== "zai") throw new Error("普通 Chrome 登录仅用于 Z.ai");
+  if (manualLogin && !manualLogin.closed) return manualLoginStatus(provider);
+  if (active.size || [...queues.values()].some((tasks) => tasks.length)) {
+    throw new Error("请先完成或取消当前 WEB 任务，再打开 Z.ai 手动登录");
+  }
+  // Block new browser transitions before releasing the profile. During login
+  // there is no debugging endpoint, DOM polling, or Playwright connection.
+  const login = { child: undefined, closed: false, opening: true };
+  manualLogin = login;
+  accountWindowVisible = true;
+  try {
+    await browserLaunching;
+    await browserTransition;
+    await stopDedicatedBrowser();
+    const child = spawn(
+      config.chromePath,
+      [
+        ...chromeLaunchArguments(config, "manual"),
+        providerDefinition("zai").accountUrl,
+      ],
+      { detached: true, stdio: "ignore" },
+    );
+    login.child = child;
+    child.once("exit", () => {
+      login.closed = true;
+    });
+    await new Promise((resolve, reject) => {
+      child.once("spawn", resolve);
+      child.once("error", reject);
+    });
+    child.unref();
+    login.opening = false;
+    return manualLoginStatus(provider);
+  } catch (error) {
+    manualLogin = undefined;
+    accountWindowVisible = false;
+    throw error;
+  }
+}
+
 async function browserAccountStatus(provider, customProvider) {
   const adapter = providerDefinition(provider, customProvider);
+  if (manualLogin) {
+    if (provider !== "zai" || manualLogin.opening || !manualLogin.closed) {
+      return manualLoginStatus(provider);
+    }
+    // The human has closed Chrome. Reopen the same profile to check the
+    // website session; closing the window alone is not proof of a login.
+    manualLogin = undefined;
+  }
   try {
     await ensureDedicatedBrowserMode(
       (await currentBrowserMode()) ||
@@ -860,6 +925,7 @@ async function browserAccountStatus(provider, customProvider) {
 }
 
 async function hideDedicatedBrowser(provider, customProvider) {
+  if (manualLogin) return { ...manualLoginStatus(provider), hidden: false };
   const adapter = providerDefinition(provider, customProvider);
   const endpoint = await readDevToolsEndpoint();
   if (!endpoint) {
@@ -912,7 +978,7 @@ async function hideDedicatedBrowser(provider, customProvider) {
 }
 
 async function enforceHiddenWindowPolicy() {
-  if (accountWindowVisible || visibleTaskIDs.size > 0 || browserLaunching)
+  if (manualLogin || accountWindowVisible || visibleTaskIDs.size > 0 || browserLaunching)
     return;
   const endpoint = await readDevToolsEndpoint();
   if (!endpoint) return;
@@ -944,6 +1010,7 @@ function isGLMAdapter(adapter) {
 }
 
 async function ensureDedicatedBrowserMode(mode, adapter) {
+  if (manualLogin) throw new Error("Z.ai 正在手动登录，请先关闭手动登录窗口");
   const keepVisible = isGLMAdapter(adapter);
   if (keepVisible) mode = "visible";
   if (browserTransition) {
@@ -1009,6 +1076,7 @@ function resetBrowserConnection() {
 }
 
 async function currentBrowserMode() {
+  if (manualLogin) return "manual";
   const endpoint = await readDevToolsEndpoint();
   if (!endpoint) {
     browserMode = undefined;
@@ -2303,6 +2371,17 @@ function errorMessage(error) {
 
 async function shutdown() {
   server.close();
+  if (manualLogin?.child && !manualLogin.closed) {
+    const child = manualLogin.child;
+    await new Promise((resolve) => {
+      const timer = globalThis.setTimeout(resolve, 10_000);
+      child.once("exit", () => {
+        globalThis.clearTimeout(timer);
+        resolve();
+      });
+      child.kill("SIGTERM");
+    });
+  }
   await stopDedicatedBrowser().catch(() => undefined);
   process.exit(0);
 }

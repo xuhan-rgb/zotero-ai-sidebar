@@ -4776,7 +4776,9 @@ function configureWebAccount(
       doc,
       "span",
       "zai-custom-web-provider-subtitle",
-      "登录网页只在配置期间显示；完成后自动回到后台运行",
+      provider === "zai"
+        ? "请在普通 Chrome 中手动登录；关闭窗口后自动检查"
+        : "登录网页只在配置期间显示；完成后自动回到后台运行",
     ),
   );
   const close = buttonEl(doc, "×");
@@ -4840,8 +4842,8 @@ function configureWebAccount(
     "zai-web-account-explanation",
     provider === "zai"
       ? requiresLogin
-        ? "本次任务需要上传论文附件，请在 Z.ai 网页完成登录后继续。"
-        : "Z.ai 支持不登录进行文字聊天；上传论文附件需要登录。你可以选择后续对话是否显示 Chrome。"
+        ? "本次任务需要上传论文附件。请在 Z.ai 网页完成登录，然后关闭本次打开的 Chrome 的全部窗口，插件会自动检查登录状态。"
+        : "Z.ai 支持游客文字聊天；上传论文附件需要登录。请在网页完成登录，或选择游客使用，然后关闭本次打开的 Chrome 的全部窗口，插件会自动检查。"
       : `请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示 Chrome。`,
   );
   const pageNoticeExplanation = el(
@@ -4894,6 +4896,7 @@ function configureWebAccount(
   let closed = false;
   let configured = false;
   let guest = false;
+  let manualLogin = false;
   let webAgentReady = false;
   let repairing = false;
   let pollTimer: number | undefined;
@@ -4969,7 +4972,11 @@ function configureWebAccount(
   };
 
   const updateDoneLabel = () => {
-    done.textContent = checkbox.checked ? "完成并隐藏" : "完成并保持显示";
+    done.textContent = manualLogin
+      ? "等待关闭登录窗口"
+      : checkbox.checked
+        ? "完成并隐藏"
+        : "完成并保持显示";
   };
   checkbox.addEventListener("change", () => {
     state.localUiSettings = normalizeLocalUiSettings({
@@ -5002,26 +5009,37 @@ function configureWebAccount(
     browserOpen: boolean;
     verificationRequired?: boolean;
     guest?: boolean;
+    manualLogin?: boolean;
+    error?: string;
   }) => {
     if (closed) return;
+    manualLogin = provider === "zai" && result.manualLogin === true;
     guest = provider === "zai" && result.guest === true;
-    configured = result.configured && !(requiresLogin && guest);
+    configured = !manualLogin && result.configured && !(requiresLogin && guest);
     status.classList.remove("is-error");
     state.webAccountConfigured = configured;
     done.disabled =
-      result.verificationRequired === true || (requiresLogin && !configured);
+      manualLogin ||
+      result.verificationRequired === true ||
+      (requiresLogin && !configured);
+    if (provider === "zai") reopen.disabled = manualLogin || !webAgentReady;
+    updateDoneLabel();
     status.classList.toggle("is-ready", configured);
-    status.textContent = guest && (result.configured || requiresLogin)
-      ? requiresLogin
-        ? "Z.ai 游客模式：本次上传论文附件需要登录，请在网页完成登录…"
-        : "Z.ai 游客模式可用，可以直接文字聊天；上传论文附件需要登录"
-      : configured
-        ? `${providerName} 已登录，可以完成并隐藏网页`
-        : result.verificationRequired
-          ? `${providerName} 网站要求访问验证，请在专用 Chrome 中手动完成验证…`
-          : result.browserOpen
-            ? `等待在 ${providerName} 网页中完成登录…`
-            : `${providerName} 登录网页尚未打开`;
+    status.textContent = manualLogin
+      ? "请在普通 Chrome 中手动登录 Z.ai，完成后关闭该 Chrome 的全部窗口，插件会自动检查…"
+      : provider === "zai" && result.error
+        ? result.error
+        : guest && (result.configured || requiresLogin)
+          ? requiresLogin
+            ? "Z.ai 游客模式：本次上传论文附件需要登录，请在网页完成登录…"
+            : "Z.ai 游客模式可用，可以直接文字聊天；上传论文附件需要登录"
+          : configured
+            ? `${providerName} 已登录，可以完成并隐藏网页`
+            : result.verificationRequired
+              ? `${providerName} 网站要求访问验证，请在专用 Chrome 中手动完成验证…`
+              : result.browserOpen
+                ? `等待在 ${providerName} 网页中完成登录…`
+                : `${providerName} 登录网页尚未打开`;
   };
   const refreshStatus = async () => {
     try {
@@ -5054,7 +5072,7 @@ function configureWebAccount(
       })
       .finally(() => {
         opening = undefined;
-        if (!closed) reopen.disabled = false;
+        if (!closed) reopen.disabled = manualLogin;
         schedulePoll();
       });
   };
@@ -5134,25 +5152,31 @@ function configureWebAccount(
     try {
       if (checkbox.checked && webAgentReady) {
         const result = await hideWebAccount(provider, customProvider);
+        manualLogin = provider === "zai" && result.manualLogin === true;
         guest = provider === "zai" && result.guest === true;
         configured =
+          !manualLogin &&
           !result.verificationRequired &&
           (result.configured || configured) &&
           !(requiresLogin && guest);
         state.webAccountConfigured = configured;
-        state.webAccountNotice = result.verificationRequired
-          ? `${providerName} 网站要求访问验证，专用 Chrome 已保持显示，请手动完成验证`
+        state.webAccountNotice = manualLogin
+          ? "Z.ai 手动登录窗口保持显示；完成登录后关闭该 Chrome 的全部窗口，再检查账号"
+          : result.verificationRequired
+            ? `${providerName} 网站要求访问验证，专用 Chrome 已保持显示，请手动完成验证`
+            : guest
+              ? "Z.ai 游客模式可用；上传论文附件需要登录"
+              : configured
+                ? `${providerName} 已就绪`
+                : `${providerName} 登录网页已隐藏，尚未检测到登录`;
+      } else if (webAgentReady) {
+        state.webAccountNotice = manualLogin
+          ? "Z.ai 手动登录窗口保持显示；完成登录后关闭该 Chrome 的全部窗口，再检查账号"
           : guest
             ? "Z.ai 游客模式可用；上传论文附件需要登录"
             : configured
               ? `${providerName} 已就绪`
-              : `${providerName} 登录网页已隐藏，尚未检测到登录`;
-      } else if (webAgentReady) {
-        state.webAccountNotice = guest
-          ? "Z.ai 游客模式可用；上传论文附件需要登录"
-          : configured
-            ? `${providerName} 已就绪`
-            : `${providerName} 登录网页保持显示，尚未检测到登录`;
+              : `${providerName} 登录网页保持显示，尚未检测到登录`;
       } else state.webAccountNotice = status.textContent || "Web Agent 尚未就绪";
     } catch (error) {
       state.webAccountNotice =
@@ -5168,6 +5192,7 @@ function configureWebAccount(
 
   form.addEventListener("submit", (event) => {
     event.preventDefault();
+    if (manualLogin) return;
     void closeDialog();
   });
   repair.addEventListener("click", () => void checkAndRepair(true));

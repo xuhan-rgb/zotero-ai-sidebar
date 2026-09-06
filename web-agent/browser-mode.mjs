@@ -1,4 +1,11 @@
 export function chromeLaunchArguments(config, mode) {
+  if (mode === "manual") {
+    return [
+      `--user-data-dir=${config.profileDir}`,
+      "--no-first-run",
+      "--no-default-browser-check",
+    ];
+  }
   return [
     `--user-data-dir=${config.profileDir}`,
     "--remote-debugging-address=127.0.0.1",

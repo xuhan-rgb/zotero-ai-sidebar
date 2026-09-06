@@ -38,6 +38,8 @@ export interface WebAccountStatus {
   configured: boolean;
   // Z.ai may be ready for text chat without an authenticated account.
   guest?: boolean;
+  // Z.ai login runs in ordinary Chrome until the user closes that window.
+  manualLogin?: boolean;
   verificationRequired?: boolean;
   url?: string;
   error?: string;
@@ -156,7 +158,11 @@ export async function openWebAccount(
       authorization: `Bearer ${config.token}`,
       "content-type": "application/json",
     },
-    body: JSON.stringify({ provider, customProvider }),
+    body: JSON.stringify({
+      provider,
+      customProvider,
+      ...(provider === "zai" ? { manualLogin: true } : {}),
+    }),
   });
   const result = (await response
     .json()

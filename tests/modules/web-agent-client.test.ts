@@ -16,6 +16,53 @@ afterEach(() => {
 });
 
 describe("Web Agent protocol health", () => {
+  it.each(["zai", "chatglm", "deepseek"] as const)(
+    "requests ordinary Chrome login only for Z.ai (%s)",
+    async (provider) => {
+      vi.stubGlobal("Zotero", { DataDirectory: { dir: "/data" } });
+      vi.stubGlobal("IOUtils", {
+        readUTF8: async () =>
+          JSON.stringify({
+            instanceId: "fixture",
+            token: "token",
+            port: 23120,
+            needsRuntimeUpdate: false,
+            nodePath: "/node",
+            chromePath: "/chrome",
+            agentScript: "/agent.mjs",
+            profileDir: "/profile",
+            callbackUrl: "http://127.0.0.1:23119/callback",
+          }),
+      });
+      const fetchMock = vi.fn(async (url: string, _options?: RequestInit) => ({
+        ok: true,
+        json: async () =>
+          url.endsWith("/health")
+            ? {
+                ok: true,
+                protocolVersion: 24,
+                service: "zotero-ai-sidebar-web-agent",
+                instanceId: "fixture",
+              }
+            : {
+                ok: true,
+                provider,
+                configured: false,
+                browserOpen: true,
+                manualLogin: provider === "zai",
+              },
+      }));
+      vi.stubGlobal("fetch", fetchMock);
+      const result = await openWebAccount(provider);
+      expect(result.manualLogin).toBe(provider === "zai");
+      const options = fetchMock.mock.calls.find(([url]) =>
+        url.endsWith("/browser/open"),
+      )![1];
+      const body = JSON.parse(String(options?.body));
+      expect(body.manualLogin).toBe(provider === "zai" ? true : undefined);
+    },
+  );
+
   it.each([
     ["zai", undefined, false],
     ["zai", "attachment", true],

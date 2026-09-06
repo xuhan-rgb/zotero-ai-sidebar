@@ -1,7 +1,7 @@
 // @vitest-environment node
 import { spawn, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
-import { mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
@@ -90,6 +90,9 @@ describe("Z.ai account and attachment flow", () => {
       const configPath = path.join(dir, "config.json");
       const preloadPath = path.join(dir, "mock-site.mjs");
       const attachmentPath = path.join(dir, "context.txt");
+      const browserLauncher = path.join(dir, "chrome.mjs");
+      const launchesPath = path.join(dir, "launches.jsonl");
+      const manualExitPath = path.join(dir, "close-manual");
       let child: ChildProcess | undefined;
       let port = 0;
       let errors = "";
@@ -107,13 +110,35 @@ describe("Z.ai account and attachment flow", () => {
       };
       const status = () => request("/browser/status?provider=zai");
       try {
+        // Model the human-operated browser with a process, not a controlled
+        // webpage. Managed browsing still runs in the real headless Chrome.
+        await writeFile(
+          browserLauncher,
+          `#!${process.execPath}
+          import { appendFileSync, existsSync } from 'node:fs';
+          import { spawn } from 'node:child_process';
+          const args = process.argv.slice(2);
+          const managed = args.some(arg => arg.startsWith('--remote-debugging-port='));
+          appendFileSync(${JSON.stringify(launchesPath)}, JSON.stringify({ args, managed, pid: process.pid }) + '\\n');
+          if (managed) {
+            const chrome = spawn(${JSON.stringify(chromePath)}, [...args, '--headless=new', '--disable-background-networking']);
+            chrome.on('exit', code => process.exit(code || 0));
+            process.on('SIGTERM', () => chrome.kill('SIGTERM'));
+          } else {
+            setInterval(() => {
+              if (existsSync(${JSON.stringify(manualExitPath)})) process.exit(0);
+            }, 50);
+          }
+        `,
+        );
+        await chmod(browserLauncher, 0o700);
         await writeFile(attachmentPath, "Local test context");
         await writeFile(
           configPath,
           JSON.stringify({
             token: "test-token",
             port: 0,
-            chromePath,
+            chromePath: browserLauncher,
             profileDir: path.join(dir, "profile"),
             callbackUrl: `${url}/callback`,
           }),
@@ -166,7 +191,88 @@ describe("Z.ai account and attachment flow", () => {
           browserOpen: true,
           guest: true,
         });
-        expect(await request("/browser/hide", { provider: "zai" })).toMatchObject({
+        expect(
+          await request("/browser/open", {
+            provider: "zai",
+            manualLogin: true,
+          }),
+        ).toMatchObject({ manualLogin: true, configured: false });
+        const launches = async () =>
+          (await readFile(launchesPath, "utf8"))
+            .trim()
+            .split("\n")
+            .map((line) => JSON.parse(line));
+        await expect
+          .poll(
+            async () => (await launches()).filter((row) => !row.managed).length,
+          )
+          .toBe(1);
+        const manual = (await launches()).find((row) => !row.managed);
+        expect(manual.args).toContain(
+          `--user-data-dir=${path.join(dir, "profile")}`,
+        );
+        expect(manual.args).toContain("https://chat.z.ai/");
+        expect(
+          manual.args.some((arg: string) =>
+            /remote-debugging|headless|enable-automation/.test(arg),
+          ),
+        ).toBe(false);
+        expect(await status()).toMatchObject({
+          manualLogin: true,
+          configured: false,
+        });
+        expect(await request("/browser/status?provider=chatglm")).toMatchObject(
+          { configured: false },
+        );
+        expect(await request("/health")).toMatchObject({
+          browserConnected: false,
+        });
+        expect(
+          await request("/browser/open", {
+            provider: "zai",
+            manualLogin: true,
+          }),
+        ).toMatchObject({ manualLogin: true });
+        expect((await launches()).filter((row) => !row.managed)).toHaveLength(
+          1,
+        );
+        const blocked = await fetch(`http://127.0.0.1:${port}/tasks`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer test-token",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({
+            id: "during-login",
+            provider: "zai",
+            prompt: "hello",
+          }),
+        });
+        expect(blocked.ok).toBe(false);
+        expect((await blocked.json()).error).toContain("手动登录");
+        expect(
+          await request("/browser/hide", { provider: "zai" }),
+        ).toMatchObject({ manualLogin: true, hidden: false });
+        expect(await request("/health")).toMatchObject({
+          browserConnected: false,
+        });
+        signedIn = true;
+        await writeFile(manualExitPath, "closed by user");
+        await expect
+          .poll(status, { timeout: 15_000 })
+          .toMatchObject({ configured: true, guest: false });
+        expect(
+          (await launches()).every((row) =>
+            row.args.includes(`--user-data-dir=${path.join(dir, "profile")}`),
+          ),
+        ).toBe(true);
+        signedIn = false;
+        await expect
+          .poll(status)
+          .toMatchObject({ configured: true, guest: true });
+        expect(
+          await request("/browser/hide", { provider: "zai" }),
+        ).toMatchObject({
           configured: true,
           guest: true,
           hidden: true,
@@ -223,6 +329,18 @@ describe("Z.ai account and attachment flow", () => {
           );
         expect(uploads).toBe(0);
         expect(submissions).toBe(1);
+        const busyLogin = await fetch(`http://127.0.0.1:${port}/browser/open`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer test-token",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ provider: "zai", manualLogin: true }),
+        });
+        expect(busyLogin.ok).toBe(false);
+        expect((await busyLogin.json()).error).toContain(
+          "完成或取消当前 WEB 任务",
+        );
         signedIn = true;
         await expect
           .poll(() => callbacks, { timeout: 20_000 })
@@ -242,6 +360,33 @@ describe("Z.ai account and attachment flow", () => {
             (event) => event.state === "failed" || event.pageNotice,
           ),
         ).toBe(false);
+        await expect
+          .poll(async () => (await request("/health")).active)
+          .toEqual({});
+        const unsupported = await fetch(
+          `http://127.0.0.1:${port}/browser/open`,
+          {
+            method: "POST",
+            headers: {
+              authorization: "Bearer test-token",
+              "content-type": "application/json",
+            },
+            body: JSON.stringify({ provider: "chatglm", manualLogin: true }),
+          },
+        );
+        expect(unsupported.ok).toBe(false);
+        await rm(manualExitPath);
+        await request("/browser/open", { provider: "zai", manualLogin: true });
+        await expect
+          .poll(
+            async () => (await launches()).filter((row) => !row.managed).length,
+          )
+          .toBe(2);
+        const manualPid = (await launches()).filter((row) => !row.managed)[1]
+          .pid;
+        await request("/shutdown", {});
+        await expect.poll(() => child!.exitCode, { timeout: 10_000 }).toBe(0);
+        expect(() => process.kill(manualPid, 0)).toThrow();
       } finally {
         if (child && child.exitCode == null && child.signalCode == null) {
           await request("/shutdown", {}).catch(() => child!.kill("SIGTERM"));

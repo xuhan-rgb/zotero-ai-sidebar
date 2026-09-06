@@ -8,6 +8,19 @@ import {
 } from "../../web-agent/browser-mode.mjs";
 
 describe("Web Agent browser modes", () => {
+  it("keeps the same profile for manual login without enabling browser control", () => {
+    const args = chromeLaunchArguments(
+      { profileDir: "/existing profile" },
+      "manual",
+    );
+    expect(args).toContain("--user-data-dir=/existing profile");
+    expect(
+      args.some((arg: string) =>
+        /remote-debugging|headless|enable-automation/.test(arg),
+      ),
+    ).toBe(false);
+  });
+
   it("lets Chrome bind an unused port even when the saved CDP port is occupied", () => {
     const args = chromeLaunchArguments(
       { profileDir: "/profile", cdpPort: 9224 },
