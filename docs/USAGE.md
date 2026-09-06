@@ -276,6 +276,8 @@ When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full t
 
 WEB mode mirrors a real AI website into the Zotero conversation. It is useful when you want to use a website account instead of an API key. API mode remains independent and does not need Chrome or the companion process.
 
+> The automatic port allocation, Z.ai support, and login detection described here apply to the current `master` code and have not been released as a new version. Existing marketplace `v0.8.6` packages do not change when source code is pushed. To test development code, use the XPI and Web Agent ZIP produced by the same build.
+
 **One-time installation (Windows / Linux / macOS):**
 
 1. Install Node.js 20 or newer and Google Chrome. Linux additionally needs `xclip`:
@@ -286,23 +288,31 @@ WEB mode mirrors a real AI website into the Zotero conversation. It is useful wh
 
 2. Install the XPI. In the composer footer select **WEB**, choose **ChatGPT**, **DeepSeek**, **ChatGLM**, **Z.ai**, or **Kimi**, then click **Account**.
 3. The account dialog checks the environment automatically. When Node.js or Chrome is missing it provides an official download button; when Linux `xclip` is missing it provides copyable installation guidance. The plugin never runs an installer or system command. After resolving the dependency, click **Check environment again**, then use **Install**, **Repair**, or **Upgrade Web Agent** as shown. The plugin downloads the matching prebuilt runtime from the version's GitHub Release, verifies its size and SHA-256, and continues only after the protocol and health check pass. The user's computer does not run npm. If automatic download fails, open or copy the provided link, download the ZIP in a browser, and select it in the same dialog.
-4. Complete login in the temporary Chrome window. Keep **Hide browser in the background while chatting** checked to minimize the dedicated browser after setup; this is the default.
+4. Sign in to the selected website in the dedicated Chrome, then choose **Finish and hide** or **Finish and keep visible**. **Hide browser in the background while chatting** is checked by default. Z.ai guests can use text chat; attachments require login. Z.ai login is detected automatically without closing Chrome first.
 
 Web Agent has no independent release version and uses the ZIP paired with the current XPI. Installation and explicit updates verify the ZIP size and the checksum embedded in the XPI, then record the installed checksum. After an XPI update, the recorded checksum is compared once; an identical package is reused. Normal startup, opening WEB mode, and sending messages do not download archives, scan files, or recompute checksums; only local health checks run. Legacy installations without a recorded checksum need the paired package installed once. Failed updates preserve existing files and login settings without enabling an unmatched old package.
 
-The updated Web Agent and dedicated Chrome let the OS assign unused ports at startup, avoiding fixed-port conflicts with MCP and other plugins. After binding, the Agent writes its actual `port` to `zai-web-agent-config.json` in the Zotero data directory; the XPI reads it automatically. `cdpPort: 0` means automatic allocation; Chrome records its actual debugging port in `DevToolsActivePort` inside its dedicated profile. Callbacks continue to use Zotero's existing HTTP service. On normal Zotero exit or AI Sidebar disable, the plugin requests shutdown of its own Agent. Switching to API mode alone does not interrupt active WEB tasks. Older runtimes need an upgrade to receive this port allocation fix.
+The updated Web Agent lets the OS assign an unused port at startup, avoiding fixed-port conflicts with MCP and other plugins. After binding, the Agent writes its actual `port` to `zai-web-agent-config.json` in the Zotero data directory; the XPI reads it automatically. The dedicated Chrome also uses a dynamically selected debugging port, recorded in `DevToolsActivePort` inside its profile. For Z.ai, the Agent selects a free port before launching Chrome and retries a limited number of times if another process claims it. There is no need to increment port numbers manually. Callbacks continue to use Zotero's existing HTTP service. On normal Zotero exit or AI Sidebar disable, the plugin requests shutdown of its own Agent. Switching to API mode alone does not interrupt active WEB tasks. Older runtimes need an upgrade to receive this port allocation fix.
+
+**ChatGLM and Z.ai account setup:**
+
+- **ChatGLM (`chatglm.cn`)**: the domestic entry no longer carries a fixed restriction label. If the website actually shows access verification, the account dialog still reports that state.
+- **Z.ai (`chat.z.ai`)**: a separate website entry with its own login and conversation records. Sign in on that website; Chrome account sync is not required, and your everyday Chrome login profile is not inherited automatically.
+- **Read the live status**: the status box at the top of the account dialog checks for guest, signed-in, or not-ready states, scheduling another check about one second after each check finishes. The explanatory text below is selected for the task when the dialog opens and does not change with login state. Use the status box and Z.ai page to check login, rather than the Chrome avatar alone.
+- **Guests and attachments**: a guest-ready status permits text chat. A task containing a paper or another attachment requires login. Once signed in is detected, choose **Finish and hide** or **Finish and keep visible** to complete setup and resume the original question.
+- **Keep the session**: Z.ai login and chat reuse the same dedicated Chrome; hiding minimizes it. If opening Z.ai would replace a browser used by another WEB task, complete or cancel that task first.
 
 **Daily use:**
 
 1. Select **WEB** and the destination service. The service menu also lists saved custom sites and **Manage third-party web pages…**. Opening the manager does not change the active service.
-2. Ask normally and press Enter or click the send arrow. Both use the same live account check; if the selected website is not configured or no longer logged in, sending stops and the sidebar asks you to open **Account**. The sidebar then reports preparation, upload, submission, generation, and synchronization progress; growing website answers are mirrored incrementally instead of appearing only at the end.
+2. Ask normally and press Enter or click the send arrow. Both use the same live account check; if the selected website is not ready or the task requires login, the sidebar asks you to open **Account**. Z.ai guests can send text tasks without attachments. The sidebar then reports preparation, upload, submission, generation, and synchronization progress; growing website answers are mirrored incrementally instead of appearing only at the end.
 3. Paper-reading tasks attach the current paper automatically through the website's real file input. A cached LaTeX main file is preferred when available; otherwise the PDF is used. For arXiv items, a separate TXT attachment contains only the section hierarchy, numbers, and titles—not Zotero tool instructions or section bodies. If a site has no usable file input, the task fails explicitly instead of flashing the browser and using clipboard fallback.
 4. Ask for **whole-paper highlights** or **selection explanation** when you want annotation suggestions. The prompt tells the web model how to return the structured manifest; the plugin parses it from the normal answer and builds a local draft. Review the matched page and quote before saving.
 5. A generated website file is exposed only when the site provides a real attachment or downloadable URL. A textual `sandbox:/...` path is not a downloadable file.
 
 Press `Esc` or the composer **Stop** button to cancel a running WEB task. Any answer already mirrored into Zotero is kept and marked as cancelled; retrying the message uses the same website again. Login, quota, server, and unsupported-upload notices detected on the website are shown as error responses instead of being mistaken for normal answers.
 
-The Web Agent uses a dedicated Chrome profile and a random localhost bearer token. It does not read your normal Chrome profile. Login, CAPTCHA, uploads, and website scripts still require a real browser, so “hidden” means minimized—not a headless API. Zotero does not change the site's fast/deep-thinking/search switches; the current website state is authoritative.
+The Web Agent uses a dedicated Chrome profile and a random localhost bearer token. It does not read your normal Chrome profile. ChatGLM and Z.ai keep their sessions in a minimized window when hidden. Other services close the visible window after setup and start headless Chrome as needed for background tasks, still running the real website. Zotero does not change the site's fast/deep-thinking/search switches; the current website state is authoritative.
 
 ---
 
@@ -552,9 +562,9 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 | Control | API mode | WEB mode |
 |---|---|---|
 | Destination | A configured local model preset | ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or a custom ChatGPT-like site |
-| Authentication | API key in Zotero prefs | Manual login in a dedicated Chrome profile |
+| Authentication | API key in Zotero prefs | Website login in dedicated Chrome; Z.ai also supports guest text chat |
 | Tools | Zotero/model tool loop is available | Website answer mirroring; no API tool loop |
-| Browser | Not used | Minimized by default after account setup |
+| Browser | Not used | Background by default; ChatGLM / Z.ai preserve sessions in a minimized window |
 | Progress | Provider streaming and tool traces | Five-stage task progress plus incremental DOM snapshots |
 | Site mode | Controlled by preset parameters | Current website model/search/thinking state; Zotero does not switch it |
 | Paper context | `Original` controls API prompt context | Attached automatically through the WEB file-upload flow |
@@ -562,9 +572,9 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 
 WEB footer controls are intentionally small:
 
-- **GLM websites** — ChatGLM (`chatglm.cn`) is the domestic site. Z.ai (`chat.z.ai`) is a separate entry with its own login and conversation records; a full conversation on the real site has not yet been verified.
+- **GLM websites** — ChatGLM (`chatglm.cn`) is the domestic site and no longer has a fixed restriction label. Z.ai (`chat.z.ai`) is a separate entry supporting guest text chat; attachments require login. Account status is detected automatically without closing Chrome.
 - **Service menu** — switches ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection. A legacy custom `kimi.com` entry is migrated to the built-in Kimi service to avoid duplicate entries.
-- **Account** — opens the current service for login and controls whether its dedicated browser stays minimized during chat.
+- **Account** — opens the current service for login and controls whether its dedicated browser stays hidden in the background during chat.
 - **Send** — Enter and the arrow follow the same path and perform a live account check immediately before submission.
 - There are no Zotero-side fast/deep-thinking/search toggles. Change those on the website itself when the account window is visible.
 
@@ -592,6 +602,8 @@ The defaults are:
 ### "WEB mode says the account is not configured"
 
 Click **Account**, wait for the dedicated Chrome window, complete login, and make sure the page exposes an editable composer. Custom sites must be added through **Manage third-party web pages…** before account setup.
+
+For Z.ai, a guest-ready status permits text chat, while attachment tasks still require login. After signing in, keep Chrome open, wait for the upper status box to update, and choose Finish. The explanatory text below is fixed and does not indicate the current login state. If Google says the browser or app may not be secure, see [Z.ai login troubleshooting](WEB_AGENT_TROUBLESHOOTING.zh-CN.md#zai-的-google-登录被拒绝).
 
 ### "WEB mode is stuck / the answer does not update"
 

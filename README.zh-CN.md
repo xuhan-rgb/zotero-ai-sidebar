@@ -11,7 +11,7 @@
 ## 能做什么
 
 - **对正在读的论文随便问** —— *"帮我总结"*、*"核心贡献是什么"*、*"和 X 比较"*。模型自动取它需要的 PDF 内容，并在工具 trace 里把过程显式展示。
-- **每个对话可选 API 或 WEB** —— API 直接使用本地配置的模型预设；WEB 通过本机 Web Agent 对接 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义 ChatGPT-like 网页，保留网页当前的模型/搜索/思考状态，并把分阶段进度和持续增长的回答同步显示在 Zotero 中。
+- **每个对话可选 API 或 WEB** —— API 直接使用本地配置的模型预设；WEB 通过本机 Web Agent 对接 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 或自定义 ChatGPT-like 网页，保留网页当前的模型/搜索/思考状态，并把分阶段进度和持续增长的回答同步显示在 Zotero 中。
 - **随时打开 Quick Ask 连续追问** —— 默认按 `Alt+Q` 在 Zotero 任意页面打开临时对话；本窗口内会保留上下文，关闭即销毁，也可把整段问答显式转入当前论文的研究对话。
 - **arXiv 论文公式不破** —— 公式和插图从 LaTeX 源码取，不再是 PDF 文本层里的乱码。*"解释 Eq. (3)"* 和 *"讲一下 Figure 2"* 都能精确命中。
 - **PDF 沉浸式翻译** —— 开启沉浸模式后点句子即在原文旁出译文卡；`Enter` / `Shift+Enter` 在句子间穿行，`/` 把光标移进追问框，`Esc` 关卡后该句仍标为「在读高亮」可继续切句。
@@ -73,17 +73,21 @@ Quick Ask 默认用 `Alt+Q` 打开。首次使用时采用当前 AI 对话模型
 
 WEB 模式使用一个本地伴随进程和独立的 Google Chrome 配置目录。API 模式不依赖这些组件；未安装 Web Agent 时，普通 API 对话不受影响。
 
+> 以下 Z.ai、自动端口分配和登录检测流程对应当前 `master` 代码，尚未发布新版本。市场已有的 `v0.8.6` 安装包不会随代码推送更新；测试开发代码请使用同一构建生成的 XPI 和 Web Agent ZIP。
+
 需要 Node.js 20 或更高版本和 Google Chrome；Linux 还需要 `xclip`：
 
 ```bash
 sudo apt install xclip
 ```
 
-安装 XPI 后，在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义服务，再点击**账号**。窗口会自动检查环境：缺少 Node.js 或 Chrome 时提供官方下载按钮，Linux 缺少 `xclip` 时提供可复制的安装说明；插件不会自动运行安装程序或系统命令。环境满足后，按状态点击**安装 / 修复 / 升级 Web Agent**，插件会从同版本 GitHub Release 下载预构建运行包，校验大小与 SHA-256，并在健康检查通过后打开登录网页；用户电脑不执行 npm。自动下载失败时，窗口会提供 Release 页面、直接下载链接和本地 ZIP 选择入口。在临时显示的 Chrome 窗口中完成登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
+安装 XPI 后，在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 或自定义服务，再点击**账号**。窗口会自动检查环境：缺少 Node.js 或 Chrome 时提供官方下载按钮，Linux 缺少 `xclip` 时提供可复制的安装说明；插件不会自动运行安装程序或系统命令。环境满足后，按状态点击**安装 / 修复 / 升级 Web Agent**，插件会从同版本 GitHub Release 下载预构建运行包，校验大小与 SHA-256，并在健康检查通过后打开登录网页；用户电脑不执行 npm。自动下载失败时，窗口会提供 Release 页面、直接下载链接和本地 ZIP 选择入口。在专用 Chrome 中完成所选网站的登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
+
+**智谱网页**：服务菜单分别提供 `ChatGLM（chatglm.cn）` 和 `Z.ai（chat.z.ai）`，ChatGLM 已移除固定的“风控受限”标记。Z.ai 支持游客文字聊天，上传附件需要登录。保持 Chrome 打开即可自动检测 Z.ai 登录状态，随后点击**完成并隐藏**或**完成并保持显示**。账号窗口上方状态框动态更新，下方说明文字固定显示；Chrome 头像不代表网站登录状态。详细操作见 [WEB 使用教程](docs/USAGE.zh-CN.md#212-通过-web-模式使用内置网页模型)。
 
 Web Agent 不单独发布版本，只使用当前 XPI 配套的 ZIP。安装和手动更新时，插件校验 ZIP 的大小与内置 SHA-256，并记录安装摘要；XPI 更新后仅比较一次安装记录，摘要相同则继续使用。正常启动、打开 WEB 和发送消息不会下载运行包、扫描文件或重新计算摘要，只做必要的本机健康检查。旧安装没有摘要记录时，需要安装一次当前配套运行包。更新失败保留原有文件与登录配置，但不会启用不匹配的旧包。
 
-这里的“隐藏”是最小化独立浏览器，而不是用 headless API 替代网页：登录、验证码、附件上传和网页脚本仍由该 Chrome 配置运行。插件不会切换网页的快速/深度思考/智能搜索开关。服务下拉菜单末尾提供**管理第三方网页…**，打开管理窗口不会改变当前服务。当前兼容边界见 [Web Agent 排障文档](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)。
+ChatGLM 和 Z.ai 的“隐藏”采用最小化并保留浏览器会话；其他服务在完成配置后关闭可见窗口，后台任务按需启动无界面 Chrome。网页仍使用独立配置运行，不读取日常 Chrome 的登录资料。插件不会切换网页的快速/深度思考/智能搜索开关。服务下拉菜单末尾提供**管理第三方网页…**，打开管理窗口不会改变当前服务。当前兼容边界见 [Web Agent 排障文档](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)。
 
 WEB 模式会在论文阅读任务中自动附加论文材料。输入框里的“联网”和“原文”属于 API 模式开关，因此在 WEB 下禁用；联网状态以网页自身设置为准，论文材料则由 WEB 附件流程提供。
 
@@ -92,7 +96,7 @@ WEB 模式会在论文阅读任务中自动附加论文材料。输入框里的�
 ### 对话与界面
 
 - **Zotero 内置 AI 对话**：直接在专属侧边栏与当前论文对话，无需离开 Zotero。
-- **稳定的网页 WEB 对话**：通过带本地令牌认证的伴随进程连接 ChatGPT、DeepSeek、ChatGLM、Kimi 或自定义 ChatGPT-like 网页；账号从 Zotero 内配置，专用浏览器在对话时默认隐藏，侧边栏持续显示分阶段进度和增量回答。
+- **稳定的网页 WEB 对话**：通过带本地令牌认证的伴随进程连接 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 或自定义 ChatGPT-like 网页；账号从 Zotero 内配置，专用浏览器在对话时默认隐藏，侧边栏持续显示分阶段进度和增量回答。
 - **Quick Ask 临时连续对话**：默认按 `Alt+Q` 快速打开；可在同一窗口连续追问、复制最后回答或把全部轮次转入研究对话。它不读取研究对话历史，关闭后也不会保存。
 - **多提供商可配置**：通过 Zotero 本地偏好支持 Anthropic、OpenAI 以及任何 OpenAI 兼容端点。账号预设支持连通性测试，可为每个预设配置独立的模型列表并通过底部切换器快速切换。
 - **快捷提示词与 Slash 命令**：在输入框旁边可自定义提示词按钮，并内置 `/arxiv-search`、`/web-search` 等 slash 命令，这些命令会被展开成给模型的明确指令。
@@ -178,7 +182,7 @@ flowchart TB
         ZoteroOrg[(zotero.org<br/>元数据同步)]
         FileDAV[(WebDAV<br/>Zotero File Sync)]
         PluginDAV[(插件 WebDAV<br/>state.json)]
-        WebApps[(AI 网页<br/>ChatGPT / DeepSeek / ChatGLM / Kimi / 自定义)]
+        WebApps[(AI 网页<br/>ChatGPT / DeepSeek / ChatGLM / Z.ai / Kimi / 自定义)]
     end
 
     User -->|提问 / 选区 / 截图| Side

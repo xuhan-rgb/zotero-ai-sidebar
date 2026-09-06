@@ -385,8 +385,9 @@
 
   <!-- ============ 3. WEB 对话 ============ -->
   <section id="web-chat">
-    <h2><span class="n">3</span>通过 WEB 使用 ChatGPT / DeepSeek</h2>
+    <h2><span class="n">3</span>通过 WEB 使用网页模型</h2>
     <p class="lead">WEB 模式通过本机 Web Agent 控制一个独立 Chrome 配置，把网页回答持续同步回 Zotero。它适合使用网页账号；API 模式不依赖 Chrome，也不会受到 Web Agent 状态影响。</p>
+    <p class="lead">本节新增的 Z.ai、自动端口分配和登录检测流程对应当前 <code>master</code> 代码，尚未发布新版本；市场已有的 <code>v0.8.6</code> 安装包不会随代码推送更新。测试开发代码需使用同一构建生成的 XPI 和 Web Agent ZIP。</p>
 
     <div class="grid2">
       <div class="win" aria-label="WEB 对话底栏示意">
@@ -411,16 +412,19 @@
 
       <ul class="legend">
         <li><span class="k">首次安装</span><span class="d">Windows / Linux / macOS 需要 Node.js 20+ 和 Google Chrome，Linux 另需 <code>xclip</code>。点“账号”后会自动检查：缺少依赖时给出下载或安装说明；满足条件后按状态显示“<b>安装 / 修复 / 升级 Web Agent</b>”。用户电脑不执行 npm。</span></li>
-        <li><span class="k">检查与恢复</span><span class="d">处理完系统依赖后点“<b>重新检查环境</b>”。运行包自动下载失败时，可打开 Release、复制下载链接，或选择已经下载的 ZIP 本地安装。</span></li>
-        <li><span class="k">ChatGPT ▾</span><span class="d">切换 ChatGPT、DeepSeek 和自定义站点；末尾“<b>管理第三方网页…</b>”只打开网址管理，不改变当前服务。</span></li>
-        <li><span class="k">账号</span><span class="d">临时显示专用 Chrome 完成登录，并设置“对话时在后台隐藏浏览器”；默认勾选。</span></li>
+        <li><span class="k">检查与恢复</span><span class="d">处理完系统依赖后点“<b>重新检查环境</b>”。运行包自动下载失败时，可打开 Release、复制下载链接，或选择已经下载的配套 ZIP 本地安装。安装或手动更新时校验 SHA-256，日常使用只做必要的健康检查。</span></li>
+        <li><span class="k">网页服务 ▾</span><span class="d">切换 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 和自定义站点；末尾“<b>管理第三方网页…</b>”只打开网址管理，不改变当前服务。</span></li>
+        <li><span class="k">账号</span><span class="d">在专用 Chrome 中完成网站登录，再点“完成并隐藏”或“完成并保持显示”。“对话时在后台隐藏浏览器”默认勾选。</span></li>
+        <li><span class="k">ChatGLM</span><span class="d">国内站入口为 <b>ChatGLM（chatglm.cn）</b>，已移除固定的“风控受限”标记；若网页实际出现验证，账号窗口仍会提示。</span></li>
+        <li><span class="k">Z.ai</span><span class="d"><b>Z.ai（chat.z.ai）</b> 支持游客文字聊天；上传论文或其他附件需要登录。登录后保持 Chrome 打开，插件会自动检测，无需先关闭浏览器。专用配置不会继承日常 Chrome 的登录资料。</span></li>
+        <li><span class="k">登录状态</span><span class="d">账号窗口<b>上方状态框动态更新</b>，每次检查完成后约 1 秒再检查；下方说明文字固定显示。识别到已登录后点击完成，继续配置或原提问。Chrome 头像不代表 Z.ai 网站登录状态。</span></li>
         <li><span class="k">进度卡</span><span class="d">依次显示准备、上传、提交、生成、同步；网页回答增长时左侧同步刷新。</span></li>
         <li><span class="k">网页状态</span><span class="d">快速 / 深度思考 / 智能搜索由网页当前状态决定，Zotero 不主动切换。</span></li>
         <li><span class="k">附件</span><span class="d">隐藏模式只使用网页真实文件输入框；没有输入框时明确报错，不聚焦 Chrome 做剪贴板粘贴。</span></li>
       </ul>
     </div>
 
-    <div class="tip">💡 “隐藏浏览器”表示最小化专用 Chrome，不是 headless API。登录、验证码和网页脚本仍在该独立配置中运行；它不会读取你日常 Chrome 的配置。</div>
+    <div class="tip">💡 ChatGLM 和 Z.ai 的“隐藏”采用最小化并保留会话；其他服务在配置完成后关闭可见窗口，后台任务按需启动无界面 Chrome，仍运行真实网页。Agent 与浏览器使用动态端口，无需手动逐次加一；切换到 Z.ai 若提示其他 WEB 任务未结束，先完成或取消该任务。</div>
     <div class="warn-box">⚠️ 第三方网页 DOM、上传和下载机制会变化。网页只返回 <span class="kbd">sandbox:/...</span> 文本路径时，没有可下载文件；详细排障见 <b>docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md</b>。</div>
   </section>
 
@@ -621,7 +625,7 @@
     <h2><span class="n">8</span>四步上手</h2>
     <div class="steps">
       <div class="step"><b>先选 API 或 WEB</b><p>在输入区底栏切换。API 使用模型预设和 Zotero 本地工具；WEB 使用 ChatGPT / DeepSeek 等网页账号。</p></div>
-      <div class="step"><b>完成对应配置</b><p>API 点顶部「设置」新增模型预设；WEB 选择网页服务后点「账号」，按检查结果补齐依赖、安装 Web Agent，再登录专用 Chrome。</p></div>
+      <div class="step"><b>完成对应配置</b><p>API 点顶部「设置」新增模型预设；WEB 选择网页服务后点「账号」，补齐依赖、安装配套 Web Agent，再完成网站登录。Z.ai 游客可文字聊天，上传附件需登录。</p></div>
       <div class="step"><b>确定对话与上下文</b><p>用数字标签切换对话，用“无 / 1轮 / 全部”决定发送多少历史；API 模式还可开关“联网 / 原文”。</p></div>
       <div class="step"><b>提问并查看任务</b><p>直接输入问题，或点「总结论文 / 全文重点 / 解释选区」。生成中的任务可在“队列”查看；精读时点顶部「沉浸」，结果可继续写入笔记或 PDF 标注。</p></div>
     </div>
