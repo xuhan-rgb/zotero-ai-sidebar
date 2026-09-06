@@ -63,10 +63,10 @@ describe("Web Agent browser modes", () => {
     );
 
     expect(runTask).toContain(
-      'await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible")',
+      'await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible", adapter)',
     );
     expect(agent).toMatch(
-      /async function openDedicatedBrowser[\s\S]*?ensureDedicatedBrowserMode\("visible"\)/,
+      /async function openDedicatedBrowser[\s\S]*?ensureDedicatedBrowserMode\("visible", adapter\)/,
     );
     expect(agent).toMatch(
       /async function hideDedicatedBrowser[\s\S]*?await stopDedicatedBrowser\(\)/,

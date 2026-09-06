@@ -62,7 +62,7 @@ let browserLaunching;
 let browserTransition;
 let browserMode;
 let accountWindowVisible = false;
-// Keep the browser used for manual verification for this Agent session.
+// GLM uses visible Chrome from the first visit; background means minimized.
 let preserveBrowserSession = false;
 const visibleTaskIDs = new Set();
 
@@ -283,7 +283,7 @@ async function runTask(task) {
   const adapter = providerDefinition(task.provider, task.customProvider);
   task.adapter = adapter;
   await callback(task, "starting_browser");
-  await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible");
+  await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible", adapter);
   const browserContext = await ensureContext();
   let session = await webSession(browserContext, task, adapter);
   let page = session.page;
@@ -313,12 +313,11 @@ async function runTask(task) {
       // Keep manual verification visible, including across account-status polls.
       visibleTaskIDs.add(task.id);
       if ((await currentBrowserMode()) !== "visible") {
-        await ensureDedicatedBrowserMode("visible");
+        await ensureDedicatedBrowserMode("visible", adapter);
         session = await webSession(await ensureContext(), task, adapter);
         page = session.page;
         task.page = page;
       }
-      preserveBrowserSession = true;
       await showBrowserWindow(page);
       verificationShown = true;
     }
@@ -763,7 +762,7 @@ async function openDedicatedBrowser(provider, customProvider) {
   const adapter = providerDefinition(provider, customProvider);
   if (!browserLaunching) {
     browserLaunching = (async () => {
-      await ensureDedicatedBrowserMode("visible");
+      await ensureDedicatedBrowserMode("visible", adapter);
       const connectedContext = await ensureContext();
       const pages = connectedContext
         .pages()
@@ -785,7 +784,6 @@ async function openDedicatedBrowser(provider, customProvider) {
         });
       }
       const verificationRequired = await pageVerificationRequired(page, adapter);
-      if (verificationRequired) preserveBrowserSession = true;
       return {
         ok: true,
         provider,
@@ -812,6 +810,7 @@ async function browserAccountStatus(provider, customProvider) {
     await ensureDedicatedBrowserMode(
       (await currentBrowserMode()) ||
         (accountWindowVisible ? "visible" : "headless"),
+      adapter,
     );
     const connectedContext = await ensureContext();
     const pages = connectedContext
@@ -834,7 +833,6 @@ async function browserAccountStatus(provider, customProvider) {
       if (await accountReady(page, adapter)) configuredPage = page;
     }
     const verificationRequired = await pageVerificationRequired(page, adapter);
-    if (verificationRequired) preserveBrowserSession = true;
     return {
       ok: true,
       provider,
@@ -887,10 +885,12 @@ async function hideDedicatedBrowser(provider, customProvider) {
     }
   }
   accountWindowVisible = false;
-  if (preserveBrowserSession) {
+  if (isGLMAdapter(adapter)) {
+    preserveBrowserSession = true;
     await minimizeDedicatedBrowser();
     return { ok: true, provider, browserOpen: true, configured, hidden: true };
   }
+  preserveBrowserSession = false;
   await stopDedicatedBrowser();
   return {
     ok: true,
@@ -929,17 +929,20 @@ async function minimizeDedicatedBrowser() {
   }
 }
 
-async function ensureDedicatedBrowserMode(mode) {
+function isGLMAdapter(adapter) {
+  return adapter.host === "chatglm.cn" || adapter.host.endsWith(".chatglm.cn");
+}
+
+async function ensureDedicatedBrowserMode(mode, adapter) {
+  const keepVisible = isGLMAdapter(adapter);
+  if (keepVisible) mode = "visible";
   if (browserTransition) {
     await browserTransition;
-    if ((await currentBrowserMode()) === mode) return;
   }
   browserTransition = (async () => {
+    preserveBrowserSession = keepVisible;
     const runningMode = await currentBrowserMode();
-    if (
-      runningMode === mode ||
-      (runningMode === "visible" && mode === "headless" && preserveBrowserSession)
-    ) {
+    if (runningMode === mode) {
       browserMode = runningMode;
       return;
     }
@@ -1086,7 +1089,7 @@ async function accountReady(page, adapter) {
 }
 
 async function pageVerificationRequired(page, adapter) {
-  if (!page || page.isClosed()) return false;
+  if (!isGLMAdapter(adapter) || !page || page.isClosed()) return false;
   if (await composerReady(page, adapter)) return false;
   const title = page
     .getByText("访问验证", { exact: true })
@@ -1094,7 +1097,7 @@ async function pageVerificationRequired(page, adapter) {
   if ((await title.count()) === 0) return false;
   return (
     (await page
-      .getByText(/请按住滑块|拖动到最右/)
+      .getByText(/请按住滑块|拖动到最右|验证失败[，,]?\s*请刷新/)
       .filter({ visible: true })
       .count()) > 0
   );

@@ -6,11 +6,12 @@ import http from "node:http";
 import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const chromePath = process.env.ZAI_TEST_CHROME || "/usr/bin/google-chrome";
 
-describe.skipIf(!existsSync(chromePath))(
+describe.skipIf(!existsSync(chromePath) || !process.env.DISPLAY)(
   "Web Agent manual verification",
   () => {
     let dir: string;
@@ -23,6 +24,7 @@ describe.skipIf(!existsSync(chromePath))(
     let submissions: number;
     let navigations: number;
     let quoteVerification: boolean;
+    let verificationFailed: boolean;
 
     beforeEach(async () => {
       ready = false;
@@ -30,6 +32,7 @@ describe.skipIf(!existsSync(chromePath))(
       submissions = 0;
       navigations = 0;
       quoteVerification = false;
+      verificationFailed = false;
       fixture = http.createServer(async (request, response) => {
         if (request.url === "/callback") {
           const chunks = [];
@@ -42,11 +45,12 @@ describe.skipIf(!existsSync(chromePath))(
           submissions++;
           response.end("Local verification test reply");
         } else {
-          if (request.url === "/") navigations++;
+          if (request.url === "/" || request.url?.startsWith("/main/"))
+            navigations++;
           response.setHeader("content-type", "text/html; charset=utf-8");
           // This is a local state fixture, with no CAPTCHA or security service.
           response.end(`<!doctype html><meta charset="utf-8">
-          <main>${ready ? "" : "<h1>访问验证</h1><p>请按住滑块，拖动到最右边</p>"}</main>
+          <main>${ready ? "" : `<h1>访问验证</h1><p>${verificationFailed ? "验证失败，请刷新" : "请按住滑块，拖动到最右边"}</p>`}</main>
           <script>
             const timer = setInterval(async () => {
               if (!await (await fetch('/ready')).json()) return;
@@ -56,6 +60,9 @@ describe.skipIf(!existsSync(chromePath))(
                 ${JSON.stringify(quoteVerification ? "<blockquote><h2>访问验证</h2><p>请按住滑块，拖动到最右边</p></blockquote>" : "")};
               document.querySelector('button').onclick = async () => {
                 const answer = await (await fetch('/submit')).text();
+                const phase = document.createElement('p');
+                phase.textContent = '思考结束';
+                document.querySelector('main').append(phase);
                 const node = document.createElement('div');
                 node.className = 'answer';
                 node.textContent = answer;
@@ -74,8 +81,8 @@ describe.skipIf(!existsSync(chromePath))(
         id: "verification-fixture",
         name: "Local verification test",
         template: "chatgpt-like",
-        homeUrl: url,
-        newConversationUrl: url,
+        homeUrl: "https://chatglm.cn/",
+        newConversationUrl: "https://chatglm.cn/",
         selectors: {
           composer: ["textarea"],
           send: ["button"],
@@ -86,6 +93,25 @@ describe.skipIf(!existsSync(chromePath))(
         },
       };
       dir = await mkdtemp(path.join(os.tmpdir(), "zai-verification-"));
+      // Mock the website at the network boundary in this isolated test profile.
+      // No requests reach GLM or any other external website.
+      const preloadPath = path.join(dir, "mock-website.mjs");
+      await writeFile(
+        preloadPath,
+        `import { chromium } from ${JSON.stringify(pathToFileURL(path.resolve("web-agent/node_modules/playwright-core/index.mjs")).href)};
+        const connect = chromium.connectOverCDP.bind(chromium);
+        chromium.connectOverCDP = async (...args) => {
+          const browser = await connect(...args);
+          await browser.contexts()[0].route('**/*', async route => {
+            const requested = new URL(route.request().url());
+            const response = await fetch(${JSON.stringify(url)} + requested.pathname + requested.search);
+            await route.fulfill({ status: response.status,
+              headers: Object.fromEntries(response.headers),
+              body: Buffer.from(await response.arrayBuffer()) });
+          });
+          return browser;
+        };`,
+      );
       const configPath = path.join(dir, "config.json");
       await writeFile(
         configPath,
@@ -99,7 +125,12 @@ describe.skipIf(!existsSync(chromePath))(
       );
       child = spawn(
         process.execPath,
-        [path.resolve("web-agent/agent.mjs"), configPath],
+        [
+          "--import",
+          preloadPath,
+          path.resolve("web-agent/agent.mjs"),
+          configPath,
+        ],
         {
           stdio: ["ignore", "ignore", "pipe"],
         },
@@ -169,6 +200,40 @@ describe.skipIf(!existsSync(chromePath))(
       expect(submissions).toBe(0);
     }, 30_000);
 
+    it.each(["chatglm", "custom:verification-fixture"])(
+      "reports failed GLM verification without treating it as ordinary login (%s)",
+      async (provider) => {
+        verificationFailed = true;
+        expect(
+          await request(
+            `/browser/status?${new URLSearchParams({
+              provider,
+              customProvider: JSON.stringify(customProvider),
+            })}`,
+          ),
+        ).toMatchObject({
+          configured: false,
+          verificationRequired: true,
+        });
+        expect(submissions).toBe(0);
+        expect(navigations).toBe(1);
+      },
+      30_000,
+    );
+
+    it.each(["https://example.test/", "https://chatglm.cn.example.test/"])(
+      "does not apply GLM verification handling to %s",
+      async (url) => {
+        customProvider.homeUrl = url;
+        customProvider.newConversationUrl = url;
+        expect(await status()).toMatchObject({
+          configured: false,
+          verificationRequired: false,
+        });
+      },
+      30_000,
+    );
+
     it("does not mistake quoted verification instructions in a usable chat for a challenge", async () => {
       quoteVerification = true;
       ready = true;
@@ -179,6 +244,8 @@ describe.skipIf(!existsSync(chromePath))(
 
     it("keeps ordinary background tasks headless when no verification is required", async () => {
       ready = true;
+      customProvider.homeUrl = "https://example.test/";
+      customProvider.newConversationUrl = "https://example.test/";
       await request("/tasks", {
         id: "ordinary-background",
         provider: "custom:verification-fixture",
@@ -198,6 +265,78 @@ describe.skipIf(!existsSync(chromePath))(
       });
       expect(submissions).toBe(1);
     }, 30_000);
+
+    it
+      .skipIf(!process.env.DISPLAY)
+      .each(["chatglm", "custom:verification-fixture"])(
+      "uses visible Chrome from the first GLM account check, before any challenge (%s)",
+      async (provider) => {
+        ready = true;
+        await expect
+          .poll(() =>
+            request(
+              `/browser/status?${new URLSearchParams({
+                provider,
+                customProvider: JSON.stringify(customProvider),
+              })}`,
+            ),
+          )
+          .toMatchObject({ configured: true });
+        expect(await request("/health")).toMatchObject({
+          browserMode: "visible",
+        });
+        expect(navigations).toBe(1);
+        expect(submissions).toBe(0);
+      },
+      30_000,
+    );
+
+    it.skipIf(!process.env.DISPLAY)(
+      "keeps a ready GLM session when hiding it and sending a background task without a prior challenge",
+      async () => {
+        ready = true;
+        await request("/browser/open", {
+          provider: "custom:verification-fixture",
+          customProvider,
+        });
+        await expect.poll(status).toMatchObject({ configured: true });
+        expect(
+          await request("/browser/hide", {
+            provider: "custom:verification-fixture",
+            customProvider,
+          }),
+        ).toMatchObject({ browserOpen: true, configured: true, hidden: true });
+        const before = navigations;
+        await expect.poll(status).toMatchObject({ configured: true });
+        expect(navigations).toBe(before);
+        await request("/tasks", {
+          id: "glm-no-challenge",
+          provider: "custom:verification-fixture",
+          customProvider,
+          sessionKey: "glm-no-challenge",
+          prompt: "Local test",
+          continuationPrompt: "Local test",
+          hideBrowser: true,
+        });
+        await expect
+          .poll(() => callbacks, {
+            timeout: 20_000,
+          })
+          .toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                state: "completed",
+                answer: "Local verification test reply",
+              }),
+            ]),
+          );
+        expect(await request("/health")).toMatchObject({
+          browserMode: "visible",
+        });
+        expect(submissions).toBe(1);
+      },
+      30_000,
+    );
 
     it.skipIf(!process.env.DISPLAY)(
       "keeps a visible task page intact while checking account status",
@@ -342,6 +481,50 @@ describe.skipIf(!existsSync(chromePath))(
           .toMatchObject({ answer: "Local verification test reply" });
         expect(await request("/health")).toMatchObject({
           browserMode: "visible",
+        });
+        expect(submissions).toBe(1);
+      },
+      30_000,
+    );
+
+    it.skipIf(!process.env.DISPLAY)(
+      "does not carry GLM session preservation into another provider's background task",
+      async () => {
+        await request("/browser/open", {
+          provider: "custom:verification-fixture",
+          customProvider,
+        });
+        ready = true;
+        await expect.poll(status).toMatchObject({ configured: true });
+        await request("/browser/hide", {
+          provider: "custom:verification-fixture",
+          customProvider,
+        });
+        expect(await request("/health")).toMatchObject({
+          browserMode: "visible",
+        });
+        const otherProvider = {
+          ...customProvider,
+          id: "other-fixture",
+          homeUrl: "https://example.test/",
+          newConversationUrl: "https://example.test/",
+        };
+        await request("/tasks", {
+          id: "other-background",
+          provider: "custom:other-fixture",
+          customProvider: otherProvider,
+          sessionKey: "other-background",
+          prompt: "Local test",
+          continuationPrompt: "Local test",
+          hideBrowser: true,
+        });
+        await expect
+          .poll(() => callbacks.find((event) => event.state === "completed"), {
+            timeout: 20_000,
+          })
+          .toMatchObject({ answer: "Local verification test reply" });
+        expect(await request("/health")).toMatchObject({
+          browserMode: "headless",
         });
         expect(submissions).toBe(1);
       },

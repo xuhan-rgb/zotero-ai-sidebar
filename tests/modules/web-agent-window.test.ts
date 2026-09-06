@@ -90,9 +90,9 @@ describe("Web Agent browser window visibility", () => {
     );
     expect(runTask.match(/applyTaskWindowPolicy\(page, task\)/g)).toHaveLength(1);
     expect(runTask).toContain(
-      'await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible")',
+      'await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible", adapter)',
     );
-    expect(agent).toContain('ensureDedicatedBrowserMode("visible")');
+    expect(agent).toContain('ensureDedicatedBrowserMode("visible", adapter)');
     expect(agent).toContain("await stopDedicatedBrowser()");
     expect(agent).not.toContain('"--start-minimized"');
     expect(installer).toContain("browser-mode.mjs");
