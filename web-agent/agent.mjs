@@ -307,6 +307,9 @@ async function runTask(task) {
 
   let loginReported = false;
   let verificationShown = false;
+  const requiresLogin = adapter.host === "chat.z.ai" && !!(
+    task.attachment || task.contextAttachment || task.tocAttachment
+  );
   const loginDeadline = Date.now() + 30 * 60_000;
   while (Date.now() < loginDeadline) {
     if (!verificationShown && (await pageVerificationRequired(page, adapter))) {
@@ -322,7 +325,7 @@ async function runTask(task) {
       verificationShown = true;
     }
     await throwForBlockingAccountDialog(task);
-    if (await accountReady(page, adapter)) break;
+    if (await accountReady(page, adapter, requiresLogin)) break;
     if (!loginReported) {
       await callback(task, "needs_login");
       loginReported = true;
@@ -330,7 +333,7 @@ async function runTask(task) {
     await page.waitForTimeout(1_000);
     throwIfTaskCancelled(task);
   }
-  if (!(await accountReady(page, adapter))) {
+  if (!(await accountReady(page, adapter, requiresLogin))) {
     throw new Error(
       `${adapter.name} login was not completed within 30 minutes`,
     );
@@ -769,7 +772,7 @@ async function openDedicatedBrowser(provider, customProvider) {
         .filter((candidate) => candidate.url().includes(adapter.host));
       let page = undefined;
       for (const candidate of pages) {
-        if (await accountReady(candidate, adapter)) {
+        if (await accountReady(candidate, adapter, true)) {
           page = candidate;
           break;
         }
@@ -790,6 +793,7 @@ async function openDedicatedBrowser(provider, customProvider) {
         browserOpen: true,
         url: page.url(),
         configured: await accountReady(page, adapter),
+        ...(adapter.host === "chat.z.ai" ? { guest: await zaiGuest(page) } : {}),
         verificationRequired,
       };
     })();
@@ -818,7 +822,7 @@ async function browserAccountStatus(provider, customProvider) {
       .filter((candidate) => candidate.url().includes(adapter.host));
     let configuredPage;
     for (const candidate of pages) {
-      if (await accountReady(candidate, adapter)) {
+      if (await accountReady(candidate, adapter, true)) {
         configuredPage = candidate;
         break;
       }
@@ -837,7 +841,10 @@ async function browserAccountStatus(provider, customProvider) {
       ok: true,
       provider,
       browserOpen: true,
-      configured: !!configuredPage,
+      configured: adapter.host === "chat.z.ai"
+        ? await accountReady(page, adapter)
+        : !!configuredPage,
+      ...(adapter.host === "chat.z.ai" ? { guest: await zaiGuest(page) } : {}),
       url: page?.url() || "",
       verificationRequired,
     };
@@ -867,6 +874,7 @@ async function hideDedicatedBrowser(provider, customProvider) {
     ? providerPages
     : connectedContext.pages().slice(0, 1);
   let configured = false;
+  let guest = adapter.host === "chat.z.ai";
   for (const page of pages) {
     if (page.url().includes(adapter.host)) {
       if (await pageVerificationRequired(page, adapter)) {
@@ -882,6 +890,7 @@ async function hideDedicatedBrowser(provider, customProvider) {
         };
       }
       configured = (await accountReady(page, adapter)) || configured;
+      if (guest && (await accountReady(page, adapter, true))) guest = false;
     }
   }
   accountWindowVisible = false;
@@ -897,6 +906,7 @@ async function hideDedicatedBrowser(provider, customProvider) {
     provider,
     browserOpen: false,
     configured,
+    ...(adapter.host === "chat.z.ai" ? { guest: configured && guest } : {}),
     hidden: true,
   };
 }
@@ -1063,7 +1073,7 @@ async function composerReady(page, adapter) {
   return (await composer.count()) > 0 && (await composer.first().isEditable());
 }
 
-async function accountReady(page, adapter) {
+async function accountReady(page, adapter, requiresLogin = false) {
   if (!(await composerReady(page, adapter))) return false;
   if (
     adapter.template === "chatgpt-like" &&
@@ -1072,10 +1082,12 @@ async function accountReady(page, adapter) {
     return false;
   }
   if (adapter.host === "chat.z.ai") {
-    // Z.ai lets guests edit the prompt, but requires login for file uploads.
-    // Wait for its explicit signed-in marker, including during hydration.
+    // Z.ai supports guest text chat; only file uploads require authentication.
+    // Require an initialized guest marker so a loading page is not ready.
     return (await page
-      .locator("#chat-container[data-guest='false']")
+      .locator(requiresLogin
+        ? "#chat-container[data-guest='false']"
+        : "#chat-container[data-guest='false'], #chat-container[data-guest='true']")
       .filter({ visible: true })
       .count()) > 0;
   }
@@ -1094,6 +1106,11 @@ async function accountReady(page, adapter) {
     .getByText("登录以获取", { exact: false })
     .filter({ visible: true });
   return (await loggedOutPrompt.count()) === 0;
+}
+
+async function zaiGuest(page) {
+  return (await page.locator("#chat-container[data-guest='true']")
+    .filter({ visible: true }).count()) > 0;
 }
 
 async function pageVerificationRequired(page, adapter) {

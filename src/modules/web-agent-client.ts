@@ -36,6 +36,8 @@ export interface WebAccountStatus {
   provider: WebPromptProvider;
   browserOpen: boolean;
   configured: boolean;
+  // Z.ai may be ready for text chat without an authenticated account.
+  guest?: boolean;
   verificationRequired?: boolean;
   url?: string;
   error?: string;
@@ -99,6 +101,14 @@ export async function dispatchWebAgentTask(input: {
         : input.customProvider
           ? `${input.customProvider.name} 未检测到可用输入框，请先打开该网址并完成登录`
           : `${webProviderName(input.provider)} 网页账号未配置，请先点击账号配置按钮并手动登录`,
+    );
+  }
+  if (
+    input.provider === "zai" && account.guest &&
+    (input.attachment || input.contextAttachment || input.tocAttachment)
+  ) {
+    throw new Error(
+      "Z.ai 游客可进行文字聊天，上传附件需要登录；请点击账号完成登录后重试",
     );
   }
   const response = await fetch(`http://127.0.0.1:${config.port}/tasks`, {

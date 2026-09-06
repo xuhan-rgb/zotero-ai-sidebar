@@ -251,7 +251,7 @@ describe("WEB send flow", () => {
     expect(agent).toContain("chromium.connectOverCDP(endpoint)");
     expect(browserMode).toContain("--remote-debugging-port=0");
     expect(agent).not.toContain("chromium.launchPersistentContext");
-    expect(agent).toContain("async function accountReady(page, adapter)");
+    expect(agent).toContain("async function accountReady(page, adapter, requiresLogin = false)");
     expect(agent).toContain("button[data-testid='login-button']");
     expect(agent).toContain("登录以获取");
   });

@@ -13,7 +13,7 @@ const chromePath = process.env.ZAI_TEST_CHROME || "/usr/bin/google-chrome";
 
 describe("Z.ai account and attachment flow", () => {
   it.skipIf(!existsSync(chromePath))(
-    "waits for login before uploading, then submits and returns the reply once",
+    "allows guest text chat but waits for login before uploading files",
     async () => {
       const dir = await mkdtemp(path.join(os.tmpdir(), "zai-account-test-"));
       let signedIn = false;
@@ -34,7 +34,7 @@ describe("Z.ai account and attachment flow", () => {
           response.end("ok");
         } else if (request.url === "/submit") {
           submissions++;
-          response.end("Signed-in Z.ai reply");
+          response.end("Z.ai test reply");
         } else {
           response.setHeader("content-type", "text/html; charset=utf-8");
           // The public Z.ai frontend marks #chat-container with data-guest,
@@ -160,13 +160,42 @@ describe("Z.ai account and attachment flow", () => {
           })
           .toBeGreaterThan(0);
 
-        // Reproduces the reported bug: editable input does not mean logged in.
+        // A guest can chat, but this is not an authenticated upload session.
         expect(await status()).toMatchObject({
-          configured: false,
+          configured: true,
           browserOpen: true,
+          guest: true,
         });
+        expect(await request("/browser/hide", { provider: "zai" })).toMatchObject({
+          configured: true,
+          guest: true,
+          hidden: true,
+        });
+        await request("/tasks", {
+          id: "zai-guest-text",
+          provider: "zai",
+          sessionKey: "zai:guest",
+          prompt: "Hello",
+          continuationPrompt: "Hello",
+          hideBrowser: true,
+        });
+        await expect
+          .poll(() => callbacks, { timeout: 20_000 })
+          .toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                id: "zai-guest-text",
+                state: "completed",
+                answer: "Z.ai test reply",
+              }),
+            ]),
+          );
+        expect(uploads).toBe(0);
+        expect(submissions).toBe(1);
         signedIn = true;
-        await expect.poll(status).toMatchObject({ configured: true });
+        await expect
+          .poll(status)
+          .toMatchObject({ configured: true, guest: false });
         hydrated = false;
         await expect.poll(status).toMatchObject({ configured: false });
         signedIn = false;
@@ -193,20 +222,21 @@ describe("Z.ai account and attachment flow", () => {
             ]),
           );
         expect(uploads).toBe(0);
-        expect(submissions).toBe(0);
+        expect(submissions).toBe(1);
         signedIn = true;
         await expect
           .poll(() => callbacks, { timeout: 20_000 })
           .toEqual(
             expect.arrayContaining([
               expect.objectContaining({
+                id: "zai-login-upload",
                 state: "completed",
-                answer: "Signed-in Z.ai reply",
+                answer: "Z.ai test reply",
               }),
             ]),
           );
         expect(uploads).toBe(1);
-        expect(submissions).toBe(1);
+        expect(submissions).toBe(2);
         expect(
           callbacks.some(
             (event) => event.state === "failed" || event.pageNotice,

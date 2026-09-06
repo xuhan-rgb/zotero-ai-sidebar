@@ -16,6 +16,78 @@ afterEach(() => {
 });
 
 describe("Web Agent protocol health", () => {
+  it.each([
+    ["zai", undefined, false],
+    ["zai", "attachment", true],
+    ["zai", "contextAttachment", true],
+    ["zai", "tocAttachment", true],
+    ["kimi", "attachment", false],
+  ] as const)(
+    "checks guest upload access only for Z.ai (%s, %s)",
+    async (provider, field, blocked) => {
+      vi.stubGlobal("Zotero", { DataDirectory: { dir: "/data" } });
+      vi.stubGlobal("IOUtils", {
+        readUTF8: async () =>
+          JSON.stringify({
+            instanceId: "fixture",
+            token: "token",
+            port: 23120,
+            needsRuntimeUpdate: false,
+            nodePath: "/node",
+            chromePath: "/chrome",
+            agentScript: "/agent.mjs",
+            profileDir: "/profile",
+            callbackUrl: "http://127.0.0.1:23119/callback",
+          }),
+      });
+      const requests: string[] = [];
+      vi.stubGlobal("fetch", async (url: string) => {
+        requests.push(url);
+        return {
+          ok: true,
+          status: 200,
+          json: async () =>
+            url.endsWith("/health")
+              ? {
+                  ok: true,
+                  protocolVersion: 24,
+                  service: "zotero-ai-sidebar-web-agent",
+                  instanceId: "fixture",
+                }
+              : {
+                  ok: true,
+                  configured: true,
+                  guest: true,
+                  provider,
+                  browserOpen: true,
+                },
+        };
+      });
+      const task = dispatchWebAgentTask({
+        id: "guest",
+        provider,
+        prompt: "hello",
+        continuationPrompt: "hello",
+        sessionKey: "guest",
+        paperUrl: "",
+        hideBrowser: true,
+        ...(field
+          ? {
+              [field]: {
+                kind: "text",
+                path: "/tmp/context.txt",
+                name: "context.txt",
+                mimeType: "text/plain",
+              },
+            }
+          : {}),
+      });
+      if (blocked) await expect(task).rejects.toThrow("上传附件需要登录");
+      else await expect(task).resolves.toBeUndefined();
+      expect(requests.some((url) => url.endsWith("/tasks"))).toBe(!blocked);
+    },
+  );
+
   it("explains website verification and does not dispatch an unready account", async () => {
     vi.stubGlobal("Zotero", { DataDirectory: { dir: "/data" } });
     vi.stubGlobal("IOUtils", {

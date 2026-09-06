@@ -3353,14 +3353,16 @@ async function sendWebPromptMessage(
     renderPanel(mount, state);
     return;
   }
-  if (!account.configured) {
+  const configureForWebTask = (requiresLogin = false) => {
     releaseWebPromptLock();
     state.webAccountConfigured = false;
-    state.webAccountNotice = account.verificationRequired
-      ? `${webProviderName(state, provider)} 网站要求访问验证，请在专用 Chrome 中手动完成验证`
-      : provider.startsWith("custom:")
-        ? `未检测到 ${webProviderName(state, provider)} 的可用输入框，请先打开该网址并完成登录`
-        : `尚未配置 ${webProviderName(state, provider)} 网页账号，请先点击账号配置按钮并手动登录`;
+    state.webAccountNotice = requiresLogin
+      ? "Z.ai 游客可进行文字聊天，本次上传论文附件需要登录"
+      : account.verificationRequired
+        ? `${webProviderName(state, provider)} 网站要求访问验证，请在专用 Chrome 中手动完成验证`
+        : provider.startsWith("custom:")
+          ? `未检测到 ${webProviderName(state, provider)} 的可用输入框，请先打开该网址并完成登录`
+          : `尚未配置 ${webProviderName(state, provider)} 网页账号，请先点击账号配置按钮并手动登录`;
     renderPanel(mount, state);
     const doc = mount.ownerDocument;
     if (doc) {
@@ -3375,8 +3377,12 @@ async function sendWebPromptMessage(
           if (states.get(mount) !== state) return;
           void sendWebPromptMessage(mount, state, content, provider, options);
         },
+        requiresLogin,
       );
     }
+  };
+  if (!account.configured) {
+    configureForWebTask();
     return;
   }
   state.webAccountConfigured = true;
@@ -3422,8 +3428,19 @@ async function sendWebPromptMessage(
   const title = item ? String(item.getField("title") || "") : "";
   const material = await resolveWebPaperMaterial(sourceItemID);
   const arxivToc = await buildArxivTocFrontBlock(sourceItemID);
-  const contextAttachment = await createWebContextAttachment(webHistory);
+  // Guest Z.ai conversations carry history in the existing text prompt path.
+  const contextAttachment =
+    provider === "zai" && account.guest
+      ? undefined
+      : await createWebContextAttachment(webHistory);
   const tocAttachment = await createWebTocAttachment(arxivToc);
+  if (
+    provider === "zai" && account.guest && (material.attachment || tocAttachment)
+  ) {
+    state.chatSelectionQuote = chatQuote;
+    configureForWebTask(true);
+    return;
+  }
   const annotationColorGuide =
     loadToolSettings(zoteroPrefs()).annotationColorGuide;
   const webContent = options.annotationBatch
@@ -4729,6 +4746,7 @@ function configureWebAccount(
   providerName: string,
   customProvider?: CustomWebProvider,
   onConfigured?: () => void,
+  requiresLogin = false,
 ): void {
   const view = doc.defaultView;
   const layer = el(
@@ -4820,7 +4838,11 @@ function configureWebAccount(
     doc,
     "p",
     "zai-web-account-explanation",
-    `请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示 Chrome。`,
+    provider === "zai"
+      ? requiresLogin
+        ? "本次任务需要上传论文附件，请在 Z.ai 网页完成登录后继续。"
+        : "Z.ai 支持不登录进行文字聊天；上传论文附件需要登录。你可以选择后续对话是否显示 Chrome。"
+      : `请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示 Chrome。`,
   );
   const pageNoticeExplanation = el(
     doc,
@@ -4871,6 +4893,7 @@ function configureWebAccount(
 
   let closed = false;
   let configured = false;
+  let guest = false;
   let webAgentReady = false;
   let repairing = false;
   let pollTimer: number | undefined;
@@ -4978,20 +5001,27 @@ function configureWebAccount(
     configured: boolean;
     browserOpen: boolean;
     verificationRequired?: boolean;
+    guest?: boolean;
   }) => {
     if (closed) return;
-    configured = result.configured;
+    guest = provider === "zai" && result.guest === true;
+    configured = result.configured && !(requiresLogin && guest);
     status.classList.remove("is-error");
-    state.webAccountConfigured = result.configured;
-    done.disabled = result.verificationRequired === true;
-    status.classList.toggle("is-ready", result.configured);
-    status.textContent = result.configured
-      ? `${providerName} 已登录，可以完成并隐藏网页`
-      : result.verificationRequired
-        ? `${providerName} 网站要求访问验证，请在专用 Chrome 中手动完成验证…`
-        : result.browserOpen
-          ? `等待在 ${providerName} 网页中完成登录…`
-          : `${providerName} 登录网页尚未打开`;
+    state.webAccountConfigured = configured;
+    done.disabled =
+      result.verificationRequired === true || (requiresLogin && !configured);
+    status.classList.toggle("is-ready", configured);
+    status.textContent = guest && (result.configured || requiresLogin)
+      ? requiresLogin
+        ? "Z.ai 游客模式：本次上传论文附件需要登录，请在网页完成登录…"
+        : "Z.ai 游客模式可用，可以直接文字聊天；上传论文附件需要登录"
+      : configured
+        ? `${providerName} 已登录，可以完成并隐藏网页`
+        : result.verificationRequired
+          ? `${providerName} 网站要求访问验证，请在专用 Chrome 中手动完成验证…`
+          : result.browserOpen
+            ? `等待在 ${providerName} 网页中完成登录…`
+            : `${providerName} 登录网页尚未打开`;
   };
   const refreshStatus = async () => {
     try {
@@ -5104,18 +5134,25 @@ function configureWebAccount(
     try {
       if (checkbox.checked && webAgentReady) {
         const result = await hideWebAccount(provider, customProvider);
+        guest = provider === "zai" && result.guest === true;
         configured =
-          !result.verificationRequired && (result.configured || configured);
+          !result.verificationRequired &&
+          (result.configured || configured) &&
+          !(requiresLogin && guest);
         state.webAccountConfigured = configured;
         state.webAccountNotice = result.verificationRequired
           ? `${providerName} 网站要求访问验证，专用 Chrome 已保持显示，请手动完成验证`
+          : guest
+            ? "Z.ai 游客模式可用；上传论文附件需要登录"
+            : configured
+              ? `${providerName} 已就绪`
+              : `${providerName} 登录网页已隐藏，尚未检测到登录`;
+      } else if (webAgentReady) {
+        state.webAccountNotice = guest
+          ? "Z.ai 游客模式可用；上传论文附件需要登录"
           : configured
             ? `${providerName} 已就绪`
-            : `${providerName} 登录网页已隐藏，尚未检测到登录`;
-      } else if (webAgentReady) {
-        state.webAccountNotice = configured
-          ? `${providerName} 已就绪`
-          : `${providerName} 登录网页保持显示，尚未检测到登录`;
+            : `${providerName} 登录网页保持显示，尚未检测到登录`;
       } else state.webAccountNotice = status.textContent || "Web Agent 尚未就绪";
     } catch (error) {
       state.webAccountNotice =
