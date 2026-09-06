@@ -10,6 +10,7 @@ import {
   type FullTranslationDocument,
 } from "./full-document";
 import { isTranslationPlaceholderReply } from "./translator";
+import { mergeUsage } from "./full-document-usage";
 
 export interface FullDocumentTranslationRunOptions {
   document: FullTranslationDocument;
@@ -161,25 +162,6 @@ class TranslationValidationError extends Error {
     super(message);
     this.name = "TranslationValidationError";
   }
-}
-
-function mergeUsage(
-  first?: FullTranslationUsage,
-  second?: FullTranslationUsage,
-): FullTranslationUsage | undefined {
-  if (!first) return second;
-  if (!second) return first;
-  return {
-    input: first.input + second.input,
-    output: first.output + second.output,
-    ...((first.cacheRead != null || second.cacheRead != null) && {
-      cacheRead: (first.cacheRead ?? 0) + (second.cacheRead ?? 0),
-    }),
-    ...(first.cacheReadIncludedInInput === second.cacheReadIncludedInInput &&
-      first.cacheReadIncludedInInput != null && {
-        cacheReadIncludedInInput: first.cacheReadIncludedInInput,
-      }),
-  };
 }
 
 function splitProtectedText(text: string, maxChars: number): string[] {

@@ -9,6 +9,7 @@ import {
   translationNeedsRetry,
 } from "./translator";
 import type { FullDocumentTranslationChunk } from "./full-document-runner";
+import { mergeUsage } from "./full-document-usage";
 
 const FULL_DOCUMENT_TRANSLATION_PREFIX = "英译中：";
 const FULL_DOCUMENT_TRANSLATION_PROMPT =
@@ -273,23 +274,4 @@ async function requestTranslation(
     }
   }
   return { text, usage };
-}
-
-function mergeUsage(
-  first: FullDocumentTranslationChunk["usage"],
-  second: FullDocumentTranslationChunk["usage"],
-): FullDocumentTranslationChunk["usage"] {
-  if (!first) return second;
-  if (!second) return first;
-  return {
-    input: first.input + second.input,
-    output: first.output + second.output,
-    ...((first.cacheRead != null || second.cacheRead != null) && {
-      cacheRead: (first.cacheRead ?? 0) + (second.cacheRead ?? 0),
-    }),
-    ...(first.cacheReadIncludedInInput === second.cacheReadIncludedInInput &&
-      first.cacheReadIncludedInInput != null && {
-        cacheReadIncludedInInput: first.cacheReadIncludedInInput,
-      }),
-  };
 }
