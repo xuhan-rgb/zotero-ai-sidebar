@@ -59,6 +59,7 @@ export function webPromptProviderForUserMessage(
   if (message?.task?.title === "ChatGPT Web") return "chatgpt";
   if (message?.task?.title === "DeepSeek Web") return "deepseek";
   if (message?.task?.title === "ChatGLM Web") return "chatglm";
+  if (message?.task?.title === "Z.ai Web") return "zai";
   const task = message?.task;
   if (task?.title === "Kimi Web" && !String(task.id || "").startsWith("task-"))
     return "kimi";

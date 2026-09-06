@@ -567,6 +567,26 @@ describe('chat history', () => {
     expect((await loadChatMessages(42))[0].task?.webProvider).toBe('kimi');
   });
 
+  it('preserves the distinct GLM website when restoring Web tasks', async () => {
+    for (const provider of ['chatglm', 'zai'] as const) {
+      await saveChatMessages(42, [
+        {
+          role: 'user',
+          content: 'hello',
+          task: {
+            id: 'glm-site-test',
+            kind: 'general',
+            title: 'GLM Web',
+            promptPreview: 'hello',
+            createdAt: 100,
+            webProvider: provider,
+          },
+        },
+      ]);
+      expect((await loadChatMessages(42))[0].task?.webProvider).toBe(provider);
+    }
+  });
+
   it('uses Windows separators for data-dir and old profile migration paths', async () => {
     const newPath =
       'C:\\Users\\admin\\Zotero\\zotero-ai-sidebar-chat-history.json';

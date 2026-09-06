@@ -3859,6 +3859,7 @@ function webProviderDisplayName(provider: WebPromptProvider): string {
   if (provider === "chatgpt") return "ChatGPT";
   if (provider === "deepseek") return "DeepSeek";
   if (provider === "chatglm") return "ChatGLM";
+  if (provider === "zai") return "Z.ai";
   if (provider === "kimi") return "Kimi";
   return provider;
 }
@@ -4638,7 +4639,8 @@ function renderWebPromptProviderSwitcher(
   for (const [value, label] of [
     ["chatgpt", "ChatGPT"],
     ["deepseek", "DeepSeek"],
-    ["chatglm", "ChatGLM"],
+    ["chatglm", "ChatGLM（chatglm.cn，风控受限）"],
+    ["zai", "Z.ai（chat.z.ai）"],
     ["kimi", "Kimi"],
   ] as const) {
     const option = doc.createElement("option");

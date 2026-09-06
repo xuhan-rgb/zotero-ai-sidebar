@@ -19,6 +19,7 @@ export type WebPromptProvider =
   | "chatgpt"
   | "deepseek"
   | "chatglm"
+  | "zai"
   | "kimi"
   | `custom:${string}`;
 export type CustomWebProviderTemplate = "chatgpt-like";
@@ -191,6 +192,7 @@ function normalizeWebPromptProvider(
     value === "chatgpt" ||
     value === "deepseek" ||
     value === "chatglm" ||
+    value === "zai" ||
     value === "kimi"
   ) {
     return value;

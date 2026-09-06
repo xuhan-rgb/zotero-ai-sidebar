@@ -284,7 +284,7 @@ WEB mode mirrors a real AI website into the Zotero conversation. It is useful wh
    sudo apt install xclip
    ```
 
-2. Install the XPI. In the composer footer select **WEB**, choose **ChatGPT**, **DeepSeek**, **ChatGLM**, or **Kimi**, then click **Account**.
+2. Install the XPI. In the composer footer select **WEB**, choose **ChatGPT**, **DeepSeek**, **ChatGLM**, **Z.ai**, or **Kimi**, then click **Account**.
 3. The account dialog checks the environment automatically. When Node.js or Chrome is missing it provides an official download button; when Linux `xclip` is missing it provides copyable installation guidance. The plugin never runs an installer or system command. After resolving the dependency, click **Check environment again**, then use **Install**, **Repair**, or **Upgrade Web Agent** as shown. The plugin downloads the matching prebuilt runtime from the version's GitHub Release, verifies its size and SHA-256, and continues only after the protocol and health check pass. The user's computer does not run npm. If automatic download fails, open or copy the provided link, download the ZIP in a browser, and select it in the same dialog.
 4. Complete login in the temporary Chrome window. Keep **Hide browser in the background while chatting** checked to minimize the dedicated browser after setup; this is the default.
 
@@ -551,7 +551,7 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 
 | Control | API mode | WEB mode |
 |---|---|---|
-| Destination | A configured local model preset | ChatGPT, DeepSeek, ChatGLM, Kimi, or a custom ChatGPT-like site |
+| Destination | A configured local model preset | ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or a custom ChatGPT-like site |
 | Authentication | API key in Zotero prefs | Manual login in a dedicated Chrome profile |
 | Tools | Zotero/model tool loop is available | Website answer mirroring; no API tool loop |
 | Browser | Not used | Minimized by default after account setup |
@@ -562,7 +562,8 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 
 WEB footer controls are intentionally small:
 
-- **Service menu** — switches ChatGPT, DeepSeek, ChatGLM, Kimi, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection. A legacy custom `kimi.com` entry is migrated to the built-in Kimi service to avoid duplicate entries.
+- **GLM websites** — ChatGLM (`chatglm.cn`) is marked as restricted because access verification still fails in the reported environment. Z.ai (`chat.z.ai`) is a separate entry with its own login and conversation records; a full conversation on the real site has not yet been verified.
+- **Service menu** — switches ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection. A legacy custom `kimi.com` entry is migrated to the built-in Kimi service to avoid duplicate entries.
 - **Account** — opens the current service for login and controls whether its dedicated browser stays minimized during chat.
 - **Send** — Enter and the arrow follow the same path and perform a live account check immediately before submission.
 - There are no Zotero-side fast/deep-thinking/search toggles. Change those on the website itself when the account window is visible.

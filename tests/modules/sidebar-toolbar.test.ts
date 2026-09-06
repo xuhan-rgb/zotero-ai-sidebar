@@ -65,8 +65,9 @@ const sidebarCSS = readFileSync(
 );
 
 describe("AI dialog toolbar", () => {
-  it("shows ChatGLM in the built-in WEB provider switcher", () => {
-    expect(sidebarSource).toContain('["chatglm", "ChatGLM"]');
+  it("distinguishes the GLM websites and labels the domestic site's current restriction", () => {
+    expect(sidebarSource).toContain('["chatglm", "ChatGLM（chatglm.cn，风控受限）"]');
+    expect(sidebarSource).toContain('["zai", "Z.ai（chat.z.ai）"]');
   });
 
   it("shows Kimi in the built-in WEB provider switcher", () => {

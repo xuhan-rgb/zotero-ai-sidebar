@@ -1,6 +1,6 @@
 # Web Agent 当前问题与排障
 
-本文记录 Zotero AI Sidebar 的网页对话模式（ChatGPT、DeepSeek、ChatGLM、
+本文记录 Zotero AI Sidebar 的网页对话模式（ChatGPT、DeepSeek、ChatGLM、Z.ai、
 Kimi 和 ChatGPT-like 第三方网页）在实际运行中确认的问题、处理策略和当前
 限制。普通 API 对话不使用 Web Agent，不应受这些规则影响。
 
@@ -14,6 +14,16 @@ Kimi 和 ChatGPT-like 第三方网页）在实际运行中确认的问题、处�
 - 同一服务同一时刻只处理一个任务，后续任务排队，避免同一网页被并发写入。
 
 ## GLM 整页访问验证
+
+**当前状态：chatglm.cn 风控受限，尚未解决。** 当前版本在用户环境中已复现
+“验证失败，请刷新”，包括人工操作后仍失败的情况；用户提供的返回值为
+`verifyResult: false`、`verifyCode: F001`。因此服务菜单标注“风控受限”，
+保留该入口供后续复测；这不表示所有用户或普通浏览器都会被限制。
+
+WEB 服务菜单另提供 **Z.ai（chat.z.ai）**。`https://z.ai/` 当前跳转到
+`https://chat.z.ai/`，使用独立的页面适配器和会话记录，需要在该网站完成账号
+登录。新增入口的控件选择和任务保存/恢复已通过本地测试，真实站点登录与完整
+对话尚未验证；新增入口不保证免验证，也不代表国内站风控已修复。
 
 本节策略仅用于内置 ChatGLM 和网址位于 `chatglm.cn` 或其子域的自定义配置。
 GLM 从首次账号检查开始使用有界面的专用 Chrome；后台运行时最小化窗口，

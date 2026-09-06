@@ -184,6 +184,28 @@ describe("Web Prompt Hub", () => {
     expect(page[2]).toContain('kimi:"https://www.kimi.com/"');
   });
 
+  it("opens the international GLM site for Z.ai tasks", async () => {
+    registerWebPromptHub();
+    const task = createWebPromptTask({
+      provider: "zai",
+      prompt: "Hello Z.ai",
+      sourceLabel: "Paper",
+      onImport: vi.fn(),
+    });
+    const Endpoint = Zotero.Server.Endpoints[
+      "/zai/web-prompt-hub"
+    ] as new () => {
+      init(options: unknown): Promise<[number, string, string]>;
+    };
+    const page = await new Endpoint().init({
+      method: "GET",
+      searchParams: new URLSearchParams({ id: task.id }),
+      data: null,
+    });
+    expect(page[2]).toContain('zai:"Z.ai Web"');
+    expect(page[2]).toContain('zai:"https://chat.z.ai/"');
+  });
+
   it("forwards the abnormal page-content marker to the importer", async () => {
     const onImport = vi.fn();
     registerWebPromptHub();

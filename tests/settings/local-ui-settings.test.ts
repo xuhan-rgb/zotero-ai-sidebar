@@ -26,6 +26,22 @@ describe("local UI settings storage", () => {
     ).toBe("chatglm");
   });
 
+  it("persists Z.ai independently of the domestic GLM provider", () => {
+    const prefs = memPrefs();
+    saveLocalUiSettings(
+      prefs,
+      normalizeLocalUiSettings({
+        chatSendMode: "web",
+        webPromptProvider: "zai",
+      }),
+    );
+    expect(loadLocalUiSettings(prefs).webPromptProvider).toBe("zai");
+    expect(
+      normalizeLocalUiSettings({ webPromptProvider: "chatglm" })
+        .webPromptProvider,
+    ).toBe("chatglm");
+  });
+
   it("keeps Kimi as a built-in WEB provider and migrates the former custom entry", () => {
     const settings = normalizeLocalUiSettings({
       chatSendMode: "web",

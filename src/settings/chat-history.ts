@@ -649,6 +649,7 @@ function normalizeWebPromptProvider(
     value === 'chatgpt' ||
     value === 'deepseek' ||
     value === 'chatglm' ||
+    value === 'zai' ||
     value === 'kimi'
   ) return value;
   if (value === 'custom:kimi-com') return 'kimi';

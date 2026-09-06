@@ -11,7 +11,7 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 ## What you can do with it
 
 - **Ask anything about the paper you're reading** — *"summarize this"*, *"what's the core contribution"*, *"compare with X"*. The model fetches the parts of the PDF it needs and shows its work in a tool trace.
-- **Choose API or WEB for each conversation** — use configured API presets directly, or mirror ChatGPT, DeepSeek, ChatGLM, Kimi, and custom ChatGPT-like sites through a local Web Agent. WEB mode keeps the website's current model/search/thinking state, reports staged progress, and incrementally mirrors the growing answer into Zotero.
+- **Choose API or WEB for each conversation** — use configured API presets directly, or mirror ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, and custom ChatGPT-like sites through a local Web Agent. WEB mode keeps the website's current model/search/thinking state, reports staged progress, and incrementally mirrors the growing answer into Zotero.
 - **Open Quick Ask anywhere and keep following up** — press `Alt+Q` by default for a temporary conversation that remembers turns while the window stays open, is destroyed on close, and can be explicitly transferred into the current paper's research chat.
 - **See the whole paper at a glance** — generate a *全文总览* map: a phase-grouped section skeleton (motivation / method / validation) with one-line gists, innovation / result markers, and a structural flowchart. Click a section to jump to that spot in the PDF; your reading position is remembered per paper and synced across machines.
 - **arXiv papers come through clean** — equations and figures are pulled from the LaTeX source instead of broken PDF text. *"Explain Eq. (3)"* and *"walk me through Figure 2"* actually work.
@@ -80,7 +80,7 @@ Requirements: Node.js 20 or newer and Google Chrome. Linux additionally needs `x
 sudo apt install xclip
 ```
 
-After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Kimi, or a custom service, and click **Account**. The dialog checks the environment automatically. Missing Node.js or Chrome dependencies include official download buttons, while a missing Linux `xclip` dependency includes copyable installation guidance; the plugin never runs an installer or system command. Once the environment is ready, **Install**, **Repair**, or **Upgrade Web Agent** downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Complete login in the temporary Chrome window and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
+After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or a custom service, and click **Account**. The dialog checks the environment automatically. Missing Node.js or Chrome dependencies include official download buttons, while a missing Linux `xclip` dependency includes copyable installation guidance; the plugin never runs an installer or system command. Once the environment is ready, **Install**, **Repair**, or **Upgrade Web Agent** downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Complete login in the temporary Chrome window and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
 
 Web Agent has no independent release version and uses the ZIP paired with the current XPI. Installation and explicit updates verify the ZIP size and the checksum embedded in the XPI, then record the installed checksum. After an XPI update, the recorded checksum is compared once; an identical package is reused. Normal startup, opening WEB mode, and sending messages do not download archives, scan files, or recompute checksums; only local health checks run. Legacy installations without a recorded checksum need the paired package installed once. Failed updates preserve existing files and login settings without enabling an unmatched old package.
 
@@ -93,7 +93,7 @@ In WEB mode, paper material is attached automatically for paper-reading tasks. T
 ### Chat & UI
 
 - **AI chat inside Zotero**: open a dedicated sidebar and discuss the current paper without leaving Zotero.
-- **Stable browser-backed WEB chat**: send to ChatGPT, DeepSeek, ChatGLM, Kimi, or custom ChatGPT-like sites through a localhost-authenticated companion; account setup is opened from Zotero, the dedicated browser is hidden by default during chat, and staged progress plus incremental answer snapshots remain visible in the sidebar.
+- **Stable browser-backed WEB chat**: send to ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or custom ChatGPT-like sites through a localhost-authenticated companion; account setup is opened from Zotero, the dedicated browser is hidden by default during chat, and staged progress plus incremental answer snapshots remain visible in the sidebar.
 - **Temporary multi-turn Quick Ask**: press `Alt+Q` by default, ask follow-up questions in the same popup, copy the latest answer, or transfer every turn into the research chat. It neither reads research-chat history nor persists after the popup closes.
 - **Configurable providers**: supports Anthropic, OpenAI, and OpenAI-compatible endpoints through local Zotero preferences. Model presets include connectivity tests and a per-preset model list with a footer switcher.
 - **Quick prompts & slash commands**: customizable prompt buttons next to the composer plus built-in slash commands (`/arxiv-search`, `/web-search`) that expand into explicit instructions for the model.
@@ -179,7 +179,7 @@ flowchart TB
         ZoteroOrg[(zotero.org<br/>metadata sync)]
         FileDAV[(WebDAV<br/>Zotero File Sync)]
         PluginDAV[(Plugin WebDAV<br/>state.json)]
-        WebApps[(AI web apps<br/>ChatGPT / DeepSeek / ChatGLM / Kimi / custom)]
+        WebApps[(AI web apps<br/>ChatGPT / DeepSeek / ChatGLM / Z.ai / Kimi / custom)]
     end
 
     User -->|prompt / selection / screenshot| Side

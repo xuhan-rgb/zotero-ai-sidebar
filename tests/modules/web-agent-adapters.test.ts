@@ -106,6 +106,107 @@ describe("Web Agent provider adapters", () => {
     expect(chatglm.attachmentUploading).not.toContain("[role='progressbar']");
   });
 
+  it("uses Z.ai's own composer, response and completion controls", () => {
+    const zai = providerDefinition("zai");
+    expect(zai.url).toBe("https://chat.z.ai/");
+    expect(zai.accountUrl).toBe(zai.url);
+    expect(zai.host).toBe("chat.z.ai");
+    expect(zai.send).not.toEqual(providerDefinition("chatglm").send);
+    document.body.innerHTML = `
+      <div class="chat-user"><div id="response-content-container">Question</div></div>
+      <div class="chat-assistant"><div id="response-content-container">
+        <p>First paragraph</p><p>Second paragraph</p>
+      </div></div>
+      <button class="copy-response-button">Copy</button>
+      <div class="messageInputContainer">
+        <textarea id="chat-input"></textarea>
+        <button id="send-message-button" disabled>Send</button>
+      </div>
+      <button><span class="size-3">Unrelated control</span></button>`;
+    expect(document.querySelector(selectorList(zai.composer))?.id).toBe(
+      "chat-input",
+    );
+    expect(document.querySelector(selectorList(zai.send))?.id).toBe(
+      "send-message-button",
+    );
+    const answers = document.querySelectorAll(selectorList(zai.answers));
+    expect(answers).toHaveLength(1);
+    expect(answers[0]?.textContent).toContain("Second paragraph");
+    expect(answers[0]?.textContent).not.toContain("Question");
+    expect(
+      document.querySelectorAll(selectorList(zai.copy)),
+    ).toHaveLength(1);
+    expect(document.querySelectorAll(selectorList(zai.stop))).toHaveLength(0);
+    document
+      .querySelector(".messageInputContainer")!
+      .insertAdjacentHTML(
+        "beforeend",
+        '<button><span class="size-3 bg-white"></span></button>',
+      );
+    expect(document.querySelectorAll(selectorList(zai.stop))).toHaveLength(1);
+  });
+
+  it("recognizes a finished Z.ai reply without DeepSeek virtual-list markup", async () => {
+    document.body.innerHTML = `
+      <button class="copy-response-button">Old reply</button>
+      <div class="chat-assistant"><div id="response-content-container">New reply</div></div>`;
+    const source = readFileSync(resolve("web-agent/agent.mjs"), "utf8");
+    const completionSource = source.slice(
+      source.indexOf("async function answerCompletionReady("),
+      source.indexOf("async function answerNodeReasoningMarkdown("),
+    );
+    const complete = new Function(
+      "selectorList",
+      `${completionSource}\nreturn answerCompletionReady;`,
+    )(selectorList);
+    const locator = (nodes: Element[]) => ({
+      count: async () => nodes.length,
+      nth: (index: number) => ({ isVisible: async () => !!nodes[index] }),
+      locator: (selector: string): ReturnType<typeof locator> =>
+        locator(
+          selector.startsWith("xpath=")
+            ? []
+            : nodes.flatMap((node) => [...node.querySelectorAll(selector)]),
+        ),
+    });
+    const page = locator([document.body]);
+    const answer = locator([document.querySelector(".chat-assistant")!]);
+    const zai = providerDefinition("zai");
+    expect(await complete(page, zai, 1, 0, answer)).toBe(false);
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      '<button class="copy-response-button">New reply</button>',
+    );
+    expect(await complete(page, zai, 1, 0, answer)).toBe(true);
+  });
+
+  it("scopes Z.ai uploads to the composer and detects its pending file spinner", () => {
+    const zai = providerDefinition("zai");
+    document.body.innerHTML = `
+      <button class="relative group">Old attachment</button>
+      <div class="messageInputContainer">
+        <input type="file" multiple>
+        <button class="relative group"><span>paper.pdf</span>
+          <svg><path class="spinner_ajPY"></path></svg>
+        </button>
+      </div>`;
+    expect(
+      document.querySelectorAll(selectorList(zai.batchAttachmentInput)),
+    ).toHaveLength(1);
+    const previews = document.querySelectorAll(
+      selectorList(zai.attachmentPreviews),
+    );
+    expect(previews).toHaveLength(1);
+    expect(previews[0]?.textContent).toContain("paper.pdf");
+    expect(
+      document.querySelectorAll(selectorList(zai.attachmentUploading)),
+    ).toHaveLength(1);
+    document.querySelector("svg")!.remove();
+    expect(
+      document.querySelectorAll(selectorList(zai.attachmentUploading)),
+    ).toHaveLength(0);
+  });
+
   it("defines Kimi as a built-in provider with its own submit and final-answer selectors", () => {
     const kimi = providerDefinition("kimi");
     expect(kimi.name).toBe("Kimi");

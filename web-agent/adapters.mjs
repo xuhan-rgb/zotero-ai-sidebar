@@ -193,6 +193,31 @@ PROVIDERS.chatglm = {
   pageNoticeFallback: true,
 };
 
+// Z.ai has an independent frontend; chatglm.cn selectors do not apply here.
+PROVIDERS.zai = {
+  name: "Z.ai",
+  template: "chatgpt-like",
+  url: "https://chat.z.ai/",
+  accountUrl: "https://chat.z.ai/",
+  host: "chat.z.ai",
+  pageNoticeFallback: true,
+  composer: ["#chat-input"],
+  send: ["#send-message-button"],
+  stop: [".messageInputContainer button:has(> span.size-3.bg-white)"],
+  // One container per assistant reply, including multi-paragraph Markdown.
+  answers: [".chat-assistant #response-content-container"],
+  // This button appears when a reply is done; use the generic copy signal.
+  copy: [".copy-response-button"],
+  latexUploadExtension: ".txt",
+  waitForAttachmentAcceptance: true,
+  previewScopedAttachmentNames: true,
+  batchAttachmentInput: [".messageInputContainer input[type='file'][multiple]"],
+  attachmentPreviews: [".messageInputContainer button.relative.group"],
+  attachmentUploading: [
+    ".messageInputContainer button.relative.group .spinner_ajPY",
+  ],
+};
+
 PROVIDERS.kimi = {
   name: "Kimi",
   template: "chatgpt-like",

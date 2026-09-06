@@ -437,6 +437,7 @@ function webProviderName(provider: WebPromptProvider): string {
   if (provider === "chatgpt") return "ChatGPT";
   if (provider === "deepseek") return "DeepSeek";
   if (provider === "chatglm") return "ChatGLM";
+  if (provider === "zai") return "Z.ai";
   if (provider === "kimi") return "Kimi";
   return provider.slice("custom:".length) || "自定义网页";
 }

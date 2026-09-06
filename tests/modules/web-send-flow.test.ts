@@ -33,6 +33,18 @@ const webAgentClient = readFileSync(
 );
 
 describe("WEB send flow", () => {
+  it("restores Z.ai tasks without rerouting them to domestic ChatGLM", () => {
+    expect(
+      webPromptProviderForUserMessage({ task: { webProvider: "zai" } }),
+    ).toBe("zai");
+    expect(
+      webPromptProviderForUserMessage({ task: { title: "Z.ai Web" } }),
+    ).toBe("zai");
+    expect(
+      webPromptProviderForUserMessage({ task: { title: "ChatGLM Web" } }),
+    ).toBe("chatglm");
+  });
+
   it("migrates old DeepSeek reasoning out of the visible answer", () => {
     const messages = [
       {
