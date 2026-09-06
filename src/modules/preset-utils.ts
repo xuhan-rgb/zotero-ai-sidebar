@@ -1,3 +1,8 @@
+import {
+  isOfficialOpenAIEndpoint as isOfficialOpenAIEndpointForPreset,
+  supportsExtendedPromptCache as supportsExtendedPromptCacheForPreset,
+  stablePromptCacheKey,
+} from "../providers/openai-cache-policy";
 import { getProvider } from "../providers/factory";
 import type { Message } from "../providers/types";
 import { savePresets, zoteroPrefs } from "../settings/storage";
@@ -549,16 +554,6 @@ function shouldSendOpenAIResponsesReasoning(preset: ModelPreset): boolean {
   return true;
 }
 
-function isOfficialOpenAIEndpointForPreset(preset: ModelPreset): boolean {
-  const baseUrl = preset.baseUrl.trim();
-  if (!baseUrl) return true;
-  try {
-    return new URL(baseUrl).hostname === "api.openai.com";
-  } catch {
-    return false;
-  }
-}
-
 function shouldSendPromptCacheKeyForPreset(preset: ModelPreset): boolean {
   return (
     isOfficialOpenAIEndpointForPreset(preset) ||
@@ -571,19 +566,6 @@ function shouldSendRelayPromptCacheForPreset(preset: ModelPreset): boolean {
     !isOfficialOpenAIEndpointForPreset(preset) &&
     preset.extras?.enableRelayPromptCache !== false
   );
-}
-
-function supportsExtendedPromptCacheForPreset(model: string): boolean {
-  return /^(gpt-5|gpt-4\.1)(?:[.-]|$)/i.test(model.trim());
-}
-
-function stablePromptCacheKey(value: string | undefined): string {
-  const cleaned = (value ?? "")
-    .trim()
-    .replace(/[^A-Za-z0-9:_-]+/g, "_")
-    .replace(/_+/g, "_")
-    .slice(0, 64);
-  return cleaned || "zai:openai";
 }
 
 function sleep(ms: number): Promise<void> {

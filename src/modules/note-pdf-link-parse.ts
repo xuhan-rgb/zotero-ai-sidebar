@@ -1,3 +1,7 @@
+import { closestElement as closestNoteElement } from "./dom-utils";
+
+export { closestNoteElement };
+
 // Parsing/identification of PDF-jump links embedded in Zotero notes:
 // classify an anchor (selection / location / quote / reference), read its
 // label/source-item, and normalize ProseMirror-surviving hrefs. Pure DOM/string
@@ -176,16 +180,4 @@ export function sourceItemIDFromNoteLink(link: HTMLAnchorElement): number | null
   if (!raw) return null;
   const value = Number(raw);
   return Number.isFinite(value) ? value : null;
-}
-
-export function closestNoteElement(
-  node: Node | null,
-  selector: string,
-): Element | null {
-  const start =
-    node && node.nodeType === 1
-      ? (node as Element)
-      : ((node as { parentElement?: Element | null } | null)?.parentElement ??
-        null);
-  return typeof start?.closest === "function" ? start.closest(selector) : null;
 }

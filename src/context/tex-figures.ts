@@ -1,3 +1,10 @@
+import {
+  readBalanced,
+  skipSpaces,
+  contextBefore,
+  contextAfter,
+  compactSnippet,
+} from "./tex-parse-utils";
 // Deterministic figure index for cached LaTeX source. This gives the model a
 // concrete "Figure N -> caption + includegraphics path" lookup instead of
 // making it infer figures from nearby prose.
@@ -202,34 +209,6 @@ function captionCommandsIn(text: string): FigureCaptionCommand[] {
   return captions;
 }
 
-function readBalanced(
-  text: string,
-  start: number,
-  open: string,
-  close: string,
-): { content: string; end: number } | null {
-  if (text[start] !== open) return null;
-  let depth = 0;
-  for (let i = start; i < text.length; i++) {
-    if (text[i] === "\\") {
-      i += 1;
-      continue;
-    }
-    if (text[i] === open) depth += 1;
-    if (text[i] === close) {
-      depth -= 1;
-      if (depth === 0) return { content: text.slice(start + 1, i), end: i + 1 };
-    }
-  }
-  return null;
-}
-
-function skipSpaces(text: string, cursor: number): number {
-  let i = cursor;
-  while (i < text.length && /\s/.test(text[i])) i += 1;
-  return i;
-}
-
 function stripLatexMarkup(text: string): string {
   return text
     .replace(/\\&/g, "&")
@@ -241,16 +220,4 @@ function stripLatexMarkup(text: string): string {
     .replace(/[{}]/g, "")
     .replace(/\s+/g, " ")
     .trim();
-}
-
-function contextBefore(text: string, start: number): string {
-  return compactSnippet(text.slice(Math.max(0, start - 700), start));
-}
-
-function contextAfter(text: string, end: number): string {
-  return compactSnippet(text.slice(end, Math.min(text.length, end + 700)));
-}
-
-function compactSnippet(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }

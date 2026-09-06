@@ -1,3 +1,7 @@
+import {
+  isOfficialOpenAIEndpoint as isOfficialOpenAIEndpointForDebug,
+  supportsExtendedPromptCache as supportsExtendedPromptCacheForDebug,
+} from "../providers/openai-cache-policy";
 // Prompt-cache / reasoning debug fingerprints for the "复制(调试)" export and
 // the per-message context panel. Pure functions over a ModelPreset — no Zotero
 // runtime, no shared sidebar state — so they live here, isolated from sidebar.ts.
@@ -167,25 +171,11 @@ function endpointForDebug(preset: ModelPreset): string {
   return "(provider default)";
 }
 
-function isOfficialOpenAIEndpointForDebug(preset: ModelPreset): boolean {
-  const baseUrl = preset.baseUrl.trim();
-  if (!baseUrl) return true;
-  try {
-    return new URL(baseUrl).hostname === "api.openai.com";
-  } catch {
-    return false;
-  }
-}
-
 function shouldSendRelayPromptCacheForDebug(preset: ModelPreset): boolean {
   return (
     !isOfficialOpenAIEndpointForDebug(preset) &&
     preset.extras?.enableRelayPromptCache !== false
   );
-}
-
-function supportsExtendedPromptCacheForDebug(model: string): boolean {
-  return /^(gpt-5|gpt-4\.1)(?:[.-]|$)/i.test(model.trim());
 }
 
 export function shortHash(value: string): string {

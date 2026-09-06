@@ -1,3 +1,8 @@
+import {
+  isOfficialOpenAIEndpoint,
+  supportsExtendedPromptCache,
+  stablePromptCacheKey,
+} from "./openai-cache-policy";
 import OpenAI from "openai";
 import { APIError } from "openai";
 import type {
@@ -1145,34 +1150,11 @@ function shouldSendRelaySessionId(preset: ModelPreset): boolean {
   return shouldSendRelayPromptCache(preset);
 }
 
-function isOfficialOpenAIEndpoint(preset: ModelPreset): boolean {
-  const baseUrl = preset.baseUrl.trim();
-  if (!baseUrl) return true;
-  try {
-    return new URL(baseUrl).hostname === "api.openai.com";
-  } catch {
-    return false;
-  }
-}
-
 function shouldSendRelayPromptCache(preset: ModelPreset): boolean {
   return (
     !isOfficialOpenAIEndpoint(preset) &&
     preset.extras?.enableRelayPromptCache !== false
   );
-}
-
-function supportsExtendedPromptCache(model: string): boolean {
-  return /^(gpt-5|gpt-4\.1)(?:[.-]|$)/i.test(model.trim());
-}
-
-function stablePromptCacheKey(value: string | undefined): string {
-  const cleaned = (value ?? "")
-    .trim()
-    .replace(/[^A-Za-z0-9:_-]+/g, "_")
-    .replace(/_+/g, "_")
-    .slice(0, 64);
-  return cleaned || "zai:openai";
 }
 
 function responseEventToChunk(event: ResponseEvent): StreamChunk | null {

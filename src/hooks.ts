@@ -1,3 +1,7 @@
+import {
+  isOfficialOpenAIEndpoint as isOfficialOpenAIEndpointForPreset,
+  supportsExtendedPromptCache as supportsExtendedPromptCacheForPreset,
+} from "./providers/openai-cache-policy";
 import { initLocale } from "./utils/locale";
 import { shutdownWebAgent } from "./modules/web-agent-client";
 import { checkWebAgentAfterXpiUpdate } from "./modules/web-agent-installer";
@@ -2461,10 +2465,6 @@ function shouldSendRelayPromptCacheForPreset(preset: ModelPreset): boolean {
   );
 }
 
-function supportsExtendedPromptCacheForPreset(model: string): boolean {
-  return /^(gpt-5|gpt-4\.1)(?:[.-]|$)/i.test(model.trim());
-}
-
 function buildPromptCacheTestKey(
   preset: ModelPreset,
   itemID: number | null,
@@ -2938,16 +2938,6 @@ async function detectOpenAIModelTransports(
     );
   } finally {
     clearTimeout(timeout);
-  }
-}
-
-function isOfficialOpenAIEndpointForPreset(preset: ModelPreset): boolean {
-  const baseUrl = preset.baseUrl.trim();
-  if (!baseUrl) return true;
-  try {
-    return new URL(baseUrl).hostname === "api.openai.com";
-  } catch {
-    return false;
   }
 }
 

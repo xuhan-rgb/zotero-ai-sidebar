@@ -1,3 +1,13 @@
+import {
+  type ReaderLike,
+  keyEventWindows,
+  readerWindow,
+  eventHitsPage,
+  distance,
+  pickPreset,
+  contextText,
+} from "./reader-mode-utils";
+import { closestElement } from "../modules/dom-utils";
 import { createPdfLocator, type PdfLocator } from "../context/pdf-locator";
 import {
   detectSentenceAtPoint,
@@ -21,15 +31,6 @@ import {
 } from "../context/agent-tools";
 import type { ModelPreset } from "../settings/types";
 import { loadPresets, type PrefsStore } from "../settings/storage";
-
-interface ReaderLike {
-  _internalReader?: {
-    _primaryView?: { _iframeWindow?: Window };
-    _secondaryView?: { _iframeWindow?: Window };
-    _iframeWindow?: Window;
-  };
-  _iframeWindow?: Window;
-}
 
 export interface TranslateModeContext {
   prefs: PrefsStore;
@@ -711,82 +712,10 @@ export class TranslateModeController {
   }
 }
 
-
-function keyEventWindows(win: Window): Window[] {
-  const out: Window[] = [];
-  let current: Window | null = win;
-  for (let i = 0; i < 4 && current; i++) {
-    if (!out.includes(current)) out.push(current);
-    let parent: Window | null = null;
-    try {
-      parent = current.parent;
-      if (!parent || parent === current) break;
-      // Accessing document verifies we can install a listener in that realm.
-      void parent.document;
-    } catch {
-      break;
-    }
-    current = parent;
-  }
-  return out;
-}
-
 function consumeKeyEvent(ev: KeyboardEvent): void {
   ev.preventDefault();
   ev.stopPropagation();
   ev.stopImmediatePropagation?.();
-}
-
-function readerWindow(reader: ReaderLike): Window | null {
-  const r = reader as ReaderLike;
-  return (
-    r._internalReader?._primaryView?._iframeWindow ??
-    r._internalReader?._secondaryView?._iframeWindow ??
-    r._internalReader?._iframeWindow ??
-    r._iframeWindow ??
-    null
-  );
-}
-
-function closestElement(node: Node | null, selector: string): Element | null {
-  const start =
-    node && node.nodeType === 1
-      ? (node as Element)
-      : ((node as { parentElement?: Element | null } | null)?.parentElement ??
-        null);
-  return typeof start?.closest === "function" ? start.closest(selector) : null;
-}
-
-function eventHitsPage(
-  win: Window,
-  clientX: number,
-  clientY: number,
-  target: Node | null,
-): boolean {
-  if (closestElement(target, ".page,[data-page-number]")) return true;
-
-  // Zotero Reader resolves pointer hits with elementsFromPoint(), because the
-  // event target can be a child overlay while the PDF page is underneath.
-  const elements =
-    typeof win.document.elementsFromPoint === "function"
-      ? Array.from(win.document.elementsFromPoint(clientX, clientY))
-      : [];
-  return elements.some((el) => closestElement(el, ".page,[data-page-number]"));
-}
-
-function distance(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
-function pickPreset(
-  presets: ModelPreset[],
-  desiredId: string,
-): ModelPreset | null {
-  if (!presets.length) return null;
-  return presets.find((p) => p.id === desiredId) ?? presets[0]!;
 }
 
 function displayKey(formatted: string): string {
@@ -796,15 +725,6 @@ function displayKey(formatted: string): string {
 function contextLabel(level: string): string | undefined {
   if (level === "paragraph") return "上下文段落";
   if (level === "page") return "当前页上下文";
-  return undefined;
-}
-
-function contextText(
-  current: DetectedSentence,
-  level: string,
-): string | undefined {
-  if (level === "paragraph") return current.paragraphContext;
-  if (level === "page") return current.bundle.pageText;
   return undefined;
 }
 

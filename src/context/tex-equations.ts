@@ -1,3 +1,4 @@
+import { contextBefore, contextAfter, compactSnippet } from "./tex-parse-utils";
 // Build a deterministic equation index from cached LaTeX source.
 //
 // This intentionally covers common numbered display environments rather than
@@ -156,16 +157,4 @@ function stripEquationSourceCommands(text: string): string {
   return text
     .replace(/\\label\{[^}]+\}/g, "")
     .replace(/\\(?:notag|nonumber)\b/g, "");
-}
-
-function contextBefore(text: string, start: number): string {
-  return compactSnippet(text.slice(Math.max(0, start - 700), start));
-}
-
-function contextAfter(text: string, end: number): string {
-  return compactSnippet(text.slice(end, Math.min(text.length, end + 700)));
-}
-
-function compactSnippet(text: string): string {
-  return text.replace(/\s+/g, " ").trim();
 }

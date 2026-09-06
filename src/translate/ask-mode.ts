@@ -1,3 +1,13 @@
+import {
+  type ReaderLike,
+  keyEventWindows,
+  readerWindow,
+  eventHitsPage,
+  distance,
+  pickPreset,
+  contextText,
+} from "./reader-mode-utils";
+import { closestElement } from "../modules/dom-utils";
 import { createPdfLocator, type PdfLocator } from "../context/pdf-locator";
 import {
   detectParagraphAtPdfPoint,
@@ -297,15 +307,6 @@ import { loadPresets, type PrefsStore } from "../settings/storage";
 //      sentence on the page and scroll it into view.
 // The soft guide is purely a reading aid: it never calls a model. It is cleared
 // on Esc / disable / reader switch.
-
-interface ReaderLike {
-  _internalReader?: {
-    _primaryView?: { _iframeWindow?: Window };
-    _secondaryView?: { _iframeWindow?: Window };
-    _iframeWindow?: Window;
-  };
-  _iframeWindow?: Window;
-}
 
 export interface AskModeContext {
   prefs: PrefsStore;
@@ -2348,24 +2349,6 @@ export class AskModeController {
   }
 }
 
-function keyEventWindows(win: Window): Window[] {
-  const out: Window[] = [];
-  let current: Window | null = win;
-  for (let i = 0; i < 4 && current; i++) {
-    if (!out.includes(current)) out.push(current);
-    let parent: Window | null = null;
-    try {
-      parent = current.parent;
-      if (!parent || parent === current) break;
-      void parent.document;
-    } catch {
-      break;
-    }
-    current = parent;
-  }
-  return out;
-}
-
 // True when the keydown originates from a text-entry control, so the reading
 // guide must not swallow Alt+↑/↓ (the user is typing, not navigating sentences).
 function isEditableTarget(target: EventTarget | null): boolean {
@@ -2641,47 +2624,6 @@ function parsePdfRects(value: unknown): number[][] {
   return out;
 }
 
-function readerWindow(reader: ReaderLike): Window | null {
-  const r = reader as ReaderLike;
-  return (
-    r._internalReader?._primaryView?._iframeWindow ??
-    r._internalReader?._secondaryView?._iframeWindow ??
-    r._internalReader?._iframeWindow ??
-    r._iframeWindow ??
-    null
-  );
-}
-
-function closestElement(node: Node | null, selector: string): Element | null {
-  const start =
-    node && node.nodeType === 1
-      ? (node as Element)
-      : ((node as { parentElement?: Element | null } | null)?.parentElement ??
-        null);
-  return typeof start?.closest === "function" ? start.closest(selector) : null;
-}
-
-function eventHitsPage(
-  win: Window,
-  clientX: number,
-  clientY: number,
-  target: Node | null,
-): boolean {
-  if (closestElement(target, ".page,[data-page-number]")) return true;
-  const elements =
-    typeof win.document.elementsFromPoint === "function"
-      ? Array.from(win.document.elementsFromPoint(clientX, clientY))
-      : [];
-  return elements.some((el) => closestElement(el, ".page,[data-page-number]"));
-}
-
-function distance(
-  a: { x: number; y: number },
-  b: { x: number; y: number },
-): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
-
 // Same marked sentence? Compare page + page-local sentence index; fall back to
 // text when an index isn't available. Used to avoid re-mounting the soft
 // highlight on every hover sample that lands on the sentence already marked.
@@ -2717,26 +2659,9 @@ function firstVisiblePageIndex(win: Window): number | null {
   return Number.isInteger(first) && first > 0 ? first - 1 : 0;
 }
 
-function pickPreset(
-  presets: ModelPreset[],
-  desiredId: string,
-): ModelPreset | null {
-  if (!presets.length) return null;
-  return presets.find((p) => p.id === desiredId) ?? presets[0]!;
-}
-
 function contextLabel(level: string): string | undefined {
   if (level === "paragraph") return "所在段落";
   if (level === "page") return "当前页上下文";
-  return undefined;
-}
-
-function contextText(
-  current: DetectedSentence,
-  level: string,
-): string | undefined {
-  if (level === "paragraph") return current.paragraphContext;
-  if (level === "page") return current.bundle.pageText;
   return undefined;
 }
 

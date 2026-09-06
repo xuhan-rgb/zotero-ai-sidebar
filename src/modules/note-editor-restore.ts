@@ -1,3 +1,4 @@
+import { closestElement as closestNoteElement } from "./dom-utils";
 export interface ZoteroNoteEditorElement extends Element {
   mode?: string;
   viewMode?: string;
@@ -838,18 +839,6 @@ function clampProseMirrorPosition(position: number, docSize: number): number {
 
 function normalizeNoteAnchorText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
-}
-
-function closestNoteElement(
-  node: Node | null,
-  selector: string,
-): Element | null {
-  const start =
-    node && node.nodeType === 1
-      ? (node as Element)
-      : ((node as { parentElement?: Element | null } | null)?.parentElement ??
-        null);
-  return typeof start?.closest === "function" ? start.closest(selector) : null;
 }
 
 function finiteNumber(value: unknown): number | null {
