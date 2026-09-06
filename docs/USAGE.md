@@ -562,7 +562,7 @@ Caveat: jumping relies on the PDF outline / text matching (no SyncTeX); for non-
 
 WEB footer controls are intentionally small:
 
-- **GLM websites** — ChatGLM (`chatglm.cn`) is marked as restricted because access verification still fails in the reported environment. Z.ai (`chat.z.ai`) is a separate entry with its own login and conversation records; a full conversation on the real site has not yet been verified.
+- **GLM websites** — ChatGLM (`chatglm.cn`) is the domestic site. Z.ai (`chat.z.ai`) is a separate entry with its own login and conversation records; a full conversation on the real site has not yet been verified.
 - **Service menu** — switches ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection. A legacy custom `kimi.com` entry is migrated to the built-in Kimi service to avoid duplicate entries.
 - **Account** — opens the current service for login and controls whether its dedicated browser stays minimized during chat.
 - **Send** — Enter and the arrow follow the same path and perform a live account check immediately before submission.

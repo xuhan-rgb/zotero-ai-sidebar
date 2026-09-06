@@ -65,8 +65,8 @@ const sidebarCSS = readFileSync(
 );
 
 describe("AI dialog toolbar", () => {
-  it("distinguishes the GLM websites and labels the domestic site's current restriction", () => {
-    expect(sidebarSource).toContain('["chatglm", "ChatGLM（chatglm.cn，风控受限）"]');
+  it("distinguishes the GLM websites without a fixed restriction label", () => {
+    expect(sidebarSource).toContain('["chatglm", "ChatGLM（chatglm.cn）"]');
     expect(sidebarSource).toContain('["zai", "Z.ai（chat.z.ai）"]');
   });
 

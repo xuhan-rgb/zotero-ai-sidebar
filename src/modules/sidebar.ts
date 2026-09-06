@@ -4656,7 +4656,7 @@ function renderWebPromptProviderSwitcher(
   for (const [value, label] of [
     ["chatgpt", "ChatGPT"],
     ["deepseek", "DeepSeek"],
-    ["chatglm", "ChatGLM（chatglm.cn，风控受限）"],
+    ["chatglm", "ChatGLM（chatglm.cn）"],
     ["zai", "Z.ai（chat.z.ai）"],
     ["kimi", "Kimi"],
   ] as const) {
