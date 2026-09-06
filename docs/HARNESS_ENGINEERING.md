@@ -19,6 +19,47 @@ harness enforcement.
   history.
 - Tool traces should be visible in the chat UI and Markdown export.
 
+## WEB Conversation Ownership (Development)
+
+The caller supplies a paper-scoped `sessionKey`; the Agent namespaces it by
+provider and persists the website conversation URL and primary-paper upload
+state in `<configPath>.conversations.json`. Closing tabs or restarting the Agent
+does not clear this binding. Before the next task, the Agent restores that URL
+and requires existing conversation messages to load before preparing the prompt.
+Manually selecting another website conversation does not change ownership.
+Each provider reuses one task tab; switching papers restores the corresponding
+binding in that tab. The provider's queue finishes the current task before
+navigating for another paper. Different providers keep separate task tabs.
+
+Tasks may also include `paperTitle`. ChatGLM and Z.ai use their website's rename
+controls after a normal answer completes, then save `titleApplied: true` with
+the binding. This includes existing bindings on their next task. Subsequent
+tasks preserve manual title edits. Missing controls or a rejected rename leave
+the answer and binding intact and allow another attempt on the next task.
+Other providers currently keep their website-generated titles. Naming requires
+the website's history row to be available; it never navigates to another chat
+just to rename it.
+
+Rename selectors and request confirmation follow the public frontend code
+inspected on 2026-09-07: [ChatGLM history controls](https://chatglm.cn/2660.f89431de.js),
+[ChatGLM rename dialog](https://chatglm.cn/4350.5a6da52b.js), and
+[Z.ai history controls](https://z-cdn.chatglm.cn/z-ai/frontend/prod-fe-1.1.93/assets/index-hicAZtW-.js).
+These are website implementation details; isolated browser fixtures exercise
+the controls and response contracts without using real accounts.
+
+Only HTTP 410 or an explicit deletion notice outside assistant messages permits
+rebinding and re-uploading the paper. Login failures, HTTP 404, redirects, and
+empty history preserve the binding and stop the task. A submission without a
+recoverable URL is recorded before clicking Send, so a restart cannot silently
+create another conversation. No historical binding can be inferred from older
+runtimes that saved only a live tab; binding begins with the first new task.
+This changes next-task routing, not answer polling while a task is generating.
+
+The sidebar's existing selection monitor also follows the active Zotero reader
+item, including readers that become available after tab selection. It refreshes
+the paper and its saved chat only when the item changes; library selection keeps
+its existing hook. An active API send retains its current panel until completion.
+
 ## Permission Mode
 
 - `default`: read-only tools run directly; tools marked `requiresApproval` are

@@ -3810,6 +3810,7 @@ async function sendWebPromptMessage(
       continuationPrompt,
       sessionKey: webConversationKey,
       paperUrl: material.paperUrl,
+      paperTitle: title,
       hideBrowser: state.localUiSettings.hideWebBrowser,
       chatgptOptions:
         provider === "chatgpt" ? state.localUiSettings.chatgptWeb : undefined,
@@ -8063,6 +8064,13 @@ function startSelectionMonitor(win: Window, sidebar: WindowSidebarState) {
   if (sidebar.selectionMonitorID != null) return;
   sidebar.selectionMonitorID = win.setInterval(() => {
     const itemID = safeSelectedItemID(win);
+    const panelState = states.get(sidebar.mount);
+    // Reader tab selection does not call ZoteroPane.itemSelected. Reuse the
+    // existing monitor so switching tabs (or a reader finishing loading)
+    // updates the paper without requiring a click inside the PDF.
+    if (panelState && panelState.itemID !== itemID && !panelState.sending) {
+      renderWindowSidebar(win);
+    }
     const before = getStoredSelectedText(itemID);
     const focusInSidebar =
       isFocusInside(sidebar.mount) || isFocusInside(sidebar.noteMount);

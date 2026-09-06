@@ -5,11 +5,12 @@ import { rm } from "node:fs/promises";
 import { unlink } from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
 import { rename } from "node:fs/promises";
+import { renameWebConversation } from "./conversation-title.mjs";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import http from "node:http";
 import process from "node:process";
-import { pathToFileURL } from "node:url";
+import { pathToFileURL, URL } from "node:url";
 import { chromium } from "playwright-core";
 
 import {
@@ -55,6 +56,8 @@ const active = new Map();
 const activeTasks = new Map();
 const knownTaskIDs = new Set();
 const sessions = new Map();
+let conversationBindings;
+let bindingWrite = Promise.resolve();
 let context;
 let cdpBrowser;
 let contextConnecting;
@@ -346,6 +349,13 @@ async function runTask(task) {
   const previousAnswerCount = await answers.count();
   const responses = await firstResponseLocator(page, adapter);
   const previousResponseCount = await responses.count();
+  if (!session.conversationUrl && previousResponseCount > 0) {
+    throw new Error(
+      `${adapter.name} 新对话页面显示了已有消息，已停止发送以免绑定到其他论文的对话`,
+    );
+  }
+  session.preparedUrl = session.conversationUrl || page.url();
+  assertConversationPage(session, adapter);
   const previousResponseBaseline =
     adapter.responseRoots?.length && previousResponseCount > 0
       ? await snapshotResponseSlice(
@@ -422,16 +432,32 @@ async function runTask(task) {
         await waitForWebAttachments(page, adapter, attachments);
       }
     });
-    if (uploadMaterial) session.materialUploaded = true;
   }
   // Pasting a file into a ChatGPT-like editor can replace its text selection.
   // Restore the complete prompt after the last attachment so a task is never
   // submitted with only a PDF/TXT tile and no user question.
+  assertConversationPage(session, adapter);
   await restoreComposerPrompt(composer, submissionPrompt);
   await callback(task, "submitting");
   task.submissionAttempted = true;
-  await submitPrompt(page, composer, adapter, previousAnswerCount, task);
+  await submitPrompt(page, composer, adapter, previousAnswerCount, task, session);
   task.submissionConfirmed = true;
+  if (uploadMaterial) session.materialUploaded = true;
+  if (!session.conversationUrl) {
+    const deadline = Date.now() + 5_000;
+    while (Date.now() < deadline) {
+      if (conversationIdentity(page.url(), adapter)) {
+        session.conversationUrl = page.url();
+        break;
+      }
+      await page.waitForTimeout(100);
+    }
+  }
+  await saveConversationBinding(session.slot, {
+    url: session.conversationUrl || "",
+    materialUploaded: session.materialUploaded,
+    titleApplied: session.titleApplied,
+  });
 
   await callback(task, "generating");
   const result = await waitForAnswer(
@@ -473,6 +499,24 @@ async function runTask(task) {
     previousAnswerCount,
     result.answer,
   );
+  if (
+    task.paperTitle && session.conversationUrl &&
+    !session.titleApplied && !task.cancelled
+  ) {
+    const named = await renameWebConversation(
+      page, task.provider, session.conversationUrl, task.paperTitle,
+    );
+    if (named) {
+      session.titleApplied = true;
+      await saveConversationBinding(session.slot, {
+        url: session.conversationUrl,
+        materialUploaded: session.materialUploaded,
+        titleApplied: true,
+      }).catch(() =>
+        console.warn("[web-agent] conversation title receipt could not be saved"),
+      );
+    }
+  }
   await callback(task, "completed", result);
 }
 
@@ -525,7 +569,7 @@ async function restoreComposerPrompt(composer, prompt) {
   }
 }
 
-async function submitPrompt(page, composer, adapter, previousAnswerCount, task) {
+async function submitPrompt(page, composer, adapter, previousAnswerCount, task, session) {
   await waitForSendButton(page, adapter);
   // Re-locate after the upload settles. DeepSeek replaces the submit node
   // while processing an attachment, so a locator created before the wait may
@@ -534,11 +578,22 @@ async function submitPrompt(page, composer, adapter, previousAnswerCount, task) 
   const attempts = adapter.name === "DeepSeek" ? 3 : 1;
   let submitMethod = "button";
   for (let attempt = 0; attempt < attempts; attempt += 1) {
+    assertConversationPage(session, adapter);
+    if (!session.conversationUrl && attempt === 0) {
+      // A crash after the click must not turn a possibly delivered question
+      // into an unbound paper that silently starts a second conversation.
+      await saveConversationBinding(session.slot, {
+        url: "",
+        materialUploaded: false,
+      });
+      assertConversationPage(session, adapter);
+    }
     try {
       await send.click({ force: true });
     } catch {
       // The page can briefly place an overlay over the button after an
       // attachment finishes. Enter remains the provider-supported fallback.
+      assertConversationPage(session, adapter);
       submitMethod = "enter";
       await composer.press("Enter");
     }
@@ -682,40 +737,197 @@ async function copyLatestAnswer(page, adapter, previousAnswerCount) {
 }
 
 async function webSession(browserContext, task, adapter) {
-  // The caller scopes sessionKey to a paper and provider. Keeping one page
-  // per key lets returning to an older paper reuse its existing Web thread.
-  const sessionSlot = task.sessionKey;
-  let session = sessions.get(sessionSlot);
-  if (session && !session.page.isClosed()) {
-    if (session.sessionKey !== task.sessionKey) {
-      await session.page.goto(adapter.url, {
-        waitUntil: "domcontentloaded",
-        timeout: 60_000,
-      });
-      session.sessionKey = task.sessionKey;
-      session.materialUploaded = false;
-      session.chatgptOptionsKey = undefined;
-    }
-    return session;
+  const bindingSlot = JSON.stringify([task.provider, task.sessionKey]);
+  const binding = (await readConversationBindings()).get(bindingSlot);
+  if (
+    binding &&
+    (!binding.url || !conversationIdentity(binding.url, adapter))
+  ) {
+    throw new Error(
+      `${adapter.name} 上次发送尚未取得可恢复的对话地址，已停止自动新建；请先在网页确认上次问题的状态`,
+    );
   }
-  const page = await browserContext.newPage();
-  session = {
+  // Tasks are serialized per provider. Its page can be reused across papers,
+  // while each task gets the URL and upload state from its own paper binding.
+  const sessionSlot = task.provider;
+  let page = sessions.get(sessionSlot)?.page;
+  if (!page || page.isClosed()) {
+    page = await browserContext.newPage();
+    page.on("close", () => {
+      if (sessions.get(sessionSlot)?.page === page)
+        sessions.delete(sessionSlot);
+    });
+  }
+  const session = {
     page,
-    materialUploaded: false,
-    sessionKey: task.sessionKey,
-    chatgptOptionsKey: undefined,
+    slot: bindingSlot,
+    conversationUrl: binding?.url,
+    materialUploaded: binding?.materialUploaded || false,
+    titleApplied: binding?.titleApplied === true,
   };
   sessions.set(sessionSlot, session);
-  page.on("close", () => {
-    if (sessions.get(sessionSlot)?.page === page) {
-      sessions.delete(sessionSlot);
-    }
-  });
-  await page.goto(adapter.url, {
+  // Restore from the website before each new task, including when its tab
+  // still shows an old DOM after the conversation was deleted elsewhere.
+  session.chatgptOptionsKey = undefined;
+  const response = await page.goto(session.conversationUrl || adapter.url, {
     waitUntil: "domcontentloaded",
     timeout: 60_000,
   });
+  if (session.conversationUrl) {
+    const expected = conversationIdentity(session.conversationUrl, adapter);
+    const deadline = Date.now() + 15_000;
+    while (Date.now() < deadline) {
+      throwIfTaskCancelled(task);
+      if (
+        (response?.status() === 410 &&
+          conversationIdentity(page.url(), adapter) === expected) ||
+        (await conversationDeletedNotice(page, adapter))
+      ) {
+        await saveConversationBinding(session.slot, null);
+        session.conversationUrl = undefined;
+        session.materialUploaded = false;
+        return webSession(browserContext, task, adapter);
+      }
+      if (
+        response?.status() >= 400 ||
+        conversationIdentity(page.url(), adapter) !== expected
+      )
+        break;
+      // A matching URL with an empty composer can still be a failed history
+      // load. Require the bound conversation's existing messages as well.
+      if (
+        (await composerReady(page, adapter)) &&
+        (await (await firstResponseLocator(page, adapter)).count()) > 0
+      )
+        return session;
+      await page.waitForTimeout(100);
+    }
+    throw new Error(
+      `${adapter.name} 原网页对话暂时无法恢复，已保留论文绑定并停止发送；请检查登录或网络后重试`,
+    );
+  }
+  if (response?.status() >= 400) {
+    throw new Error(
+      `${adapter.name} 网页加载失败（HTTP ${response.status()}），未发送问题`,
+    );
+  }
   return session;
+}
+
+async function conversationDeletedNotice(page, adapter) {
+  const notices = await page
+    .locator(
+      "[role='alert'], [role='dialog'], .el-message, .ant-message-notice, .n-message",
+    )
+    .filter({ visible: true })
+    .all();
+  for (const notice of notices) {
+    const text = await notice.evaluate(
+      (element, answers) =>
+        element.closest(answers) ? "" : element.textContent,
+      selectorList(adapter.answers),
+    );
+    if (
+      /^(?:(?:此|该|当前|原)(?:个)?)?(?:对话|会话)已(?:被)?删除[。！!]?$/u.test(
+        (text || "").trim(),
+      ) ||
+      /^(?:(?:this|the) )?(?:conversation|chat) (?:has been|was|is) deleted[.!]?$/i.test(
+        (text || "").trim(),
+      )
+    )
+      return true;
+  }
+  return false;
+}
+
+function assertConversationPage(session, adapter) {
+  const expected =
+    conversationIdentity(session.preparedUrl, adapter) || session.preparedUrl;
+  const current =
+    conversationIdentity(session.page.url(), adapter) || session.page.url();
+  if (expected !== current) {
+    throw new Error(
+      `${adapter.name} 准备发送时网页对话发生了切换，已停止发送；请重试以恢复论文绑定的对话`,
+    );
+  }
+}
+
+function readConversationBindings() {
+  conversationBindings ||= (async () => {
+    let saved;
+    try {
+      saved = JSON.parse(
+        await readFile(`${configPath}.conversations.json`, "utf8"),
+      );
+    } catch (error) {
+      if (error.code === "ENOENT") return new Map();
+      throw new Error(
+        "无法读取论文的网页对话绑定，已停止发送；请检查绑定文件后重启 Web Agent",
+        { cause: error },
+      );
+    }
+    if (
+      !saved ||
+      typeof saved !== "object" ||
+      Array.isArray(saved) ||
+      Object.values(saved).some(
+        (binding) =>
+          !binding ||
+          typeof binding.url !== "string" ||
+          typeof binding.materialUploaded !== "boolean",
+      )
+    ) {
+      throw new Error("论文的网页对话绑定文件格式错误，已保留原文件并停止发送");
+    }
+    return new Map(Object.entries(saved));
+  })();
+  return conversationBindings;
+}
+
+function saveConversationBinding(slot, binding) {
+  // Providers can finish concurrently. Commit a complete snapshot atomically
+  // beside the config, outside the versioned runtime and Chrome profile.
+  const write = bindingWrite.then(async () => {
+    const bindings = await readConversationBindings();
+    const next = new Map(bindings);
+    if (binding) next.set(slot, binding);
+    else next.delete(slot);
+    const destination = `${configPath}.conversations.json`;
+    const temporary = `${destination}.${config.instanceId}.tmp`;
+    try {
+      await writeFile(
+        temporary,
+        JSON.stringify(Object.fromEntries(next), null, 2),
+        { mode: 0o600 },
+      );
+      await rename(temporary, destination);
+      if (binding) bindings.set(slot, binding);
+      else bindings.delete(slot);
+    } finally {
+      await rm(temporary, { force: true });
+    }
+  });
+  bindingWrite = write.catch(() => undefined);
+  return write;
+}
+
+function conversationIdentity(value, adapter) {
+  const url = new URL(value);
+  const home = new URL(adapter.url);
+  if (url.origin !== home.origin) return "";
+  if (adapter.host === "chatglm.cn") {
+    const cid = url.searchParams.get("cid");
+    return cid ? `${url.origin}${url.pathname}?cid=${cid}` : "";
+  }
+  // A task starts on the provider's new-conversation URL. Only a distinct
+  // conversation address can be restored after the browser is closed.
+  if (
+    url.pathname === home.pathname &&
+    url.search === home.search &&
+    url.hash === home.hash
+  )
+    return "";
+  return url.href;
 }
 
 async function ensureContext() {
@@ -2388,6 +2600,7 @@ async function validateTask(value) {
     provider: value.provider,
     customProvider: customProvider || undefined,
     paperUrl,
+    paperTitle: typeof value.paperTitle === "string" ? value.paperTitle.trim() : "",
     hideBrowser: value.hideBrowser !== false,
     chatgptOptions,
     attachment,

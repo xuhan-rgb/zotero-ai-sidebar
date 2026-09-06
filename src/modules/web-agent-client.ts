@@ -76,6 +76,7 @@ export async function dispatchWebAgentTask(input: {
   continuationPrompt: string;
   sessionKey: string;
   paperUrl: string;
+  paperTitle?: string;
   hideBrowser: boolean;
   chatgptOptions?: ChatGPTWebSettings;
   customProvider?: CustomWebProvider;

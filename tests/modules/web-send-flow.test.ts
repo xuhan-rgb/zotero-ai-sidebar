@@ -363,7 +363,7 @@ describe("WEB send flow", () => {
 
   it("confirms ChatGPT submission and uses only one submit action per task", () => {
     expect(agent).toContain(
-      "async function submitPrompt(page, composer, adapter, previousAnswerCount, task)",
+      "async function submitPrompt(page, composer, adapter, previousAnswerCount, task, session)",
     );
     expect(agent).toContain("send.click({ force: true })");
     expect(agent).toContain('await composer.press("Enter")');
@@ -371,7 +371,7 @@ describe("WEB send flow", () => {
     expect(agent).toContain("knownTaskIDs.has(task.id)");
     expect(agent).toContain("未再次提交以避免重复发送");
     expect(agent).toContain(
-      "await submitPrompt(page, composer, adapter, previousAnswerCount, task)",
+      "await submitPrompt(page, composer, adapter, previousAnswerCount, task, session)",
     );
     expect(agent).toContain(
       "async function promptSubmissionStarted(",
@@ -520,9 +520,4 @@ describe("WEB send flow", () => {
     expect(sidebar).toContain("describeUnavailableGeneratedFiles,");
   });
 
-  it("reuses one Web page per paper and resets material when switching keys", () => {
-    expect(agent).toContain("const sessionSlot = task.sessionKey");
-    expect(agent).toContain("session.sessionKey !== task.sessionKey");
-    expect(agent).toContain("session.materialUploaded = false");
-  });
 });
