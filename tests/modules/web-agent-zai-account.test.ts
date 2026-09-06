@@ -38,6 +38,9 @@ describe("Z.ai account and attachment flow", () => {
             occupiedPort = (occupied.address() as AddressInfo).port;
           }
           response.end("ok");
+        } else if (request.url === "/other-provider") {
+          response.setHeader("content-type", "text/html; charset=utf-8");
+          response.end("<p>Login required</p>");
         } else if (request.url === "/callback") {
           const chunks = [];
           for await (const chunk of request) chunks.push(chunk);
@@ -120,8 +123,9 @@ describe("Z.ai account and attachment flow", () => {
           },
           ...(body === undefined ? {} : { body: JSON.stringify(body) }),
         });
-        expect(response.ok).toBe(true);
-        return response.json();
+        const result = await response.json();
+        expect(response.ok, JSON.stringify(result)).toBe(true);
+        return result;
       };
       const status = () => request("/browser/status?provider=zai");
       try {
@@ -165,10 +169,6 @@ describe("Z.ai account and attachment flow", () => {
             const browser = await connect(...args);
             await browser.contexts()[0].route('**/*', async route => {
               const target = new URL(route.request().url());
-              if (target.hostname === 'chat.deepseek.com') {
-                await route.fulfill({ contentType: 'text/html', body: '<p>Login required</p>' });
-                return;
-              }
               const response = await fetch(${JSON.stringify(url)} + target.pathname + target.search);
               await route.fulfill({ status: response.status,
                 headers: Object.fromEntries(response.headers),
@@ -334,16 +334,30 @@ describe("Z.ai account and attachment flow", () => {
         expect(await launches()).toHaveLength(2);
         const saved = JSON.parse(await readFile(configPath, "utf8"));
         expect(saved.profileDir).toBe(path.join(dir, "profile"));
+        // Exercise cross-provider task protection against a local website.
+        // No third-party origin is needed for this browser-transition check.
         await request("/tasks", {
           id: "other-provider",
-          provider: "deepseek",
+          provider: "custom:other-provider",
+          customProvider: {
+            id: "other-provider",
+            name: "Other local provider",
+            template: "chatgpt-like",
+            homeUrl: `${url}/other-provider`,
+            newConversationUrl: `${url}/other-provider`,
+            selectors: {
+              composer: ["textarea"],
+              send: ["button"],
+              answers: [".answer"],
+            },
+          },
           sessionKey: "other",
           prompt: "Hello",
           continuationPrompt: "Hello",
           hideBrowser: true,
         });
         await expect
-          .poll(() => callbacks)
+          .poll(() => callbacks, { timeout: 10_000 })
           .toEqual(
             expect.arrayContaining([
               expect.objectContaining({
@@ -365,7 +379,7 @@ describe("Z.ai account and attachment flow", () => {
         expect((await busy.json()).error).toContain("其他 WEB 任务");
         expect(await launches()).toHaveLength(before);
         expect(await request("/health")).toMatchObject({
-          active: { deepseek: "other-provider" },
+          active: { "custom:other-provider": "other-provider" },
         });
         await request("/tasks/cancel", { id: "other-provider" });
       } finally {

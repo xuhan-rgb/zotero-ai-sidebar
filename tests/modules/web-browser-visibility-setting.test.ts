@@ -29,14 +29,14 @@ describe("WEB browser background preference", () => {
     expect(client).toContain("hideBrowser: boolean");
   });
 
-  it("uses Headless Chrome by default and reserves visible mode for opt-out tasks", () => {
+  it("passes the background preference and provider to browser mode selection", () => {
     const agent = source("web-agent/agent.mjs");
 
     expect(agent).toContain("hideBrowser: value.hideBrowser !== false");
     expect(agent).toContain("if (!task.hideBrowser) visibleTaskIDs.add(task.id)");
     expect(agent).toContain("visibleTaskIDs.delete(task.id)");
     expect(agent).toContain(
-      'await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible")',
+      'await ensureDedicatedBrowserMode(task.hideBrowser ? "headless" : "visible", adapter)',
     );
     expect(agent).toMatch(
       /async function applyTaskWindowPolicy[\s\S]*?if \(!task\.hideBrowser\)[\s\S]*?await showBrowserWindow\(page\)/,

@@ -30,6 +30,14 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
+### What's new in v0.8.7
+
+- **Automatic port allocation**: the Web Agent and dedicated browser dynamically select free ports to reduce conflicts with MCP and other plugins; the XPI reads the Agent's actual address.
+- **Runtime paired with the XPI**: the Web Agent no longer has an independent release version. Installation and manual updates validate the paired ZIP; ordinary use does not recompute checksums, and upgrades preserve login data.
+- **New Z.ai website entry**: configured separately from ChatGLM, with guest text chat and login required for attachments. Login status is detected automatically without closing Chrome.
+- **ChatGLM sessions and answers**: preserve the browser session, separate reasoning from the final answer, and remove the fixed restriction label while continuing to report actual website verification states.
+- **Setup and tutorial updates**: correct Windows configuration paths and clarify environment checks, manual ZIP installation, and account status in the bilingual guides and illustrated tutorial.
+
 ### What's new in v0.8.6
 
 - **The XPI stays lightweight**: each version Release carries a separate, prebuilt `zai-web-agent-runtime.zip`; the plugin downloads and verifies the matching asset without running npm on the user's computer.
@@ -74,7 +82,7 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 
 WEB mode uses a local companion process and a dedicated Google Chrome profile. API mode does not need these components and is unaffected if the Web Agent is not installed.
 
-> The Z.ai, automatic port allocation, and login detection flows below apply to the current `master` code and have not been released as a new version. Existing marketplace `v0.8.6` packages do not change when source code is pushed. To test development code, use the XPI and Web Agent ZIP produced by the same build.
+> The Z.ai, automatic port allocation, and login detection flows below apply to `v0.8.7`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
 Requirements: Node.js 20 or newer and Google Chrome. Linux additionally needs `xclip`:
 

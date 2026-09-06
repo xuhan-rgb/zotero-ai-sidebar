@@ -276,7 +276,7 @@ When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full t
 
 WEB mode mirrors a real AI website into the Zotero conversation. It is useful when you want to use a website account instead of an API key. API mode remains independent and does not need Chrome or the companion process.
 
-> The automatic port allocation, Z.ai support, and login detection described here apply to the current `master` code and have not been released as a new version. Existing marketplace `v0.8.6` packages do not change when source code is pushed. To test development code, use the XPI and Web Agent ZIP produced by the same build.
+> The automatic port allocation, Z.ai support, and login detection described here apply to `v0.8.7`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
 **One-time installation (Windows / Linux / macOS):**
 
