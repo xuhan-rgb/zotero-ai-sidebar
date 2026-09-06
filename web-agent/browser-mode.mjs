@@ -1,15 +1,8 @@
-export function chromeLaunchArguments(config, mode) {
-  if (mode === "manual") {
-    return [
-      `--user-data-dir=${config.profileDir}`,
-      "--no-first-run",
-      "--no-default-browser-check",
-    ];
-  }
+export function chromeLaunchArguments(config, mode, debugPort = 0) {
   return [
     `--user-data-dir=${config.profileDir}`,
     "--remote-debugging-address=127.0.0.1",
-    "--remote-debugging-port=0",
+    `--remote-debugging-port=${debugPort}`,
     "--no-first-run",
     "--no-default-browser-check",
     ...(mode === "headless" ? ["--headless=new"] : []),

@@ -17,7 +17,7 @@ afterEach(() => {
 
 describe("Web Agent protocol health", () => {
   it.each(["zai", "chatglm", "deepseek"] as const)(
-    "requests ordinary Chrome login only for Z.ai (%s)",
+    "opens an account for automatic status checks without manual login mode (%s)",
     async (provider) => {
       vi.stubGlobal("Zotero", { DataDirectory: { dir: "/data" } });
       vi.stubGlobal("IOUtils", {
@@ -49,17 +49,17 @@ describe("Web Agent protocol health", () => {
                 provider,
                 configured: false,
                 browserOpen: true,
-                manualLogin: provider === "zai",
+                guest: false,
               },
       }));
       vi.stubGlobal("fetch", fetchMock);
       const result = await openWebAccount(provider);
-      expect(result.manualLogin).toBe(provider === "zai");
+      expect(result).not.toHaveProperty("manualLogin");
       const options = fetchMock.mock.calls.find(([url]) =>
         url.endsWith("/browser/open"),
       )![1];
       const body = JSON.parse(String(options?.body));
-      expect(body.manualLogin).toBe(provider === "zai" ? true : undefined);
+      expect(body).toEqual({ provider });
     },
   );
 

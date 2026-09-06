@@ -20,9 +20,25 @@ describe("Z.ai account and attachment flow", () => {
       let hydrated = true;
       let uploads = 0;
       let submissions = 0;
+      let occupied: http.Server | undefined;
+      let occupiedPort = 0;
       const callbacks: Record<string, unknown>[] = [];
       const fixture = http.createServer(async (request, response) => {
-        if (request.url === "/callback") {
+        if (request.url?.startsWith("/occupy?")) {
+          if (!occupied) {
+            occupiedPort = Number(
+              new URL(request.url, "http://local").searchParams.get("port"),
+            );
+            occupied = http.createServer((_req, res) =>
+              res.end("foreign-service"),
+            );
+            await new Promise<void>((resolve) =>
+              occupied!.listen(occupiedPort, "127.0.0.1", resolve),
+            );
+            occupiedPort = (occupied.address() as AddressInfo).port;
+          }
+          response.end("ok");
+        } else if (request.url === "/callback") {
           const chunks = [];
           for await (const chunk of request) chunks.push(chunk);
           callbacks.push(JSON.parse(Buffer.concat(chunks).toString()));
@@ -92,7 +108,6 @@ describe("Z.ai account and attachment flow", () => {
       const attachmentPath = path.join(dir, "context.txt");
       const browserLauncher = path.join(dir, "chrome.mjs");
       const launchesPath = path.join(dir, "launches.jsonl");
-      const manualExitPath = path.join(dir, "close-manual");
       let child: ChildProcess | undefined;
       let port = 0;
       let errors = "";
@@ -110,25 +125,21 @@ describe("Z.ai account and attachment flow", () => {
       };
       const status = () => request("/browser/status?provider=zai");
       try {
-        // Model the human-operated browser with a process, not a controlled
-        // webpage. Managed browsing still runs in the real headless Chrome.
+        // Simulate a port race at the browser process boundary. The competing
+        // service stays alive in this test process while Chrome retries.
         await writeFile(
           browserLauncher,
           `#!${process.execPath}
-          import { appendFileSync, existsSync } from 'node:fs';
+          import { appendFileSync } from 'node:fs';
           import { spawn } from 'node:child_process';
           const args = process.argv.slice(2);
-          const managed = args.some(arg => arg.startsWith('--remote-debugging-port='));
-          appendFileSync(${JSON.stringify(launchesPath)}, JSON.stringify({ args, managed, pid: process.pid }) + '\\n');
-          if (managed) {
-            const chrome = spawn(${JSON.stringify(chromePath)}, [...args, '--headless=new', '--disable-background-networking']);
-            chrome.on('exit', code => process.exit(code || 0));
-            process.on('SIGTERM', () => chrome.kill('SIGTERM'));
-          } else {
-            setInterval(() => {
-              if (existsSync(${JSON.stringify(manualExitPath)})) process.exit(0);
-            }, 50);
-          }
+          appendFileSync(${JSON.stringify(launchesPath)}, JSON.stringify({ args, pid: process.pid }) + '\\n');
+          const debugPort = args.find(arg => arg.startsWith('--remote-debugging-port=')).split('=')[1];
+          await fetch(${JSON.stringify(url)} + '/occupy?port=' + debugPort);
+          const chrome = spawn(${JSON.stringify(chromePath)}, [...args, '--headless=new', '--disable-background-networking']);
+          chrome.stderr.pipe(process.stderr);
+          chrome.on('exit', code => process.exit(code || 0));
+          process.on('SIGTERM', () => chrome.kill('SIGTERM'));
         `,
         );
         await chmod(browserLauncher, 0o700);
@@ -154,6 +165,10 @@ describe("Z.ai account and attachment flow", () => {
             const browser = await connect(...args);
             await browser.contexts()[0].route('**/*', async route => {
               const target = new URL(route.request().url());
+              if (target.hostname === 'chat.deepseek.com') {
+                await route.fulfill({ contentType: 'text/html', body: '<p>Login required</p>' });
+                return;
+              }
               const response = await fetch(${JSON.stringify(url)} + target.pathname + target.search);
               await route.fulfill({ status: response.status,
                 headers: Object.fromEntries(response.headers),
@@ -191,81 +206,40 @@ describe("Z.ai account and attachment flow", () => {
           browserOpen: true,
           guest: true,
         });
-        expect(
-          await request("/browser/open", {
-            provider: "zai",
-            manualLogin: true,
-          }),
-        ).toMatchObject({ manualLogin: true, configured: false });
         const launches = async () =>
           (await readFile(launchesPath, "utf8"))
             .trim()
             .split("\n")
             .map((line) => JSON.parse(line));
-        await expect
-          .poll(
-            async () => (await launches()).filter((row) => !row.managed).length,
-          )
-          .toBe(1);
-        const manual = (await launches()).find((row) => !row.managed);
-        expect(manual.args).toContain(
-          `--user-data-dir=${path.join(dir, "profile")}`,
-        );
-        expect(manual.args).toContain("https://chat.z.ai/");
         expect(
-          manual.args.some((arg: string) =>
-            /remote-debugging|headless|enable-automation/.test(arg),
-          ),
-        ).toBe(false);
-        expect(await status()).toMatchObject({
-          manualLogin: true,
-          configured: false,
+          await request("/browser/open", { provider: "zai" }),
+        ).toMatchObject({
+          configured: true,
+          guest: true,
+          browserOpen: true,
         });
-        expect(await request("/browser/status?provider=chatglm")).toMatchObject(
-          { configured: false },
-        );
-        expect(await request("/health")).toMatchObject({
-          browserConnected: false,
-        });
+        const started = await launches();
+        expect(started).toHaveLength(2);
+        for (const launch of started) {
+          expect(launch.args).toContain(
+            `--user-data-dir=${path.join(dir, "profile")}`,
+          );
+          expect(launch.args).not.toContain("--remote-debugging-port=0");
+          expect(launch.args).not.toContain("--headless=new");
+        }
         expect(
-          await request("/browser/open", {
-            provider: "zai",
-            manualLogin: true,
-          }),
-        ).toMatchObject({ manualLogin: true });
-        expect((await launches()).filter((row) => !row.managed)).toHaveLength(
-          1,
-        );
-        const blocked = await fetch(`http://127.0.0.1:${port}/tasks`, {
-          method: "POST",
-          headers: {
-            authorization: "Bearer test-token",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({
-            id: "during-login",
-            provider: "zai",
-            prompt: "hello",
-          }),
-        });
-        expect(blocked.ok).toBe(false);
-        expect((await blocked.json()).error).toContain("手动登录");
-        expect(
-          await request("/browser/hide", { provider: "zai" }),
-        ).toMatchObject({ manualLogin: true, hidden: false });
-        expect(await request("/health")).toMatchObject({
-          browserConnected: false,
-        });
+          await (await fetch(`http://127.0.0.1:${occupiedPort}`)).text(),
+        ).toBe("foreign-service");
+        // Login becomes visible in the same open page without closing Chrome.
         signedIn = true;
-        await writeFile(manualExitPath, "closed by user");
         await expect
-          .poll(status, { timeout: 15_000 })
-          .toMatchObject({ configured: true, guest: false });
-        expect(
-          (await launches()).every((row) =>
-            row.args.includes(`--user-data-dir=${path.join(dir, "profile")}`),
-          ),
-        ).toBe(true);
+          .poll(status)
+          .toMatchObject({ configured: true, guest: false, browserOpen: true });
+        expect(await status()).not.toHaveProperty("manualLogin");
+        expect(await request("/health")).toMatchObject({
+          browserConnected: true,
+        });
+        expect(await launches()).toHaveLength(2);
         signedIn = false;
         await expect
           .poll(status)
@@ -275,8 +249,10 @@ describe("Z.ai account and attachment flow", () => {
         ).toMatchObject({
           configured: true,
           guest: true,
+          browserOpen: true,
           hidden: true,
         });
+        expect(await launches()).toHaveLength(2);
         await request("/tasks", {
           id: "zai-guest-text",
           provider: "zai",
@@ -329,18 +305,10 @@ describe("Z.ai account and attachment flow", () => {
           );
         expect(uploads).toBe(0);
         expect(submissions).toBe(1);
-        const busyLogin = await fetch(`http://127.0.0.1:${port}/browser/open`, {
-          method: "POST",
-          headers: {
-            authorization: "Bearer test-token",
-            "content-type": "application/json",
-          },
-          body: JSON.stringify({ provider: "zai", manualLogin: true }),
-        });
-        expect(busyLogin.ok).toBe(false);
-        expect((await busyLogin.json()).error).toContain(
-          "完成或取消当前 WEB 任务",
-        );
+        expect(
+          await request("/browser/open", { provider: "zai" }),
+        ).toMatchObject({ guest: true });
+        expect(await launches()).toHaveLength(2);
         signedIn = true;
         await expect
           .poll(() => callbacks, { timeout: 20_000 })
@@ -363,34 +331,53 @@ describe("Z.ai account and attachment flow", () => {
         await expect
           .poll(async () => (await request("/health")).active)
           .toEqual({});
-        const unsupported = await fetch(
-          `http://127.0.0.1:${port}/browser/open`,
-          {
-            method: "POST",
-            headers: {
-              authorization: "Bearer test-token",
-              "content-type": "application/json",
-            },
-            body: JSON.stringify({ provider: "chatglm", manualLogin: true }),
-          },
-        );
-        expect(unsupported.ok).toBe(false);
-        await rm(manualExitPath);
-        await request("/browser/open", { provider: "zai", manualLogin: true });
+        expect(await launches()).toHaveLength(2);
+        const saved = JSON.parse(await readFile(configPath, "utf8"));
+        expect(saved.profileDir).toBe(path.join(dir, "profile"));
+        await request("/tasks", {
+          id: "other-provider",
+          provider: "deepseek",
+          sessionKey: "other",
+          prompt: "Hello",
+          continuationPrompt: "Hello",
+          hideBrowser: true,
+        });
         await expect
-          .poll(
-            async () => (await launches()).filter((row) => !row.managed).length,
-          )
-          .toBe(2);
-        const manualPid = (await launches()).filter((row) => !row.managed)[1]
-          .pid;
-        await request("/shutdown", {});
-        await expect.poll(() => child!.exitCode, { timeout: 10_000 }).toBe(0);
-        expect(() => process.kill(manualPid, 0)).toThrow();
+          .poll(() => callbacks)
+          .toEqual(
+            expect.arrayContaining([
+              expect.objectContaining({
+                id: "other-provider",
+                state: "needs_login",
+              }),
+            ]),
+          );
+        const before = (await launches()).length;
+        const busy = await fetch(`http://127.0.0.1:${port}/browser/open`, {
+          method: "POST",
+          headers: {
+            authorization: "Bearer test-token",
+            "content-type": "application/json",
+          },
+          body: JSON.stringify({ provider: "zai" }),
+        });
+        expect(busy.ok).toBe(false);
+        expect((await busy.json()).error).toContain("其他 WEB 任务");
+        expect(await launches()).toHaveLength(before);
+        expect(await request("/health")).toMatchObject({
+          active: { deepseek: "other-provider" },
+        });
+        await request("/tasks/cancel", { id: "other-provider" });
       } finally {
         if (child && child.exitCode == null && child.signalCode == null) {
           await request("/shutdown", {}).catch(() => child!.kill("SIGTERM"));
           await expect.poll(() => child!.exitCode, { timeout: 10_000 }).toBe(0);
+        }
+        if (occupied) {
+          occupied.closeAllConnections();
+          await new Promise<void>((resolve) =>
+            occupied!.close(() => resolve()),
+          );
         }
         fixture.closeAllConnections();
         await new Promise<void>((resolve) => fixture.close(() => resolve()));

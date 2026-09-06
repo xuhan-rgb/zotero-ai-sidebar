@@ -8,17 +8,17 @@ import {
 } from "../../web-agent/browser-mode.mjs";
 
 describe("Web Agent browser modes", () => {
-  it("keeps the same profile for manual login without enabling browser control", () => {
+  it("uses the allocated nonzero debugging port for a visible Z.ai session", () => {
     const args = chromeLaunchArguments(
       { profileDir: "/existing profile" },
-      "manual",
+      "visible",
+      41357,
     );
     expect(args).toContain("--user-data-dir=/existing profile");
-    expect(
-      args.some((arg: string) =>
-        /remote-debugging|headless|enable-automation/.test(arg),
-      ),
-    ).toBe(false);
+    expect(args).toContain("--remote-debugging-port=41357");
+    expect(args).not.toContain("--remote-debugging-port=0");
+    expect(args).not.toContain("--headless=new");
+    expect(args).not.toContain("--enable-automation");
   });
 
   it("lets Chrome bind an unused port even when the saved CDP port is occupied", () => {

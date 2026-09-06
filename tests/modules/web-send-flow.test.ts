@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { chromeLaunchArguments } from "../../web-agent/browser-mode.mjs";
 import { migrateLegacyDeepSeekMessages } from "../../src/modules/web-history-migration";
 import {
   webPromptProviderForUserMessage,
@@ -21,10 +22,6 @@ const taskEscapeHandler = sidebar.slice(
 );
 const agent = readFileSync(
   resolve(process.cwd(), "web-agent/agent.mjs"),
-  "utf8",
-);
-const browserMode = readFileSync(
-  resolve(process.cwd(), "web-agent/browser-mode.mjs"),
   "utf8",
 );
 const webAgentClient = readFileSync(
@@ -249,7 +246,9 @@ describe("WEB send flow", () => {
     );
     expect(agent).toContain('request.url?.startsWith("/browser/status")');
     expect(agent).toContain("chromium.connectOverCDP(endpoint)");
-    expect(browserMode).toContain("--remote-debugging-port=0");
+    expect(
+      chromeLaunchArguments({ profileDir: "/profile" }, "visible"),
+    ).toContain("--remote-debugging-port=0");
     expect(agent).not.toContain("chromium.launchPersistentContext");
     expect(agent).toContain("async function accountReady(page, adapter, requiresLogin = false)");
     expect(agent).toContain("button[data-testid='login-button']");
