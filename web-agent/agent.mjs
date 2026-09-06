@@ -1071,6 +1071,14 @@ async function accountReady(page, adapter) {
   ) {
     return false;
   }
+  if (adapter.host === "chat.z.ai") {
+    // Z.ai lets guests edit the prompt, but requires login for file uploads.
+    // Wait for its explicit signed-in marker, including during hydration.
+    return (await page
+      .locator("#chat-container[data-guest='false']")
+      .filter({ visible: true })
+      .count()) > 0;
+  }
   if (adapter.host !== "chatgpt.com") return true;
 
   // ChatGPT exposes a usable composer before authentication. Treat visible
