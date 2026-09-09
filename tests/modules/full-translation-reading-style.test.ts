@@ -33,3 +33,11 @@ it("restores escaped numeric citations only when matching citations occur in the
   expect(zh.querySelectorAll('.math-display')).toHaveLength(2);
   expect(state.blocks.p.translation).toContain(String.raw`\[29\]`);
 });
+
+it("labels website translation beside progress and omits API token counters", () => {
+  const paper: FullTranslationDocument={schemaVersion:1,arxivId:"a",sourceHash:"b",blocks:[]};
+  const state=createFullTranslationState(paper,"web:deepseek","deepseek");
+  const view=renderFullTranslationView(document,{document:paper,state,translationBackend:"WEB · DeepSeek",layout:"parallel",running:false,assets:{},onLayoutChange:vi.fn(),onRun:vi.fn(),onRetranslate:vi.fn(),onCancel:vi.fn(),onExit:vi.fn()});
+  expect(view.querySelector('.zai-ft-progress .zai-ft-model')?.textContent).toBe('WEB · DeepSeek');
+  expect(view.querySelector('.zai-ft-token-usage')).toBeNull();
+});

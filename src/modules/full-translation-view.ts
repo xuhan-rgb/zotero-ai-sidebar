@@ -52,6 +52,7 @@ export interface FullTranslationViewOptions {
   running: boolean;
   preparing?: boolean;
   runError?: string;
+  translationBackend?: string;
   assets: FullTranslationAssetPreviews;
   readingSettings?: FullTranslationReadingSettings;
   expandedSourceBlockId?: string;
@@ -418,11 +419,17 @@ function renderToolbar(
   } else {
     const model = doc.createElement("span");
     model.className = "zai-ft-model";
-    model.textContent = options.state.model;
+    model.textContent = options.translationBackend?.startsWith("WEB")
+      ? options.translationBackend
+      : options.state.presetId.startsWith("web:")
+        ? `WEB · ${options.state.model}`
+        : options.state.model;
     model.title = `翻译模型：${options.state.model}`;
     summary.append(model);
   }
-  summary.append(renderUsageHistory(doc, options.document, options.state));
+  if (!options.translationBackend?.startsWith("WEB") && !options.state.presetId.startsWith("web:")) {
+    summary.append(renderUsageHistory(doc, options.document, options.state));
+  }
 
   const viewControls = renderViewControls(doc, options);
 
@@ -842,6 +849,13 @@ function renderViewControls(
     layoutButton(doc, "上英下中", "interleaved", options),
   );
   controls.append(languages, layouts);
+  if (options.translationBackend) {
+    const backend = doc.createElement("span");
+    backend.className = "zai-ft-backend";
+    backend.textContent = options.translationBackend;
+    backend.title = "翻译来源跟随 AI 聊天栏的 API / WEB 模式";
+    controls.append(backend);
+  }
   if (options.onReadingSettingsChange) {
     controls.append(renderReadingSettingsControl(doc, options));
   }

@@ -1,3 +1,4 @@
+import { createFullDocumentWebTranslator } from "../translate/full-document-web";
 import { abortable } from "../utils/abortable";
 import { buildContext } from "../context/builder";
 import type { ContextSource } from "../context/builder";
@@ -691,7 +692,7 @@ const MIN_ZOTERO_DOCKED_CONTENT_WIDTH = 720;
 
 interface PreparedFullTranslationRun {
   controller: AbortController;
-  translator: FullDocumentTranslator;
+  translator: Pick<FullDocumentTranslator, "translate" | "model"> & { preset: { id: string }; stopOnError?: boolean; translateBatch?: import("../translate/full-document-batch").TranslateBatch };
 }
 
 let readerSelectionHandler: ((event: unknown) => void) | null = null;
@@ -10621,7 +10622,8 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
           quote: currentView.dataset.sourceQuote,
         }
       : undefined;
-  const modelSettings = fullTranslationModelSettings(sidebar);
+  const webTranslation = panelState?.localUiSettings.chatSendMode === "web";
+  const modelSettings = webTranslation ? undefined : fullTranslationModelSettings(sidebar);
   const view = renderFullTranslationView(doc, {
     document: session.document,
     state: session.state,
@@ -10629,6 +10631,9 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
     running: !!sidebar.fullTranslationAbort,
     preparing: session.preparing,
     runError: session.runError,
+    translationBackend: webTranslation && panelState
+      ? `WEB · ${webProviderName(panelState, panelState.localUiSettings.webPromptProvider)}`
+      : "API",
     assets: session.assets,
     readingSettings,
     expandedSourceBlockId,
@@ -10778,10 +10783,7 @@ async function restartFullTranslation(
     const controller = new AbortController();
     prepared = {
       controller,
-      translator: createFullDocumentTranslator(
-        zoteroPrefs(),
-        controller.signal,
-      ),
+      translator: fullTranslationTranslator(sidebar, controller.signal),
     };
   } catch (error) {
     session.runError = errorMessage(error);
@@ -10841,6 +10843,21 @@ function renderFullTranslationNotice(
   host.root.replaceChildren(body);
 }
 
+function fullTranslationTranslator(sidebar: WindowSidebarState, signal: AbortSignal): PreparedFullTranslationRun["translator"] {
+  const state = states.get(sidebar.mount);
+  if (state?.localUiSettings.chatSendMode === "web") {
+    const session = fullTranslationSessions.get(sidebar);
+    if (!session) throw new Error("全文翻译尚未加载");
+    return createFullDocumentWebTranslator({
+      settings: state.localUiSettings,
+      customProvider: customWebProviderFor(state, state.localUiSettings.webPromptProvider),
+      arxivId: session.document.arxivId,
+      signal,
+    });
+  }
+  return createFullDocumentTranslator(zoteroPrefs(), signal);
+}
+
 async function startFullTranslation(
   sidebar: WindowSidebarState,
   prepared?: PreparedFullTranslationRun,
@@ -10856,7 +10873,7 @@ async function startFullTranslation(
   try {
     const translator =
       prepared?.translator ??
-      createFullDocumentTranslator(zoteroPrefs(), controller.signal);
+      fullTranslationTranslator(sidebar, controller.signal);
     session.state = {
       ...session.state,
       presetId: translator.preset.id,
@@ -10870,6 +10887,8 @@ async function startFullTranslation(
       signal: controller.signal,
       targetBlockId,
       translate: translator.translate,
+      stopOnError: translator.stopOnError,
+      translateBatch: translator.translateBatch,
       onState: async (state) => {
         session.state = state;
         await saveFullTranslationState(state);

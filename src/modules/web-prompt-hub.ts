@@ -90,6 +90,10 @@ export function unregisterWebPromptHub(): void {
   tasks.clear();
 }
 
+export function discardWebPromptTask(id: string): void {
+  tasks.delete(id);
+}
+
 export function createWebPromptTask(input: WebPromptTaskInput): {
   id: string;
   url: string;

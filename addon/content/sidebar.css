@@ -8208,3 +8208,11 @@ div.math-fallback {
   cursor: pointer;
 }
 .zai-ft-reference-body .zai-ft-reference-copy { cursor: pointer; }
+
+.zai-ft-backend {
+  align-self: center;
+  padding: 3px 8px;
+  color: #376a56;
+  font: 12px/1.5 var(--zai-font);
+  white-space: nowrap;
+}

@@ -695,3 +695,11 @@ Reference figures, equations, and tables **by number** ("Figure 2", "Eq. 3", "Ta
 - [docs/MATH_RENDERING.md](MATH_RENDERING.md) — math rendering details
 - [docs/RELEASE.md](RELEASE.md) — release flow
 - [CLAUDE.md](../CLAUDE.md) — project modification constraints and non-negotiables
+
+### LaTeX full-document translation through WEB mode
+
+Select **WEB** in the AI chat panel, choose a website, and configure its account. Open full-document translation for a paper with LaTeX source and start or resume translation. The reader shows `WEB · provider`; no API key is required for this translation. API mode continues to use the existing API settings. A running translation keeps the backend selected when it started.
+
+Both backends share bilingual layouts, figures, citation popups, and cached translations. Completed blocks are skipped when resuming; use the block context menu to retranslate an individual block. Full retranslation rebuilds translation state. Layout changes do not require retranslation.
+
+WEB requests batch up to 20 blocks with a target limit of 10,000 characters (an oversized block is sent alone), map responses by block ID, and wait at least 15 seconds between completed batches. Replies use text blocks with matching start/end markers, preserving LaTeX backslashes and newlines without JSON escaping. Incomplete markers or mismatched block IDs pause the run with a retry message. Protected math is validated before saving. Failed requests, timeouts, or invalid replies pause the run and preserve completed content. Cancel and check the account page for login or verification before resuming. WEB responses do not add API Token usage because websites do not supply that usage metadata. This version still requires LaTeX source; ordinary PDF translation is not yet integrated.

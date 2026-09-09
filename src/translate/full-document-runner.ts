@@ -1,3 +1,4 @@
+import { runFullDocumentBatchTranslation, type TranslateBatch } from "./full-document-batch";
 import {
   addFullTranslationUsage,
   updateFullTranslationBlock,
@@ -17,6 +18,8 @@ export interface FullDocumentTranslationRunOptions {
   state: FullTranslationState;
   signal: AbortSignal;
   targetBlockId?: string;
+  stopOnError?: boolean;
+  translateBatch?: TranslateBatch;
   translate(source: string): Promise<string | FullDocumentTranslationChunk>;
   onState?(state: FullTranslationState): void | Promise<void>;
 }
@@ -29,6 +32,7 @@ export interface FullDocumentTranslationChunk {
 export async function runFullDocumentTranslation(
   options: FullDocumentTranslationRunOptions,
 ): Promise<FullTranslationState> {
+  if (options.translateBatch) return runFullDocumentBatchTranslation(options);
   let state = options.state;
 
   for (const block of options.document.blocks) {
@@ -100,6 +104,10 @@ export async function runFullDocumentTranslation(
           error: errorMessage(error),
         },
       );
+      if (options.stopOnError) {
+        await options.onState?.(state);
+        throw error;
+      }
     }
     await options.onState?.(state);
   }
