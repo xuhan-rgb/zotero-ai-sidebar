@@ -7,6 +7,39 @@ import {
 } from "../../src/modules/full-translation-host";
 
 describe("full translation host", () => {
+  it("fits beside notes and follows their visibility and width", () => {
+    const tab = document.createElement("section");
+    tab.id = "tab-with-notes-boundary";
+    const chat = document.createElement("hr");
+    const notes = document.createElement("hr");
+    let notesLeft = 500;
+    tab.getBoundingClientRect = () =>
+      ({ left: 100, width: 1200 }) as DOMRect;
+    chat.getBoundingClientRect = () => ({ left: 900, width: 4 }) as DOMRect;
+    notes.getBoundingClientRect = () =>
+      ({ left: notesLeft, width: 4 }) as DOMRect;
+    document.body.append(tab, chat, notes);
+    const host = mountFullTranslationHost(document, tab.id, [], [chat, notes])!;
+    expect(host.root.style.width).toBe("400px");
+    notesLeft = 450;
+    syncFullTranslationHostBounds(host);
+    expect(host.root.style.width).toBe("350px");
+    notes.hidden = true;
+    syncFullTranslationHostBounds(host);
+    expect(host.root.style.width).toBe("800px");
+    notes.hidden = false;
+    syncFullTranslationHostBounds(host);
+    expect(host.root.style.width).toBe("350px");
+    chat.hidden = true;
+    notes.hidden = true;
+    syncFullTranslationHostBounds(host);
+    expect(host.root.style.width).toBe("");
+    unmountFullTranslationHost(host);
+    tab.remove();
+    chat.remove();
+    notes.remove();
+  });
+
   it("temporarily replaces the active reader tab without destroying it", () => {
     const tab = document.createElement("section");
     tab.id = "tab-paper";

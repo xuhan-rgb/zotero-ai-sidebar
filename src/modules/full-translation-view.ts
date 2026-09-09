@@ -1,4 +1,9 @@
 import { renderMarkdownInto } from "./markdown-render";
+import { normalizeLatexTextCommands } from "../context/tex-clean";
+import {
+  protectLatexForTranslation,
+  restoreLatexAfterTranslation,
+} from "../translate/full-document";
 import type {
   FullTranslationBlockState,
   FullTranslationBlockStatus,
@@ -783,7 +788,7 @@ function outlineBlockText(
   }
   const blockState = options.state.blocks[block.id];
   return effectiveBlockStatus(blockState) === "done" && blockState?.translation
-    ? blockState.translation
+    ? normalizeTranslationDisplayText(blockState.translation)
     : block.source;
 }
 
@@ -1210,6 +1215,25 @@ function closeBlockContextMenu(menu: HTMLElement): boolean {
   return true;
 }
 
+function normalizeTranslationDisplayText(text: string): string {
+  // Normalize cached replies at display time without rewriting stored output.
+  const protectedText = protectLatexForTranslation(text);
+  const prose = protectedText.text
+    .replace(/<\/(?:chs_title|chs_description)\s*>/gi, "\n\n")
+    .replace(/<(?:chs_title|chs_description)\s*>/gi, "")
+    .replace(/\\let\s*(?:\\thefootnote\s*)?\\relax\b/g, "")
+    .replace(/\\(?:footnote|footnotetext)(?:\[[^\]\n]*\])?\s*(?=\{)/g, "\\textrm")
+    .replace(/\\url\s*\{(https?:\/\/[^{}\s]+)\}/g, (_, url: string) => {
+      const href = url.replace(/\(/g, "%28").replace(/\)/g, "%29");
+      return `[${url}](${href})`;
+    })
+    .replace(/\\(?:url|nolinkurl)\s*(?=\{)/g, "\\textrm");
+  return restoreLatexAfterTranslation(
+    normalizeLatexTextCommands(prose),
+    protectedText.placeholders,
+  ) ?? text;
+}
+
 function renderBlockSide(
   doc: Document,
   block: FullTranslationBlock,
@@ -1240,7 +1264,14 @@ function renderBlockSide(
   ) {
     body.classList.add("zai-ft-state");
   }
-  renderMarkdownInto(body, block.kind === "formula" ? `$$\n${text}\n$$` : text);
+  renderMarkdownInto(
+    body,
+    block.kind === "formula"
+      ? `$$\n${text}\n$$`
+      : side === "translation"
+        ? normalizeTranslationDisplayText(text)
+        : text,
+  );
   if (
     readingSettings &&
     block.kind !== "heading" &&

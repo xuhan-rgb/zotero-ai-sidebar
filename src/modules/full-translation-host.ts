@@ -9,14 +9,14 @@ export interface FullTranslationHost {
   container: Element;
   root: HTMLElement;
   hiddenChildren: HiddenChildSnapshot[];
-  rightBoundary?: Element;
+  rightBoundary?: Element | readonly Element[];
 }
 
 export function mountFullTranslationHost(
   doc: Document,
   tabID: string,
   adjacentElements: readonly Element[] = [],
-  rightBoundary?: Element,
+  rightBoundary?: Element | readonly Element[],
 ): FullTranslationHost | null {
   const container = doc.getElementById(tabID);
   if (!container) return null;
@@ -48,20 +48,33 @@ export function mountFullTranslationHost(
 export function syncFullTranslationHostBounds(host: FullTranslationHost): void {
   host.root.style.removeProperty("width");
   host.root.style.removeProperty("max-width");
-  if (!host.rightBoundary || elementIsHidden(host.rightBoundary)) return;
+  if (!host.rightBoundary) return;
 
   const containerRect = host.container.getBoundingClientRect();
-  const boundaryRect = host.rightBoundary.getBoundingClientRect();
   if (
     !Number.isFinite(containerRect.left) ||
     !Number.isFinite(containerRect.width) ||
-    !Number.isFinite(boundaryRect.left) ||
     containerRect.width <= 0
   ) {
     return;
   }
 
-  const availableWidth = Math.floor(boundaryRect.left - containerRect.left);
+  const boundaries: readonly Element[] = Array.isArray(host.rightBoundary)
+    ? host.rightBoundary
+    : [host.rightBoundary as Element];
+  let right = containerRect.left + containerRect.width;
+  for (const boundary of boundaries) {
+    if (!boundary.isConnected || elementIsHidden(boundary)) continue;
+    const rect = boundary.getBoundingClientRect();
+    if (
+      Number.isFinite(rect.left) &&
+      rect.width > 0 &&
+      rect.left > containerRect.left
+    ) {
+      right = Math.min(right, rect.left);
+    }
+  }
+  const availableWidth = Math.floor(right - containerRect.left);
   if (availableWidth <= 0 || availableWidth >= containerRect.width) return;
   host.root.style.width = `${availableWidth}px`;
   host.root.style.maxWidth = `${availableWidth}px`;

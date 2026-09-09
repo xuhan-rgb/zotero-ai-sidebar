@@ -10539,7 +10539,7 @@ function ensureFullTranslationHost(
     hostWindow.document,
     tabID,
     [],
-    sidebar.splitter,
+    [sidebar.splitter, sidebar.noteSplitter],
   );
   if (host) fullTranslationHosts.set(sidebar, host);
   else fullTranslationHosts.delete(sidebar);
@@ -11587,6 +11587,9 @@ function closeCurrentNoteWindow(mount: HTMLElement): void {
 }
 
 function setNoteColumnVisible(state: WindowSidebarState, visible: boolean) {
+  hostWindowForSidebar(state)?.requestAnimationFrame?.(() =>
+    syncFullTranslationHostLayout(state),
+  );
   const noteColumn = state.noteColumn as Element & {
     hidden?: boolean;
     collapsed?: boolean;

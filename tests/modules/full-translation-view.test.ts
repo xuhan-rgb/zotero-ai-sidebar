@@ -132,6 +132,38 @@ function openBlockContextMenu(view: HTMLElement, blockId: string): HTMLElement {
 }
 
 describe("renderFullTranslationView", () => {
+  it("renders cached translation wrappers, footnotes and URLs as readable text", () => {
+    const paper: FullTranslationDocument = {
+      ...document,
+      blocks: [
+        { id: "title", kind: "title", source: "ByteTrack", translatable: true },
+        { id: "body", kind: "paragraph", source: "Source", translatable: true },
+      ],
+    };
+    const cached = createFullTranslationState(paper, "preset-1", "model-1");
+    cached.blocks.title = {
+      status: "done",
+      translation: "<chs_title>ByteTrack：多目标跟踪</chs_title> <chs_description>关联低分检测框。</chs_description>",
+    };
+    const raw = String.raw`\let\relax\footnotetext{通讯作者：\textbf{张三}。} 代码：\url{https://github.com/ifzhang/ByteTrack}，公式 $L_{task}$。`;
+    cached.blocks.body = { status: "done", translation: raw };
+    const view = renderFullTranslationView(globalThis.document, {
+      document: paper, state: cached, layout: "parallel", running: false,
+      onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(),
+      onCancel: vi.fn(), onExit: vi.fn(),
+    });
+    const title = view.querySelector('[data-block-id="title"] .zai-ft-translation')!;
+    expect(title.textContent).toContain("ByteTrack：多目标跟踪");
+    expect(title.textContent).toContain("关联低分检测框。");
+    expect(title.textContent).not.toContain("chs_");
+    const body = view.querySelector('[data-block-id="body"] .zai-ft-translation')!;
+    expect(body.textContent).toContain("通讯作者：张三。");
+    expect(body.textContent).not.toMatch(/\\(?:let|relax|footnotetext|url)/);
+    expect(body.querySelector("a")?.getAttribute("href")).toBe("https://github.com/ifzhang/ByteTrack");
+    expect(body.querySelector(".katex")).not.toBeNull();
+    expect(cached.blocks.body.translation).toBe(raw);
+  });
+
   it("keeps model dropdowns collapsed behind a settings button", () => {
     const onToggleModelSettings = vi.fn();
     const onModelPresetChange = vi.fn();
