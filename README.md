@@ -30,6 +30,14 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
+### What's new in v0.8.9
+
+- **Complete algorithm displays**: LaTeX algorithm fragments share one visual region in both source and translation. Loop indentation continues across fragments; comments retain `/* … */` or `//`. Existing translations are reused. This is a reconstructed reader, not a pixel-identical LaTeX compiler.
+- **LaTeX download controls**: choose system proxy or direct access from the paper header. The proxy port follows the operating system unless overridden; settings apply only to LaTeX downloads. Chat preparation uses completed local source caches or local PDF text instead of waiting for downloads.
+- **More stable reading and chat**: correct sidebar alignment after startup stylesheet loading, retain available tools with attached full text, improve heading matching and streaming scroll behavior, and keep the open note panel following the selected paper.
+- **Output budget**: new model presets default to 32768 output tokens. Saved presets keep their existing values; endpoint/model limits still apply.
+- **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to verify or update the paired runtime ZIP. See the updated [full-translation tutorial](docs/USAGE.md#211-read-an-arxiv-paper-in-full-document-translation).
+
 ### What's new in v0.8.7
 
 - **Automatic port allocation**: the Web Agent and dedicated browser dynamically select free ports to reduce conflicts with MCP and other plugins; the XPI reads the Agent's actual address.
@@ -82,7 +90,7 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 
 WEB mode uses a local companion process and a dedicated Google Chrome profile. API mode does not need these components and is unaffected if the Web Agent is not installed.
 
-> The Z.ai, automatic port allocation, and login detection flows below apply to `v0.8.7`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
+> The Z.ai, automatic port allocation, and login detection flows below apply to `v0.8.9`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
 Requirements: Node.js 20 or newer and Google Chrome. Linux additionally needs `xclip`:
 

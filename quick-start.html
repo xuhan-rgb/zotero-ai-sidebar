@@ -358,7 +358,7 @@
                 </div>
               </div>
             </div>
-            <div class="frow"><span class="lbl">Max tokens</span><span class="field">8192 ⌃⌄</span></div>
+            <div class="frow"><span class="lbl">Max tokens</span><span class="field">32768 ⌃⌄</span></div>
             <div class="frow"><span class="lbl">Reasoning Summary</span><span class="field sel">Concise — 简短显示思考摘要 <span>▾</span></span></div>
             <div class="frow"><span class="lbl">标志位</span>
               <div class="flags"><span class="flag amber">第三方/Relay</span><span class="flag mint">relay cache 自动</span><span class="flag mint">reasoning 透传</span></div>
@@ -373,7 +373,7 @@
         <li><span class="k">API Key</span><span class="d">默认打码，点 👁 临时显示。只存本地 Zotero 偏好，<b>别外传</b>。</span></li>
         <li><span class="k">Base URL</span><span class="d">你的 API / 中转端点。<b>属于隐私，别公开分享</b>——本页用占位符代替。</span></li>
         <li><span class="k">Models</span><span class="d">左边是已启用的模型标签；右边点预设或「+ 添加 / 自定义」加模型。</span></li>
-        <li><span class="k">Max tokens</span><span class="d">单次回复的最大输出长度。</span></li>
+        <li><span class="k">Max tokens</span><span class="d">新预设默认 32768，已有预设保留原值；需符合所用模型的输出上限。</span></li>
         <li><span class="k">Reasoning / Vendor</span><span class="d">OpenAI 侧是思考摘要详略；Anthropic 侧是 Vendor（Claude 官方/反代、DeepSeek 格式等）。</span></li>
         <li><span class="k">标志位</span><span class="d">第三方/Relay 端点默认带 prompt_cache_key + session_id；非 OpenAI 兼容预设不发 OpenAI 缓存参数。</span></li>
       </ul>
@@ -387,7 +387,7 @@
   <section id="web-chat">
     <h2><span class="n">3</span>通过 WEB 使用网页模型</h2>
     <p class="lead">WEB 模式通过本机 Web Agent 控制一个独立 Chrome 配置，把网页回答持续同步回 Zotero。它适合使用网页账号；API 模式不依赖 Chrome，也不会受到 Web Agent 状态影响。</p>
-    <p class="lead">本节的 Z.ai、自动端口分配和登录检测流程适用于 <code>v0.8.7</code>。从旧版升级时，请安装新版 XPI，并按账号窗口提示安装或更新其配套 Web Agent ZIP。</p>
+    <p class="lead">本节的 Z.ai、自动端口分配和登录检测流程适用于 <code>v0.8.9</code>。从旧版升级时，请安装新版 XPI，并按账号窗口提示安装或更新其配套 Web Agent ZIP。</p>
 
     <div class="grid2">
       <div class="win" aria-label="WEB 对话底栏示意">
@@ -536,6 +536,8 @@
     </div>
 
     <div class="tip">📖 <b>arXiv 全文翻译</b>：论文标题旁有 <span class="badge">LaTeX 源</span> 时，可点“全文翻译”进入整篇阅读页。顶部支持中英 / 中文 / 英文、左右 / 逐段；点进度栏中的模型名称可切换账号、模型和思考强度。首次从设置页的默认翻译模型继承，修改后由全文翻译独立记忆。选择原文后也可按 <span class="kbd">Alt+Q</span> 连续追问。</div>
+    <div class="tip"><b>v0.8.9：完整算法显示</b>：一张算法只保留一个显示区域，翻译分段不会变成多张卡片；原文、译文保留跨段缩进和 <code>/* … */</code> 注释。已有译文可直接复用，未完成处点“继续翻译”。图像在对应 Figure 块显示，注释中的 Figure 编号只是引用。复杂排版以原 PDF 为准。</div>
+    <div class="tip"><b>LaTeX 下载失败</b>：点论文标题旁“代理设置”，选择“系统代理”或“不使用代理”，再“保存并重试”。端口默认跟随系统，手动修改后可用“恢复跟随系统”清除覆盖。这只影响 LaTeX 下载；聊天准备不会等待后台源码下载。</div>
   </section>
 
   <!-- ============ 6. 笔记与总览 ============ -->
@@ -649,7 +651,7 @@
     <div class="tip">Quick Ask、切句、选区快译等快捷键都能在「设置 → 沉浸阅读」里修改。</div>
   </section>
 
-  <footer>Zotero AI Sidebar v0.8.7 · 本页为离线使用教程，示意图按当前界面结构重绘，尺寸与系统字体可能略有不同。</footer>
+  <footer>Zotero AI Sidebar v0.8.9 · 本页为离线使用教程，示意图按当前界面结构重绘，尺寸与系统字体可能略有不同。</footer>
 </div>
 </body>
 </html>

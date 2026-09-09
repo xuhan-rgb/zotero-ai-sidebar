@@ -180,7 +180,7 @@ The note panel is designed as a **work area independent from the chat**: opening
 
 ### 2.6 Read arXiv papers with exact equations and figures
 
-For arXiv papers, the plugin automatically downloads the LaTeX source and reads from it instead of the PDF text layer. Equations arrive at the model verbatim instead of as garbled `f l θ`-style fragments from the PDF.
+For arXiv papers, the plugin downloads LaTeX source in the background. Once cached, exact source equations and figures can be read on demand. While downloading, chat preparation uses the local PDF without waiting for the source.
 
 **You'll know it's active when** a `LaTeX 源` badge appears next to the paper title in the sidebar.
 
@@ -192,7 +192,7 @@ For arXiv papers, the plugin automatically downloads the LaTeX source and reads 
 - **Ask about a section by name** — "Explain the Method section." The plugin fetches just that section instead of the whole paper.
 
 **Watch out for:**
-- The first question on a new arXiv paper takes a few extra seconds — the source is being downloaded and cached.
+- Wait for the `LaTeX 源` badge before using source-specific tools or full-document translation; ordinary questions need not wait for the download.
 - Use **numbers** ("Figure 2", "Eq. 3", "Table 1"), not descriptions ("the figure with the loss curves"). The lookup is by number/label.
 - Very old papers or papers where the author chose to withhold source will silently fall back to the PDF flow — your prompt doesn't have to change.
 
@@ -272,11 +272,29 @@ When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full t
 - The full-translation view can stay beside the AI sidebar. Select source or translated text and press `Alt+Q` to start a temporary multi-turn Quick Ask about it.
 - Click **返回 PDF (Back to PDF)** to exit the full-translation reader.
 
+#### Complete algorithms, figures, and cached translations (v0.8.9)
+
+1. Wait for the **LaTeX 源** badge, then open **Full translation**. Use immersive reading for sentence translation of ordinary PDFs.
+2. Choose **英文** for reconstructed source or **中文** for translation. In bilingual **左右** mode, the complete algorithm is shown side by side; **逐段** shows the complete source algorithm followed by its complete translation.
+3. Fragments of one `algorithm` environment share one visual region. Completed translations remain cached; pending fragments show their status. Use **Continue translation** to finish them without retranslating everything.
+4. Comments retain delimiters such as `/* Figure 2(a) */`, and loops/branches retain indentation. A Figure reference inside a comment does not insert an image there; images appear in their corresponding Figure blocks.
+5. Images load from local LaTeX assets and show loading or error states. EPS previews are currently unsupported. Complex macros, typography, and layout may differ from the original PDF; use **Return to PDF** to compare.
+
+#### Configure a failed LaTeX download
+
+Click **代理设置 (Proxy settings)** beside the paper title:
+
+- **System proxy** reads the operating system configuration. Its port follows system changes unless you edit **Port** to save a LaTeX-only override. Use **Restore system port**, then save, to remove the override.
+- **No proxy** connects directly for LaTeX downloads.
+- **Save and retry** retries the download. Settings apply to all papers on this machine and do not change model API or WEB website networking. PAC scripts are currently unsupported.
+
+Downloads run in the background; chat preparation does not wait for them. Attaching full PDF text still follows the current turn's context controls. **Stop** can cancel the current answer while context is being prepared.
+
 ### 2.12 Use a built-in website through WEB mode
 
 WEB mode mirrors a real AI website into the Zotero conversation. It is useful when you want to use a website account instead of an API key. API mode remains independent and does not need Chrome or the companion process.
 
-> The automatic port allocation, Z.ai support, and login detection described here apply to `v0.8.7`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
+> The automatic port allocation, Z.ai support, and login detection described here apply to `v0.8.9`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
 **One-time installation (Windows / Linux / macOS):**
 
@@ -329,7 +347,7 @@ Each preset is a complete `provider + endpoint + model + parameters` set. Save a
 | API key | ✓ | Stored in local prefs; included in your own `state.json` and config-export file, never sent to zotero.org / third parties |
 | Base URL | ✓ | Official endpoint or OpenAI-compatible reverse proxy |
 | Model | ✓ | Model id, e.g. `claude-opus-4-7`, `gpt-5` |
-| Max output tokens | | Output length cap |
+| Max output tokens | | Defaults to 32768 for new presets; existing values are preserved. The endpoint/model must support the chosen limit |
 | Max tool iterations | | A **safety fuse** — the maximum tool-loop steps per turn. **Not a task-routing knob.** Setting it too low makes the model abandon PDF reads partway through |
 | Reasoning / Thinking | | Enable reasoning effort (OpenAI) or extended thinking (Anthropic); the model must support it |
 | Agent permission mode | | Governs write tools: blocked / approval-required / YOLO |
