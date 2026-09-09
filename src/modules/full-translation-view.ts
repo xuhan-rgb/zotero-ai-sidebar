@@ -1,3 +1,4 @@
+import { attachFullTranslationLinks } from "./full-translation-links";
 import { renderMarkdownInto } from "./markdown-render";
 import { normalizeLatexTextCommands } from "../context/tex-clean";
 import { normalizeAlgorithmDisplay, hasAlgorithmSyntax, type AlgorithmDisplayState } from "../translate/algorithm-display";
@@ -131,6 +132,7 @@ export function renderFullTranslationView(
   reader.append(renderOutline(doc, options, content), content);
   const blockMenu = renderBlockContextMenu(doc, root, content, options);
   root.append(reader, blockMenu);
+  attachFullTranslationLinks(root, options.document);
   root.addEventListener("click", (event) => {
     const target = event.target as Node | null;
     if (!target) return;
@@ -836,8 +838,8 @@ function renderViewControls(
   const layouts = doc.createElement("div");
   layouts.className = "zai-ft-layouts";
   layouts.append(
-    layoutButton(doc, "左右", "parallel", options),
-    layoutButton(doc, "逐段", "interleaved", options),
+    layoutButton(doc, "左右对照", "parallel", options),
+    layoutButton(doc, "上英下中", "interleaved", options),
   );
   controls.append(languages, layouts);
   if (options.onReadingSettingsChange) {
@@ -1054,6 +1056,13 @@ function renderBlockPair(
   const row = doc.createElement("article");
   row.className = `zai-ft-block zai-ft-${block.kind}`;
   row.dataset.blockId = block.id;
+  if (block.kind === "abstract") {
+    const label = doc.createElement("h2");
+    label.className = "zai-ft-section-label";
+    label.textContent = "Abstract · 摘要";
+    row.append(label);
+  }
+  if (/\\(?:footnote|footnotetext)\b/.test(block.source)) row.classList.add("zai-ft-footnote");
   const reading = readingSettings(options);
   const blockState = options.state.blocks[block.id];
   const blockStatus = effectiveBlockStatus(blockState);
@@ -1308,6 +1317,27 @@ function renderBlockSide(
     cell.append(marker);
   }
 
+  if (side === "translation" && block.kind !== "formula") {
+    // Some cached translations escape citation brackets as display-math
+    // delimiters. Repair only numeric groups present as citations in the source.
+    const sourceProse = protectLatexForTranslation(block.source).text;
+    const canonical = (value: string) => value.replace(/\s/g, "").replace(/，/g, ",").replace(/–/g, "-");
+    const citations = new Set(
+      [...sourceProse.matchAll(/(?<!\\)\[(\d+(?:\s*[,，–-]\s*\d+)*)\]/g)]
+        .map(match => canonical(match[1])),
+    );
+    text = text.replace(/\\\[\s*(\d+(?:\s*[,，–-]\s*\d+)*)\s*\\\]/g,
+      (original, numbers: string) => citations.has(canonical(numbers)) ? `[${numbers.trim()}]` : original);
+  }
+  let titleDescription = "";
+  if (block.kind === "title" && side === "translation") {
+    const title = text.match(/<chs_title>([\s\S]*?)<\/chs_title>/i);
+    const description = text.match(/<chs_description>([\s\S]*?)<\/chs_description>/i);
+    if (title) {
+      text = title[1].trim();
+      titleDescription = description?.[1].trim() ?? "";
+    }
+  }
   const body = doc.createElement("div");
   body.className = "zai-ft-block-body";
   if (
@@ -1340,9 +1370,7 @@ function renderBlockSide(
       body,
       block.kind === "formula"
         ? `$$\n${text}\n$$`
-        : side === "translation"
-          ? normalizeTranslationDisplayText(text)
-          : text,
+        : normalizeTranslationDisplayText(text, undefined, side),
     );
   }
   // Decode prose escapes after Markdown so a literal # never becomes a heading.
@@ -1362,6 +1390,16 @@ function renderBlockSide(
     decorateSentenceBoundaries(body, readingSettings);
   }
   cell.append(body);
+  if (titleDescription) {
+    const details = doc.createElement("details");
+    details.className = "zai-ft-title-description";
+    const summary = doc.createElement("summary");
+    summary.textContent = "查看标题附带概述";
+    const description = doc.createElement("div");
+    renderMarkdownInto(description, normalizeTranslationDisplayText(titleDescription));
+    details.append(summary, description);
+    cell.append(details);
+  }
   return cell;
 }
 
@@ -1443,6 +1481,9 @@ function renderAssetItem(
     image.src = preview.previewUrl;
     image.alt = `Figure ${figureNumber ?? ""}`.trim();
     image.loading = "lazy";
+    image.tabIndex = 0;
+    image.setAttribute("role", "button");
+    image.setAttribute("aria-label", `放大 ${image.alt}`);
     item.append(image);
     return;
   }

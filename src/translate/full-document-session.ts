@@ -1,4 +1,9 @@
-import { readArxivMainText, readArxivMeta } from "../context/arxiv-store";
+import {
+  readArxivMainText,
+  readArxivMeta,
+  readArxivBibliographyFiles,
+} from "../context/arxiv-store";
+import { fullDocumentReferences } from "./full-document-references";
 import {
   ensureArxivSource,
   isFreshArxivSourceMeta,
@@ -37,6 +42,9 @@ export async function loadFullTranslationSession(
   if (!source) return null;
 
   const document = buildFullTranslationDocument(arxivId, source);
+  document.references = fullDocumentReferences(
+    await readArxivBibliographyFiles(arxivId),
+  );
   if (document.blocks.length === 0) return null;
   const cached = await loadFullTranslationState(arxivId, document.sourceHash);
   const state = cached

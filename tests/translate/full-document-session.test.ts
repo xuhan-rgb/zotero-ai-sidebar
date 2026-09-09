@@ -44,9 +44,11 @@ describe("loadFullTranslationSession", () => {
               fetchedAt: "2026-08-09T00:00:00.000Z",
               status: "ok",
               mainTexRelPath: "main.tex",
+              files: ["main.tex", "paper.bbl"],
               cleanerVersion: ARXIV_SOURCE_CLEANER_VERSION,
             });
           }
+          if (path.endsWith("paper.bbl")) return String.raw`\bibitem{one}Author. Title.\end{thebibliography}`;
           if (path.endsWith("main.tex")) {
             return String.raw`\title{Test}\begin{document}\section{Intro}Text.\end{document}`;
           }
@@ -58,7 +60,7 @@ describe("loadFullTranslationSession", () => {
     const session = await loadFullTranslationSession("2504.16054");
 
     expect(session).toMatchObject({
-      document: { arxivId: "2504.16054" },
+      document: { arxivId: "2504.16054", references: [{ number: 1, text: "Author. Title." }] },
       state: { presetId: "", model: "" },
     });
     expect(session).not.toHaveProperty("preflight");

@@ -83,7 +83,7 @@ export interface FullTranslationReadingSettings {
 export const DEFAULT_FULL_TRANSLATION_READING_SETTINGS: FullTranslationReadingSettings =
   {
     languageMode: "bilingual",
-    layout: "parallel",
+    layout: "interleaved",
     markerStyle: "slashes",
     customMarker: "//",
     markerColorMode: "palette",

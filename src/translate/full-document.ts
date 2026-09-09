@@ -54,6 +54,7 @@ export interface FullTranslationDocument {
   arxivId: string;
   sourceHash: string;
   blocks: FullTranslationBlock[];
+  references?: import("./full-document-references").FullTranslationReference[];
 }
 
 export interface LatexPlaceholder {
