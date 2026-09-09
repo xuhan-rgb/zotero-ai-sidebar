@@ -59,6 +59,28 @@ Appendix evidence appears here.
 `;
 
 describe("buildFullTranslationDocument", () => {
+  it("keeps algorithm display membership without changing paragraph identities", () => {
+    const paper = buildFullTranslationDocument("test", String.raw`
+\begin{document}
+Before the algorithm.
+
+\begin{algorithm}
+\KwIn{Video}
+
+\For{frame}{process frame}
+
+\caption{Tracking}
+\end{algorithm}
+
+After the algorithm.
+\end{document}`);
+    const grouped = paper.blocks.filter((block) => block.algorithmId);
+    expect(grouped).toHaveLength(3);
+    expect(new Set(grouped.map((block) => block.algorithmId)).size).toBe(1);
+    expect(grouped.map((block) => block.id)).toEqual(["front-p2", "front-p3", "front-p4"]);
+    expect(paper.blocks.find((block) => block.source.includes("After the algorithm"))?.algorithmId).toBeUndefined();
+  });
+
   it("builds stable translatable blocks from cleaned LaTeX", () => {
     const document = buildFullTranslationDocument("2504.16054", source);
 

@@ -34,6 +34,7 @@ export interface FullTranslationBlock {
   kind: FullTranslationBlockKind;
   source: string;
   translatable: boolean;
+  algorithmId?: string;
   level?: number;
   number?: number | string;
   assets?: string[];
@@ -112,6 +113,7 @@ export function buildFullTranslationDocument(
   let cursor = contentStart;
   let sectionID = "front";
   let paragraphIndex = 0;
+  const algorithm = { id: undefined as string | undefined, count: 0 };
 
   for (const event of events) {
     if (event.start > cursor) {
@@ -120,6 +122,7 @@ export function buildFullTranslationDocument(
         source.slice(cursor, event.start),
         sectionID,
         paragraphIndex,
+        algorithm,
       );
     }
     cursor = Math.max(cursor, event.end);
@@ -203,6 +206,7 @@ export function buildFullTranslationDocument(
       source.slice(cursor, contentEnd),
       sectionID,
       paragraphIndex,
+      algorithm,
     );
   }
 
@@ -920,6 +924,7 @@ function appendTextBlocks(
   raw: string,
   sectionID: string,
   initialIndex: number,
+  algorithm: { id?: string; count: number },
 ): number {
   let paragraphIndex = initialIndex;
   const cleaned = normalizeTextCommands(raw)
@@ -937,6 +942,9 @@ function appendTextBlocks(
   if (!cleaned) return paragraphIndex;
 
   for (const part of cleaned.split(/\n\s*\n+/)) {
+    if (/\\begin\{algorithm\*?\}/.test(part)) {
+      algorithm.id = `algorithm-${++algorithm.count}`;
+    }
     const parsed = splitEmbeddedDisplayFormulas(part).flatMap<DisplaySegment>(
       (segment): DisplaySegment[] => {
         const formula =
@@ -967,6 +975,7 @@ function appendTextBlocks(
           kind: "formula",
           source: segment.source,
           translatable: false,
+          ...(algorithm.id ? { algorithmId: algorithm.id } : {}),
         });
         continue;
       }
@@ -977,8 +986,10 @@ function appendTextBlocks(
         kind: /^(?:[-*]|\d+\.)\s/m.test(segment.source) ? "list" : "paragraph",
         source: segment.source,
         translatable: true,
+        ...(algorithm.id ? { algorithmId: algorithm.id } : {}),
       });
     }
+    if (/\\end\{algorithm\*?\}/.test(part)) algorithm.id = undefined;
   }
   return paragraphIndex;
 }

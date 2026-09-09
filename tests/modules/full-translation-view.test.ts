@@ -132,6 +132,102 @@ function openBlockContextMenu(view: HTMLElement, blockId: string): HTMLElement {
 }
 
 describe("renderFullTranslationView", () => {
+  it.each(["parallel", "interleaved"] as const)("keeps a split algorithm in one visual container in %s mode", (layout) => {
+    const paper: FullTranslationDocument = { ...document, blocks: [
+      { id: "a1", kind: "paragraph", source: String.raw`\begin{algorithm}\KwIn{Video}`, translatable: true, algorithmId: "algorithm-1" },
+      { id: "a2", kind: "paragraph", source: String.raw`\For{frame}{process frame}\end{algorithm}`, translatable: true, algorithmId: "algorithm-1" },
+      { id: "after", kind: "paragraph", source: "Normal paragraph", translatable: true },
+    ] };
+    const cached = createFullTranslationState(paper, "preset-1", "model-1");
+    cached.blocks.a1 = { status: "done", translation: String.raw`\KwIn{视频}` };
+    cached.blocks.a2 = { status: "done", translation: String.raw`\For{帧}{处理帧}` };
+    const view = renderFullTranslationView(globalThis.document, {
+      document: paper, state: cached, layout, running: false, assets: {},
+      onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(), onCancel: vi.fn(), onExit: vi.fn(),
+    });
+    const groups = view.querySelectorAll(".zai-ft-algorithm-group");
+    expect(groups).toHaveLength(1);
+    const group = groups[0];
+    expect(group.querySelectorAll(".zai-ft-block")).toHaveLength(2);
+    expect(group.querySelector('[data-block-id="after"]')).toBeNull();
+    expect(group.textContent).toContain("处理帧");
+    const translated = group.querySelector<HTMLElement>('[data-block-id="a1"] .zai-ft-translation')!;
+    expect(translated.style.gridRow).toBe(layout === "parallel" ? "1" : "3");
+    expect(cached.blocks.a1.translation).toBe(String.raw`\KwIn{视频}`);
+  });
+
+  it("decodes a literal LaTeX hash in both source and translated code labels", () => {
+    const paper: FullTranslationDocument = { ...document, blocks: [
+      { id: "label", kind: "paragraph", source: "Use `similarity\\#2`.", translatable: true },
+    ] };
+    const cached = createFullTranslationState(paper, "preset-1", "model-1");
+    cached.blocks.label = { status: "done", translation: "使用 `similarity\\#2`。" };
+    const view = renderFullTranslationView(globalThis.document, {
+      document: paper, state: cached, layout: "parallel", running: false, assets: {},
+      onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(), onCancel: vi.fn(), onExit: vi.fn(),
+    });
+    for (const side of ["source", "translation"]) {
+      expect(view.querySelector(`.zai-ft-${side} code`)?.textContent).toBe("similarity#2");
+    }
+  });
+
+  it("renders the real split ByteTrack algorithm in both languages", () => {
+    const fixture = JSON.parse(readFileSync(resolve(
+      "tests/fixtures/translation/bytetrack-algorithm.json",
+    ), "utf8"));
+    const paper: FullTranslationDocument = { ...document, blocks: [
+      { id: "algorithm", kind: "paragraph", source: fixture.source, translatable: true },
+      { id: "continuation", kind: "paragraph", source: String.raw`\tcc{Next step} $T$\; }`, translatable: true },
+    ] };
+    const cached = createFullTranslationState(paper, "preset-1", "model-1");
+    cached.blocks.algorithm = { status: "done", translation: fixture.translation };
+    cached.blocks.continuation = { status: "done", translation: String.raw`\tcc{下一步} $T$\； }` };
+    const view = renderFullTranslationView(globalThis.document, {
+      document: paper, state: cached, layout: "parallel", running: false, assets: {},
+      onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(), onCancel: vi.fn(), onExit: vi.fn(),
+    });
+    for (const side of ["source", "translation"]) {
+      const body = view.querySelector(`[data-block-id="algorithm"] .zai-ft-${side}`)!;
+      expect(body.textContent).toContain(side === "source" ? "/* Figure 2(a) */" : "/* 图2(a) */");
+      expect(body.textContent).not.toContain(side === "source" ? "Comment：" : "注释：");
+      expect(body.querySelector(".zai-ft-algorithm-line")).not.toBeNull();
+      expect(body.textContent).not.toMatch(/\\(?:For|If|Else|对于|如果|否则|tcc|;|；)/);
+      expect(body.querySelector('.zai-ft-algorithm-line[data-indent="3"] .katex')).not.toBeNull();
+      const continuation = view.querySelector(`[data-block-id="continuation"] .zai-ft-${side}`)!;
+      expect(continuation.querySelector('.zai-ft-algorithm-line[data-indent="1"]')).not.toBeNull();
+      expect(continuation.textContent).not.toContain("}");
+    }
+  });
+
+  it("shows custom paragraph titles and algorithm control flow without source commands", () => {
+    const cached = state();
+    cached.blocks["section-1-p1"].translation = String.raw`\myparagraph{相似性度量。} 位置和外观是线索。
+\begin{algorithm}[!h]\SetAlgoLined\DontPrintSemicolon\SetNoFillComment\footnotesize
+\KwIn{视频序列 $V$；检测器 Det}\KwOut{轨迹 $T$}
+初始化：$T\leftarrow\emptyset$\;
+\For{帧 $f_k$ 在 $V$ 中}{\tcc{预测检测框及分数}
+\If{$d.score>\tau$}{保留检测 $d$\;}\Else{保存低分检测\;}}
+\end{algorithm}`;
+    const view = renderFullTranslationView(globalThis.document, {
+      document, state: cached, layout: "parallel", running: false, assets: {},
+      onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(),
+      onCancel: vi.fn(), onExit: vi.fn(),
+    });
+    const body = view.querySelector('[data-block-id="section-1-p1"] .zai-ft-translation')!;
+    expect(body.querySelector("strong")?.textContent).toBe("相似性度量。");
+    expect(body.textContent).toContain("输入：");
+    expect(body.textContent).toContain("输出：");
+    expect(body.textContent).toContain("遍历：");
+    expect(body.textContent).toContain("如果：");
+    expect(body.textContent).toContain("否则：");
+    expect(body.textContent).toContain("预测检测框及分数");
+    expect(body.textContent).not.toMatch(/\\(?:myparagraph|begin|end|KwIn|KwOut|For|If|Else|tcc|SetAlgoLined|DontPrintSemicolon|SetNoFillComment|footnotesize|;)/);
+    expect(body.querySelectorAll(".katex").length).toBeGreaterThan(4);
+    const nested = body.querySelector('.zai-ft-algorithm-line[data-indent="2"]');
+    expect(nested?.textContent).toContain("保留检测");
+    expect((nested as HTMLElement)?.style.paddingInlineStart).toBe("3em");
+  });
+
   it("renders cached translation wrappers, footnotes and URLs as readable text", () => {
     const paper: FullTranslationDocument = {
       ...document,

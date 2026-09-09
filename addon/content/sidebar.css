@@ -7762,6 +7762,14 @@ div.math-fallback {
   line-height: 1.35;
 }
 
+.zai-ft-algorithm-line {
+  padding-block: 2px;
+}
+
+.zai-ft-algorithm-line > p {
+  margin: 0;
+}
+
 .zai-ft-abstract .zai-ft-cell {
   background-image: linear-gradient(
     90deg,
@@ -7894,6 +7902,33 @@ div.math-fallback {
 .is-interleaved.is-bilingual .zai-ft-heading {
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+
+.zai-ft-algorithm-group {
+  display: grid;
+  margin: 12px;
+  overflow: hidden;
+  border: 1px solid rgba(128, 105, 76, 0.24);
+  border-radius: 6px;
+  padding-block: 12px;
+  background: #fffdf8;
+}
+
+.zai-full-translation .zai-ft-algorithm-group > .zai-ft-block {
+  display: contents;
+}
+
+.zai-full-translation .zai-ft-algorithm-group > .zai-ft-block > .zai-ft-cell {
+  margin: 0;
+  padding: 2px 20px;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.is-interleaved.is-bilingual .zai-ft-algorithm-group > .zai-ft-block:first-child > .zai-ft-translation {
+  border-top: 1px solid rgba(128, 105, 76, 0.24);
+  padding-top: 12px;
 }
 
 .is-interleaved.is-bilingual .zai-ft-heading .zai-ft-translation {

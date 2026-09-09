@@ -1,5 +1,6 @@
 import { renderMarkdownInto } from "./markdown-render";
 import { normalizeLatexTextCommands } from "../context/tex-clean";
+import { normalizeAlgorithmDisplay, hasAlgorithmSyntax, type AlgorithmDisplayState } from "../translate/algorithm-display";
 import {
   protectLatexForTranslation,
   restoreLatexAfterTranslation,
@@ -97,8 +98,33 @@ export function renderFullTranslationView(
 
   const content = doc.createElement("div");
   content.className = "zai-ft-content";
+  const algorithmStates = { source: { depth: 0 }, translation: { depth: 0 } };
+  const algorithmGroups = new Map<string, HTMLElement>();
   for (const block of options.document.blocks) {
-    content.append(renderBlockPair(doc, block, options));
+    if (block.kind === "heading" || block.kind === "title") {
+      algorithmStates.source.depth = 0;
+      algorithmStates.translation.depth = 0;
+    }
+    if (algorithmStates.source.depth || hasAlgorithmSyntax(block.source)) {
+      algorithmStates.translation.depth = algorithmStates.source.depth;
+    }
+    const row = renderBlockPair(doc, block, options, algorithmStates);
+    if (block.algorithmId) {
+      let group = algorithmGroups.get(block.algorithmId);
+      if (!group) {
+        group = doc.createElement("section");
+        group.className = "zai-ft-algorithm-group";
+        group.dataset.algorithmId = block.algorithmId;
+        algorithmGroups.set(block.algorithmId, group);
+        content.append(group);
+      }
+      group.append(row);
+    } else {
+      content.append(row);
+    }
+  }
+  for (const group of algorithmGroups.values()) {
+    layoutAlgorithmGroup(group, options);
   }
   const reader = doc.createElement("div");
   reader.className = "zai-ft-reader";
@@ -185,7 +211,7 @@ export function revealFullTranslationSourceBlock(
   ) as HTMLElement[];
   highlighted.forEach((row) => row.classList.remove("is-source-target"));
   target.classList.add("is-source-target");
-  target.scrollIntoView({ behavior: "smooth", block: "center" });
+  (target.closest(".zai-ft-algorithm-group") ?? target).scrollIntoView({ behavior: "smooth", block: "center" });
   root.ownerDocument?.defaultView?.setTimeout(
     () => target.classList.remove("is-source-target"),
     1_800,
@@ -655,7 +681,7 @@ function renderUsageEvent(
       ?.querySelectorAll(".zai-ft-block.is-usage-target")
       .forEach((row: Element) => row.classList.remove("is-usage-target"));
     target.classList.add("is-usage-target");
-    target.scrollIntoView({ behavior: "smooth", block: "start" });
+    (target.closest(".zai-ft-algorithm-group") ?? target).scrollIntoView({ behavior: "smooth", block: "start" });
     history.open = false;
     doc.defaultView?.setTimeout(
       () => target.classList.remove("is-usage-target"),
@@ -1000,10 +1026,30 @@ function readingSettings(
   return options.readingSettings ?? DEFAULT_FULL_TRANSLATION_READING_SETTINGS;
 }
 
+function layoutAlgorithmGroup(group: HTMLElement, options: FullTranslationViewOptions): void {
+  const rows = Array.from(group.children);
+  const bilingual = readingSettings(options).languageMode === "bilingual";
+  const parallel = bilingual && options.layout === "parallel";
+  group.style.gridTemplateColumns = parallel ? "minmax(0, 1fr) minmax(0, 1fr)" : "minmax(0, 1fr)";
+  rows.forEach((row, index) => {
+    const source = row.querySelector<HTMLElement>(".zai-ft-source");
+    const translation = row.querySelector<HTMLElement>(".zai-ft-translation");
+    if (source) {
+      source.style.gridColumn = "1";
+      source.style.gridRow = String(bilingual ? index + 1 : index * 2 + 1);
+    }
+    if (translation) {
+      translation.style.gridColumn = parallel ? "2" : "1";
+      translation.style.gridRow = String(parallel ? index + 1 : bilingual ? rows.length + index + 1 : index * 2 + 2);
+    }
+  });
+}
+
 function renderBlockPair(
   doc: Document,
   block: FullTranslationBlock,
   options: FullTranslationViewOptions,
+  algorithmStates: Record<"source" | "translation", AlgorithmDisplayState>,
 ): HTMLElement {
   const row = doc.createElement("article");
   row.className = `zai-ft-block zai-ft-${block.kind}`;
@@ -1036,6 +1082,7 @@ function renderBlockPair(
       !hasSharedVisual,
       undefined,
       reading,
+      algorithmStates.source,
     );
     const translation = renderBlockSide(
       doc,
@@ -1045,6 +1092,7 @@ function renderBlockPair(
       !hasSharedVisual && !isPairedInterleavedHeading,
       blockStatus,
       reading,
+      algorithmStates.translation,
     );
     if (reading.languageMode === "translation" && block.source.trim()) {
       const label = doc.createElement("span");
@@ -1215,12 +1263,17 @@ function closeBlockContextMenu(menu: HTMLElement): boolean {
   return true;
 }
 
-function normalizeTranslationDisplayText(text: string): string {
+function normalizeTranslationDisplayText(
+  text: string,
+  algorithmState?: AlgorithmDisplayState,
+  language: "source" | "translation" = "translation",
+): string {
   // Normalize cached replies at display time without rewriting stored output.
   const protectedText = protectLatexForTranslation(text);
   const prose = protectedText.text
     .replace(/<\/(?:chs_title|chs_description)\s*>/gi, "\n\n")
     .replace(/<(?:chs_title|chs_description)\s*>/gi, "")
+    .replace(/\\myparagraph\s*(?=\{)/g, "\\textbf")
     .replace(/\\let\s*(?:\\thefootnote\s*)?\\relax\b/g, "")
     .replace(/\\(?:footnote|footnotetext)(?:\[[^\]\n]*\])?\s*(?=\{)/g, "\\textrm")
     .replace(/\\url\s*\{(https?:\/\/[^{}\s]+)\}/g, (_, url: string) => {
@@ -1229,7 +1282,7 @@ function normalizeTranslationDisplayText(text: string): string {
     })
     .replace(/\\(?:url|nolinkurl)\s*(?=\{)/g, "\\textrm");
   return restoreLatexAfterTranslation(
-    normalizeLatexTextCommands(prose),
+    normalizeAlgorithmDisplay(normalizeLatexTextCommands(prose), algorithmState, language),
     protectedText.placeholders,
   ) ?? text;
 }
@@ -1242,6 +1295,7 @@ function renderBlockSide(
   showMarker: boolean,
   status?: string,
   readingSettings?: FullTranslationReadingSettings,
+  algorithmState?: AlgorithmDisplayState,
 ): HTMLElement {
   const cell = doc.createElement("div");
   cell.className = `zai-ft-cell zai-ft-${side}`;
@@ -1264,14 +1318,41 @@ function renderBlockSide(
   ) {
     body.classList.add("zai-ft-state");
   }
-  renderMarkdownInto(
-    body,
-    block.kind === "formula"
-      ? `$$\n${text}\n$$`
-      : side === "translation"
-        ? normalizeTranslationDisplayText(text)
-        : text,
-  );
+  if (
+    block.kind !== "formula" &&
+    (algorithmState?.depth || hasAlgorithmSyntax(text))
+  ) {
+    // The shared Markdown renderer supports only one nested list level.
+    // Algorithm rows need to retain all loop/branch nesting levels.
+    body.classList.add("zai-ft-algorithm");
+    for (const line of normalizeTranslationDisplayText(text, algorithmState, side).split("\n")) {
+      if (!line.trim()) continue;
+      const indent = Math.floor((line.match(/^ */)?.[0].length ?? 0) / 2);
+      const row = doc.createElement("div");
+      row.className = "zai-ft-algorithm-line";
+      row.dataset.indent = String(indent);
+      row.style.paddingInlineStart = `${indent * 1.5}em`;
+      renderMarkdownInto(row, line.trim().replace(/^- /, ""));
+      body.append(row);
+    }
+  } else {
+    renderMarkdownInto(
+      body,
+      block.kind === "formula"
+        ? `$$\n${text}\n$$`
+        : side === "translation"
+          ? normalizeTranslationDisplayText(text)
+          : text,
+    );
+  }
+  // Decode prose escapes after Markdown so a literal # never becomes a heading.
+  const textNodes = doc.createTreeWalker(body, 4 /* SHOW_TEXT */);
+  let node: Node | null;
+  while ((node = textNodes.nextNode())) {
+    if (!node.parentElement?.closest(".katex")) {
+      node.textContent = node.textContent?.replace(/\\#/g, "#") ?? "";
+    }
+  }
   if (
     readingSettings &&
     block.kind !== "heading" &&
