@@ -49,3 +49,9 @@ export function checkLatexSourceAvailability(
   });
   return pending;
 }
+
+// A saved connection setting must permit a fresh check immediately.
+export function resetLatexSourceAvailability(arxivId: string): void {
+  settledChecks.delete(arxivId);
+  inFlightChecks.delete(arxivId);
+}

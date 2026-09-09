@@ -43,9 +43,26 @@ function extractArxivId(text: string): string | null {
 }
 
 export function resolveArxivId(fields: ArxivIdFields): string | null {
-  for (const raw of [fields.extra, fields.archiveID, fields.url, fields.doi]) {
+  for (const raw of [fields.extra, fields.archiveID]) {
     const id = raw ? extractArxivId(raw) : null;
     if (id) return id;
+  }
+  // Publisher paths such as /document/9417526 also resemble legacy IDs.
+  // URL and DOI fields must identify arXiv before scanning their identifiers.
+  if (
+    fields.url &&
+    /^https?:\/\/(?:www\.|export\.)?arxiv\.org\/(?:abs|pdf|e-print|src)\//i.test(
+      fields.url,
+    )
+  ) {
+    const id = extractArxivId(fields.url);
+    if (id) return id;
+  }
+  if (
+    fields.doi &&
+    /^(?:https?:\/\/(?:dx\.)?doi\.org\/)?10\.48550\/arxiv\./i.test(fields.doi)
+  ) {
+    return extractArxivId(fields.doi);
   }
   return null;
 }

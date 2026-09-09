@@ -1,3 +1,9 @@
+import { downloadLatexSource } from "./latex-download";
+import {
+  loadLatexProxy,
+  type LatexProxySettings,
+} from "../settings/latex-proxy";
+import { zoteroPrefs } from "../settings/storage";
 // Orchestrates: fetch e-print -> extract -> select+clean main.tex -> store.
 // All failures resolve to false (caller falls back to PDF).
 
@@ -35,33 +41,6 @@ export function isFreshArxivSourceMeta(meta: ArxivMeta | null): boolean {
     meta?.status === "ok" &&
     meta.cleanerVersion === ARXIV_SOURCE_CLEANER_VERSION
   );
-}
-
-// Use Zotero's HTTP API, not fetch(): arXiv's e-print response trips a Gecko
-// `fetch` bug ("Content-Length header exceeds response Body"). Zotero.HTTP
-// (XHR-based) downloads the binary payload cleanly.
-interface ZoteroHttpResponse {
-  status: number;
-  response: ArrayBuffer;
-}
-function zoteroHttpRequest(
-  url: string,
-  options: { responseType: string; timeout: number },
-): Promise<ZoteroHttpResponse> {
-  const Z = (
-    globalThis as unknown as {
-      Zotero: {
-        HTTP: {
-          request(
-            method: string,
-            url: string,
-            options: { responseType: string; timeout: number },
-          ): Promise<ZoteroHttpResponse>;
-        };
-      };
-    }
-  ).Zotero;
-  return Z.HTTP.request("GET", url, options);
 }
 
 // TEMP diagnostic: append a per-stage trace to a debug file so a failed
@@ -102,10 +81,54 @@ export interface EnsureArxivArgs {
   onProgress?: (msg: string) => void;
 }
 
-// Returns true when a usable arXiv source cache exists for the paper after
-// this call (already cached, or freshly downloaded). Never throws.
+const inFlightSources = new Map<string, Promise<boolean>>();
+const sourceErrors = new Map<string, string>();
+const latestSourceRequests = new Map<string, string>();
+
+export function arxivSourceError(arxivId: string): string | undefined {
+  return sourceErrors.get(arxivId);
+}
+
+// Returns true when a usable source cache exists after this call. Never throws.
+// All callers share an in-flight download for the same paper and connection.
 export async function ensureArxivSource(
   args: EnsureArxivArgs,
+): Promise<boolean> {
+  if (!args.arxivId) return false;
+  // A different request may have completed the shared cache while an older
+  // download is still pending. Cache readiness takes priority over that task.
+  const cached = await readArxivMeta(args.arxivId);
+  if (isFreshArxivSourceMeta(cached) || cached?.status === "no-source") {
+    sourceErrors.delete(args.arxivId);
+    latestSourceRequests.delete(args.arxivId);
+    return cached?.status === "ok";
+  }
+  let proxy: LatexProxySettings;
+  try {
+    proxy = loadLatexProxy(zoteroPrefs());
+  } catch (error) {
+    sourceErrors.set(args.arxivId, String(error));
+    return Promise.resolve(false);
+  }
+  const key = JSON.stringify([args.arxivId, proxy]);
+  const existing = inFlightSources.get(key);
+  if (existing) return existing;
+  sourceErrors.delete(args.arxivId);
+  latestSourceRequests.set(args.arxivId, key);
+  const pending = prepareArxivSource(args, proxy, (message) => {
+    if (latestSourceRequests.get(args.arxivId) === key) {
+      sourceErrors.set(args.arxivId, message);
+    }
+  });
+  inFlightSources.set(key, pending);
+  void pending.finally(() => inFlightSources.delete(key));
+  return pending;
+}
+
+async function prepareArxivSource(
+  args: EnsureArxivArgs,
+  proxy: LatexProxySettings,
+  reportError: (message: string) => void,
 ): Promise<boolean> {
   const trace: string[] = [];
   const arxivId = args.arxivId;
@@ -131,24 +154,31 @@ export async function ensureArxivSource(
     args.onProgress?.("下载 arXiv 源码…");
     let bytes: Uint8Array;
     try {
-      const resp = await zoteroHttpRequest(
+      const resp = await downloadLatexSource(
         `https://arxiv.org/e-print/${arxivId}`,
-        {
-          responseType: "arraybuffer",
-          timeout: DEFAULT_CONTEXT_POLICY.arxivFetchTimeoutMs,
-        },
+        DEFAULT_CONTEXT_POLICY.arxivFetchTimeoutMs,
+        proxy,
       );
       trace.push(
         `download: status=${resp.status} bytes=${resp.response ? resp.response.byteLength : "none"}`,
       );
-      if (resp.status !== 200 || !resp.response) return false;
+      if (resp.status !== 200 || !resp.response) {
+        reportError(`源码下载失败：HTTP ${resp.status}`);
+        return false;
+      }
       bytes = new Uint8Array(resp.response);
     } catch (e) {
       trace.push(`download threw: ${String(e)}`);
+      reportError(
+        /timed? ?out|timeout/i.test(String(e))
+          ? `下载超时（${DEFAULT_CONTEXT_POLICY.arxivFetchTimeoutMs / 1000} 秒）`
+          : `${proxy.mode === "system" ? "系统代理下载失败" : "直连下载失败"}：${String(e)}`,
+      );
       return false;
     }
     if (bytes.length > DEFAULT_CONTEXT_POLICY.maxArxivSourceBytes) {
       trace.push(`payload too large: ${bytes.length}`);
+      reportError("源码包超过大小限制");
       return false;
     }
 
@@ -238,6 +268,7 @@ export async function ensureArxivSource(
     return true;
   } catch (e) {
     trace.push(`ERROR: ${String(e)}`);
+    reportError(`源码处理失败：${String(e)}`);
     return false;
   } finally {
     writeArxivDebug(trace);

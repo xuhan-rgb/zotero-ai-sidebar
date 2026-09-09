@@ -702,7 +702,11 @@ export class OpenAIProvider implements Provider {
           type: "error",
           message:
             incompleteReason === "max_output_tokens"
-              ? "回答再次达到最大输出长度，已保留当前内容；请发送“继续”完成剩余部分。"
+              ? !iterationText && calls.length === 0
+                ? "本轮尚未生成正文就达到输出上限，已保留已接收的内容。请在模型设置中提高最大输出 Token；也可降低思考强度后重试。"
+                : outputContinuations > 0
+                  ? "回答再次达到最大输出长度，已保留当前内容；请发送“继续”完成剩余部分。"
+                  : "本轮达到最大输出长度，已保留当前内容；请提高最大输出 Token 后重试。"
               : `OpenAI response incomplete: ${incompleteReason}`,
         };
         return;

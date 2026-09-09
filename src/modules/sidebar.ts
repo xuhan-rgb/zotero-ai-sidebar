@@ -1,3 +1,4 @@
+import { abortable } from "../utils/abortable";
 import { buildContext } from "../context/builder";
 import type { ContextSource } from "../context/builder";
 import {
@@ -26,10 +27,9 @@ import {
 } from "../context/pdf-locator";
 import { extractPdfRange, searchPdfPassages } from "../context/retrieval";
 import { ensureArxivSource } from "../context/arxiv-source";
-import { hasArxivSource } from "../context/arxiv-store";
+import { hasArxivSource, readArxivMainText } from "../context/arxiv-store";
 import { buildArxivTocFrontBlock } from "../context/arxiv-tools";
 import { resolveArxivIdForItemID } from "../context/arxiv-id";
-import { toolsForPinnedFullTextTurn } from "../context/tool-filter";
 import {
   findSection,
   isArxivTocBlock,
@@ -40,7 +40,7 @@ import {
   normalizeLatexSourceCommands,
 } from "../context/tex-clean";
 import { zoteroContextSource } from "../context/zotero-source";
-import { checkLatexSourceAvailability } from "./latex-source-availability";
+import { renderLatexSourceControls } from "./latex-source-controls";
 import { getProvider } from "../providers/factory";
 import type {
   AssistantAnnotationDraft,
@@ -69,7 +69,12 @@ import {
   createFullTranslationState,
   saveFullTranslationState,
 } from "../settings/full-translation-store";
-import { loadPresets, zoteroPrefs } from "../settings/storage";
+import {
+  loadPresets,
+  loadSelectedPresetID,
+  saveSelectedPresetID,
+  zoteroPrefs,
+} from "../settings/storage";
 import {
   DEFAULT_LOCAL_UI_SETTINGS,
   loadLocalUiSettings,
@@ -495,6 +500,7 @@ import {
   lockMessagesScroll,
   preserveMessagesScroll,
   preserveStreamingMessagesScroll,
+  preserveThinkingScroll,
   restoreMessagesScroll,
   scheduleMessagesScrollRestore,
 } from "./message-scroll";
@@ -721,7 +727,11 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
     state = {
       itemID,
       presets,
-      selectedId: presets[0]?.id ?? null,
+      selectedId:
+        loadSelectedPresetID(zoteroPrefs()) ??
+        state?.selectedId ??
+        presets[0]?.id ??
+        null,
       conversations: [],
       activeConversationID: "default",
       historyMode: "previous",
@@ -832,6 +842,7 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
   state.scrollToBottom = false;
   state.focusInput = false;
   afterRender(mount, () => {
+    if (panel.parentElement !== mount) return;
     if (state.networkDiagramTarget) {
       const messages = mount.querySelector<HTMLElement>(".messages");
       if (messages) {
@@ -1255,7 +1266,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   openNote.title = noteWindowOpen
     ? "关闭笔记列"
     : "在当前 Zotero 窗口打开当前条目的子笔记";
-  openNote.disabled = state.itemID == null;
+  openNote.disabled = !noteWindowOpen && state.itemID == null;
   openNote.addEventListener("click", () => {
     if (isNoteWindowOpenForMount(mount)) {
       void closeCurrentNoteWindow(mount);
@@ -1707,12 +1718,8 @@ function applyConversation(
   state.draftSelectionEnd = conversation.draftText.length;
   state.draftHadFocus = false;
   state.historyMode = conversation.historyMode;
+  // Account selection is global; historical conversations must not restore it.
   if (
-    conversation.presetID &&
-    state.presets.some((preset) => preset.id === conversation.presetID)
-  ) {
-    state.selectedId = conversation.presetID;
-  } else if (
     !state.selectedId ||
     !state.presets.some((preset) => preset.id === state.selectedId)
   ) {
@@ -1989,39 +1996,12 @@ export function renderContextCard(
   card.append(el(doc, "div", "ctx-title", title), metaRow);
   const arxivId = resolveArxivIdForItemID(itemID);
   if (arxivId) {
-    const arxivBadge = doc.createElement("span");
-    arxivBadge.className = "arxiv-source-badge";
-    arxivBadge.textContent = "正在检查 LaTeX…";
-    metaRow.append(arxivBadge);
-    void checkLatexSourceAvailability(arxivId).then((availability) => {
-      const sidebar = findSidebarStateByDocument(doc);
-      const currentItemID = sidebar
-        ? (states.get(sidebar.mount)?.itemID ?? null)
-        : null;
-      if (!metaRow.isConnected || currentItemID !== itemID) return;
-      if (availability === "no-source") {
-        arxivBadge.textContent = "无 LaTeX 源";
-        arxivBadge.title = "当前 arXiv 条目没有可用的 LaTeX 源码";
-        return;
-      }
-      if (availability === "error") {
-        arxivBadge.textContent = "LaTeX 检查失败";
-        arxivBadge.title = "无法检查 arXiv LaTeX 源码，请稍后重试";
-        return;
-      }
-      arxivBadge.textContent = "LaTeX 源";
-      arxivBadge.title = "正在使用 arXiv LaTeX 源码分析（公式精确）";
-      const translateButton = doc.createElement("button");
-      translateButton.type = "button";
-      translateButton.className = "arxiv-full-translation-button";
-      translateButton.textContent = "全文翻译";
-      translateButton.title = "用 LaTeX 重建原文与中文译文并进行结构对照";
-      translateButton.addEventListener("click", () => {
+    metaRow.append(
+      renderLatexSourceControls(doc, arxivId, () => {
         const sidebar = findSidebarStateByDocument(doc);
         if (sidebar) void showFullTranslation(sidebar);
-      });
-      metaRow.append(translateButton);
-    });
+      }),
+    );
   }
   return card;
 }
@@ -5280,6 +5260,7 @@ function renderPresetSwitcher(
     selectedChatPreset(state)?.id ?? selectedPreset(state)?.id ?? "";
   select.addEventListener("change", () => {
     state.selectedId = select.value;
+    saveSelectedPresetID(zoteroPrefs(), select.value);
     state.agentPermissionMode = agentPermissionMode(
       selectedChatPreset(state) ?? selectedPreset(state),
     );
@@ -6740,18 +6721,47 @@ async function streamAssistant(
   }
   renderPanel(mount, state);
 
+  let bubbleUpdateTimer: number | undefined;
   const updateTaskBubble = () => {
+    if (bubbleUpdateTimer !== undefined) {
+      mount.ownerDocument!.defaultView!.clearTimeout(bubbleUpdateTimer);
+      bubbleUpdateTimer = undefined;
+    }
     if (state.activeConversationID === taskConversationID) {
       updateMessageBubble(mount, assistantIndex, assistant);
     }
+  };
+
+  const scheduleTaskBubble = () => {
+    if (bubbleUpdateTimer !== undefined) return;
+    bubbleUpdateTimer = mount.ownerDocument!.defaultView!.setTimeout(updateTaskBubble, 50);
   };
 
   const controllerCtor = mount.ownerDocument!.defaultView!.AbortController;
   const controller = new controllerCtor();
   runtime.abort = controller;
   let toolSession: ZoteroAgentToolSession | null = null;
+  let preparationStage: string | undefined;
+  let preparationStageStarted = Date.now();
+  const setPreparationStage = (detail?: string) => {
+    const now = Date.now();
+    if (preparationStage) {
+      debugZai("chat.prepare.stage", {
+        itemID: state.itemID,
+        taskID: options.taskID,
+        stage: preparationStage,
+        elapsedMs: now - preparationStageStarted,
+        cancelled: controller.signal.aborted,
+      });
+    }
+    preparationStage = detail;
+    preparationStageStarted = now;
+    runtime.activeAssistantDetail = detail;
+    if (detail) updateTaskBubble();
+  };
 
   try {
+    setPreparationStage("正在整理对话历史");
     const effectiveHistory = options.isolatedHistory ? [] : history;
     const contextLedger = formatContextLedger(effectiveHistory);
     const forcePinnedFullText =
@@ -6787,23 +6797,36 @@ async function streamAssistant(
         promptCacheLedger: contextLedger,
       };
     }
-    // Download the arXiv LaTeX source (if this is an arXiv item and not
-    // already cached) before context assembly, so getFullText can prefer it.
-    // A false result must not block analysis — the PDF flow proceeds normally.
-    let arxivSourceUsed = false;
-    if (state.itemID != null) {
-      arxivSourceUsed = await ensureArxivSourceForItem(state.itemID);
+    // Chat only reads completed local source caches. The header downloads
+    // LaTeX independently; missing source must fall through to the local PDF.
+    setPreparationStage("正在检查本地 LaTeX 缓存，不等待下载");
+    const arxivId = resolveArxivIdForItemID(state.itemID);
+    const arxivSourceUsed = !!(
+      arxivId &&
+      await abortable(readArxivMainText(arxivId), controller.signal)
+    );
+    if (arxivSourceUsed && forcePinnedFullText && state.itemID != null) {
+      // Explicit full-source requests should not reuse an older frozen PDF.
+      await abortable(freezeFullText(state.itemID, ""), controller.signal);
     }
-    const baseContext = await buildSystemContextOnly(state.itemID);
-    const pinnedFullText = await resolvePinnedFullText(
-      state.itemID,
-      zoteroContextSource,
-      contextPolicy,
-      {
-        force: forcePinnedFullText,
-        suppressPinned:
-          !!userMessage.context?.selectedText && !forcePinnedFullText,
-      },
+    setPreparationStage("正在读取论文题录");
+    const baseContext = await abortable(
+      buildSystemContextOnly(state.itemID),
+      controller.signal,
+    );
+    setPreparationStage("正在读取本地正文与上下文设置");
+    const pinnedFullText = await abortable(
+      resolvePinnedFullText(
+        state.itemID,
+        zoteroContextSource,
+        contextPolicy,
+        {
+          force: forcePinnedFullText,
+          suppressPinned:
+            !!userMessage.context?.selectedText && !forcePinnedFullText,
+        },
+      ),
+      controller.signal,
     );
     if (pinnedFullText) {
       const fullTextSource = isArxivTocBlock(pinnedFullText)
@@ -6811,10 +6834,10 @@ async function streamAssistant(
         : arxivSourceUsed && forcePinnedFullText
           ? "arxiv"
           : "pdf";
-      const frontBlockDebugPath = await saveDebugFrontBlockForState(
-        state,
-        pinnedFullText,
-        fullTextSource,
+      setPreparationStage("正在准备本轮正文");
+      const frontBlockDebugPath = await abortable(
+        saveDebugFrontBlockForState(state, pinnedFullText, fullTextSource),
+        controller.signal,
       );
       const planReason = forcePinnedFullText
         ? "用户本轮点击“+ 本轮原文”，PDF 选区、附近上下文和论文全文一起发送；长期“原文”状态不变"
@@ -6841,6 +6864,7 @@ async function streamAssistant(
         rangeEnd: userMessage.context?.rangeEnd ?? pinnedFullText.length,
       };
     }
+    setPreparationStage("正在准备 Zotero 工具和模型请求");
     // Build a fresh tool session per turn. WHY per-turn (not cached):
     // - Reader's PDF.js text layer can change between turns (user opens a
     //   different attachment); a stale locator would point at the wrong PDF.
@@ -6919,9 +6943,7 @@ async function streamAssistant(
         return result;
       },
     });
-    const toolsForTurn = pinnedFullText
-      ? toolsForPinnedFullTextTurn(toolSession.tools, userMessage, options)
-      : toolSession.tools;
+    const toolsForTurn = toolSession.tools;
     const promptCacheKey = buildPromptCacheKey(preset, state.itemID);
     const relayRoutingItemKey = resolveItemKeyForCache(state.itemID);
     userMessage.context = {
@@ -6937,6 +6959,7 @@ async function streamAssistant(
     if (state.activeConversationID === taskConversationID) {
       state.scrollToBottom = state.autoFollowMessages;
     }
+    setPreparationStage();
     runtime.activeAssistantStage = "waiting_model";
     renderPanel(mount, state);
 
@@ -6988,12 +7011,12 @@ async function streamAssistant(
         } else {
           assistant.content += chunk.text;
         }
-        updateTaskBubble();
+        scheduleTaskBubble();
       } else if (chunk.type === "thinking_delta") {
         runtime.activeAssistantStage = "thinking";
         runtime.activeAssistantDetail = undefined;
         assistant.thinking = `${assistant.thinking ?? ""}${chunk.text}`;
-        updateTaskBubble();
+        scheduleTaskBubble();
       } else if (chunk.type === "tool_call") {
         runtime.activeAssistantStage =
           chunk.status === "started" ? "using_tool" : "waiting_model";
@@ -7035,6 +7058,8 @@ async function streamAssistant(
     }
     updateTaskBubble();
   } finally {
+    updateTaskBubble();
+    setPreparationStage();
     toolSession?.dispose();
     markMessageTaskCompleted(userMessage);
     if (options.annotationSnapshot) {
@@ -8303,6 +8328,8 @@ function annotationRectCount(annotation: Record<string, unknown>): number {
   return Array.isArray(position?.rects) ? position.rects.length : 0;
 }
 
+const streamingMarkdownByElement = new WeakMap<HTMLElement, string>();
+
 function updateMessageBubble(
   mount: HTMLElement,
   index: number,
@@ -8331,7 +8358,13 @@ function updateMessageBubble(
     }
 
     if (message.thinking) {
-      renderMarkdownInto(ensureThinkingBody(root, body), message.thinking);
+      const thinkingBody = ensureThinkingBody(root, body);
+      if (streamingMarkdownByElement.get(thinkingBody) !== message.thinking) {
+        preserveThinkingScroll(thinkingBody, () => {
+          renderMarkdownInto(thinkingBody, message.thinking!);
+        });
+        streamingMarkdownByElement.set(thinkingBody, message.thinking);
+      }
     }
     renderMarkdownInto(
       body,
@@ -9394,6 +9427,7 @@ function renderNoteHead(
     menuExtra?: HTMLButtonElement[];
   },
 ): NoteHeadParts {
+  sidebar.noteMount.dataset.noteView = opts.view;
   const head = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   head.className = "zai-note-window-head";
 
@@ -9586,6 +9620,7 @@ async function openRouteView(sidebar: WindowSidebarState): Promise<void> {
   try {
     await saveVisibleNoteBeforeSwitch(sidebar);
     const note = await findReadingRouteNote(itemID);
+    if (states.get(sidebar.mount)?.itemID !== itemID) return;
     if (note) {
       await showNoteWindow(doc, note);
       return;
@@ -9593,11 +9628,14 @@ async function openRouteView(sidebar: WindowSidebarState): Promise<void> {
   } catch (err) {
     debugZai("route-view:open-failed", { error: errorMessage(err) });
   }
-  renderRouteEmptyView(sidebar);
+  renderEmptyNoteView(sidebar);
 }
 
 // Empty reading-route view: header (路线 active) + a centered generate CTA.
-function renderRouteEmptyView(sidebar: WindowSidebarState): void {
+function renderEmptyNoteView(
+  sidebar: WindowSidebarState,
+  view: "normal" | "readingRoute" = "readingRoute",
+): void {
   const doc = sidebar.noteMount.ownerDocument!;
   sidebar.noteEditorCleanup?.();
   sidebar.noteEditorCleanup = undefined;
@@ -9609,7 +9647,7 @@ function renderRouteEmptyView(sidebar: WindowSidebarState): void {
 
   const itemID = states.get(sidebar.mount)?.itemID ?? null;
   const parts = renderNoteHead(doc, sidebar, {
-    view: "readingRoute",
+    view,
     editable: false,
     action: null,
   });
@@ -9626,12 +9664,13 @@ function renderRouteEmptyView(sidebar: WindowSidebarState): void {
   const msg = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   msg.textContent =
     itemID == null
-      ? "请先选择一篇带 PDF 的文献，再生成阅读路线。"
-      : "还没有阅读路线。";
-  const cta = buttonEl(doc, "✨ 生成阅读路线");
+      ? "请先选择一篇文献。"
+      : view === "normal" ? "还没有 AI 笔记。" : "还没有阅读路线。";
+  const cta = buttonEl(doc, view === "normal" ? "新建笔记" : "✨ 生成阅读路线");
   cta.disabled = itemID == null;
   cta.addEventListener("click", () => {
-    void generateReadingRouteFromNoteSwitcher(sidebar, cta);
+    if (view === "normal") void openCurrentItemNote(doc, itemID, cta);
+    else void generateReadingRouteFromNoteSwitcher(sidebar, cta);
   });
   empty.append(msg, cta);
   body.append(empty);
@@ -10209,7 +10248,12 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
       ])
     : [null, null];
   // The user may have switched away while the async load was in flight.
-  if (!sidebar.overviewActive) return;
+  if (
+    !sidebar.overviewActive ||
+    states.get(sidebar.mount)?.itemID !== itemID
+  ) {
+    return;
+  }
   if (!sidebar.networkDiagramBusy) {
     sidebar.networkDiagramMessages =
       storedNetworkDiagram?.workspace.messages ?? [];
@@ -10234,7 +10278,12 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
   // machines). The back stack / lock stay ephemeral.
   if (stored?.data && itemKey && sidebar.overviewNavItemKey !== itemKey) {
     const rec = await loadReading(itemKey);
-    if (!sidebar.overviewActive) return;
+    if (
+      !sidebar.overviewActive ||
+      states.get(sidebar.mount)?.itemID !== itemID
+    ) {
+      return;
+    }
     sidebar.overviewNav = {
       history: [],
       locked: false,
@@ -11483,7 +11532,7 @@ function findSidebarStateByMount(
 
 function isNoteWindowOpenForMount(mount: HTMLElement): boolean {
   const sidebar = findSidebarStateByMount(mount);
-  if (!sidebar?.noteItemID) return false;
+  if (!sidebar) return false;
   // Auto-repair: if the note column is hidden/collapsed (e.g. user dragged the
   // splitter closed instead of clicking the Close button), clear the stale state.
   const col = sidebar.noteColumn as Element & {
@@ -11509,7 +11558,7 @@ function updateOpenNoteButton(state: WindowSidebarState) {
     ".open-note-button",
   ) as HTMLButtonElement | null;
   if (!button) return;
-  const opened = !!state.noteItemID;
+  const opened = isNoteColumnVisible(state);
   button.textContent = opened ? "关闭笔记" : "打开笔记";
   button.title = opened
     ? "关闭笔记列"
@@ -11519,7 +11568,8 @@ function updateOpenNoteButton(state: WindowSidebarState) {
 
 function closeCurrentNoteWindow(mount: HTMLElement): void {
   const sidebar = findSidebarStateByMount(mount);
-  if (!sidebar?.noteItemID) return;
+  if (!sidebar) return;
+  sidebar.overviewActive = false;
   const editor = findActiveNoteEditor(sidebar);
   const closeBtn = sidebar.noteMount.querySelector(
     ".zai-note-window-button:last-of-type",
@@ -12626,9 +12676,33 @@ function installDockedFrameSync(
     alignDockedColumnToWindow(entry, sidebar);
     fitDockedWorkspaceToWindow(entry, sidebar);
   };
+  let frame = 0;
+  const scheduleSync = () => {
+    if (frame) entry.mainWindow.cancelAnimationFrame?.(frame);
+    frame =
+      entry.mainWindow.requestAnimationFrame?.(() => {
+        frame = 0;
+        sync();
+      }) ?? 0;
+  };
+  // Startup may measure the XUL layout before the sidebar CSS takes effect.
+  const stylesheets: Element[] = [];
+  for (const column of [sidebar.column, sidebar.noteColumn]) {
+    for (const link of (column as HTMLElement).querySelectorAll(
+      'link[rel="stylesheet"]',
+    )) {
+      stylesheets.push(link);
+    }
+  }
+  for (const stylesheet of stylesheets) {
+    stylesheet.addEventListener("load", scheduleSync);
+  }
   entry.mainWindow.addEventListener("resize", sync);
-  const frame = entry.mainWindow.requestAnimationFrame?.(sync) ?? 0;
+  scheduleSync();
   return () => {
+    for (const stylesheet of stylesheets) {
+      stylesheet.removeEventListener("load", scheduleSync);
+    }
     entry.mainWindow.removeEventListener("resize", sync);
     if (frame) entry.mainWindow.cancelAnimationFrame?.(frame);
     for (const element of [
@@ -14187,8 +14261,15 @@ function renderWindowSidebar(win: Window) {
   if (itemID !== previousItemID) {
     if (state.fullTranslationActive) {
       void showFullTranslation(state);
-    } else if (state.noteItemID) {
-      switchNoteForItem(state, itemID);
+    } else if (state.overviewActive) {
+      state.noteMount.replaceChildren();
+      void showOverviewWindow(state);
+    } else if (isNoteColumnVisible(state)) {
+      if (state.noteMount.dataset.noteView === "readingRoute") {
+        void openRouteView(state);
+      } else {
+        switchNoteForItem(state, itemID);
+      }
     }
     void migrateTranslateModeOnReaderSwitch(win);
     void migrateAskModeOnReaderSwitch(win);
@@ -14210,11 +14291,7 @@ function switchNoteForItem(
     sidebar.noteItemID = note.id;
     renderNoteWindow(sidebar, note);
   } else {
-    sidebar.noteItemID = undefined;
-    sidebar.noteEditorCleanup?.();
-    sidebar.noteEditorCleanup = undefined;
-    sidebar.noteMount.replaceChildren();
-    setNoteColumnVisible(sidebar, false);
+    renderEmptyNoteView(sidebar, "normal");
   }
   updateOpenNoteButton(sidebar);
 }

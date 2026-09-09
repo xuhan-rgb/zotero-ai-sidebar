@@ -18,6 +18,16 @@ import {
   type PanelState,
 } from "./sidebar-state";
 
+const scrollUpdates = new WeakMap<HTMLElement, object>();
+
+function beginScrollUpdate(mount: HTMLElement): () => boolean {
+  const update = {};
+  const messages = mount.querySelector(".messages");
+  scrollUpdates.set(mount, update);
+  return () => scrollUpdates.get(mount) === update &&
+    mount.querySelector(".messages") === messages;
+}
+
 export function scrollMessagesToBottom(mount: HTMLElement) {
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!messages) return;
@@ -109,18 +119,20 @@ export function scheduleMessagesScrollRestore(
   mount: HTMLElement,
   snapshot: MessagesScrollSnapshot | null,
 ) {
-  restoreMessagesScrollSnapshot(mount, snapshot);
+  const isCurrent = beginScrollUpdate(mount);
+  const restore = () => {
+    if (isCurrent()) restoreMessagesScrollSnapshot(mount, snapshot);
+  };
+  restore();
   const win = mount.ownerDocument?.defaultView;
   if (!win) return;
   win.requestAnimationFrame(() => {
-    restoreMessagesScrollSnapshot(mount, snapshot);
-    win.requestAnimationFrame(() =>
-      restoreMessagesScrollSnapshot(mount, snapshot),
-    );
+    restore();
+    win.requestAnimationFrame(restore);
   });
-  win.setTimeout(() => restoreMessagesScrollSnapshot(mount, snapshot), 0);
-  win.setTimeout(() => restoreMessagesScrollSnapshot(mount, snapshot), 80);
-  win.setTimeout(() => restoreMessagesScrollSnapshot(mount, snapshot), 250);
+  win.setTimeout(restore, 0);
+  win.setTimeout(restore, 80);
+  win.setTimeout(restore, 250);
 }
 
 export function preserveMessagesScroll(
@@ -143,14 +155,17 @@ export function preserveStreamingMessagesScroll(
   followBottom: boolean,
   mutate: () => void,
 ) {
+  beginScrollUpdate(mount);
   const snapshot = captureMessagesScrollSnapshot(mount);
   mutate();
   if (!snapshot) return;
   const intended = followBottom ? { ...snapshot, atBottom: true } : snapshot;
   restoreMessagesScrollSnapshot(mount, intended);
+  const isCurrent = beginScrollUpdate(mount);
   const win = mount.ownerDocument?.defaultView;
   if (!win) return;
   win.requestAnimationFrame(() => {
+    if (!isCurrent()) return;
     const messages = mount.querySelector(".messages") as HTMLElement | null;
     if (!messages) return;
     if (followBottom || (snapshot.top > 0 && messages.scrollTop === 0)) {
@@ -197,4 +212,13 @@ export function restoreMessagesScroll(
     return;
   }
   messages.scrollTop = state.messagesScrollTop;
+}
+
+// Preserve the independent scroll position inside a streaming thinking block.
+export function preserveThinkingScroll(body: HTMLElement, mutate: () => void) {
+  const top = body.scrollTop;
+  const followBottom = isMessagesElementNearBottom(body);
+  mutate();
+  const maxTop = Math.max(0, body.scrollHeight - body.clientHeight);
+  body.scrollTop = followBottom ? maxTop : Math.min(top, maxTop);
 }

@@ -705,7 +705,7 @@ export function makePreset(provider: ProviderKind): ModelPreset {
     apiKey: "",
     baseUrl: DEFAULT_BASE_URLS[provider],
     model: DEFAULT_MODELS[provider],
-    maxTokens: 8192,
+    maxTokens: 32768,
     extras:
       provider === "openai"
         ? {

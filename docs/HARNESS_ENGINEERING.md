@@ -9,6 +9,9 @@ harness enforcement.
 - The harness exposes tool contracts, validates arguments, executes tools, and
   enforces budget limits.
 - The harness must not use local semantic keyword rules to infer user intent.
+- Attaching PDF text, LaTeX text, or an arXiv TOC preserves the complete session
+  tool list. Pinned context does not disable reading or rendering capabilities;
+  write permissions remain enforced when tools execute.
 - Tool calls are structured function calls. If parsing or validation fails, the
   harness returns structured tool errors rather than guessing a replacement
   tool.
@@ -134,7 +137,48 @@ Repository source bodies are transient tool output. Sync stores only the fixed
 repository reference, graph revisions, independent conversation and evidence
 pointers, so WebDAV never becomes a source-code mirror.
 
+## LaTeX source connections
+
+The paper header exposes retry and proxy settings for arXiv source downloads.
+URL and DOI metadata must identify arXiv before their identifiers are parsed;
+publisher document URLs must not trigger an arXiv source download.
+The per-profile `latexProxy` preference has only `system` (default) and `direct`
+modes. System mode reads the operating system proxy configuration for each new
+download and redirect, so address/port changes require no plugin configuration
+or restart. It respects the native proxy/bypass list; PAC script configurations
+currently report an explicit unsupported error. Direct mode bypasses proxies
+even if Zotero has a manual proxy configured. Old custom/Zotero preferences
+migrate to system mode. The proxy form displays the current system port and
+allows an optional validated `portOverride` for the primary proxy. This changes
+only LaTeX downloads; the host still comes from the operating system. Restoring
+system mode's automatic port removes the override when saved, so subsequent
+downloads follow system port changes again.
+A temporary channel filter passes all unrelated requests through unchanged and
+is unregistered when the download settles. No global Zotero proxy preferences
+are changed.
+
+Downloads are shared across header checks and explicit source consumers such as
+translation for the same arXiv ID and connection settings. Saving a different connection permits an
+immediate retry; an old connection's late error cannot replace the new status.
+Every source request checks for a completed cache before joining an in-flight
+download. A fresh cache written by another worker wins over the old promise;
+late errors from that old request cannot replace the ready-cache status.
+The existing download timeout and source-size limits still apply. Chat preparation
+never starts or waits for a LaTeX download. It reads completed local source caches
+only; when no source is ready it uses local PDF text, subject to the existing
+full-text/selection controls. Header downloads may finish in the background and
+make source context available to later turns.
+
 ## Policy
+
+Stopping a chat turn also interrupts its waits for local arXiv cache reads,
+system context, pinned text, and debug-file output. Late completion of those
+operations must not send a model request for the cancelled turn. Background
+paper-cache work may finish independently after the chat stops waiting.
+The preparation indicator names the current local operation. Each completed or
+cancelled preparation stage emits `chat.prepare.stage` to Zotero's debug log,
+with item/task IDs, elapsed milliseconds and cancellation state, but no message
+body or credentials.
 
 All size and count limits live in `src/context/policy.ts`. Runtime logic should
 not contain scattered magic numbers for context budgets. If a new Zotero tool

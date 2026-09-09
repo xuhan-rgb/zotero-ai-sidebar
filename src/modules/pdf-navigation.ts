@@ -12,6 +12,7 @@ import {
   getReaderPdfApp,
   getSharedPdfLocator,
   type LocateResult,
+  type PdfLocator,
   type PdfRect,
 } from "../context/pdf-locator";
 import type { PdfSelectionLocator } from "../providers/types";
@@ -427,14 +428,10 @@ export async function jumpToOverviewSection(
     // outline yields them — only a text-needle locate does. Shared (cached)
     // locator: extraction happens once per Reader, repeats are fast.
     const pdfLocator = await getSharedPdfLocator(reader);
-    let result: LocateResult | null = null;
-    for (const needle of await sectionLocateNeedles(state.itemID, section)) {
-      const hit = await pdfLocator.locate(needle, { minConfidence: 0.5 });
-      if (hit) {
-        result = hit;
-        break;
-      }
-    }
+    const result = await locateOverviewSection(
+      pdfLocator,
+      await sectionLocateNeedles(state.itemID, section),
+    );
     const locator = result
       ? pdfSelectionLocatorFromLocateResult(
           pdfLocator.attachmentID,
@@ -477,11 +474,19 @@ export async function jumpToOverviewSection(
   }
 }
 
-// Build locate needles, most accurate first. For arXiv items we have the
-// LaTeX source, so the section's first body sentence (long & near-unique)
-// pinpoints the section far better than a short heading title. Title-based
-// candidates remain as fallbacks for non-arXiv PDFs or when the body match
-// fails.
+export async function locateOverviewSection(
+  pdfLocator: PdfLocator,
+  needles: string[],
+): Promise<LocateResult | null> {
+  for (const needle of needles) {
+    const hit = await pdfLocator.locate(needle, { exactWholeWords: true });
+    if (hit) return hit;
+  }
+  return null;
+}
+
+// Prefer the numbered heading and title so section clicks highlight the heading.
+// The first LaTeX body sentence is a fallback when the heading cannot be found.
 // Cache parsed LaTeX sections per arXiv id so repeated section clicks don't
 // re-read and re-parse the source each time.
 const overviewSectionCache = new Map<string, Promise<TexSection[] | null>>();
@@ -502,6 +507,10 @@ export async function sectionLocateNeedles(
   section: OverviewSection,
 ): Promise<string[]> {
   const needles: string[] = [];
+  const title = section.title.trim();
+  const no = section.no?.trim() ?? "";
+  if (/^[\d.]+$/.test(no)) needles.push(`${no} ${title}`, `${no}. ${title}`);
+  needles.push(title);
   const arxivId = resolveArxivIdForItemID(itemID);
   if (arxivId) {
     try {
@@ -514,13 +523,9 @@ export async function sectionLocateNeedles(
         if (hint) needles.push(hint);
       }
     } catch {
-      // Fall through to title-based candidates.
+      // Keep the heading candidates when the LaTeX source is unavailable.
     }
   }
-  const title = section.title.trim();
-  const no = section.no?.trim() ?? "";
-  if (/^[\d.]+$/.test(no)) needles.push(`${no} ${title}`, `${no}. ${title}`);
-  needles.push(title);
   return needles.filter((s) => s.trim().length >= 3);
 }
 

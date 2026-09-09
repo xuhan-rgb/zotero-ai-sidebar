@@ -1827,6 +1827,72 @@ button:disabled,
   text-decoration: underline;
 }
 
+.latex-source-controls {
+  display: contents;
+}
+
+.latex-source-toolbar {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.latex-proxy-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  flex-basis: 100%;
+  padding: 8px;
+  border: 1px solid var(--zai-border);
+  border-radius: 8px;
+}
+
+.latex-proxy-settings > span {
+  flex-basis: 100%;
+}
+
+.latex-proxy-port input {
+  width: 84px;
+  margin-left: 6px;
+}
+
+.latex-proxy-error {
+  color: #b42318;
+}
+
+.latex-proxy-error:empty {
+  display: none;
+}
+
+.latex-proxy-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.latex-proxy-submit-actions {
+  display: inline-flex;
+  gap: 8px;
+  margin-left: auto;
+}
+
+.latex-proxy-actions button {
+  padding: 5px 10px;
+  border-radius: 6px;
+  white-space: nowrap;
+  font-size: 12px;
+}
+
+.latex-proxy-actions .latex-proxy-save,
+.latex-proxy-actions .latex-proxy-save:hover {
+  background: var(--zai-accent-strong);
+  border-color: var(--zai-accent-strong);
+  color: #fff;
+}
+
 .arxiv-source-badge {
   display: inline-block;
   padding: 1px 7px;

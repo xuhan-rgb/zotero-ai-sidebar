@@ -107,7 +107,13 @@ export interface PdfLocator {
   ): Promise<string | null>;
   locate(
     needle: string,
-    opts?: { minConfidence?: number; pageIndex?: number; exactOnly?: boolean },
+    opts?: {
+      minConfidence?: number;
+      pageIndex?: number;
+      exactOnly?: boolean;
+      // Exact contiguous text with word boundaries; no fuzzy/interrupted match.
+      exactWholeWords?: boolean;
+    },
   ): Promise<LocateResult | null>;
   renderRegion(
     pageIndex: number,
@@ -396,7 +402,8 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
       // exactOnly callers want the cheap O(N) substring pass only. Skipping
       // the O(N·k) fuzzy stage lets a multi-candidate locate try EVERY
       // candidate's exact match before any single one pays for fuzzy.
-      const exactOnly = opts?.exactOnly === true;
+      const exactWholeWords = opts?.exactWholeWords === true;
+      const exactOnly = opts?.exactOnly === true || exactWholeWords;
       const pageIndexes =
         typeof opts?.pageIndex === "number" &&
         Number.isInteger(opts.pageIndex) &&
@@ -413,7 +420,24 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
         const page = await bundleFor(pageIndex);
         if (!page || !page.normalizedText) continue;
 
-        const exactIndex = page.normalizedText.indexOf(normalizedNeedle);
+        let exactIndex = page.normalizedText.indexOf(normalizedNeedle);
+        if (exactWholeWords) {
+          const isWord = (char: string): boolean => /[\p{L}\p{N}_]/u.test(char);
+          while (exactIndex >= 0) {
+            const end = exactIndex + normalizedNeedle.length;
+            const startsInsideWord =
+              isWord(normalizedNeedle.charAt(0)) &&
+              isWord(page.normalizedText.charAt(exactIndex - 1));
+            const endsInsideWord =
+              isWord(normalizedNeedle.charAt(normalizedNeedle.length - 1)) &&
+              isWord(page.normalizedText.charAt(end));
+            if (!startsInsideWord && !endsInsideWord) break;
+            exactIndex = page.normalizedText.indexOf(
+              normalizedNeedle,
+              exactIndex + 1,
+            );
+          }
+        }
         if (exactIndex >= 0) {
           return locateOnPage(
             page,
@@ -423,6 +447,8 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
             await cumulativeOffset(pageIndex),
           );
         }
+
+        if (exactWholeWords) continue;
 
         const interrupted = interruptedExactRanges(
           page.normalizedText,
@@ -439,7 +465,7 @@ export async function createPdfLocator(reader: unknown): Promise<PdfLocator> {
 
         if (exactOnly) continue;
 
-        const fuzzy = fuzzyNormalizedMatch(page, normalizedNeedle);
+        const fuzzy = await fuzzyNormalizedMatch(page, normalizedNeedle);
         if (
           fuzzy &&
           fuzzy.confidence >= minConfidence &&
@@ -1419,17 +1445,22 @@ function debugTextInfo(text: string): { length: number; head: string } {
 // absorbed by Levenshtein insertions/deletions on the boundaries.
 // GOTCHA: this CANNOT find a match shorter than `needleLength` — by design,
 // since the caller wants a passage of roughly the needle's size.
-function fuzzyNormalizedMatch(
+async function fuzzyNormalizedMatch(
   page: PageBundle,
   normalizedNeedle: string,
-): NormalizedMatch | null {
+): Promise<NormalizedMatch | null> {
   const haystack = page.normalizedText;
   const needleLength = normalizedNeedle.length;
   if (!haystack || needleLength === 0) return null;
 
   const step = Math.max(1, Math.floor(needleLength / 4));
   let best: NormalizedMatch | null = null;
+  let lastYield = Date.now();
   for (let start = 0; start < haystack.length; start += step) {
+    if (Date.now() - lastYield > 16) {
+      await delay(0);
+      lastYield = Date.now();
+    }
     const end = Math.min(haystack.length, start + needleLength);
     if (end <= start) continue;
     const candidate = haystack.slice(start, end);

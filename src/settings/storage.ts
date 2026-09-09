@@ -30,6 +30,15 @@ export interface PrefsStore {
 }
 
 const KEY = 'extensions.zotero-ai-sidebar.presets';
+const SELECTED_PRESET_KEY = 'extensions.zotero-ai-sidebar.selectedPresetID';
+
+export function loadSelectedPresetID(prefs: PrefsStore): string | null {
+  return prefs.get(SELECTED_PRESET_KEY) || null;
+}
+
+export function saveSelectedPresetID(prefs: PrefsStore, id: string): void {
+  prefs.set(SELECTED_PRESET_KEY, id);
+}
 
 export function loadPresets(prefs: PrefsStore): ModelPreset[] {
   const raw = prefs.get(KEY);
@@ -84,7 +93,7 @@ function normalizePreset(value: unknown): ModelPreset | null {
     baseUrl,
     model,
     models,
-    maxTokens: Number(preset.maxTokens || 8192),
+    maxTokens: Number(preset.maxTokens || 32768),
     extras: normalizeExtras(provider, preset.extras, baseUrl, model),
   };
 }

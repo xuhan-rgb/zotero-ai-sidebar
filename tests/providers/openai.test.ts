@@ -25,6 +25,7 @@ const requestLog = vi.hoisted(() => ({
   retry5xxRemaining: 0,
   retry5xxRequestNumbers: [] as number[],
   incompleteResponsesRemaining: 0,
+  incompleteThinkingOnly: false,
   unterminatedResponsesRemaining: 0,
 }));
 
@@ -89,8 +90,10 @@ vi.mock("openai", async (importOriginal) => {
           requestLog.incompleteResponsesRemaining -= 1;
           return (async function* () {
             yield {
-              type: "response.output_text.delta",
-              delta: "Partial answer",
+              type: requestLog.incompleteThinkingOnly
+                ? "response.reasoning_summary_text.delta"
+                : "response.output_text.delta",
+              delta: requestLog.incompleteThinkingOnly ? "Thinking" : "Partial answer",
             };
             yield {
               type: "response.incomplete",
@@ -249,6 +252,7 @@ describe("OpenAIProvider", () => {
     requestLog.retry5xxRemaining = 0;
     requestLog.retry5xxRequestNumbers = [];
     requestLog.incompleteResponsesRemaining = 0;
+    requestLog.incompleteThinkingOnly = false;
     requestLog.unterminatedResponsesRemaining = 0;
     relayRoutingStore = "{}";
     // Provide a Zotero global so loadRelaySalt / persistRelaySalt have a
@@ -637,6 +641,25 @@ describe("OpenAIProvider", () => {
         output: "[Paper full text]\ncontent",
       },
     ]);
+  });
+
+  it("reports output exhaustion before any answer without claiming a continuation", async () => {
+    requestLog.incompleteResponsesRemaining = 1;
+    requestLog.incompleteThinkingOnly = true;
+    const got: StreamChunk[] = [];
+    for await (const chunk of new OpenAIProvider().stream(
+      [{ role: "user", content: "Explain this" }], "be helpful", preset,
+      new AbortController().signal,
+      { toolSettings: { webSearchMode: "live", mcpServers: [], arxivMcp: {
+        enabled: false, serverLabel: "arxiv", serverUrl: "",
+        allowedTools: [], requireApproval: "never",
+      } } },
+    )) got.push(chunk);
+    expect(got).toContainEqual({
+      type: "error",
+      message: "本轮尚未生成正文就达到输出上限，已保留已接收的内容。请在模型设置中提高最大输出 Token；也可降低思考强度后重试。",
+    });
+    expect(requestLog.requests).toHaveLength(1);
   });
 
   it("continues a tool-enabled response truncated by max output tokens", async () => {

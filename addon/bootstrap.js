@@ -26,6 +26,8 @@ async function startup({ id, version, resourceURI, rootURI }, reason) {
    */
   const window = Zotero.getMainWindow();
   const ctx = {
+    Components,
+    ChromeUtils,
     rootURI,
     window,
     document: window?.document,

@@ -6,23 +6,48 @@ import {
 } from "../../src/context/arxiv-id";
 
 describe("resolveArxivId", () => {
+  it("does not treat publisher document URLs as legacy arXiv IDs", () => {
+    expect(
+      resolveArxivId({ url: "https://ieeexplore.ieee.org/document/9417526" }),
+    ).toBeNull();
+    expect(
+      resolveArxivId({ url: "https://example.com/document/9410526" }),
+    ).toBeNull();
+    expect(resolveArxivId({ doi: "10.1234/document/9410526" })).toBeNull();
+  });
+
   it("reads a new-style id from the Extra field", () => {
-    expect(resolveArxivId({ extra: "arXiv: 2504.16054\nfoo: bar" })).toBe("2504.16054");
+    expect(resolveArxivId({ extra: "arXiv: 2504.16054\nfoo: bar" })).toBe(
+      "2504.16054",
+    );
   });
   it("reads an id with a version suffix", () => {
-    expect(resolveArxivId({ extra: "tex.eprint: 2504.16054v1" })).toBe("2504.16054v1");
+    expect(resolveArxivId({ extra: "tex.eprint: 2504.16054v1" })).toBe(
+      "2504.16054v1",
+    );
   });
   it("reads an id from an arxiv abs/pdf url", () => {
-    expect(resolveArxivId({ url: "https://arxiv.org/abs/2504.16054" })).toBe("2504.16054");
+    expect(resolveArxivId({ url: "https://arxiv.org/abs/2504.16054" })).toBe(
+      "2504.16054",
+    );
   });
   it("reads an id from a 10.48550 arXiv DOI", () => {
-    expect(resolveArxivId({ doi: "10.48550/arXiv.2504.16054" })).toBe("2504.16054");
+    expect(resolveArxivId({ doi: "10.48550/arXiv.2504.16054" })).toBe(
+      "2504.16054",
+    );
   });
   it("reads a legacy-style id", () => {
-    expect(resolveArxivId({ url: "https://arxiv.org/abs/hep-th/9901001" })).toBe("hep-th/9901001");
+    expect(
+      resolveArxivId({ url: "https://arxiv.org/abs/hep-th/9901001" }),
+    ).toBe("hep-th/9901001");
   });
   it("returns null for non-arxiv metadata", () => {
-    expect(resolveArxivId({ doi: "10.1145/3534678.3539043", url: "https://example.com" })).toBeNull();
+    expect(
+      resolveArxivId({
+        doi: "10.1145/3534678.3539043",
+        url: "https://example.com",
+      }),
+    ).toBeNull();
   });
 
   it("resolves the same shared arXiv id for different Zotero item keys", () => {

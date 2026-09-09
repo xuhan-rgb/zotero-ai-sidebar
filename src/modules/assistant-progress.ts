@@ -53,11 +53,13 @@ export function assistantProgressFor(
     case "building_context":
       return {
         label: readingRoute ? "正在准备阅读路线" : "正在整理上下文",
-        detail: readingRoute
-          ? "正在准备题录、PDF 正文和阅读路线工具上下文"
-          : selectedText
-          ? `已带入 PDF 选区 ${selectedText.length} 字`
-          : "正在准备系统提示和可用 Zotero 工具",
+        detail:
+          state.activeAssistantDetail ||
+          (readingRoute
+            ? "正在准备题录、PDF 正文和阅读路线工具上下文"
+            : selectedText
+              ? `已带入 PDF 选区 ${selectedText.length} 字`
+              : "正在准备系统提示和可用 Zotero 工具"),
       };
     case "waiting_model":
       return {

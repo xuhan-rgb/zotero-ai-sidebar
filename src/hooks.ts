@@ -2057,7 +2057,7 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
     preset.model,
     preset.id,
   );
-  const maxTokens = input(doc, String(preset.maxTokens || 8192), "number");
+  const maxTokens = input(doc, String(preset.maxTokens || 32768), "number");
   maxTokens.dataset.field = "maxTokens";
   maxTokens.classList.add("zai-number-input");
   const reasoningSummary = select(
@@ -2783,7 +2783,7 @@ function readPresetControls(doc: Document): ModelPreset[] {
       baseUrl: controlValue(card, "baseUrl") || DEFAULT_BASE_URLS[provider],
       model,
       models: models.length ? models : model ? [model] : [],
-      maxTokens: Number(controlValue(card, "maxTokens")) || 8192,
+      maxTokens: Number(controlValue(card, "maxTokens")) || 32768,
       extras,
     };
   });
@@ -3503,7 +3503,7 @@ function makePreset(provider: ProviderKind): ModelPreset {
     baseUrl: DEFAULT_BASE_URLS[provider],
     model,
     models: model ? [model] : [],
-    maxTokens: 8192,
+    maxTokens: 32768,
     extras:
       provider === "openai"
         ? {

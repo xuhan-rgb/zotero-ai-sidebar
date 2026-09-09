@@ -199,7 +199,7 @@ export function newPreset(provider: ProviderKind): ModelPreset {
     baseUrl: DEFAULT_BASE_URLS[provider],
     model: defaultModel,
     models: defaultModel ? [defaultModel] : [],
-    maxTokens: 8192,
+    maxTokens: 32768,
     extras: provider === 'openai'
       ? {
           reasoningEffort: DEFAULT_REASONING_EFFORT,

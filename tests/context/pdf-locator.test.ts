@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { locateOverviewSection } from "../../src/modules/pdf-navigation";
+import { describe, expect, it, vi } from "vitest";
 import {
   createPdfLocator,
   getSharedPdfLocator,
@@ -22,6 +23,67 @@ interface FakeProcessedChar {
 }
 
 describe("pdf locator", () => {
+  it("lets UI tasks run repeatedly during a single-page fuzzy scan", async () => {
+    const locator = await createPdfLocator(readerWithPages([
+      [item("alpha beta gamma delta ".repeat(100), 0, 100)],
+    ]));
+    // Simulate an expensive scan without a machine-speed-dependent threshold.
+    let clock = 0;
+    const now = vi.spyOn(Date, "now").mockImplementation(() => (clock += 31));
+    let ticks = 0;
+    const timer = setInterval(() => { ticks++; }, 0);
+    try {
+      await locator.locate("alpha beta gamma epsilon ".repeat(5), { minConfidence: 0 });
+      expect(ticks).toBeGreaterThan(1);
+    } finally {
+      clearInterval(timer);
+      now.mockRestore();
+      locator.dispose();
+    }
+  });
+
+  it("locates 3. BYTE instead of a fuzzy match in earlier ByteTrack prose", async () => {
+    const locator = await createPdfLocator(
+      readerWithPages([
+        [
+          item(
+            "tracker named ByteTrack. For the first time, we achieve",
+            0,
+            100,
+          ),
+        ],
+        [item("3. BYTE", 0, 100)],
+      ]),
+    );
+    const hit = await locateOverviewSection(locator, [
+      "3 BYTE",
+      "3. BYTE",
+      "BYTE",
+    ]);
+    expect(hit).toMatchObject({
+      pageIndex: 1,
+      matchedText: "3. BYTE",
+      confidence: 1,
+    });
+  });
+
+  it("does not locate a short title inside ByteTrack", async () => {
+    const locator = await createPdfLocator(
+      readerWithPages([
+        [
+          item(
+            "tracker named ByteTrack. For the first time, we achieve",
+            0,
+            100,
+          ),
+        ],
+        [item("BYTE", 0, 100)],
+      ]),
+    );
+    const hit = await locateOverviewSection(locator, ["BYTE"]);
+    expect(hit).toMatchObject({ pageIndex: 1, matchedText: "BYTE" });
+  });
+
   it("exposes full text from the same PDF.js text layer used for locating", async () => {
     const locator = await createPdfLocator(
       readerWithPages([
