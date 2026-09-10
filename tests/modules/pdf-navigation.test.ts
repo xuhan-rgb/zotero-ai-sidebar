@@ -90,3 +90,11 @@ describe("overview section heading location", () => {
     expect(needles[3]).toContain("We propose a simple");
   });
 });
+
+it("uses the original WEB heading instead of a title also found in figure text", async () => {
+  const needles = await sectionLocateNeedles(null, {
+    no: "V.A", title: "Phase calibration", level: 2, charStart: 100, charEnd: 200,
+    headingText: "A. Phase calibration",
+  });
+  expect(needles).toEqual(["A. Phase calibration"]);
+});

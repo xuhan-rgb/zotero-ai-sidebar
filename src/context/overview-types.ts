@@ -30,6 +30,7 @@ export interface OverviewSection {
   charStart: number;
   charEnd: number;
   pageLabel?: string;
+  headingText?: string; // Original PDF heading, supplied by WEB extraction only.
   anchors?: string[];
   phase?: OverviewPhase;
   emphasis?: OverviewEmphasis;

@@ -1,3 +1,4 @@
+import { webPaperSessionKey, prepareWebOverview, webOverviewPrompt, parseWebOverview, webReadingRoutePrompt, parseWebReadingRoute, type WebPaperAction } from "./web-paper-actions";
 import { createFullDocumentWebTranslator } from "../translate/full-document-web";
 import { abortable } from "../utils/abortable";
 import { buildContext } from "../context/builder";
@@ -3290,6 +3291,7 @@ async function sendWebPromptMessage(
   text: string,
   provider: WebPromptProvider,
   options: {
+    paperAction?: WebPaperAction;
     explainSelection?: boolean;
     annotationBatch?: boolean;
     taskTitle?: string;
@@ -3380,8 +3382,8 @@ async function sendWebPromptMessage(
     releaseWebPromptLock();
     return;
   }
-  const chatQuote = state.chatSelectionQuote;
-  const selectedText =
+  const chatQuote = options.paperAction ? undefined : state.chatSelectionQuote;
+  const selectedText = options.paperAction ? "" :
     options.retrySelectedText?.trim() ||
     chatQuote?.excerpt.trim() ||
     selectionSnapshot?.text.trim() ||
@@ -3394,7 +3396,7 @@ async function sendWebPromptMessage(
     );
   }
   if (selectionSnapshot && selectedText) selectionSnapshot.text = selectedText;
-  const history = completedWebHistory(
+  const history = options.paperAction ? [] : completedWebHistory(
     selectConversationHistory(state.messages, state.historyMode),
   );
   const webHistory = chatQuote?.fullReply.trim()
@@ -3410,9 +3412,21 @@ async function sendWebPromptMessage(
   const title = item ? String(item.getField("title") || "") : "";
   const material = await resolveWebPaperMaterial(sourceItemID);
   const arxivToc = await buildArxivTocFrontBlock(sourceItemID);
+  let webOutline: Awaited<ReturnType<typeof prepareWebOverview>> | undefined;
+  try {
+    if (options.paperAction && !material.attachment) throw new Error("未找到可发送的论文全文，请先为条目添加 PDF。");
+    if (options.paperAction === "overview") {
+      webOutline = await prepareWebOverview({ source: zoteroContextSource, itemID: sourceItemID });
+      webOutline.title = title;
+    }
+  } catch (error) {
+    releaseWebPromptLock();
+    renderPanel(mount, state);
+    throw error;
+  }
   // Guest Z.ai conversations carry history in the existing text prompt path.
   const contextAttachment =
-    provider === "zai" && account.guest
+    options.paperAction || (provider === "zai" && account.guest)
       ? undefined
       : await createWebContextAttachment(webHistory);
   const tocAttachment = await createWebTocAttachment(arxivToc);
@@ -3425,7 +3439,10 @@ async function sendWebPromptMessage(
   }
   const annotationColorGuide =
     loadToolSettings(zoteroPrefs()).annotationColorGuide;
-  const webContent = options.annotationBatch
+  const webContent = options.paperAction === "readingRoute"
+    ? webReadingRoutePrompt(content)
+    : webOutline ? webOverviewPrompt(webOutline)
+    : options.annotationBatch
     ? webAnnotationTaskQuestion()
     : content;
   const prompt = buildWebPrompt({
@@ -3478,7 +3495,7 @@ async function sendWebPromptMessage(
     content,
     task: {
       id: "pending-web-task",
-      kind: options.annotationBatch
+      kind: options.paperAction === "readingRoute" ? "reading_route" : options.annotationBatch
         ? "full_text"
         : options.explainSelection
           ? "selection"
@@ -3487,6 +3504,7 @@ async function sendWebPromptMessage(
       promptPreview: contentPreview(content, 90),
       createdAt,
       webProvider: provider,
+      ...(options.paperAction ? { webPaperAction: options.paperAction } : {}),
       webStatus: "queued",
     },
     ...(selectedText
@@ -3514,7 +3532,7 @@ async function sendWebPromptMessage(
     content: `正在准备 ${webProviderName(state, provider)} 网页自动回答。`,
     task: {
       id: "pending-web-task",
-      kind: options.annotationBatch
+      kind: options.paperAction === "readingRoute" ? "reading_route" : options.annotationBatch
         ? "full_text"
         : options.explainSelection
           ? "selection"
@@ -3523,6 +3541,7 @@ async function sendWebPromptMessage(
       promptPreview: contentPreview(content, 90),
       createdAt,
       webProvider: provider,
+      ...(options.paperAction ? { webPaperAction: options.paperAction } : {}),
       webStatus: "queued",
     },
   };
@@ -3706,7 +3725,7 @@ async function sendWebPromptMessage(
         (message) =>
           message.role === "assistant" && message.task?.id === taskID,
       );
-      if (!source || !target) return;
+      if (!source || !target || (options.paperAction && target.task?.cancelledAt)) return;
       const importedAnswer = describeUnavailableGeneratedFiles(result.answer);
       if (result.pageNotice) {
         target.webPageNotice = true;
@@ -3715,6 +3734,35 @@ async function sendWebPromptMessage(
           importedAnswer,
           "请点击底部“账号”检查登录状态、浏览器显示方式或网页配置后重试。",
         ].join("\n\n");
+      } else if (options.paperAction) {
+        target.content = importedAnswer;
+        try {
+          if (options.paperAction === "readingRoute") {
+            const markdown = parseWebReadingRoute(importedAnswer);
+            if (states.get(mount) === state && state.itemID === sourceItemID) {
+              await saveReadingRouteAndReplaceChatMessage(mount.ownerDocument!, sourceItemID, target, markdown);
+            } else {
+              await saveReadingRouteToDedicatedNote(mount.ownerDocument!, sourceItemID, markdown);
+              target.content = "WEB 阅读路线已保存到原论文的「AI 阅读路线」笔记。";
+            }
+          } else {
+            const data = await parseWebOverview(importedAnswer, webOutline!, { source: zoteroContextSource, itemID: sourceItemID });
+            const itemKey = resolveItemKeyForCache(sourceItemID);
+            if (!itemKey) throw new Error("原论文已不可用，无法保存总览。");
+            const workspace = (await loadNetworkDiagramWorkspace(itemKey))?.workspace;
+            const revision = currentNetworkDiagramRevision(workspace);
+            const nextData = revision ? { ...data, networkTopology: detailedNetworkGraphToMindmap(revision.graph) } : data;
+            await saveOverview(itemKey, nextData);
+            await writeOverviewAttachment(mount.ownerDocument!, sourceItemID, nextData);
+            const sb = findSidebarStateByDocument(mount.ownerDocument!);
+            if (sb?.overviewActive && states.get(mount) === state && state.itemID === sourceItemID) await showOverviewWindow(sb);
+            target.content = "WEB 全文总览已生成并保存，可在「总览」中查看。";
+          }
+        } catch (error) {
+          const message = errorMessage(error);
+          target.content = `${message}\n\n${importedAnswer}`;
+          if (target.task) target.task.error = message;
+        }
       } else if (options.annotationBatch || hasWebAnnotationProtocol(importedAnswer)) {
         target.content = importedAnswer;
         const parsed = parseWebAnnotationBatch(target.content);
@@ -3790,7 +3838,7 @@ async function sendWebPromptMessage(
       provider,
       prompt,
       continuationPrompt,
-      sessionKey: webConversationKey,
+      sessionKey: webPaperSessionKey(webConversationKey, options.paperAction, task.id),
       paperUrl: material.paperUrl,
       paperTitle: title,
       hideBrowser: state.localUiSettings.hideWebBrowser,
@@ -7694,6 +7742,7 @@ async function regenerateLastResponse(mount: HTMLElement, state: PanelState) {
     await persistPanelConversations(state);
     if (states.get(mount) !== state) return;
     await sendWebPromptMessage(mount, state, userMessage.content, webProvider, {
+      paperAction: userMessage.task?.webPaperAction,
       explainSelection: userMessage.context?.explainSelection === true,
       annotationBatch: userMessage.task?.kind === "full_text",
       taskTitle: userMessage.task?.title,
@@ -9597,10 +9646,18 @@ async function generateReadingRouteFromNoteSwitcher(
   try {
     await saveVisibleNoteBeforeSwitch(sidebar);
     const prompt = loadQuickPromptSettings(zoteroPrefs()).builtIns.readingRoute;
-    await sendMessage(sidebar.mount, state, prompt, {
-      readingRoute: true,
-      taskTitle: originalText.includes("更新") ? "更新路线" : "生成路线",
-    });
+    if (state.localUiSettings.chatSendMode === "web") {
+      await sendWebPromptMessage(sidebar.mount, state, prompt, state.localUiSettings.webPromptProvider, {
+        paperAction: "readingRoute", taskTitle: "WEB · 阅读路线",
+      });
+      button.textContent = originalText;
+      button.disabled = false;
+    } else {
+      await sendMessage(sidebar.mount, state, prompt, {
+        readingRoute: true,
+        taskTitle: originalText.includes("更新") ? "更新路线" : "生成路线",
+      });
+    }
   } catch (err) {
     button.textContent = "生成失败";
     button.title = err instanceof Error ? err.message : String(err);
@@ -10976,9 +11033,15 @@ async function generateOverviewIntoPanel(
   button.textContent = "生成中...";
   button.disabled = true;
   try {
-    await sendMessage(sidebar.mount, state, OVERVIEW_PROMPT, {
-      taskTitle: "生成总览",
-    });
+    if (state.localUiSettings.chatSendMode === "web") {
+      await sendWebPromptMessage(sidebar.mount, state, "请为当前论文生成全文总览。", state.localUiSettings.webPromptProvider, {
+        paperAction: "overview", taskTitle: "WEB · 全文总览",
+      });
+    } else {
+      await sendMessage(sidebar.mount, state, OVERVIEW_PROMPT, {
+        taskTitle: "生成总览",
+      });
+    }
     // Safety net: if the model did not call render_paper_overview (so
     // onOverviewReady never re-rendered this view), restore the button so the
     // user can retry. If it did, this button was already replaced.

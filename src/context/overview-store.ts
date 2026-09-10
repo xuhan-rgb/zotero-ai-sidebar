@@ -191,6 +191,7 @@ function normalizeOverviewData(raw: unknown): OverviewData | null {
       charStart: typeof s.charStart === "number" ? s.charStart : 0,
       charEnd: typeof s.charEnd === "number" ? s.charEnd : 0,
       pageLabel: typeof s.pageLabel === "string" ? s.pageLabel : undefined,
+      ...(typeof s.headingText === "string" && s.headingText.trim() ? { headingText: s.headingText } : {}),
       anchors: Array.isArray(s.anchors)
         ? s.anchors.filter((a): a is string => typeof a === "string")
         : undefined,

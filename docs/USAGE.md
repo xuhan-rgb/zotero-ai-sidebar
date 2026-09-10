@@ -703,3 +703,15 @@ Select **WEB** in the AI chat panel, choose a website, and configure its account
 Both backends share bilingual layouts, figures, citation popups, and cached translations. Completed blocks are skipped when resuming; use the block context menu to retranslate an individual block. Full retranslation rebuilds translation state. Layout changes do not require retranslation.
 
 WEB requests batch up to 20 blocks with a target limit of 10,000 characters (an oversized block is sent alone), map responses by block ID, and wait at least 15 seconds between completed batches. Replies use text blocks with matching start/end markers, preserving LaTeX backslashes and newlines without JSON escaping. Incomplete markers or mismatched block IDs pause the run with a retry message. Protected math is validated before saving. Failed requests, timeouts, or invalid replies pause the run and preserve completed content. Cancel and check the account page for login or verification before resuming. WEB responses do not add API Token usage because websites do not supply that usage metadata. This version still requires LaTeX source; ordinary PDF translation is not yet integrated.
+
+### Reading routes and paper overviews through WEB mode
+
+Select **WEB** and a configured website in the chat panel, then use the middle panel's reading-route or overview generation button. These actions prefer the current paper's available LaTeX source and fall back to its PDF attachment, ignore incidental text selections, and require no API key.
+
+- **Reading route:** a complete response is saved to the dedicated AI reading-route note, preserving personal additions when updating. Incomplete replies remain in chat without replacing the existing note.
+- **Overview:** the plugin supplies the section outline; the website returns the narrative, section summaries, and logical graph. The plugin retains local navigation coordinates and uses the existing overview view/cache, preserving any code-derived network diagram.
+- Results belong to the paper that started the task, even after switching papers. Resolve website login or response-format errors before retrying.
+
+Switching back to **API** uses the original API generation flow, prompts, tools, and persistence logic.
+
+WEB reading routes and overviews start an independent website session for each task and upload the original paper again: English LaTeX source first, otherwise PDF. They omit chat history, selections, and chat-context TXT attachments. A section directory may accompany the source as navigation material.

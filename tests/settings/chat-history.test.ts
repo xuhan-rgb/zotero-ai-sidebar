@@ -631,3 +631,12 @@ describe('chat history', () => {
     expect(writes).toEqual([newPath]);
   });
 });
+
+it('preserves WEB paper action type so retries use the same importer', async () => {
+  await saveChatMessages(42, [{ role: 'user', content: '总览', task: {
+    id: 'web-overview', kind: 'general', title: 'WEB 总览', promptPreview: '总览',
+    createdAt: 1, webProvider: 'deepseek', webPaperAction: 'overview',
+  } }]);
+  const messages = await loadChatMessages(42);
+  expect(messages[0].task?.webPaperAction).toBe('overview');
+});

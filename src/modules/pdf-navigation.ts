@@ -444,7 +444,7 @@ export async function jumpToOverviewSection(
     // dest from the located rect; then the centered reader.navigate fallback.
     // The emphatic, pointer-dismissed highlight is mounted on every path from
     // the located rects (the outline path used to scroll with no highlight).
-    if (await jumpViaPdfOutline(reader, section)) {
+    if (!section.headingText && await jumpViaPdfOutline(reader, section)) {
       if (locator) {
         mountRouteHighlightOnReader(mount, reader, locator, { emphatic: true });
       }
@@ -506,6 +506,7 @@ export async function sectionLocateNeedles(
   itemID: number | null,
   section: OverviewSection,
 ): Promise<string[]> {
+  if (section.headingText?.trim()) return [section.headingText.trim()];
   const needles: string[] = [];
   const title = section.title.trim();
   const no = section.no?.trim() ?? "";

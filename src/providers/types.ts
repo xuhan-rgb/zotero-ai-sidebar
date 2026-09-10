@@ -99,6 +99,7 @@ export interface ChatTaskMeta {
   error?: string;
   webProvider?: WebPromptProvider;
   webStatus?: WebTaskStatus;
+  webPaperAction?: "readingRoute" | "overview";
   pdfSelection?: PdfSelectionLocator;
 }
 

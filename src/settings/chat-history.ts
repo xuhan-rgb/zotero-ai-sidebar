@@ -622,6 +622,7 @@ function normalizeChatTask(value: unknown): ChatTaskMeta | null {
     ...(error ? { error } : {}),
     ...(webProvider ? { webProvider } : {}),
     ...(webStatus ? { webStatus } : {}),
+    ...(value.webPaperAction === "readingRoute" || value.webPaperAction === "overview" ? { webPaperAction: value.webPaperAction } : {}),
     ...(pdfSelection ? { pdfSelection } : {}),
   };
 }
