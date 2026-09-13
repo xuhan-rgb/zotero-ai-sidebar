@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
+  prepareMessagesScrollRestore,
+  resetMessagesScrollForConversation,
   preserveStreamingMessagesScroll,
   preserveThinkingScroll,
   restoreMessagesScroll,
@@ -149,4 +151,128 @@ describe('thinking block auto-follow', () => {
     preserveThinkingScroll(body, () => { height = 600; });
     expect(body.scrollTop).toBe(300);
   });
+});
+
+
+describe('panel rebuild scroll snapshot', () => {
+  it('keeps the original position across consecutive replacements before restoration', () => {
+    const mount = document.createElement('div');
+    const state = { messagesScrollTop: 640, autoFollowMessages: false,
+      activeConversationID: 'a' } as PanelState;
+    states.set(mount, state);
+    const replace = () => {
+      const messages = document.createElement('div');
+      messages.className = 'messages';
+      Object.defineProperties(messages, {
+        scrollHeight: { value: 2000 }, clientHeight: { value: 300 },
+      });
+      mount.replaceChildren(messages);
+      return messages;
+    };
+    const first = prepareMessagesScrollRestore(state);
+    replace();
+    syncMessagesScrollState(mount);
+    expect(state.messagesScrollTop).toBe(640);
+    const second = prepareMessagesScrollRestore(state);
+    const messages = replace();
+    first(mount, false);
+    expect(messages.scrollTop).toBe(0);
+    second(mount, false);
+    expect(messages.scrollTop).toBe(640);
+    messages.scrollTop = 320;
+    syncMessagesScrollState(mount);
+    expect(state.messagesScrollTop).toBe(320);
+  });
+
+  it('does not reuse a snapshot from another conversation', () => {
+    const state = { messagesScrollTop: 640, activeConversationID: 'a' } as PanelState;
+    prepareMessagesScrollRestore(state);
+    state.activeConversationID = 'b';
+    state.messagesScrollTop = 90;
+    const restore = prepareMessagesScrollRestore(state);
+    const mount = document.createElement('div');
+    const messages = document.createElement('div');
+    messages.className = 'messages';
+    Object.defineProperties(messages, {
+      scrollHeight: { value: 2000 }, clientHeight: { value: 300 },
+    });
+    mount.append(messages);
+    states.set(mount, state);
+    restore(mount, false);
+    expect(messages.scrollTop).toBe(90);
+  });
+});
+
+
+it('opens a switched conversation at the end instead of restoring its old position', () => {
+  const state = { messagesScrollTop: 640, autoFollowMessages: false } as PanelState;
+  resetMessagesScrollForConversation(state);
+  expect(state.messagesScrollTop).toBe(0);
+  expect(state.scrollToBottom).toBe(true);
+  expect(state.skipNextMessagesScrollCapture).toBe(true);
+});
+
+it('still follows an explicit request to show the latest message after a rebuild', () => {
+  vi.useFakeTimers();
+  try {
+    const mount = document.createElement('div');
+    const state = { messagesScrollTop: 640, activeConversationID: 'a' } as PanelState;
+    states.set(mount, state);
+    const restore = prepareMessagesScrollRestore(state);
+    const messages = document.createElement('div');
+    messages.className = 'messages';
+    Object.defineProperties(messages, {
+      scrollHeight: { value: 2000 }, clientHeight: { value: 300 },
+    });
+    mount.append(messages);
+    restore(mount, true);
+    expect(messages.scrollTop).toBe(1700);
+    vi.runAllTimers();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('retains a pending bottom request when another render arrives before the first frame', () => {
+  vi.useFakeTimers();
+  try {
+    const mount = document.createElement('div');
+    const state = { messagesScrollTop: 0, activeConversationID: 'a',
+      scrollToBottom: true } as PanelState;
+    states.set(mount, state);
+    prepareMessagesScrollRestore(state);
+    state.scrollToBottom = false;
+    const restore = prepareMessagesScrollRestore(state);
+    const messages = document.createElement('div');
+    messages.className = 'messages';
+    Object.defineProperties(messages, {
+      scrollHeight: { value: 2000 }, clientHeight: { value: 300 },
+    });
+    mount.append(messages);
+    restore(mount, false);
+    expect(messages.scrollTop).toBe(1700);
+    vi.runAllTimers();
+  } finally {
+    vi.useRealTimers();
+  }
+});
+
+it('discards an empty loading frame snapshot when history loads the same conversation', () => {
+  const mount = document.createElement('div');
+  const state = { itemID: 1, activeConversationID: 'default', historyLoaded: true,
+    messagesScrollTop: 640, autoFollowMessages: false } as PanelState;
+  states.set(mount, state);
+  state.messagesScrollTop = 0;
+  const stale = prepareMessagesScrollRestore(state);
+  resetMessagesScrollForConversation(state);
+  const restore = prepareMessagesScrollRestore(state);
+  const messages = document.createElement('div');
+  messages.className = 'messages';
+  Object.defineProperties(messages, {
+    scrollHeight: { value: 2000 }, clientHeight: { value: 300 },
+  });
+  mount.append(messages);
+  stale(mount, false);
+  restore(mount, true);
+  expect(messages.scrollTop).toBe(1700);
 });

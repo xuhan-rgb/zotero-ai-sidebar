@@ -18,6 +18,16 @@ import {
   type PanelState,
 } from "./sidebar-state";
 
+export function resetMessagesScrollForConversation(state: PanelState) {
+  state.messagesScrollTop = 0;
+  state.autoFollowMessages = true;
+  state.scrollToBottom = true;
+  // Discard the previous conversation and any empty history-loading frame.
+  state.skipNextMessagesScrollCapture = true;
+  state.messagesScrollLock = undefined;
+  pendingRebuilds.delete(state);
+}
+
 const scrollUpdates = new WeakMap<HTMLElement, object>();
 
 function beginScrollUpdate(mount: HTMLElement): () => boolean {
@@ -67,9 +77,40 @@ function captureMessagesScrollSnapshot(
   };
 }
 
+// A new message container starts at zero. Keep the pre-rebuild position until
+// the latest render restores it, including when another render arrives first.
+const pendingRebuilds = new WeakMap<PanelState, {
+  conversationID: string;
+  snapshot: MessagesScrollSnapshot;
+}>();
+
+export function prepareMessagesScrollRestore(state: PanelState) {
+  const snapshot = activeMessagesScrollLock(state) ?? {
+    top: state.messagesScrollTop,
+    atBottom: !!state.scrollToBottom,
+  };
+  const pending = { conversationID: state.activeConversationID, snapshot };
+  pendingRebuilds.set(state, pending);
+  return (mount: HTMLElement, scrollToBottom: boolean) => {
+    if (pendingRebuilds.get(state) !== pending ||
+        state.activeConversationID !== pending.conversationID) return;
+    pendingRebuilds.delete(state);
+    const locked = activeMessagesScrollLock(state);
+    if (locked || scrollToBottom || snapshot.atBottom) {
+      scheduleMessagesScrollRestore(mount, locked ?? { ...snapshot, atBottom: true });
+    } else {
+      restoreMessagesScrollSnapshot(mount, snapshot);
+    }
+  };
+}
+
 export function activeMessagesScrollLock(
   state: PanelState | undefined,
 ): MessagesScrollSnapshot | null {
+  const pending = state && pendingRebuilds.get(state);
+  if (pending && pending.conversationID === state?.activeConversationID) {
+    return pending.snapshot;
+  }
   if (!state?.messagesScrollLock) return null;
   if (Date.now() <= state.messagesScrollLock.until) {
     return state.messagesScrollLock.snapshot;
@@ -119,6 +160,9 @@ export function scheduleMessagesScrollRestore(
   mount: HTMLElement,
   snapshot: MessagesScrollSnapshot | null,
 ) {
+  const state = states.get(mount);
+  const pending = state && pendingRebuilds.get(state);
+  if (pending && pending.conversationID === state?.activeConversationID) return;
   const isCurrent = beginScrollUpdate(mount);
   const restore = () => {
     if (isCurrent()) restoreMessagesScrollSnapshot(mount, snapshot);

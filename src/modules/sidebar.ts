@@ -503,7 +503,8 @@ import {
   preserveMessagesScroll,
   preserveStreamingMessagesScroll,
   preserveThinkingScroll,
-  restoreMessagesScroll,
+  prepareMessagesScrollRestore,
+  resetMessagesScrollForConversation,
   scheduleMessagesScrollRestore,
 } from "./message-scroll";
 import {
@@ -748,6 +749,8 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
       draftHadFocus: false,
       messagesScrollTop: 0,
       autoFollowMessages: true,
+      skipNextDraftCapture: true,
+      skipNextMessagesScrollCapture: true,
       agentPermissionMode: agentPermissionMode(presets[0]),
       copyDebugContext: false,
       uiSettings: loadUiSettings(zoteroPrefs()),
@@ -837,6 +840,9 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
   }
 
   state.renderRecoveryAttempts = 0;
+  const restoreRebuiltMessages = state.networkDiagramTarget
+    ? null
+    : prepareMessagesScrollRestore(state);
   mount.replaceChildren();
   mount.append(panel);
   const shouldScroll = state.scrollToBottom;
@@ -857,12 +863,7 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
       restoreChatInput(mount, state, !!shouldFocus);
       return;
     }
-    const lockedScroll = activeMessagesScrollLock(state);
-    if (lockedScroll) {
-      scheduleMessagesScrollRestore(mount, lockedScroll);
-    } else {
-      restoreMessagesScroll(mount, state, !!shouldScroll);
-    }
+    restoreRebuiltMessages?.(mount, !!shouldScroll);
     restoreChatInput(mount, state, !!shouldFocus);
   });
 }
@@ -948,6 +949,10 @@ function capturePanelState(mount: HTMLElement, state: PanelState) {
     }
   }
   state.skipNextDraftCapture = false;
+  if (state.skipNextMessagesScrollCapture) {
+    state.skipNextMessagesScrollCapture = false;
+    return;
+  }
 
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (messages) {
@@ -961,9 +966,10 @@ function capturePanelState(mount: HTMLElement, state: PanelState) {
     if (lockedScroll) {
       state.messagesScrollTop = lockedScroll.top;
       state.autoFollowMessages = lockedScroll.atBottom;
-      return;
+    } else {
+      state.messagesScrollTop = messages.scrollTop;
+      state.autoFollowMessages = isMessagesElementNearBottom(messages);
     }
-    state.messagesScrollTop = messages.scrollTop;
   }
 }
 
@@ -1733,9 +1739,7 @@ function applyConversation(
   );
   state.pasteBlocks = [];
   state.draftImages = [];
-  state.messagesScrollTop = 0;
-  state.autoFollowMessages = true;
-  state.scrollToBottom = true;
+  resetMessagesScrollForConversation(state);
   state.queueOpen = false;
   resetComposerPromptHistory(state);
 }
@@ -2733,6 +2737,7 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
     ? "network"
     : "normal";
   messages.addEventListener("scroll", () => {
+    if (mount.querySelector(".messages") !== messages) return;
     if (state.networkDiagramTarget) {
       state.networkDiagramMessagesScrollTop = messages.scrollTop;
       state.networkDiagramAutoFollowMessages =
@@ -7814,7 +7819,6 @@ async function loadPersistedMessages(mount: HTMLElement, state: PanelState) {
   applyConversation(state, conversation);
   state.historyLoaded = true;
   state.paperPinned = paperPinned;
-  state.scrollToBottom = true;
   if (cancelledStale > 0 || migratedLegacyWeb) {
     void persistPanelConversations(state);
   }
@@ -14570,6 +14574,14 @@ function patchItemSelection(win: Window, state: WindowSidebarState) {
   const pane = (win as any).ZoteroPane;
   if (typeof pane?.itemSelected !== "function") return;
 
+  // Host notifications can reselect the same item after saving an annotation.
+  // Only an actual paper change needs to replace the conversation panel.
+  const refreshIfItemChanged = () => {
+    const panel = states.get(state.mount);
+    if (!panel || panel.itemID !== safeSelectedItemID(win)) {
+      renderWindowSidebar(win);
+    }
+  };
   const original = pane.itemSelected;
   const patched = function patchedItemSelected(
     this: unknown,
@@ -14579,11 +14591,11 @@ function patchItemSelection(win: Window, state: WindowSidebarState) {
     try {
       result = original.apply(this, args);
     } catch (err) {
-      renderWindowSidebar(win);
+      refreshIfItemChanged();
       throw err;
     }
 
-    Promise.resolve(result).finally(() => renderWindowSidebar(win));
+    Promise.resolve(result).then(refreshIfItemChanged, refreshIfItemChanged);
     return result;
   };
 

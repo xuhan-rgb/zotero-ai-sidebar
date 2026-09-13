@@ -202,6 +202,7 @@ export interface PanelState {
   messagesScrollTop: number;
   autoFollowMessages: boolean;
   skipNextDraftCapture?: boolean;
+  skipNextMessagesScrollCapture?: boolean;
   activeAssistantIndex?: number;
   activeAssistantStage?: AssistantProgressStage;
   activeAssistantDetail?: string;
