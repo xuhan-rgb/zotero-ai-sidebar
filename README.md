@@ -88,17 +88,19 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 
 ### Optional WEB mode (Windows / Linux / macOS)
 
-WEB mode uses a local companion process and a dedicated Google Chrome profile. API mode does not need these components and is unaffected if the Web Agent is not installed.
+WEB mode uses a local companion process and a dedicated Chrome or Microsoft Edge profile. API mode does not need these components and is unaffected if the Web Agent is not installed.
 
 > The Z.ai, automatic port allocation, and login detection flows below apply to `v0.8.9`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
-Requirements: Node.js 20 or newer and Google Chrome. Linux additionally needs `xclip`:
+Requirements: Node.js 20 or newer and Google Chrome or Microsoft Edge. Linux additionally needs `xclip`:
 
 ```bash
 sudo apt install xclip
 ```
 
-After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or a custom service, and click **Account**. The dialog checks the environment automatically. Missing Node.js or Chrome dependencies include official download buttons, while a missing Linux `xclip` dependency includes copyable installation guidance; the plugin never runs an installer or system command. Once the environment is ready, **Install**, **Repair**, or **Upgrade Web Agent** downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Sign in to the selected website in the dedicated Chrome and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
+Use the small arrow next to **Account** to choose **Google Chrome** or **Microsoft Edge**, then apply the selection. The main **Account** button still opens the selected website immediately in the saved browser. Browser choice is shared by all WEB services; API mode is unaffected. Each browser keeps a separate login profile, and switching back reuses its previous profile. Browser switching is blocked while WEB tasks are running. The account dialog also shows the current browser with a change entry.
+
+After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or a custom service, and click **Account**. The dialog checks the environment automatically. Missing Node.js or browser dependencies include official download buttons, while a missing Linux `xclip` dependency includes copyable installation guidance; the plugin never runs an installer or system command. Once the environment is ready, **Install**, **Repair**, or **Upgrade Web Agent** downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Sign in to the selected website in the selected dedicated browser and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
 
 **GLM websites**: the menu has separate ChatGLM (`chatglm.cn`) and Z.ai (`chat.z.ai`) entries. ChatGLM no longer has a fixed restriction label. Z.ai supports guest text chat; attachments require login. Keep Chrome open while the plugin detects the Z.ai session, then choose **Finish and hide** or **Finish and keep visible**. The upper status box updates automatically, while the explanatory text below is fixed; the Chrome avatar does not indicate website login. See the [WEB tutorial](docs/USAGE.md#212-use-a-built-in-website-through-web-mode).
 

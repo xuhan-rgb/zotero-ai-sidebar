@@ -8216,3 +8216,23 @@ div.math-fallback {
   font: 12px/1.5 var(--zai-font);
   white-space: nowrap;
 }
+
+/* Browser selection is secondary to the one-click account action. */
+.composer-footer-actions:has(.composer-browser-picker) { overflow: visible; }
+.composer-web-account-group { display: inline-flex; align-items: center; gap: 0; }
+.composer-browser-picker { position: relative; font-size: 12px; }
+.composer-browser-picker > summary { cursor: pointer; padding: 5px 7px; list-style: none; }
+.composer-browser-menu {
+  position: absolute; bottom: 100%; right: 0; z-index: 100;
+  width: 240px; padding: 12px; display: flex; flex-direction: column; gap: 10px;
+  background: var(--zai-panel-strong); color: var(--zai-text);
+  border: 1px solid var(--zai-border); border-radius: 10px; box-shadow: 0 6px 20px #0002;
+}
+.composer-browser-picker:not([open]) > .composer-browser-menu { display: none; }
+.zai-web-account-form .composer-browser-menu { position: static; width: auto; box-shadow: none; }
+.composer-browser-menu select { width: 100%; }
+
+.composer-browser-menu input { box-sizing: border-box; width: 100%; margin-top: 5px; }
+
+.composer-browser-file-actions { display: flex; gap: 6px; }
+.composer-browser-file-actions button { flex: 1; white-space: nowrap; }

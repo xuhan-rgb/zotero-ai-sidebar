@@ -715,3 +715,14 @@ Select **WEB** and a configured website in the chat panel, then use the middle p
 Switching back to **API** uses the original API generation flow, prompts, tools, and persistence logic.
 
 WEB reading routes and overviews start an independent website session for each task and upload the original paper again: English LaTeX source first, otherwise PDF. They omit chat history, selections, and chat-context TXT attachments. A section directory may accompany the source as navigation material.
+
+
+### 选择 WEB 浏览器
+
+底部仍保留“账号”一键打开登录网页。在“账号”右侧点击小箭头，可选择 Google Chrome 或 Microsoft Edge，再点击“应用浏览器选择”。选择本身不会打开登录网页；之后点击“账号”，会使用保存的浏览器直接打开当前 AI 网站。账号弹窗顶部也有“浏览器 · 更换”入口。
+
+已有 Chrome 配置会继续使用原浏览器；首次配置只安装了 Edge 时，会自动选择 Edge。选择适用于全部 WEB 服务，不影响 API。Chrome 与 Edge 分别使用专用登录目录，第一次换浏览器需要登录，切回来会复用之前的目录。运行中的 WEB 任务或排队任务结束后才能切换浏览器。
+
+浏览器安装在自定义目录时，在同一菜单的“浏览器程序路径”中填写完整路径，或点击“选择程序文件…”选择可执行文件，再应用。Windows 选择 `chrome.exe` / `msedge.exe`；Linux 选择浏览器启动程序；macOS 选择应用包内 `Contents/MacOS/` 下的可执行文件。留空后应用可恢复自动检测。Chrome 和 Edge 的自定义路径分别保存。
+
+浏览器菜单会直接显示当前检测到或保存的完整程序路径。选择“＋ 添加其他浏览器…”，填写自定义名称并选择可执行文件，然后点击“保存并使用”；新浏览器会出现在列表中，使用独立的登录目录。自定义浏览器需要支持现有 Chromium 远程调试方式，添加路径本身不代表已验证兼容性。

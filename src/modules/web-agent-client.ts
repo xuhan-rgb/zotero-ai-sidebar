@@ -20,6 +20,8 @@ export interface WebAgentConfig {
   token: string;
   nodePath: string;
   chromePath: string;
+  browser?: string;
+  browserProfiles?: Record<string, string>;
   agentScript: string;
   profileDir: string;
   cdpPort?: number;

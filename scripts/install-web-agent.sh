@@ -8,7 +8,7 @@ install_dir="${data_root}/zotero-ai-sidebar/web-agent"
 profile_dir="${data_root}/zotero-ai-sidebar/browser-profile"
 config_path="${zotero_data_dir}/zai-web-agent-config.json"
 node_path=$(command -v node)
-chrome_path=$(command -v google-chrome || command -v google-chrome-stable)
+chrome_path=$(command -v google-chrome || command -v google-chrome-stable || command -v microsoft-edge || command -v microsoft-edge-stable)
 command -v xclip >/dev/null
 
 mkdir -p "$install_dir"

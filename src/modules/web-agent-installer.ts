@@ -9,6 +9,231 @@ import {
   type WebAgentConfig,
 } from "./web-agent-client";
 
+export type WebAgentBrowser = "chrome" | "edge";
+
+export function webAgentBrowserCandidates(
+  input: WebAgentExecutableCandidatesInput,
+  browser: WebAgentBrowser,
+): string[] {
+  if (browser === "chrome") return webAgentExecutableCandidates(input).chrome;
+  const dirs = (input.env.PATH ?? "")
+    .split(input.platform === "win32" ? ";" : ":")
+    .filter(Boolean);
+  if (input.platform === "win32")
+    return unique([
+      ...dirs.map((dir) => winJoin(dir, "msedge.exe")),
+      ...[
+        input.env.ProgramFiles,
+        input.env["ProgramFiles(x86)"],
+        input.env.LOCALAPPDATA,
+      ]
+        .filter((dir): dir is string => !!dir)
+        .map((dir) =>
+          winJoin(dir, "Microsoft", "Edge", "Application", "msedge.exe"),
+        ),
+    ]);
+  if (input.platform === "darwin")
+    return unique([
+      ...dirs.map((dir) => posixJoin(dir, "microsoft-edge")),
+      "/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge",
+      posixJoin(
+        input.homeDir,
+        "Applications",
+        "Microsoft Edge.app",
+        "Contents",
+        "MacOS",
+        "Microsoft Edge",
+      ),
+    ]);
+  return unique([
+    ...dirs.flatMap((dir) =>
+      ["microsoft-edge", "microsoft-edge-stable"].map((name) =>
+        posixJoin(dir, name),
+      ),
+    ),
+    "/usr/bin/microsoft-edge",
+    "/usr/bin/microsoft-edge-stable",
+    posixJoin(input.homeDir, ".local", "bin", "microsoft-edge"),
+  ]);
+}
+
+function configuredBrowser(config: WebAgentConfig): string {
+  return (
+    config.browser ??
+    (/msedge|microsoft[- ]edge/i.test(config.chromePath) ? "edge" : "chrome")
+  );
+}
+
+interface CustomWebBrowser {
+  browser: string;
+  name: string;
+  customPath: string;
+}
+
+async function readCustomWebBrowsers(host: WebAgentInstallerHost): Promise<CustomWebBrowser[]> {
+  const text = await readOptionalUTF8(host, nativeJoin(host.platform, host.dataDir, "zai-web-custom-browsers.json"));
+  if (!text) return [];
+  const entries = JSON.parse(text);
+  if (!Array.isArray(entries)) throw new Error("自定义浏览器配置格式错误");
+  return entries.filter(entry => /^custom-[a-z0-9-]+$/.test(entry.browser)
+    && typeof entry.name === "string" && typeof entry.customPath === "string");
+}
+
+export async function addWebAgentBrowser(
+  name: string,
+  path: string,
+  host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
+): Promise<void> {
+  if (!name.trim()) throw new Error("请填写浏览器名称");
+  if (!path.trim()) throw new Error("请选择浏览器可执行文件");
+  const id = `custom-${host.randomToken().replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
+  await selectWebAgentBrowser(id, host, path, name.trim());
+}
+
+export async function getWebAgentBrowsers(
+  host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
+) {
+  const config = await readConfig(
+    host,
+    nativeJoin(host.platform, host.dataDir, "zai-web-agent-config.json"),
+  );
+  const preference = await readOptionalUTF8(
+    host,
+    nativeJoin(host.platform, host.dataDir, "zai-web-browser.txt"),
+  );
+  const available: Array<CustomWebBrowser & { path?: string }> = await Promise.all(
+    (["chrome", "edge"] as const).map(async (browser) => {
+      const customPath = (await readOptionalUTF8(
+        host,
+        nativeJoin(host.platform, host.dataDir, `zai-web-browser-${browser}-path.txt`),
+      ))?.trim() ?? "";
+      return {
+        browser,
+        name: browser === "edge" ? "Microsoft Edge" : "Google Chrome",
+        customPath,
+        path: await firstExisting(host, customPath ? [customPath] : [
+          ...(config && configuredBrowser(config) === browser ? [config.chromePath] : []),
+          ...webAgentBrowserCandidates(host, browser),
+        ]),
+      };
+    }),
+  );
+  for (const entry of await readCustomWebBrowsers(host)) {
+    available.push({ ...entry, path: await firstExisting(host, [entry.customPath]) });
+  }
+  const saved = config ? configuredBrowser(config) : preference?.trim();
+  const selected = available.some(entry => entry.browser === saved)
+    ? saved! : (available.find(entry => entry.path)?.browser ?? "chrome");
+  return { selected, available };
+}
+
+export async function detectWebAgentBrowser(
+  browser: string,
+  host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
+): Promise<string> {
+  if (browser !== "chrome" && browser !== "edge")
+    throw new Error("自定义浏览器请使用“选择程序文件…”指定路径。");
+  const path = await firstExisting(host, webAgentBrowserCandidates(host, browser));
+  if (!path) throw new Error("未检测到浏览器，请使用“选择程序文件…”指定路径。");
+  return path;
+}
+
+export async function selectWebAgentBrowser(
+  browser: string,
+  host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
+  customPath?: string,
+  customName?: string,
+): Promise<void> {
+  const choices = await getWebAgentBrowsers(host);
+  const builtin = browser === "chrome" || browser === "edge";
+  const entry = choices.available.find(entry => entry.browser === browser);
+  if (!entry && !(customName && /^custom-[a-z0-9-]+$/.test(browser)))
+    throw new Error("浏览器配置不存在");
+  const normalizedPath = customPath?.trim().replace(/^"(.*)"$/, "$1");
+  if (normalizedPath && !(await host.exists(normalizedPath)))
+    throw new Error("浏览器程序路径不存在，请选择浏览器可执行文件。");
+  const path = normalizedPath || (customPath !== undefined
+    ? (builtin ? await firstExisting(host, webAgentBrowserCandidates(host, browser)) : undefined)
+    : choices.available.find((entry) => entry.browser === browser)?.path);
+  if (!path)
+    throw new Error(
+      `未找到 ${entry?.name ?? customName ?? browser}，请选择有效的浏览器程序路径。`,
+    );
+  const configPath = nativeJoin(
+    host.platform,
+    host.dataDir,
+    "zai-web-agent-config.json",
+  );
+  const config = await readConfig(host, configPath);
+  if (config && (configuredBrowser(config) !== browser || config.chromePath !== path)) {
+    const health = await host.health(config);
+    if (
+      Object.values(health?.active ?? {}).some(Boolean) ||
+      Object.values(health?.queued ?? {}).some((count) => count > 0)
+    ) {
+      throw new Error("WEB 任务正在运行，请等待任务完成后再切换浏览器。");
+    }
+    if (health) {
+      if (!(await host.stop(config)))
+        throw new Error("Web Agent 未能停止，浏览器设置未更改。");
+      let stopped = false;
+      for (let i = 0; i < 40; i++) {
+        await host.delay(250);
+        if (!(await host.health(config))) {
+          stopped = true;
+          break;
+        }
+      }
+      if (!stopped) throw new Error("Web Agent 尚未退出，请稍后再切换浏览器。");
+    }
+    const profiles = {
+      ...config.browserProfiles,
+      [configuredBrowser(config)]: config.profileDir,
+    };
+    const profileDir =
+      profiles[browser] ??
+      nativeJoin(
+        host.platform,
+        host.profileDir,
+        "zai-web-agent",
+        `browser-profile-${browser}`,
+      );
+    await host.makeDirectory(profileDir);
+    const next = {
+      ...config,
+      browser,
+      browserProfiles: { ...profiles, [browser]: profileDir },
+      chromePath: path,
+      profileDir,
+      port: 0,
+      cdpPort: 0,
+    };
+    await host.writeUTF8(configPath, `${JSON.stringify(next, null, 2)}\n`);
+    await host.setPermissions(configPath, 0o600).catch(() => undefined);
+    clearWebAgentConfigCache();
+  }
+  if (!builtin && normalizedPath) {
+    const entries = await readCustomWebBrowsers(host);
+    const next = { browser, name: customName ?? entry!.name, customPath: normalizedPath };
+    const index = entries.findIndex(entry => entry.browser === browser);
+    if (index < 0) entries.push(next); else entries[index] = next;
+    await host.writeUTF8(
+      nativeJoin(host.platform, host.dataDir, "zai-web-custom-browsers.json"),
+      JSON.stringify(entries, null, 2),
+    );
+  }
+  if (builtin && customPath !== undefined) {
+    await host.writeUTF8(
+      nativeJoin(host.platform, host.dataDir, `zai-web-browser-${browser}-path.txt`),
+      normalizedPath ?? "",
+    );
+  }
+  await host.writeUTF8(
+    nativeJoin(host.platform, host.dataDir, "zai-web-browser.txt"),
+    browser,
+  );
+}
+
 export type WebAgentPlatform = "linux" | "darwin" | "win32";
 
 export interface WebAgentExecutableCandidatesInput {
@@ -25,6 +250,8 @@ export interface WebAgentExecutableCandidates {
 
 export interface WebAgentHealth {
   ok: boolean;
+  active?: Record<string, unknown>;
+  queued?: Record<string, number>;
   protocolVersion?: number;
   runtimeSha256?: string;
 }
@@ -132,17 +359,20 @@ export async function inspectWebAgentInstallation(
     config?.nodePath,
     ...candidates.node,
   ]);
-  const chromePath = await firstExisting(host, [
-    config?.chromePath,
-    ...candidates.chrome,
-  ]);
+  const browsers = await getWebAgentBrowsers(host);
+  const chromePath = browsers.available.find(
+    (entry) => entry.browser === browsers.selected,
+  )?.path;
   const clipboardPath =
     host.platform === "linux"
       ? await firstExisting(host, candidates.clipboard)
       : undefined;
   const missing: string[] = [];
   if (!node) missing.push("Node.js 20+");
-  if (!chromePath) missing.push("Google Chrome");
+  if (!chromePath)
+    missing.push(
+      browsers.available.find(entry => entry.browser === browsers.selected)?.name ?? "浏览器",
+    );
   if (host.platform === "linux" && !clipboardPath) missing.push("xclip");
 
   if (missing.length > 0) {
@@ -292,7 +522,10 @@ async function installWebAgentRuntimeArchive(
     if (!previousStopped)
       throw new Error("旧 Web Agent 未能停止，请关闭 WEB 任务后重试升级");
   }
+  const browser = (await getWebAgentBrowsers(host)).selected;
   const config: WebAgentConfig = {
+    browser,
+    browserProfiles: previous?.browserProfiles,
     runtimeSha256: release.sha256,
     checkedXpiVersion: ADDON_VERSION,
     needsRuntimeUpdate: false,
@@ -306,7 +539,7 @@ async function installWebAgentRuntimeArchive(
         host.platform,
         host.profileDir,
         "zai-web-agent",
-        "browser-profile",
+        browser === "chrome" ? "browser-profile" : `browser-profile-${browser}`,
       ),
     cdpPort: 0,
     port: 0,
@@ -322,7 +555,7 @@ async function installWebAgentRuntimeArchive(
 
     newRuntimeStarted = await host.start(config);
     if (!newRuntimeStarted) {
-      throw new Error("Web Agent 启动失败，请检查 Node.js 和 Chrome 路径");
+      throw new Error("Web Agent 启动失败，请检查 Node.js 和浏览器路径");
     }
     for (let attempt = 0; attempt < 40; attempt += 1) {
       await refreshStartedConfig(host, configPath, config);

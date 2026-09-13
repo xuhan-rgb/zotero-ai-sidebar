@@ -1,3 +1,4 @@
+import { traceBrowserPicker } from "./browser-picker-debug";
 import { webPaperSessionKey, prepareWebOverview, webOverviewPrompt, parseWebOverview, webReadingRoutePrompt, parseWebReadingRoute, type WebPaperAction } from "./web-paper-actions";
 import { createFullDocumentWebTranslator } from "../translate/full-document-web";
 import { abortable } from "../utils/abortable";
@@ -235,6 +236,10 @@ import {
   openWebAccount,
 } from "./web-agent-client";
 import {
+  getWebAgentBrowsers,
+  addWebAgentBrowser,
+  detectWebAgentBrowser,
+  selectWebAgentBrowser,
   installLocalWebAgentRuntime,
   inspectWebAgentInstallation,
   repairWebAgentInstallation,
@@ -788,6 +793,9 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
 
 function renderPanel(mount: HTMLElement, state: PanelState) {
   const doc = mount.ownerDocument!;
+  for (const picker of mount.querySelectorAll(".composer-browser-picker")) {
+    traceBrowserPicker("renderPanel:will-rebuild", picker);
+  }
   const sidebar = findSidebarStateByMount(mount);
   if (migrateLegacyDeepSeekMessages(state.messages)) {
     // A sidebar can render a restored conversation before the workspace-load
@@ -973,11 +981,48 @@ function capturePanelState(mount: HTMLElement, state: PanelState) {
   }
 }
 
+let browserPickerDebugSequence = 0;
 const compactMenuOutsideClickDocuments = new WeakSet<Document>();
 
 function installCompactMenuOutsideClick(doc: Document): void {
   if (compactMenuOutsideClickDocuments.has(doc)) return;
   compactMenuOutsideClickDocuments.add(doc);
+  // Wait for a complete outside click. Native select choices can send their
+  // press to this document, then dispatch change before the final click.
+  const outsideBrowserPress = new WeakSet<Element>();
+  const inside = (event: Event, menu: Element) => {
+    const path = event.composedPath?.() ?? [];
+    if (path.includes(menu) || (event.target != null && menu.contains(event.target as Node))) return true;
+    // Gecko renders HTML select options in a separate XUL popup under window.
+    // The owning select remains focused even though that popup is not a child.
+    const active = doc.activeElement;
+    return active?.localName === "select" && menu.contains(active) && path.some(node => {
+      const element = node as Element;
+      return element.localName === "menuitem" &&
+        /(?:^|\s)ContentSelectDropdown-item-\d+(?:\s|$)/.test(element.getAttribute("class") ?? "");
+    });
+  };
+  doc.addEventListener("mousedown", (event) => {
+    for (const menu of doc.querySelectorAll("details.composer-browser-picker[open]")) {
+      traceBrowserPicker("outside-guard:check", menu, event);
+      if (inside(event, menu)) outsideBrowserPress.delete(menu);
+      else outsideBrowserPress.add(menu);
+    }
+  }, true);
+  doc.addEventListener("change", (event) => {
+    for (const menu of doc.querySelectorAll("details.composer-browser-picker[open]")) {
+      traceBrowserPicker("outside-guard:check", menu, event);
+      if (inside(event, menu)) outsideBrowserPress.delete(menu);
+    }
+  }, true);
+  doc.addEventListener("click", (event) => {
+    for (const menu of doc.querySelectorAll("details.composer-browser-picker[open]")) {
+      traceBrowserPicker(outsideBrowserPress.has(menu) && !inside(event, menu)
+        ? "outside-guard:CLOSE" : "outside-guard:keep", menu, event);
+      if (outsideBrowserPress.has(menu) && !inside(event, menu)) menu.removeAttribute("open");
+      outsideBrowserPress.delete(menu);
+    }
+  }, true);
   doc.addEventListener(
     "click",
     (event) => {
@@ -4744,6 +4789,146 @@ function renderWebPromptProviderSwitcher(
   return select;
 }
 
+function renderWebBrowserPicker(
+  doc: Document,
+  state: PanelState,
+  onChanged: () => void,
+  compact = false,
+): HTMLElement {
+  installCompactMenuOutsideClick(doc);
+  const details = el(doc, "details", "composer-browser-picker") as HTMLDetailsElement;
+  details.setAttribute("data-browser-debug-id", String(++browserPickerDebugSequence));
+  traceBrowserPicker("create", details);
+  for (const type of ["mousedown", "mouseup", "click", "input", "change", "focusin", "focusout", "keydown", "toggle"]) {
+    details.addEventListener(type, (event: Event) => traceBrowserPicker("picker:event", details, event), true);
+  }
+  const summary = el(doc, "summary", "", compact ? "▾" : "浏览器：正在检测…");
+  summary.title = "选择 WEB 浏览器";
+  summary.setAttribute("aria-label", "选择 WEB 浏览器");
+  const menu = el(doc, "div", "composer-browser-menu");
+  const select = doc.createElement("select");
+  select.setAttribute("aria-label", "WEB 浏览器");
+  const nameInput = doc.createElement("input");
+  nameInput.type = "text";
+  nameInput.setAttribute("aria-label", "浏览器名称");
+  nameInput.placeholder = "例如：我的浏览器";
+  const nameLabel = el(doc, "label", "", "浏览器名称");
+  nameLabel.append(nameInput);
+  nameLabel.hidden = true;
+  const pathInput = doc.createElement("input");
+  pathInput.type = "text";
+  pathInput.setAttribute("aria-label", "浏览器程序路径");
+  pathInput.placeholder = "留空自动检测，或输入可执行文件完整路径";
+  const pathLabel = el(doc, "label", "", "浏览器程序路径");
+  pathLabel.append(pathInput);
+  const browse = buttonEl(doc, "选择程序文件…");
+  browse.type = "button";
+  browse.addEventListener("click", () => {
+    void pickWebAgentRuntimeFile(doc, "browser").then(path => {
+      if (path) pathInput.value = path;
+    }).catch(error => { notice.textContent = errorMessage(error); });
+  });
+  const detect = buttonEl(doc, "重新检测");
+  detect.type = "button";
+  detect.className = "composer-browser-detect";
+  const fileActions = el(doc, "div", "composer-browser-file-actions");
+  fileActions.append(browse, detect);
+  const apply = buttonEl(doc, "应用浏览器选择");
+  apply.className = "composer-browser-apply";
+  apply.type = "button";
+  apply.disabled = true;
+  select.disabled = true;
+  const note = el(doc, "small", "", "适用于所有 WEB 服务。自定义浏览器须支持 Chromium 远程调试；登录状态分别保存。");
+  const notice = el(doc, "span", "");
+  notice.setAttribute("role", "status");
+  menu.append(el(doc, "strong", "", "WEB 浏览器"), select, nameLabel, pathLabel, fileActions, note, apply, notice);
+  details.append(summary, menu);
+  let selected: string = "chrome";
+  let changing = false;
+  let detectedPath: string | undefined;
+  let paths: Record<string, string> = {};
+  const showPath = () => {
+    detectedPath = undefined;
+    detect.hidden = select.value !== "chrome" && select.value !== "edge";
+    nameLabel.hidden = select.value !== "__new";
+    apply.textContent = select.value === "__new" ? "保存并使用" : "应用浏览器选择";
+    pathInput.placeholder = select.value === "__new" ? "可执行文件完整路径" : "留空自动检测，或输入可执行文件完整路径";
+    pathInput.value = paths[select.value] ?? "";
+  };
+
+  select.addEventListener("change", showPath);
+  detect.addEventListener("click", () => {
+    if (changing || state.sending) return;
+    changing = true;
+    detect.disabled = apply.disabled = select.disabled = browse.disabled = pathInput.disabled = true;
+    notice.textContent = "正在重新检测…";
+    void detectWebAgentBrowser(select.value).then(path => {
+      pathInput.value = path;
+      detectedPath = path;
+      notice.textContent = "已检测到浏览器，点击应用保存。";
+    }).catch(error => { notice.textContent = errorMessage(error); })
+      .finally(() => {
+        changing = false;
+        detect.disabled = apply.disabled = select.disabled = browse.disabled = pathInput.disabled = state.sending;
+      });
+  });
+  const refresh = async () => {
+    const choices = await getWebAgentBrowsers();
+    selected = choices.selected;
+    paths = Object.fromEntries(choices.available.map(entry => [entry.browser, entry.customPath || entry.path || ""]));
+    select.replaceChildren();
+    for (const entry of choices.available) {
+      const option = doc.createElement("option");
+      option.value = entry.browser;
+      option.textContent = `${entry.name}${entry.path ? "" : "（未安装）"}`;
+      select.append(option);
+    }
+    const addOption = doc.createElement("option");
+    addOption.value = "__new";
+    addOption.textContent = "＋ 添加其他浏览器…";
+    select.append(addOption);
+    select.value = selected;
+    showPath();
+    const selectedName = choices.available.find(entry => entry.browser === selected)?.name ?? selected;
+    if (!compact) summary.textContent = `浏览器：${selectedName} · 更换`;
+    summary.title = `当前浏览器：${selectedName}，点击更换`;
+    apply.disabled = state.sending || changing;
+    select.disabled = state.sending || changing;
+  };
+  details.addEventListener("toggle", () => {
+    if (details.open && !changing) void refresh().catch(error => { notice.textContent = errorMessage(error); });
+  });
+  apply.addEventListener("click", () => {
+    if (changing || state.sending) return;
+    if (!detectedPath && select.value === selected && pathInput.value.trim() === (paths[selected] ?? "")) { traceBrowserPicker("apply-unchanged:CLOSE", details); details.open = false; return; }
+    changing = true;
+    apply.disabled = true;
+    select.disabled = true;
+    pathInput.disabled = true;
+    browse.disabled = true;
+    detect.disabled = true;
+    notice.textContent = "正在切换浏览器…";
+    nameInput.disabled = true;
+    const operation = select.value === "__new"
+      ? addWebAgentBrowser(nameInput.value, pathInput.value)
+      : selectWebAgentBrowser(select.value, undefined, detectedPath === pathInput.value ? "" : pathInput.value.trim() === (paths[select.value] ?? "") ? undefined : pathInput.value);
+    void operation
+      .then(async () => {
+        state.webAccountConfigured = false;
+        state.webAccountNotice = "浏览器已切换，请打开账号配置完成登录";
+        await refresh();
+        notice.textContent = "已保存";
+        traceBrowserPicker("apply-saved:CLOSE", details);
+        details.open = false;
+        onChanged();
+      })
+      .catch(error => { notice.textContent = errorMessage(error); })
+      .finally(() => { changing = false; apply.disabled = state.sending; select.disabled = false; pathInput.disabled = false; browse.disabled = false; nameInput.disabled = false; detect.disabled = state.sending; });
+  });
+  void refresh().catch(error => { notice.textContent = errorMessage(error); });
+  return details;
+}
+
 function renderWebAccountButton(
   doc: Document,
   mount: HTMLElement,
@@ -4771,7 +4956,11 @@ function renderWebAccountButton(
       customProvider,
     );
   });
-  return button;
+  const group = el(doc, "span", "composer-web-account-group");
+  group.append(button, renderWebBrowserPicker(doc, state, () => {
+    renderPanel(mount, state);
+  }, true));
+  return group;
 }
 
 function configureWebAccount(
@@ -4813,7 +5002,7 @@ function configureWebAccount(
       "span",
       "zai-custom-web-provider-subtitle",
       provider === "zai"
-        ? "登录状态会自动检测，无需关闭 Chrome"
+        ? "登录状态会自动检测，无需关闭浏览器"
         : "登录网页只在配置期间显示；完成后自动回到后台运行",
     ),
   );
@@ -4878,9 +5067,9 @@ function configureWebAccount(
     "zai-web-account-explanation",
     provider === "zai"
       ? requiresLogin
-        ? "本次任务需要上传论文附件，请在 Z.ai 网页完成登录；插件会自动检测，无需关闭 Chrome。"
-        : "Z.ai 支持游客文字聊天；上传论文附件需要登录。完成登录后插件会自动识别账号，无需关闭 Chrome。"
-      : `请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示 Chrome。`,
+        ? "本次任务需要上传论文附件，请在 Z.ai 网页完成登录；插件会自动检测，无需关闭浏览器。"
+        : "Z.ai 支持游客文字聊天；上传论文附件需要登录。完成登录后插件会自动识别账号，无需关闭浏览器。"
+      : `请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示浏览器。`,
   );
   const pageNoticeExplanation = el(
     doc,
@@ -4897,11 +5086,16 @@ function configureWebAccount(
     doc,
     "small",
     "",
-    "默认开启；取消勾选后，生成回答时会显示专用 Chrome。",
+    "默认开启；取消勾选后，生成回答时会显示专用浏览器。",
   );
   optionText.append(optionHint);
   visibilityOption.append(checkbox, optionText);
   body.append(
+    renderWebBrowserPicker(doc, state, () => {
+      configured = false;
+      stopPolling();
+      void checkAndRepair(false);
+    }),
     status,
     dependencyActions,
     downloadActions,
@@ -4967,16 +5161,16 @@ function configureWebAccount(
         action.addEventListener("click", () => {
           (Zotero as any).launchURL(nodeDownloadUrl);
         });
-      } else if (missing === "Google Chrome") {
+      } else if (missing === "Google Chrome" || missing === "Microsoft Edge") {
         copy.append(
-          el(doc, "strong", "", "Google Chrome 未找到"),
+          el(doc, "strong", "", `${missing} 未找到`),
           el(doc, "small", "", "请安装到系统默认位置或加入 PATH。"),
         );
-        action = buttonEl(doc, "打开 Chrome 下载页");
+        action = buttonEl(doc, `打开 ${missing} 下载页`);
         action.addEventListener("click", () => {
-          (Zotero as any).launchURL(chromeDownloadUrl);
+          (Zotero as any).launchURL(missing === "Microsoft Edge" ? "https://www.microsoft.com/edge/download" : chromeDownloadUrl);
         });
-      } else {
+      } else if (missing === "xclip") {
         copy.append(
           el(doc, "strong", "", "Linux 剪贴板依赖 xclip 未找到"),
           el(doc, "small", "", "请按所用 Linux 发行版安装后重新检查。"),
@@ -4988,6 +5182,16 @@ function configureWebAccount(
             xclipInstallGuide,
             "web-agent-xclip-install-guide",
           ).then(() => flashButton(action, "已复制"));
+        });
+      } else {
+        copy.append(
+          el(doc, "strong", "", `${missing} 程序未找到`),
+          el(doc, "small", "", "请在浏览器配置中重新选择程序文件。"),
+        );
+        action = buttonEl(doc, "修改浏览器路径");
+        action.addEventListener("click", () => {
+          const picker = body.querySelector<HTMLDetailsElement>(".composer-browser-picker");
+          if (picker) picker.open = true;
         });
       }
       action.type = "button";
@@ -5060,7 +5264,7 @@ function configureWebAccount(
           : configured
             ? `${providerName} 已登录，可以完成并隐藏网页`
             : result.verificationRequired
-              ? `${providerName} 网站要求访问验证，请在专用 Chrome 中手动完成验证…`
+              ? `${providerName} 网站要求访问验证，请在专用浏览器 中手动完成验证…`
               : result.browserOpen
                 ? `等待在 ${providerName} 网页中完成登录…`
                 : `${providerName} 登录网页尚未打开`;
@@ -5183,7 +5387,7 @@ function configureWebAccount(
           !(requiresLogin && guest);
         state.webAccountConfigured = configured;
         state.webAccountNotice = result.verificationRequired
-          ? `${providerName} 网站要求访问验证，专用 Chrome 已保持显示，请手动完成验证`
+          ? `${providerName} 网站要求访问验证，专用浏览器 已保持显示，请手动完成验证`
           : guest
             ? "Z.ai 游客模式可用；上传论文附件需要登录"
             : configured
@@ -5242,7 +5446,10 @@ function configureWebAccount(
   void checkAndRepair(false);
 }
 
-async function pickWebAgentRuntimeFile(doc: Document): Promise<string | null> {
+async function pickWebAgentRuntimeFile(
+  doc: Document,
+  kind: "runtime" | "browser" = "runtime",
+): Promise<string | null> {
   const win = doc.defaultView;
   if (!win?.browsingContext) throw new Error("当前窗口不支持文件选择器");
   const nsFilePicker = Components.interfaces.nsIFilePicker;
@@ -5255,10 +5462,10 @@ async function pickWebAgentRuntimeFile(doc: Document): Promise<string | null> {
   const picker = filePickerClass.createInstance(nsFilePicker);
   picker.init(
     win.browsingContext,
-    "选择 Web Agent 运行包",
+    kind === "browser" ? "选择浏览器可执行文件" : "选择 Web Agent 运行包",
     nsFilePicker.modeOpen,
   );
-  picker.appendFilter("Web Agent ZIP", "*.zip");
+  if (kind === "runtime") picker.appendFilter("Web Agent ZIP", "*.zip");
   picker.appendFilters(nsFilePicker.filterAll ?? 1);
   const result = await new Promise<nsIFilePicker.ResultCode>((resolve) => {
     picker.open({ done: resolve });
