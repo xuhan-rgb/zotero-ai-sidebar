@@ -30,6 +30,15 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
+### What's new in v0.8.10
+
+- **Choose your WEB browser**: use Chrome, Microsoft Edge, or a user-named Chromium-compatible browser from the arrow next to **Account**. Detected executable paths are visible and editable; **Choose program file…** and **Detect again** help correct custom or mistaken paths. Each browser entry keeps its own login profile.
+- **Native browser dropdown fix**: selecting a browser keeps the configuration menu open; clicking outside dismisses it. Zotero's native dropdown options are recognized as part of the current selection interaction.
+- **WEB reading routes and overviews**: generate both through the selected website using an independent task session. Send available LaTeX source first, otherwise the paper PDF, without chat history or selected-text context. API generation retains its existing flow.
+- **Batched LaTeX translation**: send multiple blocks per WEB request, validate returned block markers, and pause on incomplete responses. Improve bilingual reading layout and reference interactions.
+- **Chat scroll behavior**: PDF color annotations preserve the current chat position through necessary refreshes; switching papers opens the conversation at the bottom. The fix is shared across Zotero versions.
+- **Upgrade**: install the 0.8.10 XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime; an unchanged runtime package is reused with existing login data.
+
 ### What's new in v0.8.9
 
 - **Complete algorithm displays**: LaTeX algorithm fragments share one visual region in both source and translation. Loop indentation continues across fragments; comments retain `/* … */` or `//`. Existing translations are reused. This is a reconstructed reader, not a pixel-identical LaTeX compiler.
