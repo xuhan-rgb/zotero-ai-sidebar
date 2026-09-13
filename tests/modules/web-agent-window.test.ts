@@ -133,7 +133,8 @@ describe("Web Agent browser window visibility", () => {
     expect(sidebar).toContain("安装 Web Agent");
     expect(sidebar).toContain("修复 Web Agent");
     expect(sidebar).toContain("打开 Node.js 下载页");
-    expect(sidebar).toContain("打开 Chrome 下载页");
+    expect(sidebar).toContain("打开 ${missing} 下载页");
+    expect(sidebar).toContain('missing === "Google Chrome" || missing === "Microsoft Edge"');
     expect(sidebar).toContain("复制 xclip 安装说明");
     expect(sidebar).toContain("https://nodejs.org/en/download");
     expect(sidebar).toContain("https://www.google.com/chrome/");

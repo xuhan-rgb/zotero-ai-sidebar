@@ -423,6 +423,8 @@ describe.skipIf(!existsSync(chromePath) || !process.env.DISPLAY)(
           provider: "custom:verification-fixture",
           customProvider,
         });
+        // Account status polling observes the loaded verification page before closing.
+        await expect.poll(status).toMatchObject({ verificationRequired: true });
         expect(
           await request("/browser/hide", {
             provider: "custom:verification-fixture",

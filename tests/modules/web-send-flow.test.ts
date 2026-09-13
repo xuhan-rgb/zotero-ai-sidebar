@@ -127,7 +127,7 @@ describe("WEB send flow", () => {
       '`${state.itemID ?? "global"}:${sourceConversationID}:${provider}`',
     );
     expect(sendWebPrompt).toContain("continuationPrompt");
-    expect(sendWebPrompt).toContain("sessionKey: webConversationKey");
+    expect(sendWebPrompt).toContain("sessionKey: webPaperSessionKey(webConversationKey, options.paperAction, task.id)");
     expect(sendWebPrompt).toContain(
       "const continuationPrompt = buildWebPrompt({",
     );
