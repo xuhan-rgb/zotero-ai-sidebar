@@ -88,25 +88,34 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 
 ### Optional WEB mode (Windows / Linux / macOS)
 
-WEB mode uses a local companion process and a dedicated Chrome or Microsoft Edge profile. API mode does not need these components and is unaffected if the Web Agent is not installed.
+WEB mode uses a local companion process and a dedicated browser profile. Chrome and Microsoft Edge are detected automatically; other Chromium-compatible browsers can be configured by executable path. API mode does not need these components and is unaffected if the Web Agent is not installed.
 
 > The Z.ai, automatic port allocation, and login detection flows below apply to `v0.8.9`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
-Requirements: Node.js 20 or newer and Google Chrome or Microsoft Edge. Linux additionally needs `xclip`:
+Requirements: Node.js 20 or newer and a browser supported by the Web Agent (automatically detected Chrome / Edge, or a compatible custom browser). Linux additionally needs `xclip`:
 
 ```bash
 sudo apt install xclip
 ```
 
-Use the small arrow next to **Account** to choose **Google Chrome** or **Microsoft Edge**, then apply the selection. The main **Account** button still opens the selected website immediately in the saved browser. Browser choice is shared by all WEB services; API mode is unaffected. Each browser keeps a separate login profile, and switching back reuses its previous profile. Browser switching is blocked while WEB tasks are running. The account dialog also shows the current browser with a change entry.
+**Choose and configure a browser**
+
+Open the small arrow next to **Account** (`账号 ▾`). The website selector chooses the AI service; the account menu chooses which browser runs it. The main **Account** button still opens the selected website directly in the saved browser. The account dialog also provides a browser-selection entry.
+
+- **Chrome / Edge**: choose a browser from the native dropdown. The program-path field displays the detected or saved executable path. Choosing an option keeps the configuration menu open; click **Apply browser selection** (`应用浏览器选择`) to save.
+- **Custom installation path**: edit the complete executable path or use **Choose program file…** (`选择程序文件…`). Select the browser executable, not a document or shortcut: `chrome.exe` / `msedge.exe` on Windows, the browser launcher on Linux, or the executable inside the app's `Contents/MacOS/` directory on macOS.
+- **Recover a mistaken path**: for Chrome or Edge, click **Detect again** (`重新检测`). This ignores the saved path and searches the normal installation locations and PATH. Review the result, then apply it; detection alone does not save or launch the browser.
+- **Add another browser**: choose **＋ Add another browser…** (`＋ 添加其他浏览器…`), enter a name, select its executable, and click **Save and use** (`保存并使用`). The saved entry appears in the dropdown. Custom browsers must support the existing Chromium remote-debugging connection; saving a path does not verify compatibility or add support for another browser engine.
+
+Click outside the configuration menu to dismiss it without applying changes. Browser choice is shared by all WEB services and does not affect API mode. Each browser entry has a separate login profile; switching back reuses it. Running or queued WEB tasks must finish before switching browsers. Existing Chrome configurations are preserved; a fresh setup with only Edge detected selects Edge automatically.
 
 After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or a custom service, and click **Account**. The dialog checks the environment automatically. Missing Node.js or browser dependencies include official download buttons, while a missing Linux `xclip` dependency includes copyable installation guidance; the plugin never runs an installer or system command. Once the environment is ready, **Install**, **Repair**, or **Upgrade Web Agent** downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Sign in to the selected website in the selected dedicated browser and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
 
-**GLM websites**: the menu has separate ChatGLM (`chatglm.cn`) and Z.ai (`chat.z.ai`) entries. ChatGLM no longer has a fixed restriction label. Z.ai supports guest text chat; attachments require login. Keep Chrome open while the plugin detects the Z.ai session, then choose **Finish and hide** or **Finish and keep visible**. The upper status box updates automatically, while the explanatory text below is fixed; the Chrome avatar does not indicate website login. See the [WEB tutorial](docs/USAGE.md#212-use-a-built-in-website-through-web-mode).
+**GLM websites**: the menu has separate ChatGLM (`chatglm.cn`) and Z.ai (`chat.z.ai`) entries. ChatGLM no longer has a fixed restriction label. Z.ai supports guest text chat; attachments require login. Keep the selected browser open while the plugin detects the Z.ai session, then choose **Finish and hide** or **Finish and keep visible**. The upper status box updates automatically, while the explanatory text below is fixed; the browser profile avatar does not indicate website login. See the [WEB tutorial](docs/USAGE.md#212-use-a-built-in-website-through-web-mode).
 
 Web Agent has no independent release version and uses the ZIP paired with the current XPI. Installation and explicit updates verify the ZIP size and the checksum embedded in the XPI, then record the installed checksum. After an XPI update, the recorded checksum is compared once; an identical package is reused. Normal startup, opening WEB mode, and sending messages do not download archives, scan files, or recompute checksums; only local health checks run. Legacy installations without a recorded checksum need the paired package installed once. Failed updates preserve existing files and login settings without enabling an unmatched old package.
 
-ChatGLM and Z.ai preserve their browser sessions in a minimized window when hidden. Other services close the visible window after setup and start headless Chrome as needed for background tasks. The website still runs in the dedicated profile and does not read your everyday Chrome login data. The plugin does not switch the site's fast/deep-thinking/search controls. The footer's service menu also contains **Manage third-party web pages…**; opening it does not change the active service. See [Web Agent troubleshooting](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md) for current compatibility limits.
+ChatGLM and Z.ai preserve their browser sessions in a minimized window when hidden. Other services close the visible window after setup and start the selected browser in headless mode as needed for background tasks. The website still runs in the dedicated profile and does not read your everyday browser login data. The plugin does not switch the site's fast/deep-thinking/search controls. The footer's service menu also contains **Manage third-party web pages…**; opening it does not change the active service. See [Web Agent troubleshooting](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md) for current compatibility limits.
 
 In WEB mode, paper material is attached automatically for paper-reading tasks. The composer’s **Network** and **Original** switches are API-only and therefore disabled; the website's own search state and the WEB attachment pipeline remain authoritative.
 
@@ -192,7 +201,7 @@ flowchart TB
         direction LR
         Provider[LLM provider API<br/>OpenAI / Anthropic / compatible]
         WebAgent[Local Web Agent<br/>localhost token + task queue]
-        Browser[Dedicated Chrome profile<br/>manual login + site state]
+        Browser[Dedicated browser profile<br/>Chrome / Edge / custom Chromium-compatible browser]
         Tools[Local AgentTool<br/>optional automation]
     end
 
