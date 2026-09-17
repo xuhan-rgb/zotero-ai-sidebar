@@ -381,6 +381,7 @@
 
     <div class="tip">💡 <b>三个模型选择互不覆盖</b>：研究对话使用侧边栏当前模型；Quick Ask 首次跟随研究对话，之后独立记忆；沉浸阅读使用设置页的“默认翻译模型”，arXiv 全文翻译首次继承它，之后在全文翻译顶部独立记忆。</div>
     <div class="warn-box">🔒 <b>隐私提醒</b>：API Key 和 Base URL 都是敏感信息，截图 / 分享前请打码。导出的配置 JSON 和 WebDAV 的 <span class="kbd">state.json</span> 里也含密钥，妥善保管、不要公开。</div>
+    <div class="tip">📝 <b>快捷提示词存在数据目录</b>：内置模板和自定义按钮写在 <span class="kbd">zotero-ai-sidebar-quick-prompts.json</span>（通常是主目录下的 <span class="kbd">Zotero/</span>，和 PDF 在一起），不写入 <span class="kbd">prefs.js</span>。升级后第一次启动会自动迁移旧设置；导入/导出和 WebDAV 的 <span class="kbd">state.json</span> 仍包含提示词库。</div>
   </section>
 
   <!-- ============ 3. WEB 对话 ============ -->
@@ -631,7 +632,7 @@
       <div class="step"><b>确定对话与上下文</b><p>用数字标签切换对话，用“无 / 1轮 / 全部”决定发送多少历史；API 模式还可开关“联网 / 原文”。</p></div>
       <div class="step"><b>提问并查看任务</b><p>直接输入问题，或点「总结论文 / 全文重点 / 解释选区」。生成中的任务可在“队列”查看；精读时点顶部「沉浸」，结果可继续写入笔记或 PDF 标注。</p></div>
     </div>
-    <div class="tip">💡 数据本地优先：不开同步时什么都不出本机；开了 WebDAV 才会把含预设（含 API key）、对话、批注、翻译缓存的 <b>state.json</b> 推到<b>你自己的</b>端点，不发给 zotero.org 或第三方。</div>
+    <div class="tip">💡 数据本地优先：不开同步时什么都不出本机。快捷提示词在本机是 <b>zotero-ai-sidebar-quick-prompts.json</b>，聊天记录是 <b>zotero-ai-sidebar-chat-history.json</b>，都在 Zotero 数据目录。开了 WebDAV 才会把含预设（含 API key）、提示词、对话、批注、翻译缓存的 <b>state.json</b> 推到<b>你自己的</b>端点，不发给 zotero.org 或第三方。</div>
   </section>
 
   <!-- ============ 9. 快捷键 ============ -->

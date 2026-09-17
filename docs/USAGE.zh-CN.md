@@ -485,6 +485,8 @@ Web Agent 使用独立 Chrome 配置目录和随机 localhost bearer token，不
 
 适合把高频提问做成一键操作。
 
+提示词库（内置模板、自定义按钮，以及「普通选区提问后生成建议注释」开关）保存在 Zotero 数据目录下的 `zotero-ai-sidebar-quick-prompts.json`——通常是用户主目录里的 `Zotero/`，和 PDF 在一起，**不会**写入 `prefs.js`。升级后第一次启动会把旧偏好项迁到这个文件，写成功后再清掉偏好项。配置导入/导出和 WebDAV `state.json` 仍然包含同一份提示词库。
+
 ### 3.7 笔记编辑面板
 
 目标布局：`PDF Reader | 笔记面板 | AI 聊天`。
@@ -538,6 +540,7 @@ Zotero 默认六色分别由 hex 表示。本插件把每种颜色对应到一�
 ### 3.12 聊天历史
 
 - 每篇论文一条独立线程，绑定到 itemID（跨机靠 portable 线程键迁移）。
+- 本地文件是数据目录下的 `zotero-ai-sidebar-chat-history.json`（和快捷提示词同一目录）。跨机靠 WebDAV `state.json`。
 - 单条消息保留：文本、思考块（reasoning summary）、工具 trace、图片附件元信息。
 - **复制为 Markdown** 两种模式：
   - **Clean**：论文简介 + 对话本身。适合分享、发博客。
@@ -659,6 +662,10 @@ Z.ai 的“游客模式可用”表示可以文字聊天；附件任务仍需登
 1. URL 末尾要带 `/`。
 2. 坚果云、Mailbox 等服务用 **应用专用密码** 而不是登录密码。
 3. 服务端权限：写入路径需要可创建子目录。
+
+### "Warning: attempting to write … quickPrompts"
+
+旧版把整份提示词写进偏好项 `extensions.zotero-ai-sidebar.quickPrompts`。超过大约 10KB 时，错误控制台会打这条性能警告。当前版本改为写入 `zotero-ai-sidebar-quick-prompts.json`。安装新 XPI 并重启后，再保存或切换提示词设置不应再出现该警告。提示词仍然能保存，这从来不是保存失败。
 
 ### "AI 想加批注但被挡住了"
 

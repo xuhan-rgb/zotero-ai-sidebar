@@ -67,6 +67,8 @@ import {
 } from "./translate/ask-mode";
 import {
   DEFAULT_QUICK_PROMPT_SETTINGS,
+  flushQuickPromptSettings,
+  hydrateQuickPromptSettings,
   loadQuickPromptSettings,
   normalizeQuickPromptSettings,
   saveQuickPromptSettings,
@@ -168,6 +170,11 @@ async function onStartup() {
   ]);
 
   initLocale();
+  await hydrateQuickPromptSettings(zoteroPrefs()).catch((error) =>
+    Zotero.debug(
+      `[Zotero AI Sidebar] Quick prompt storage hydrate failed: ${String(error)}`,
+    ),
+  );
   await checkWebAgentAfterXpiUpdate().catch((error) =>
     Zotero.debug(
       `[Zotero AI Sidebar] Web Agent package check failed: ${String(error)}`,
@@ -210,6 +217,11 @@ async function onMainWindowUnload(win: Window): Promise<void> {
 }
 
 async function onShutdown(isAppShutdown = false): Promise<void> {
+  await flushQuickPromptSettings().catch((error) =>
+    Zotero.debug(
+      `[Zotero AI Sidebar] Quick prompt storage flush failed: ${String(error)}`,
+    ),
+  );
   await shutdownWebAgent();
   if (isAppShutdown) return;
   unregisterWebPromptHub();

@@ -6,7 +6,10 @@ import {
 } from '../../src/translate/settings';
 import { DEFAULT_TRANSLATE_SETTINGS } from '../../src/settings/types';
 import { savePresets } from '../../src/settings/storage';
-import { saveQuickPromptSettings } from '../../src/settings/quick-prompts';
+import {
+  resetQuickPromptSettingsCache,
+  saveQuickPromptSettings,
+} from '../../src/settings/quick-prompts';
 import { saveToolSettings } from '../../src/settings/tool-settings';
 import { saveUiSettings } from '../../src/settings/ui-settings';
 import {
@@ -51,6 +54,7 @@ let files: Map<string, string>;
 
 beforeEach(() => {
   files = new Map();
+  resetQuickPromptSettingsCache();
   Object.defineProperty(globalThis, 'Zotero', {
     configurable: true,
     value: {

@@ -1,18 +1,32 @@
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it } from 'vitest';
 import type { PrefsStore } from '../../src/settings/storage';
 import {
   DEFAULT_QUICK_PROMPT_SETTINGS,
+  flushQuickPromptSettings,
+  hydrateQuickPromptSettings,
   loadQuickPromptSettings,
+  quickPromptsPath,
+  resetQuickPromptSettingsCache,
   saveQuickPromptSettings,
 } from '../../src/settings/quick-prompts';
+
+const PREF_KEY = 'extensions.zotero-ai-sidebar.quickPrompts';
 
 function memPrefs(): PrefsStore {
   const map = new Map<string, string>();
   return {
     get: (key) => map.get(key),
     set: (key, value) => map.set(key, value),
+    clear: (key) => {
+      map.delete(key);
+    },
   };
 }
+
+beforeEach(() => {
+  resetQuickPromptSettingsCache();
+  Reflect.deleteProperty(globalThis, 'Zotero');
+});
 
 describe('quick prompt settings storage', () => {
   it('returns defaults for missing or invalid settings', () => {
@@ -20,7 +34,7 @@ describe('quick prompt settings storage', () => {
       DEFAULT_QUICK_PROMPT_SETTINGS,
     );
     const prefs = memPrefs();
-    prefs.set('extensions.zotero-ai-sidebar.quickPrompts', '{bad');
+    prefs.set(PREF_KEY, '{bad');
     expect(loadQuickPromptSettings(prefs)).toEqual(
       DEFAULT_QUICK_PROMPT_SETTINGS,
     );
@@ -58,7 +72,7 @@ describe('quick prompt settings storage', () => {
   it('drops custom buttons without prompt and falls back for empty built-ins', () => {
     const prefs = memPrefs();
     prefs.set(
-      'extensions.zotero-ai-sidebar.quickPrompts',
+      PREF_KEY,
       JSON.stringify({
         builtIns: {
           summary: '',
@@ -91,7 +105,7 @@ describe('quick prompt settings storage', () => {
   it('backfills the reading route prompt for legacy built-ins', () => {
     const prefs = memPrefs();
     prefs.set(
-      'extensions.zotero-ai-sidebar.quickPrompts',
+      PREF_KEY,
       JSON.stringify({
         builtIns: {
           summary: 'summary',
@@ -109,7 +123,7 @@ describe('quick prompt settings storage', () => {
   it('keeps an explicit `false` for selectionQuestionAnnotationEnabled', () => {
     const prefs = memPrefs();
     prefs.set(
-      'extensions.zotero-ai-sidebar.quickPrompts',
+      PREF_KEY,
       JSON.stringify({ selectionQuestionAnnotationEnabled: false }),
     );
     expect(loadQuickPromptSettings(prefs).selectionQuestionAnnotationEnabled).toBe(
@@ -158,12 +172,141 @@ describe('quick prompt settings storage', () => {
   it('migrates the old annotation suggestion switch name', () => {
     const prefs = memPrefs();
     prefs.set(
-      'extensions.zotero-ai-sidebar.quickPrompts',
+      PREF_KEY,
       JSON.stringify({ annotationSuggestionColorEnabled: true }),
     );
 
     expect(loadQuickPromptSettings(prefs).selectionQuestionAnnotationEnabled).toBe(
       true,
     );
+  });
+});
+
+describe('quick prompt file storage', () => {
+  let files: Map<string, string>;
+
+  function installFileBackend(options?: {
+    writeError?: Error;
+  }): void {
+    files = new Map();
+    Object.defineProperty(globalThis, 'Zotero', {
+      configurable: true,
+      value: {
+        DataDirectory: { dir: '/tmp/zotero-data' },
+        Profile: { dir: '/tmp/zotero-profile' },
+        File: {
+          getContentsAsync: async (path: string) => {
+            const value = files.get(path);
+            if (value == null) throw new Error(`missing file: ${path}`);
+            return value;
+          },
+          putContentsAsync: async (path: string, contents: string) => {
+            if (options?.writeError) throw options.writeError;
+            files.set(path, contents);
+          },
+        },
+      },
+    });
+  }
+
+  it('writes settings to the data directory and does not keep the prefs blob', async () => {
+    installFileBackend();
+    const prefs = memPrefs();
+    saveQuickPromptSettings(prefs, {
+      ...DEFAULT_QUICK_PROMPT_SETTINGS,
+      builtIns: {
+        ...DEFAULT_QUICK_PROMPT_SETTINGS.builtIns,
+        summary: 'file summary',
+      },
+    });
+    await flushQuickPromptSettings();
+
+    expect(prefs.get(PREF_KEY)).toBeUndefined();
+    expect(files.get(quickPromptsPath())).toContain('file summary');
+    expect(loadQuickPromptSettings(prefs).builtIns.summary).toBe('file summary');
+  });
+
+  it('migrates a legacy prefs blob onto disk then clears the preference', async () => {
+    installFileBackend();
+    const prefs = memPrefs();
+    prefs.set(
+      PREF_KEY,
+      JSON.stringify({
+        builtIns: {
+          summary: 'legacy summary',
+          readingRoute: 'legacy route',
+          fullTextHighlight: 'legacy highlight',
+          explainSelection: 'legacy explain',
+        },
+        selectionQuestionAnnotationEnabled: false,
+        customButtons: [{ id: 'a', label: 'A', prompt: 'do A' }],
+      }),
+    );
+
+    await hydrateQuickPromptSettings(prefs);
+
+    expect(prefs.get(PREF_KEY)).toBeUndefined();
+    const stored = JSON.parse(files.get(quickPromptsPath()) ?? '{}');
+    expect(stored.builtIns.summary).toBe('legacy summary');
+    expect(stored.selectionQuestionAnnotationEnabled).toBe(false);
+    expect(loadQuickPromptSettings(memPrefs()).customButtons).toEqual([
+      { id: 'a', label: 'A', prompt: 'do A' },
+    ]);
+  });
+
+  it('keeps the legacy prefs blob when the file write fails', async () => {
+    installFileBackend({ writeError: new Error('disk full') });
+    const prefs = memPrefs();
+    const legacy = JSON.stringify({
+      builtIns: {
+        summary: 'keep me',
+        readingRoute: 'route',
+        fullTextHighlight: 'highlight',
+        explainSelection: 'explain',
+      },
+      selectionQuestionAnnotationEnabled: true,
+      customButtons: [],
+    });
+    prefs.set(PREF_KEY, legacy);
+
+    await hydrateQuickPromptSettings(prefs);
+
+    expect(prefs.get(PREF_KEY)).toBe(legacy);
+    expect(files.size).toBe(0);
+    expect(loadQuickPromptSettings(prefs).builtIns.summary).toBe('keep me');
+  });
+
+  it('prefers the file over a leftover prefs blob', async () => {
+    installFileBackend();
+    files.set(
+      quickPromptsPath(),
+      JSON.stringify({
+        builtIns: {
+          summary: 'from file',
+          readingRoute: 'route',
+          fullTextHighlight: 'highlight',
+          explainSelection: 'explain',
+        },
+        selectionQuestionAnnotationEnabled: true,
+        customButtons: [],
+      }),
+    );
+    const prefs = memPrefs();
+    prefs.set(
+      PREF_KEY,
+      JSON.stringify({
+        builtIns: {
+          summary: 'from prefs',
+          readingRoute: 'route',
+          fullTextHighlight: 'highlight',
+          explainSelection: 'explain',
+        },
+      }),
+    );
+
+    await hydrateQuickPromptSettings(prefs);
+
+    expect(loadQuickPromptSettings(prefs).builtIns.summary).toBe('from file');
+    expect(prefs.get(PREF_KEY)).toBeUndefined();
   });
 });

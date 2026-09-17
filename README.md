@@ -30,6 +30,11 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
+### Unreleased
+
+- **Quick prompts live in a data-directory file**: built-in and custom prompts are stored as `zotero-ai-sidebar-quick-prompts.json` next to your PDFs (usually `Zotero/` in your home folder), not as a large blob in `prefs.js`. The first launch after upgrade migrates any existing preference value and clears it only after the file write succeeds. Import/export and WebDAV `state.json` still include the prompt library.
+- **Upgrade**: install the new XPI and restart Zotero. Existing prompt edits are kept; the error-console warning about writing ~10KB to `extensions.zotero-ai-sidebar.quickPrompts` should stop after restart.
+
 ### What's new in v0.8.10
 
 - **Choose your WEB browser**: use Chrome, Microsoft Edge, or a user-named Chromium-compatible browser from the arrow next to **Account**. Detected executable paths are visible and editable; **Choose program file…** and **Detect again** help correct custom or mistaken paths. Each browser entry keeps its own login profile.
@@ -177,6 +182,7 @@ In WEB mode, paper material is attached automatically for paper-reading tasks. T
 
 ### Sync & config
 
+- **Quick prompts on disk**: the prompt library (built-in templates, custom buttons, and the selection-annotation toggle) is saved as `zotero-ai-sidebar-quick-prompts.json` in the Zotero data directory, the same place as chat history — not in `prefs.js`.
 - **Config backup & restore**: export/import model presets (API keys included), UI settings, quick prompts, tool/MCP settings, and translation settings as a single JSON file — handy for moving a setup to a new machine. The file holds your keys, so keep it private.
 - **WebDAV cloud sync**: push and pull a single `state.json` snapshot to a WebDAV endpoint (e.g. Nutstore) — model presets (API keys included), UI settings, quick prompts, tool/MCP settings, translation settings, AI chat history, sentence-translation cache, full PDF annotations (highlight / underline / note / ink), per-item paper overviews, and reading positions (the `在读` anchor).
 - **Auto sync**: disabled by default; when enabled, startup and every 10 minutes pull from cloud first, merge local chat/cache data, then push the merged state back to WebDAV.

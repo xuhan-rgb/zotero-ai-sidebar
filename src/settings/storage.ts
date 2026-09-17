@@ -27,6 +27,7 @@ import {
 export interface PrefsStore {
   get(key: string): string | undefined;
   set(key: string, value: string): void;
+  clear?(key: string): void;
 }
 
 const KEY = 'extensions.zotero-ai-sidebar.presets';
@@ -68,6 +69,9 @@ export function zoteroPrefs(): PrefsStore {
     },
     set: (k, v) => {
       (Zotero as unknown as { Prefs: { set: (k: string, v: string, global: boolean) => void } }).Prefs.set(k, v, true);
+    },
+    clear: (k) => {
+      (Zotero as unknown as { Prefs: { clear: (k: string, global: boolean) => void } }).Prefs.clear(k, true);
     },
   };
 }

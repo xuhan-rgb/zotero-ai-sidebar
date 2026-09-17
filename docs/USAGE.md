@@ -483,6 +483,8 @@ A row of **one-click prompts** beside the composer — e.g. *"Summarize"*, *"Exp
 
 Use it to bind your own high-frequency questions to a single click.
 
+The prompt library (built-in templates, custom buttons, and the “generate a suggested annotation after a free-form selection question” toggle) is stored as `zotero-ai-sidebar-quick-prompts.json` in the Zotero data directory — usually `Zotero/` in your home folder, next to PDFs. It is **not** written into `prefs.js`. After an upgrade, the first launch copies any old preference blob into that file and clears the preference only once the write succeeds. Config export/import and WebDAV `state.json` still carry the same prompt library.
+
 ### 3.7 Note-editing panel
 
 Target layout: `PDF Reader | Note panel | AI chat`.
@@ -536,6 +538,7 @@ Right tool when you want to *carry config to a new machine but leave conversatio
 ### 3.12 Chat history
 
 - One thread per paper, bound to itemID (carried across machines via portable thread keys).
+- Stored locally as `zotero-ai-sidebar-chat-history.json` in the Zotero data directory (same folder as quick prompts). Cross-machine copies go through WebDAV `state.json`.
 - Each message preserves: text, thinking (reasoning summary), tool trace, image attachment metadata.
 - **Copy as Markdown** has two modes:
   - **Clean** — paper intro + dialogue. For sharing or blog posts.
@@ -657,6 +660,10 @@ Open **Account** and enable **Hide browser in the background while chatting**. H
 1. URL must end with `/`.
 2. Nutstore, Mailbox, etc. require an **app-specific password**, not your login password.
 3. The destination path must be writable, including subdirectory creation.
+
+### "Warning: attempting to write … quickPrompts"
+
+Older builds stored the whole prompt library in the Zotero preference `extensions.zotero-ai-sidebar.quickPrompts`. When that value reached ~10KB, the error console logged a performance warning. Current builds write `zotero-ai-sidebar-quick-prompts.json` instead. After installing the new XPI and restarting, saving or toggling prompt settings should no longer emit that warning. Prompts still save; this was never a save failure.
 
 ### "AI tries to annotate but is blocked"
 

@@ -1,4 +1,5 @@
 import type { PrefsStore } from './storage';
+import { appendLocalPath } from '../utils/local-path';
 
 export type BuiltInPromptID =
   | 'summary'
@@ -146,25 +147,178 @@ export const DEFAULT_QUICK_PROMPT_SETTINGS: QuickPromptSettings = {
 };
 
 const KEY = 'extensions.zotero-ai-sidebar.quickPrompts';
+const PROMPTS_FILE = 'zotero-ai-sidebar-quick-prompts.json';
 const MAX_CUSTOM_BUTTONS = 12;
 const MAX_LABEL_CHARS = 32;
 const MAX_PROMPT_CHARS = 20_000;
 
+interface ZoteroFileAPI {
+  getContentsAsync(path: string, charset?: string): Promise<string>;
+  putContentsAsync(path: string, contents: string): Promise<void>;
+}
+
+interface ZoteroGlobal {
+  File: ZoteroFileAPI;
+  Profile: { dir: string };
+  DataDirectory?: { dir?: string; path?: string };
+  Prefs?: { clear: (key: string, global: boolean) => void };
+}
+
+// In-memory cache keeps load/save synchronous for sidebar and prefs UI.
+// Disk I/O is queued; hydrate at startup migrates the legacy pref blob.
+let cached: QuickPromptSettings | null = null;
+let loaded = false;
+let writeQueue: Promise<void> = Promise.resolve();
+let hydratePromise: Promise<void> | null = null;
+
+export function quickPromptsPath(): string {
+  return appendLocalPath(promptsDir(), PROMPTS_FILE);
+}
+
 export function loadQuickPromptSettings(prefs: PrefsStore): QuickPromptSettings {
-  const raw = prefs.get(KEY);
-  if (!raw) return DEFAULT_QUICK_PROMPT_SETTINGS;
-  try {
-    return normalizeQuickPromptSettings(JSON.parse(raw));
-  } catch {
-    return DEFAULT_QUICK_PROMPT_SETTINGS;
+  if (loaded && cached) return cached;
+  const fromPrefs = parsePrefs(prefs);
+  if (fromPrefs) {
+    cached = fromPrefs;
+    loaded = true;
+    return cached;
   }
+  return DEFAULT_QUICK_PROMPT_SETTINGS;
 }
 
 export function saveQuickPromptSettings(
   prefs: PrefsStore,
   settings: QuickPromptSettings,
 ): void {
-  prefs.set(KEY, JSON.stringify(normalizeQuickPromptSettings(settings)));
+  cached = normalizeQuickPromptSettings(settings);
+  loaded = true;
+  if (!canUseFileStorage()) {
+    prefs.set(KEY, JSON.stringify(cached));
+    return;
+  }
+  enqueueWrite(prefs);
+}
+
+export function hydrateQuickPromptSettings(prefs: PrefsStore): Promise<void> {
+  if (hydratePromise) return hydratePromise;
+  hydratePromise = (async () => {
+    if (!canUseFileStorage()) {
+      if (!loaded) {
+        cached = parsePrefs(prefs) ?? DEFAULT_QUICK_PROMPT_SETTINGS;
+        loaded = true;
+      }
+      return;
+    }
+    const fromFile = await readFile();
+    if (loaded) return;
+    if (fromFile) {
+      cached = fromFile;
+      loaded = true;
+      clearLegacyPref(prefs);
+      return;
+    }
+    const fromPrefs = parsePrefs(prefs);
+    if (loaded) return;
+    if (fromPrefs) {
+      cached = fromPrefs;
+      loaded = true;
+      enqueueWrite(prefs);
+      await flushQuickPromptSettings();
+      return;
+    }
+    cached = DEFAULT_QUICK_PROMPT_SETTINGS;
+    loaded = true;
+  })();
+  return hydratePromise;
+}
+
+export function flushQuickPromptSettings(): Promise<void> {
+  return writeQueue.catch(() => undefined);
+}
+
+export function resetQuickPromptSettingsCache(): void {
+  cached = null;
+  loaded = false;
+  writeQueue = Promise.resolve();
+  hydratePromise = null;
+}
+
+function getZotero(): ZoteroGlobal {
+  return (globalThis as unknown as { Zotero: ZoteroGlobal }).Zotero;
+}
+
+function promptsDir(): string {
+  const Z = getZotero();
+  return Z.DataDirectory?.dir ?? Z.DataDirectory?.path ?? Z.Profile.dir;
+}
+
+function canUseFileStorage(): boolean {
+  try {
+    const file = getZotero().File as Partial<ZoteroFileAPI> | undefined;
+    return !!(file?.getContentsAsync && file?.putContentsAsync && promptsDir());
+  } catch {
+    return false;
+  }
+}
+
+function parsePrefs(prefs: PrefsStore): QuickPromptSettings | null {
+  const raw = prefs.get(KEY);
+  if (!raw) return null;
+  try {
+    return normalizeQuickPromptSettings(JSON.parse(raw));
+  } catch {
+    return null;
+  }
+}
+
+function enqueueWrite(prefs: PrefsStore): void {
+  writeQueue = writeQueue.catch(() => undefined).then(async () => {
+    if (!cached) return;
+    await writeFile(cached);
+    clearLegacyPref(prefs);
+  });
+  void writeQueue.catch(() => undefined);
+}
+
+async function writeFile(settings: QuickPromptSettings): Promise<void> {
+  await getZotero().File.putContentsAsync(
+    quickPromptsPath(),
+    JSON.stringify(settings, null, 2),
+  );
+}
+
+async function readFile(): Promise<QuickPromptSettings | null> {
+  try {
+    const raw = await getZotero().File.getContentsAsync(
+      quickPromptsPath(),
+      'utf-8',
+    );
+    const parsed: unknown = JSON.parse(raw);
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) {
+      return null;
+    }
+    return normalizeQuickPromptSettings(parsed);
+  } catch {
+    return null;
+  }
+}
+
+function clearLegacyPref(prefs: PrefsStore): void {
+  if (!prefs.get(KEY)) return;
+  try {
+    if (typeof prefs.clear === 'function') {
+      prefs.clear(KEY);
+      return;
+    }
+    const clear = getZotero().Prefs?.clear;
+    if (clear) {
+      clear(KEY, true);
+      return;
+    }
+  } catch {
+    // Fall through to a tiny overwrite so the 10KB blob is gone.
+  }
+  prefs.set(KEY, '');
 }
 
 export function normalizeQuickPromptSettings(value: unknown): QuickPromptSettings {
