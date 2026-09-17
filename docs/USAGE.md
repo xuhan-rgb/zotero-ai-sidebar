@@ -264,7 +264,9 @@ Quick Ask does not read saved research-chat history and exposes no write tools. 
 
 ### 2.11 Read an arXiv paper in full-document translation
 
-When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full translation)** beside it to open a reconstructed full-paper reader. This requires an available arXiv LaTeX source, so ordinary PDFs and arXiv entries without public source do not show the entry point.
+When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full translation)** beside it to open a reconstructed full-paper reader. Papers with LaTeX source still use that rebuild.
+
+Ordinary PDFs, and arXiv items without source, can also use **全文翻译**: the plugin sends the PDF to MinerU’s precise parsing API (set the token under Settings → Immersive reading), then opens the same bilingual reader. The PDF is uploaded to mineru.net. Create a token at [API management](https://mineru.net/apiManage).
 
 - Use **中英 / 中文 / 英文** for bilingual / translation / source display, and **左右 / 逐段** for parallel / interleaved layout. **阅读设置** also controls source color, font size, line height, and paragraph spacing.
 - Click the model name in the progress bar to open **Account / Model / Reasoning effort** selectors. The first use inherits the **Default translation model** from settings; after a change, full-document translation remembers an independent global selection and does not modify the immersive-reading default.
@@ -274,7 +276,7 @@ When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full t
 
 #### Complete algorithms, figures, and cached translations (v0.8.9)
 
-1. Wait for the **LaTeX 源** badge, then open **Full translation**. Use immersive reading for sentence translation of ordinary PDFs.
+1. Use **Full translation** from the LaTeX source when it exists. Ordinary PDFs can use the same button after a MinerU token is set. Sentence-level reading still uses immersive mode.
 2. Choose **英文** for reconstructed source or **中文** for translation. In bilingual **左右** mode, the complete algorithm is shown side by side; **逐段** shows the complete source algorithm followed by its complete translation.
 3. Fragments of one `algorithm` environment share one visual region. Completed translations remain cached; pending fragments show their status. Use **Continue translation** to finish them without retranslating everything.
 4. Comments retain delimiters such as `/* Figure 2(a) */`, and loops/branches retain indentation. A Figure reference inside a comment does not insert an image there; images appear in their corresponding Figure blocks.
@@ -709,7 +711,7 @@ Select **WEB** in the AI chat panel, choose a website, and configure its account
 
 Both backends share bilingual layouts, figures, citation popups, and cached translations. Completed blocks are skipped when resuming; use the block context menu to retranslate an individual block. Full retranslation rebuilds translation state. Layout changes do not require retranslation.
 
-WEB requests batch up to 20 blocks with a target limit of 10,000 characters (an oversized block is sent alone), map responses by block ID, and wait at least 15 seconds between completed batches. Replies use text blocks with matching start/end markers, preserving LaTeX backslashes and newlines without JSON escaping. Incomplete markers or mismatched block IDs pause the run with a retry message. Protected math is validated before saving. Failed requests, timeouts, or invalid replies pause the run and preserve completed content. Cancel and check the account page for login or verification before resuming. WEB responses do not add API Token usage because websites do not supply that usage metadata. This version still requires LaTeX source; ordinary PDF translation is not yet integrated.
+WEB requests batch up to 20 blocks with a target limit of 10,000 characters (an oversized block is sent alone), map responses by block ID, and wait at least 15 seconds between completed batches. Replies use text blocks with matching start/end markers, preserving LaTeX backslashes and newlines without JSON escaping. Incomplete markers or mismatched block IDs pause the run with a retry message. Protected math is validated before saving. Failed requests, timeouts, or invalid replies pause the run and preserve completed content. Cancel and check the account page for login or verification before resuming. WEB responses do not add API Token usage because websites do not supply that usage metadata. Ordinary PDFs can enter the same reader after a MinerU parse when a token is configured.
 
 ### Reading routes and paper overviews through WEB mode
 

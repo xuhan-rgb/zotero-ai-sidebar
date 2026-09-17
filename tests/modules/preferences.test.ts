@@ -302,6 +302,8 @@ describe("preference save controls", () => {
     expect(preferenceMarkup).toContain(">沉浸阅读</html:div>");
     expect(preferenceMarkup).toContain("默认翻译模型");
     expect(preferenceMarkup).toContain("全文翻译首次使用时从这里继承");
+    expect(preferenceMarkup).toContain("MinerU 文档解析");
+    expect(preferenceMarkup).toContain("zai-mineru-token");
     expect(preferenceMarkup).toContain("Quick Ask 临时问答");
     expect(preferenceMarkup).toContain("窗口内可选择账号、模型和思考强度");
     expect(preferenceMarkup).toContain("单击直接打开翻译卡");

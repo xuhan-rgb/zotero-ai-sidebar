@@ -60,6 +60,9 @@ describe("full translation store", () => {
     expect(fullTranslationPath("2504.16054")).toBe(
       "/data/zotero-ai-sidebar/arxiv/2504.16054/translations/zh-CN.json",
     );
+    expect(fullTranslationPath("pdf:ABCD1234")).toBe(
+      "/data/zotero-ai-sidebar-mineru/ABCD1234/translations/zh-CN.json",
+    );
   });
 
   it("persists completed blocks and resumes pending blocks", async () => {

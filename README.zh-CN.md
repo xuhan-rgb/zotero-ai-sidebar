@@ -32,6 +32,7 @@
 ### 未发布
 
 - **快捷提示词改为数据目录文件**：内置提示词、自定义按钮和相关开关保存在 `zotero-ai-sidebar-quick-prompts.json`，和 PDF 同目录（通常是用户主目录下的 `Zotero/`），不再作为大段内容写入 `prefs.js`。升级后第一次启动会迁移旧偏好项，**文件写成功后再清掉偏好项**。配置导入/导出和 WebDAV `state.json` 仍包含提示词库。
+- **普通 PDF 可通过 MinerU 做全文翻译**：没有 arXiv LaTeX 源时，全文翻译会把 PDF 交给 MinerU 精准解析 API，再沿用现有对照阅读页。需在设置中填写 mineru.net Token。
 - **升级方法**：安装新 XPI 后重启 Zotero。已有提示词编辑会保留；重启后错误控制台里不应再出现向 `extensions.zotero-ai-sidebar.quickPrompts` 写入约 10KB 的 Warning。
 
 ### v0.8.10 更新内容

@@ -184,7 +184,9 @@ function requestWebTranslation(
       prompt,
       continuationPrompt: prompt,
       sessionKey,
-      paperUrl: `https://arxiv.org/abs/${options.arxivId}`,
+      paperUrl: options.arxivId.startsWith("pdf:")
+        ? ""
+        : `https://arxiv.org/abs/${options.arxivId}`,
       hideBrowser: options.settings.hideWebBrowser,
       chatgptOptions: options.settings.chatgptWeb,
       customProvider: options.customProvider,

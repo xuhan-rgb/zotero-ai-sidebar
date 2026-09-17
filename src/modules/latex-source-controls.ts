@@ -51,7 +51,9 @@ export function renderLatexSourceControls(
       translate.hidden = false;
     } else if (result === "no-source") {
       badge.textContent = "无 LaTeX 源";
-      badge.title = "当前 arXiv 条目没有可用的 LaTeX 源码";
+      badge.title =
+        "当前 arXiv 条目没有 LaTeX 源码；可点全文翻译，用 MinerU 解析 PDF";
+      translate.hidden = false;
     } else {
       const reason = arxivSourceError(arxivId) || "无法检查源码，请重试";
       badge.textContent = reason.startsWith("下载超时")

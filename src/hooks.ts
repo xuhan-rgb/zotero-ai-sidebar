@@ -75,6 +75,13 @@ import {
   type QuickPromptSettings,
 } from "./settings/quick-prompts";
 import {
+  loadMineruSettings,
+  normalizeMineruSettings,
+  saveMineruSettings,
+  type MineruSettings,
+} from "./settings/mineru";
+import { probeMineruToken } from "./translate/mineru-client";
+import {
   detectAnthropicVendor,
   loadPresets,
   normalizePresetList,
@@ -599,6 +606,12 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
       void runSyncTest(doc);
     },
   );
+  byID<HTMLButtonElement>(doc, "zai-mineru-test")?.addEventListener(
+    "click",
+    () => {
+      void runMineruTest(doc);
+    },
+  );
   byID<HTMLButtonElement>(doc, "zai-sync-push")?.addEventListener(
     "click",
     () => {
@@ -621,6 +634,9 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
     doc,
     "#zai-translate-preset, #zai-translate-model, #zai-translate-thinking, #zai-translate-context, #zai-translate-position, #zai-translate-size, #zai-translate-trigger, #zai-translate-next-key, #zai-translate-prev-key",
     () => saveTranslateSettingsControls(doc),
+  );
+  bindAutoSaveControls(doc, "#zai-mineru-token", () =>
+    saveMineruSettingsControls(doc),
   );
   bindAutoSaveControls(
     doc,
@@ -980,6 +996,7 @@ interface ConfigBackup {
   quickPrompts: QuickPromptSettings;
   toolSettings: ToolSettings;
   translateSettings: TranslateSettings;
+  mineruSettings: MineruSettings;
 }
 
 interface ParsedConfigBackup {
@@ -988,6 +1005,7 @@ interface ParsedConfigBackup {
   quickPrompts?: QuickPromptSettings;
   toolSettings?: ToolSettings;
   translateSettings?: TranslateSettings;
+  mineruSettings?: MineruSettings;
   sections: string[];
 }
 
@@ -1000,6 +1018,7 @@ function buildConfigBackup(): ConfigBackup {
     quickPrompts: loadQuickPromptSettings(zoteroPrefs()),
     toolSettings: loadToolSettings(zoteroPrefs()),
     translateSettings: loadTranslateSettings(zoteroPrefs()),
+    mineruSettings: loadMineruSettings(zoteroPrefs()),
   };
 }
 
@@ -1119,9 +1138,13 @@ function importConfigBackupRaw(
   if (parsed.translateSettings) {
     saveTranslateSettings(zoteroPrefs(), parsed.translateSettings);
   }
+  if (parsed.mineruSettings) {
+    saveMineruSettings(zoteroPrefs(), parsed.mineruSettings);
+  }
 
   if (parsed.presets) renderPresetSettings(doc);
-  if (parsed.presets || parsed.translateSettings) renderTranslateSettings(doc);
+  if (parsed.presets || parsed.translateSettings || parsed.mineruSettings)
+    renderTranslateSettings(doc);
   if (parsed.uiSettings) renderUiSettings(doc);
   if (parsed.quickPrompts) renderPromptSettings(doc);
   if (parsed.toolSettings) renderToolSettings(doc);
@@ -1246,8 +1269,15 @@ function parseConfigBackup(raw: string): ParsedConfigBackup | string {
     );
     sections.push("翻译");
   }
+  if (hasOwn(parsed, "mineruSettings")) {
+    if (!isRecord(parsed.mineruSettings)) {
+      return "配置里的 mineruSettings 必须是对象。";
+    }
+    result.mineruSettings = normalizeMineruSettings(parsed.mineruSettings);
+    sections.push("MinerU");
+  }
   if (sections.length === 0) {
-    return "没有找到可导入的配置段：presets / uiSettings / quickPrompts / toolSettings / translateSettings。";
+    return "没有找到可导入的配置段：presets / uiSettings / quickPrompts / toolSettings / translateSettings / mineruSettings。";
   }
   return result;
 }
@@ -1382,6 +1412,7 @@ function renderTranslateSettings(doc: Document): void {
   );
   setInputValue(doc, "zai-translate-next-key", settings.nextSentenceKey);
   setInputValue(doc, "zai-translate-prev-key", settings.prevSentenceKey);
+  setInputValue(doc, "zai-mineru-token", loadMineruSettings(zoteroPrefs()).token);
   setStatus(
     doc,
     "zai-translate-status",
@@ -1482,6 +1513,34 @@ function readTranslateSettingsControls(doc: Document): TranslateSettings {
       byID<HTMLInputElement>(doc, "zai-translate-prev-key")?.value.trim() ||
       existing.prevSentenceKey,
   });
+}
+
+function saveMineruSettingsControls(doc: Document): void {
+  const token =
+    byID<HTMLInputElement>(doc, "zai-mineru-token")?.value.trim() ?? "";
+  saveMineruSettings(zoteroPrefs(), { token });
+  setStatus(doc, "zai-mineru-status", "已保存 MinerU Token。");
+}
+
+async function runMineruTest(doc: Document): Promise<void> {
+  saveMineruSettingsControls(doc);
+  const token = loadMineruSettings(zoteroPrefs()).token;
+  if (!token) {
+    setStatus(doc, "zai-mineru-status", "请先填写 MinerU Token。", true);
+    return;
+  }
+  const button = byID<HTMLButtonElement>(doc, "zai-mineru-test");
+  if (button) button.disabled = true;
+  setStatus(doc, "zai-mineru-status", "正在测试 MinerU 连接…");
+  try {
+    await probeMineruToken({ token });
+    setStatus(doc, "zai-mineru-status", "MinerU 连接成功。");
+    flashButton(button, "已连接");
+  } catch (error) {
+    setStatus(doc, "zai-mineru-status", String(error), true);
+  } finally {
+    if (button) button.disabled = false;
+  }
 }
 
 function translatePresets(): ModelPreset[] {

@@ -68,6 +68,12 @@ import {
   setPaperPinned,
 } from "../settings/paper-cache";
 import { loadQuickPromptSettings } from "../settings/quick-prompts";
+import { loadMineruSettings } from "../settings/mineru";
+import {
+  loadMineruFullTranslationSession,
+  pdfTranslationDocumentId,
+  resolveItemPdfForMineru,
+} from "../translate/mineru-session";
 import {
   createFullTranslationState,
   saveFullTranslationState,
@@ -2053,8 +2059,23 @@ export function renderContextCard(
         if (sidebar) void showFullTranslation(sidebar);
       }),
     );
+  } else {
+    metaRow.append(renderPdfFullTranslationButton(doc));
   }
   return card;
+}
+
+function renderPdfFullTranslationButton(doc: Document): HTMLElement {
+  const button = doc.createElement("button");
+  button.type = "button";
+  button.className = "arxiv-full-translation-button";
+  button.textContent = "全文翻译";
+  button.title = "用 MinerU 解析当前 PDF 后进入全文翻译";
+  button.addEventListener("click", () => {
+    const sidebar = findSidebarStateByDocument(doc);
+    if (sidebar) void showFullTranslation(sidebar);
+  });
+  return button;
 }
 
 function safeGetItem(
@@ -10730,13 +10751,14 @@ async function showFullTranslation(sidebar: WindowSidebarState): Promise<void> {
   const panelState = states.get(sidebar.mount);
   const itemID = panelState?.itemID ?? null;
   const arxivId = resolveArxivIdForItemID(itemID);
+  const pdfId = translationPdfDocumentId(itemID);
   const tabID = activeReaderTabID(sidebar);
-  if (!arxivId || !tabID) {
+  if ((!arxivId && !pdfId) || !tabID) {
     closeFullTranslation(sidebar);
     return;
   }
 
-  const request = Symbol(arxivId);
+  const request = Symbol(arxivId ?? pdfId ?? "full-translation");
   fullTranslationRequests.set(sidebar, request);
   await saveVisibleNoteBeforeSwitch(sidebar);
   if (fullTranslationRequests.get(sidebar) !== request) return;
@@ -10752,36 +10774,113 @@ async function showFullTranslation(sidebar: WindowSidebarState): Promise<void> {
   }
 
   const previous = fullTranslationSessions.get(sidebar);
-  if (previous?.document.arxivId === arxivId) {
+  const previousId = previous?.document.arxivId;
+  if (
+    previousId &&
+    (previousId === arxivId || previousId === pdfId)
+  ) {
     renderFullTranslationPanel(sidebar);
     await loadFullTranslationAssets(sidebar, previous, request);
     return;
   }
-  if (previous && previous.document.arxivId !== arxivId) {
+  if (previous && previousId !== arxivId && previousId !== pdfId) {
     sidebar.fullTranslationAbort?.abort();
     sidebar.fullTranslationAbort = undefined;
     fullTranslationSessions.delete(sidebar);
   }
 
-  renderFullTranslationNotice(sidebar, "正在读取 LaTeX 全文…");
-
   try {
-    const session = await loadFullTranslationSession(arxivId);
-    if (!isCurrentFullTranslation(sidebar, arxivId, request)) return;
-    if (!session) {
-      renderFullTranslationNotice(
-        sidebar,
-        "当前条目没有可用的 LaTeX 正文，无法进行全文翻译。",
-        true,
-      );
-      return;
+    let session = null as Awaited<ReturnType<typeof loadFullTranslationSession>>;
+    if (arxivId) {
+      renderFullTranslationNotice(sidebar, "正在读取 LaTeX 全文…");
+      session = await loadFullTranslationSession(arxivId);
     }
+    if (!session) {
+      session = await loadMineruTranslationForItem(sidebar, itemID, request);
+    }
+    if (!session) return;
+    const documentId = session.document.arxivId;
+    if (!isCurrentFullTranslation(sidebar, documentId, request)) return;
     fullTranslationSessions.set(sidebar, session);
     renderFullTranslationPanel(sidebar);
     await loadFullTranslationAssets(sidebar, session, request);
   } catch (error) {
-    if (!isCurrentFullTranslation(sidebar, arxivId, request)) return;
+    const documentId =
+      fullTranslationSessions.get(sidebar)?.document.arxivId ??
+      arxivId ??
+      pdfId ??
+      "";
+    if (!isCurrentFullTranslation(sidebar, documentId, request)) return;
     renderFullTranslationNotice(sidebar, errorMessage(error), true);
+  }
+}
+
+async function loadMineruTranslationForItem(
+  sidebar: WindowSidebarState,
+  itemID: number | null,
+  request: symbol,
+): Promise<Awaited<ReturnType<typeof loadFullTranslationSession>>> {
+  const token = loadMineruSettings(zoteroPrefs()).token;
+  if (!token) {
+    renderFullTranslationNotice(
+      sidebar,
+      "没有 LaTeX 源时需要 MinerU。请先在设置 → 沉浸阅读中填写 MinerU Token。",
+      true,
+    );
+    return null;
+  }
+  if (itemID == null) {
+    renderFullTranslationNotice(sidebar, "请先选择一篇带 PDF 的文献。", true);
+    return null;
+  }
+  const pdf = await resolveItemPdfForMineru(itemID);
+  if (!pdf) {
+    renderFullTranslationNotice(
+      sidebar,
+      "当前条目没有可用的 PDF 附件，无法用 MinerU 解析。",
+      true,
+    );
+    return null;
+  }
+  renderFullTranslationNotice(sidebar, "正在用 MinerU 解析 PDF…");
+  return loadMineruFullTranslationSession({
+    itemKey: pdf.itemKey,
+    pdfPath: pdf.path,
+    fileName: pdf.name,
+    token,
+    onProgress: (message) => {
+      if (
+        isCurrentFullTranslation(
+          sidebar,
+          pdfTranslationDocumentId(pdf.itemKey),
+          request,
+        )
+      ) {
+        renderFullTranslationNotice(sidebar, message);
+      }
+    },
+  });
+}
+
+function translationPdfDocumentId(itemID: number | null): string | null {
+  if (itemID == null) return null;
+  try {
+    const item = Zotero.Items.get(itemID) as
+      | { key?: string; parentID?: number }
+      | false
+      | null;
+    if (!item) return null;
+    const root =
+      typeof item.parentID === "number"
+        ? ((Zotero.Items.get(item.parentID) as { key?: string } | false | null) ||
+          item)
+        : item;
+    const key = root.key || item.key;
+    return typeof key === "string" && key
+      ? pdfTranslationDocumentId(key)
+      : null;
+  } catch {
+    return null;
   }
 }
 
@@ -11202,14 +11301,16 @@ function closeFullTranslation(sidebar: WindowSidebarState): void {
 
 function isCurrentFullTranslation(
   sidebar: WindowSidebarState,
-  arxivId: string,
+  documentId: string,
   request?: symbol,
 ): boolean {
   const itemID = states.get(sidebar.mount)?.itemID ?? null;
+  const arxivId = resolveArxivIdForItemID(itemID);
+  const pdfId = translationPdfDocumentId(itemID);
   return (
     sidebar.fullTranslationActive === true &&
     (request == null || fullTranslationRequests.get(sidebar) === request) &&
-    resolveArxivIdForItemID(itemID) === arxivId
+    (documentId === arxivId || documentId === pdfId)
   );
 }
 

@@ -33,6 +33,7 @@ Installed plugins also update automatically: each release publishes `update.json
 ### Unreleased
 
 - **Quick prompts live in a data-directory file**: built-in and custom prompts are stored as `zotero-ai-sidebar-quick-prompts.json` next to your PDFs (usually `Zotero/` in your home folder), not as a large blob in `prefs.js`. The first launch after upgrade migrates any existing preference value and clears it only after the file write succeeds. Import/export and WebDAV `state.json` still include the prompt library.
+- **Full-document translation for ordinary PDFs via MinerU**: when no arXiv LaTeX source is available, full-document translation uploads the PDF to MinerU’s precise parsing API, then reuses the existing bilingual reader. Set a mineru.net token in settings.
 - **Upgrade**: install the new XPI and restart Zotero. Existing prompt edits are kept; the error-console warning about writing ~10KB to `extensions.zotero-ai-sidebar.quickPrompts` should stop after restart.
 
 ### What's new in v0.8.10

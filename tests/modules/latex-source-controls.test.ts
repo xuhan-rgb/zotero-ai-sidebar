@@ -147,6 +147,18 @@ describe("LaTeX proxy controls", () => {
     expect(root.querySelector(".latex-proxy-settings")).toBeNull();
   });
 
+  it("offers MinerU full translation when there is no LaTeX source", async () => {
+    check.mockResolvedValue("no-source");
+    const translate = vi.fn();
+    const root = renderLatexSourceControls(document, "no-tex", translate);
+    await flush();
+    expect(root.querySelector(".arxiv-source-badge")?.textContent).toBe(
+      "无 LaTeX 源",
+    );
+    click(root, "全文翻译");
+    expect(translate).toHaveBeenCalledOnce();
+  });
+
   it("keeps translation available and supports using system proxy settings", async () => {
     check.mockResolvedValue("available");
     const translate = vi.fn();

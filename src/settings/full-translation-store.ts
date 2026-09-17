@@ -45,7 +45,7 @@ export interface FullTranslationState {
 interface IOUtilsLike {
   makeDirectory(
     path: string,
-    options?: { ignoreExisting?: boolean },
+    options?: { ignoreExisting?: boolean; createAncestors?: boolean },
   ): Promise<void>;
   writeUTF8(path: string, data: string): Promise<unknown>;
   readUTF8(path: string): Promise<string>;
@@ -55,10 +55,27 @@ let writeQueue: Promise<void> = Promise.resolve();
 
 export function fullTranslationPath(arxivId: string): string {
   return appendLocalPath(
-    arxivFolderPath(arxivId),
+    translationFolderPath(arxivId),
     "translations",
     "zh-CN.json",
   );
+}
+
+function translationFolderPath(documentId: string): string {
+  if (documentId.startsWith("pdf:")) {
+    const key = documentId.slice(4).replace(/[^A-Za-z0-9_-]/g, "_") || "item";
+    const Z = (
+      globalThis as unknown as {
+        Zotero?: {
+          DataDirectory?: { dir?: string; path?: string };
+          Profile: { dir: string };
+        };
+      }
+    ).Zotero!;
+    const root = Z.DataDirectory?.dir ?? Z.DataDirectory?.path ?? Z.Profile.dir;
+    return appendLocalPath(root, "zotero-ai-sidebar-mineru", key);
+  }
+  return arxivFolderPath(documentId);
 }
 
 export function createFullTranslationState(
@@ -198,10 +215,13 @@ export function saveFullTranslationState(
     .catch(() => undefined)
     .then(async () => {
       const folder = appendLocalPath(
-        arxivFolderPath(snapshot.arxivId),
+        translationFolderPath(snapshot.arxivId),
         "translations",
       );
-      await io().makeDirectory(folder, { ignoreExisting: true });
+      await io().makeDirectory(folder, {
+        ignoreExisting: true,
+        createAncestors: true,
+      });
       await io().writeUTF8(
         fullTranslationPath(snapshot.arxivId),
         JSON.stringify(snapshot, null, 2),
