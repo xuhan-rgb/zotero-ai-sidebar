@@ -56,6 +56,13 @@ beforeEach(() => {
 });
 
 describe("full translation store", () => {
+  it("preserves the exact failed WEB response after saving and loading", async () => {
+    const state = createFullTranslationState(document, "web:deepseek", "deepseek");
+    state.lastError = { message: "段落 p1 无效", rawResponse: "```text\n<<<ZAI_TRANSLATION:p1>>>\n\\begin{array}{l} x \\\\ y \\end{array}\n</pre>\n```" };
+    await saveFullTranslationState(state);
+    const restored = await loadFullTranslationState(document.arxivId, document.sourceHash);
+    expect(restored?.lastError).toEqual(state.lastError);
+  });
   it("stores translations beside the shared arXiv source cache", () => {
     expect(fullTranslationPath("2504.16054")).toBe(
       "/data/zotero-ai-sidebar/arxiv/2504.16054/translations/zh-CN.json",

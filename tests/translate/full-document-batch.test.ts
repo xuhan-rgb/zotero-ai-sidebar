@@ -68,6 +68,24 @@ it("resumes only unfinished paragraphs and preserves cached translations", async
   expect(batches.mock.calls[0][0].map((e) => e.id)).toEqual(["p1"]);
   expect(state.blocks.p0.translation).toBe("保留");
 });
+it("saves valid paragraphs and resumes only a failed English-only paragraph", async () => {
+  const options = fixture(2);
+  options.document.blocks.forEach((b) => { b.source = "This is a source paragraph with $x$."; });
+  let latest = options.state;
+  await expect(runFullDocumentTranslation({
+    ...options,
+    translateBatch: async () => [
+      { id: "p0", text: "这是译文 ZAILATEXTOKEN0X。" },
+      { id: "p1", text: "This is a source paragraph with ZAILATEXTOKEN0X." },
+    ],
+    onState: (s) => { latest = s; },
+  })).rejects.toThrow("p1");
+  expect(latest.blocks.p0).toMatchObject({ status: "done", translation: "这是译文 $x$。" });
+  expect(latest.blocks.p1.status).toBe("error");
+  const retry = vi.fn(async (entries: TranslationBatchEntry[]) => entries.map((e) => ({ id: e.id, text: "重试译文 ZAILATEXTOKEN0X" })));
+  await runFullDocumentTranslation({ ...options, state: latest, translateBatch: retry });
+  expect(retry.mock.calls[0][0].map((e) => e.id)).toEqual(["p1"]);
+});
 it("cancellation restores pending state and ignores the returned batch", async () => {
   const options = fixture(2);
   const controller = new AbortController();

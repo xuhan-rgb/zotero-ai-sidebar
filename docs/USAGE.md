@@ -266,7 +266,7 @@ Quick Ask does not read saved research-chat history and exposes no write tools. 
 
 When the current paper shows the `LaTeX 源` badge, click **全文翻译 (Full translation)** beside it to open a reconstructed full-paper reader. Papers with LaTeX source still use that rebuild.
 
-Ordinary PDFs, and arXiv items without source, can also use **全文翻译**: the plugin sends the PDF to MinerU’s precise parsing API (set the token under Settings → Immersive reading), then opens the same bilingual reader. The PDF is uploaded to mineru.net. Create a token at [API management](https://mineru.net/apiManage).
+Ordinary PDFs, and arXiv items without source, are parsed with MinerU when you open the PDF (set the token under AI Chat Settings → MinerU document parsing, below Accounts and models). **全文翻译** appears only after the badge shows **PDF 已解析**; opening it uses the cached parse and does not call MinerU again. The PDF is uploaded to mineru.net. If you do not have a token yet, apply at [mineru.net/apiManage/token](https://mineru.net/apiManage/token).
 
 - Use **中英 / 中文 / 英文** for bilingual / translation / source display, and **左右 / 逐段** for parallel / interleaved layout. **阅读设置** also controls source color, font size, line height, and paragraph spacing.
 - Click the model name in the progress bar to open **Account / Model / Reasoning effort** selectors. The first use inherits the **Default translation model** from settings; after a change, full-document translation remembers an independent global selection and does not modify the immersive-reading default.

@@ -1,7 +1,14 @@
 import type { PrefsStore } from "./storage";
 
+export const MINERU_TOKEN_APPLY_URL = "https://mineru.net/apiManage/token";
+
 export interface MineruSettings {
   token: string;
+}
+
+export function openMineruTokenApplyPage(): void {
+  (globalThis as unknown as { Zotero?: { launchURL?: (url: string) => void } })
+    .Zotero?.launchURL?.(MINERU_TOKEN_APPLY_URL);
 }
 
 const KEY = "extensions.zotero-ai-sidebar.mineru";

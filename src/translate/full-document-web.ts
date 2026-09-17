@@ -55,13 +55,11 @@ export function createFullDocumentWebTranslator(
       ].join("\n\n");
       try {
         const answer = await requestWebTranslation(prompt, options, sessionKey);
-        const values = parseWebTranslationBatch(answer, entries);
-        for (const entry of entries) {
-          const output = values.find((item) => item.id === entry.id);
-          if (output && translationNeedsRetry(entry.text, output.text))
-            throw new Error("WEB 批次未返回有效中文译文，已暂停。");
+        try {
+          return Object.assign(parseWebTranslationBatch(answer, entries), { rawResponse: answer });
+        } catch (error) {
+          throw Object.assign(error instanceof Error ? error : new Error(String(error)), { rawResponse: answer });
         }
-        return values;
       } finally {
         lastBatchCompleted = Date.now();
       }

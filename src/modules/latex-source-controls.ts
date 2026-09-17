@@ -9,12 +9,14 @@ import { zoteroPrefs } from "../settings/storage";
 import {
   checkLatexSourceAvailability,
   resetLatexSourceAvailability,
+  type LatexSourceAvailability,
 } from "./latex-source-availability";
 
 export function renderLatexSourceControls(
   doc: Document,
   arxivId: string,
   onTranslate: () => void,
+  options?: { onAvailability?: (result: LatexSourceAvailability) => void },
 ): HTMLElement {
   const root = doc.createElement("span");
   root.className = "latex-source-controls";
@@ -45,15 +47,14 @@ export function renderLatexSourceControls(
     badge.title = "检查本地缓存；缺少有效缓存时自动下载并处理源码";
     const result = await checkLatexSourceAvailability(arxivId);
     if (current !== generation) return;
+    options?.onAvailability?.(result);
     if (result === "available") {
       badge.textContent = "LaTeX 源";
       badge.title = "LaTeX 源码已就绪";
       translate.hidden = false;
     } else if (result === "no-source") {
       badge.textContent = "无 LaTeX 源";
-      badge.title =
-        "当前 arXiv 条目没有 LaTeX 源码；可点全文翻译，用 MinerU 解析 PDF";
-      translate.hidden = false;
+      badge.title = "当前 arXiv 条目没有 LaTeX 源码；将解析 PDF 后再显示全文翻译";
     } else {
       const reason = arxivSourceError(arxivId) || "无法检查源码，请重试";
       badge.textContent = reason.startsWith("下载超时")

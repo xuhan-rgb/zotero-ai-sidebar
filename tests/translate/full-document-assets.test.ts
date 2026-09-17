@@ -38,6 +38,25 @@ beforeEach(() => {
 });
 
 describe("loadFullTranslationAssetPreviews", () => {
+  it("loads MinerU figures from their own cache", async () => {
+    const read = vi.fn(async () => new Uint8Array([1, 2, 3]));
+    Object.defineProperty(globalThis, "IOUtils", {
+      configurable: true,
+      value: {
+        readUTF8: async () => JSON.stringify({ assets: ["images/robot.png"] }),
+        read,
+      },
+    });
+    const assets = await loadFullTranslationAssetPreviews({
+      ...document,
+      arxivId: "pdf:ITEMKEY",
+      blocks: [{ ...document.blocks[0]!, assets: ["images/robot.png"] }],
+    }, globalThis.document);
+    expect(assets["images/robot.png"]?.previewUrl).toBe("data:image/png;base64,AQID");
+    expect(read).toHaveBeenCalledWith(
+      "/data/zotero-ai-sidebar-mineru/ITEMKEY/assets/images/robot.png",
+    );
+  });
   it("uses Zotero's registered reader resource namespace for PDF figures", () => {
     expect(PDFJS_MODULE_URL).toBe("resource://zotero/reader/pdf/build/pdf.mjs");
     expect(PDFJS_WORKER_URL).toBe(

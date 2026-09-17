@@ -452,6 +452,24 @@
     </html:div>
 
     <html:div class="zai-pref-card">
+      <html:div class="zai-pref-title">MinerU 文档解析</html:div>
+      <html:div class="zai-pref-grid">
+        <html:label for="zai-mineru-token">MinerU Token</html:label>
+        <html:input
+          id="zai-mineru-token"
+          type="password"
+          autocomplete="off"
+        />
+        <html:label for="zai-mineru-test">连接</html:label>
+        <html:span class="zai-pref-actions">
+          <html:button id="zai-mineru-apply" type="button">申请 Token</html:button>
+          <html:button id="zai-mineru-test" type="button">测试连接</html:button>
+          <html:span id="zai-mineru-status" class="zai-pref-status"></html:span>
+        </html:span>
+      </html:div>
+    </html:div>
+
+    <html:div class="zai-pref-card">
       <html:div class="zai-pref-title">沉浸阅读</html:div>
       <html:p class="zai-pref-help">
         配置翻译使用的账号、模型、呈现方式和阅读交互；修改后自动保存并立即生效。
@@ -490,22 +508,6 @@
           <html:option value="high">High - 更强推理</html:option>
           <html:option value="xhigh">Extra high - 最强推理</html:option>
         </html:select>
-        <html:div class="zai-pref-subtitle zai-grid-section">MinerU 文档解析</html:div>
-        <html:p class="zai-translate-model-scope">
-          没有 arXiv LaTeX 源的论文，全文翻译会先把 PDF 交给 MinerU 精准解析 API，再使用上面的翻译模型。Token 在
-          mineru.net/apiManage 创建。PDF 会上传到 MinerU 云端。
-        </html:p>
-        <html:label for="zai-mineru-token">MinerU Token</html:label>
-        <html:input
-          id="zai-mineru-token"
-          type="password"
-          autocomplete="off"
-        />
-        <html:label for="zai-mineru-test">连接</html:label>
-        <html:span class="zai-pref-actions">
-          <html:button id="zai-mineru-test" type="button">测试连接</html:button>
-          <html:span id="zai-mineru-status" class="zai-pref-status"></html:span>
-        </html:span>
         <html:div class="zai-pref-subtitle zai-grid-section">翻译呈现</html:div>
         <html:label for="zai-translate-position">结果位置</html:label>
         <html:select id="zai-translate-position">

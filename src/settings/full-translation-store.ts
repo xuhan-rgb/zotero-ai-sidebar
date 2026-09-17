@@ -37,6 +37,7 @@ export interface FullTranslationState {
   model: string;
   usage?: FullTranslationUsage;
   usageEvents?: FullTranslationUsageEvent[];
+  lastError?: { message: string; rawResponse?: string };
   blocks: Record<string, FullTranslationBlockState>;
   createdAt: string;
   updatedAt: string;
@@ -259,6 +260,10 @@ function normalizeState(value: unknown): FullTranslationState | null {
     model: value.model,
     ...(usage ? { usage } : {}),
     ...(usageEvents ? { usageEvents } : {}),
+    ...(isRecord(value.lastError) && typeof value.lastError.message === "string"
+      ? { lastError: { message: value.lastError.message,
+          ...(typeof value.lastError.rawResponse === "string" ? { rawResponse: value.lastError.rawResponse } : {}) } }
+      : {}),
     blocks,
     createdAt: typeof value.createdAt === "string" ? value.createdAt : "",
     updatedAt: typeof value.updatedAt === "string" ? value.updatedAt : "",

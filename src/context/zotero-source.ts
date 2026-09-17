@@ -1,5 +1,7 @@
 import { readArxivMainText } from './arxiv-store';
-import { resolveArxivIdFromZoteroItems } from './arxiv-id';
+import { resolveItemPdfForMineru } from '../translate/mineru-session';
+import { loadMineruCache, readPdfStat } from '../translate/mineru-store';
+import { resolveArxivIdForItemID, resolveArxivIdFromZoteroItems } from './arxiv-id';
 import {
   normalizeLatexListEnvironments,
   normalizeLatexSourceCommands,
@@ -18,9 +20,8 @@ import type { ItemAnnotation } from './types';
 // - The "current item" can be either a parent regular item OR a PDF
 //   attachment item (the user may have selected the attachment directly
 //   in the Zotero collection view). `isAttachment()` disambiguates.
-// - Full text comes from Zotero's offline indexer cache (`Fulltext.
-//   getItemCacheFile`), NOT from PDF.js. Reading is bounded by
-//   `policy.fullTextCacheReadCharLimit` to avoid loading huge PDFs whole.
+// - Full text prefers arXiv source, then a matching MinerU cache, then
+//   Zotero's offline indexer cache. It is NOT the PDF.js coordinate layer.
 //
 // REF: Zotero source `chrome/content/zotero/xpcom/data/item.js`,
 //      `chrome/content/zotero/xpcom/fulltext.js`.
@@ -63,6 +64,7 @@ function getZ(): ZoteroGlobal {
 }
 
 export const zoteroContextSource: ContextSource = {
+  getParsedPdfText: readParsedPdfText,
   async getItem(itemID) {
     const Z = getZ();
     const item = await Z.Items.getAsync(itemID);
@@ -77,8 +79,8 @@ export const zoteroContextSource: ContextSource = {
     return meta;
   },
 
-  // Returns the Zotero indexer's cached plain text for the first PDF
-  // attachment under `itemID`. INVARIANT: this is NOT the PDF.js text
+  // Returns cached paper text for the first PDF attachment under `itemID`.
+  // INVARIANT: this is NOT the PDF.js text
   // layer — char offsets here will not align with `pdf-locator`'s offsets,
   // so do NOT use this output to drive coordinate-based highlights.
   async getFullText(itemID) {
@@ -92,7 +94,7 @@ export const zoteroContextSource: ContextSource = {
 
     // Resolve the paper identity from Zotero metadata, then read the shared
     // cache by arXiv id rather than by this particular Zotero item's key.
-    const arxivId = resolveArxivIdFromZoteroItems(
+    const arxivId = resolveArxivIdForItemID(itemID) || resolveArxivIdFromZoteroItems(
       [parent, ...attachmentItems].filter((item): item is ZoteroItem => !!item),
     );
     const arxivText = arxivId ? await readArxivMainText(arxivId) : null;
@@ -101,6 +103,9 @@ export const zoteroContextSource: ContextSource = {
         normalizeLatexListEnvironments(arxivText),
       );
     }
+
+    const parsed = await readParsedPdfText(itemID);
+    if (parsed) return parsed;
 
     // WHY first-PDF-wins: papers commonly have one PDF + a few supplemental
     // PDFs; sending the first one matches user expectation. If we ever need
@@ -133,6 +138,24 @@ export const zoteroContextSource: ContextSource = {
       .sort((a, b) => (a.sortIndex ?? 0) - (b.sortIndex ?? 0));
   },
 };
+
+async function readParsedPdfText(itemID: number): Promise<string | null> {
+  try {
+    // Do not supersede the LaTeX workflow, including frozen source and TOC.
+    const arxivId = resolveArxivIdForItemID(itemID);
+    if (arxivId && await readArxivMainText(arxivId)) return null;
+    const pdf = await resolveItemPdfForMineru(itemID);
+    if (!pdf) return null;
+    const stat = await readPdfStat(pdf.path);
+    const cached = await loadMineruCache(pdf.itemKey, stat.size, stat.mtime);
+    const text = cached?.markdown;
+    return text?.trim()
+      ? text.slice(0, DEFAULT_CONTEXT_POLICY.fullTextCacheReadCharLimit)
+      : null;
+  } catch {
+    return null;
+  }
+}
 
 async function getPdfAttachments(
   Z: ZoteroGlobal,

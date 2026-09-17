@@ -10,6 +10,7 @@ import { zoteroContextSource } from "./context/zotero-source";
 import {
   refreshSidebarPreferences,
   getActiveSidebarPresetId,
+  tryFocusPendingPreference,
   registerSidebar,
   registerSidebarForWindow,
   unregisterSidebar,
@@ -77,6 +78,7 @@ import {
 import {
   loadMineruSettings,
   normalizeMineruSettings,
+  openMineruTokenApplyPage,
   saveMineruSettings,
   type MineruSettings,
 } from "./settings/mineru";
@@ -267,6 +269,7 @@ function watchPreferencesPane(win: Window): void {
       "zotero-ai-sidebar-tool-settings",
     );
     if (root && root.dataset.bound !== "true") setupPreferencesPane(win);
+    else if (root) tryFocusPendingPreference(win.document);
   };
   tick();
   preferenceWatchTimers.push({ win, timer: win.setInterval(tick, 500) });
@@ -295,6 +298,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
     renderPreferenceSaveBar(doc);
     root.dataset.rendered = "true";
   }
+  tryFocusPendingPreference(doc);
 
   if (root.dataset.bound === "true") return;
   root.dataset.bound = "true";
@@ -604,6 +608,12 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
     "click",
     () => {
       void runSyncTest(doc);
+    },
+  );
+  byID<HTMLButtonElement>(doc, "zai-mineru-apply")?.addEventListener(
+    "click",
+    () => {
+      openMineruTokenApplyPage();
     },
   );
   byID<HTMLButtonElement>(doc, "zai-mineru-test")?.addEventListener(
@@ -1526,7 +1536,12 @@ async function runMineruTest(doc: Document): Promise<void> {
   saveMineruSettingsControls(doc);
   const token = loadMineruSettings(zoteroPrefs()).token;
   if (!token) {
-    setStatus(doc, "zai-mineru-status", "请先填写 MinerU Token。", true);
+    setStatus(
+      doc,
+      "zai-mineru-status",
+      "还没有 Token。请到 https://mineru.net/apiManage/token 申请，填入后再测试。",
+      true,
+    );
     return;
   }
   const button = byID<HTMLButtonElement>(doc, "zai-mineru-test");

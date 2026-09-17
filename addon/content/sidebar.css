@@ -6634,6 +6634,19 @@ div.math-fallback {
   opacity: 0.58;
 }
 
+.zai-ft-run-error > summary { cursor: pointer; }
+.zai-ft-run-error > div { margin-top: 12px; }
+.zai-ft-error-response {
+  max-height: 360px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+  font: 13px/1.6 monospace;
+  color: #272d30;
+  background: #fff;
+  padding: 12px;
+}
 .zai-ft-run-error {
   padding: 7px 12px;
   border-bottom: 1px solid rgba(178, 68, 48, 0.24);
@@ -8175,7 +8188,25 @@ div.math-fallback {
 .zai-ft-title .zai-ft-translation .zai-ft-block-body { font-size: 20px; line-height: 1.7; font-weight: 400; }
 .zai-ft-title-description { margin: 12px auto 0; max-width: 760px; font: 13px/1.8 var(--zai-font); text-align: left; color: #727975; }
 .zai-ft-title-description summary { text-align: center; cursor: pointer; }
+.zai-ft-content > .zai-ft-metadata {
+  display: block;
+  margin: -18px 0 24px;
+  text-align: center;
+}
+.zai-ft-metadata .zai-ft-block-body {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #666;
+  overflow-wrap: anywhere;
+}
 .zai-ft-section-label { grid-column: 1 / -1; margin: 12px 0 18px; font: 700 23px/1.5 Georgia, serif; }
+.zai-ft-content > .zai-ft-list-lead,
+.zai-ft-content > .zai-ft-list-continues { margin-bottom: 4px; }
+.zai-ft-list-lead > .zai-ft-cell { padding-bottom: 4px; }
+.zai-ft-list-item > .zai-ft-cell { padding-top: 4px; padding-bottom: 4px; }
+.zai-ft-list-item .zai-ft-block-body > ul { margin: 0; padding-inline-start: 1.3em; }
+.zai-ft-list-item .zai-ft-block-body li { padding-inline-start: 0.2em; }
+.zai-ft-list-item .zai-ft-block-body li > p { margin: 0; }
 .zai-ft-footnote .zai-ft-block-body { font-size: 12px; color: #727975; }
 .zai-ft-heading .zai-ft-block-body { font-size: 23px; }
 .zai-ft-heading .zai-ft-translation .zai-ft-block-body { font-size: 18px; }

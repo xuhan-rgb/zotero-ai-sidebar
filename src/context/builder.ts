@@ -27,6 +27,7 @@ export interface ItemMetadata {
 export interface ContextSource {
   getItem(itemID: number): Promise<ItemMetadata | null>;
   getFullText(itemID: number): Promise<string>;
+  getParsedPdfText?(itemID: number): Promise<string | null>;
   getAnnotations?(itemID: number): Promise<ItemAnnotation[]>;
 }
 

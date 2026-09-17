@@ -1,5 +1,8 @@
-import { appendLocalPath } from "../utils/local-path";
-import type { MineruParseResult } from "./mineru-client";
+import { appendLocalPath, localDirname } from "../utils/local-path";
+import { downloadMineruResult, type MineruParseResult } from "./mineru-client";
+import { mineruImagePath } from "./mineru-zip";
+import { loadMineruSettings } from "../settings/mineru";
+import { zoteroPrefs } from "../settings/storage";
 
 export interface MineruCacheMeta {
   itemKey: string;
@@ -8,18 +11,20 @@ export interface MineruCacheMeta {
   sourceHash: string;
   batchId?: string;
   parsedAt: string;
+  assets?: string[];
 }
 
 interface IOUtilsLike {
   makeDirectory(
     path: string,
-    options?: { ignoreExisting?: boolean },
+    options?: { ignoreExisting?: boolean; createAncestors?: boolean },
   ): Promise<void>;
   writeUTF8(path: string, data: string): Promise<unknown>;
   readUTF8(path: string): Promise<string>;
   exists?(path: string): Promise<boolean>;
   stat?(path: string): Promise<{ size?: number; lastModified?: number }>;
   read(path: string): Promise<Uint8Array>;
+  write(path: string, bytes: Uint8Array): Promise<unknown>;
 }
 
 function dataRoot(): string {
@@ -42,17 +47,28 @@ export function mineruCacheFolder(itemKey: string): string {
   return appendLocalPath(dataRoot(), "zotero-ai-sidebar-mineru", itemKey);
 }
 
+export async function readPdfStat(
+  path: string,
+): Promise<{ size: number; mtime: number }> {
+  const IO = io();
+  const stat = await IO.stat?.(path);
+  if (stat && typeof stat.size === "number") {
+    return { size: stat.size, mtime: stat.lastModified ?? 0 };
+  }
+  const bytes = await IO.read(path);
+  return { size: bytes.byteLength, mtime: 0 };
+}
+
+export async function readPdfBytes(path: string): Promise<Uint8Array> {
+  return io().read(path);
+}
+
 export async function readPdfFingerprint(
   path: string,
 ): Promise<{ size: number; mtime: number; bytes: Uint8Array }> {
-  const IO = io();
-  const bytes = await IO.read(path);
-  const stat = await IO.stat?.(path);
-  return {
-    bytes,
-    size: stat?.size ?? bytes.byteLength,
-    mtime: stat?.lastModified ?? 0,
-  };
+  const bytes = await readPdfBytes(path);
+  const stat = await readPdfStat(path);
+  return { bytes, size: stat.size, mtime: stat.mtime };
 }
 
 export async function loadMineruCache(
@@ -95,6 +111,7 @@ export async function saveMineruCache(
     sourceHash,
     batchId: parsed.batchId,
     parsedAt: new Date().toISOString(),
+    assets: await saveMineruAssets(itemKey, parsed.assets ?? {}),
   };
   await IO.writeUTF8(appendLocalPath(folder, "meta.json"), JSON.stringify(meta, null, 2));
   await IO.writeUTF8(appendLocalPath(folder, "full.md"), parsed.markdown);
@@ -102,4 +119,62 @@ export async function saveMineruCache(
     appendLocalPath(folder, "content_list.json"),
     JSON.stringify(parsed.contentList ?? null),
   );
+}
+
+async function saveMineruAssets(itemKey: string, assets: Record<string, Uint8Array>): Promise<string[]> {
+  const paths: string[] = [];
+  for (const [name, bytes] of Object.entries(assets)) {
+    const path = mineruImagePath(name);
+    if (!path) continue;
+    const target = appendLocalPath(mineruCacheFolder(itemKey), "assets", path);
+    await io().makeDirectory(localDirname(target), {
+      ignoreExisting: true,
+      createAncestors: true,
+    });
+    await io().write(target, bytes);
+    paths.push(path);
+  }
+  return paths;
+}
+
+const assetRestores = new Map<string, Promise<void>>();
+
+export async function ensureMineruCachedAssets(itemKey: string): Promise<void> {
+  const existing = assetRestores.get(itemKey);
+  if (existing) return existing;
+  const pending = restoreMineruAssets(itemKey);
+  assetRestores.set(itemKey, pending);
+  try {
+    await pending;
+  } finally {
+    assetRestores.delete(itemKey);
+  }
+}
+
+async function restoreMineruAssets(itemKey: string): Promise<void> {
+  const path = appendLocalPath(mineruCacheFolder(itemKey), "meta.json");
+  const meta = JSON.parse(await io().readUTF8(path)) as MineruCacheMeta;
+  if (Array.isArray(meta.assets)) return;
+  const token = loadMineruSettings(zoteroPrefs()).token;
+  if (!token) throw new Error("补齐图片缓存需要配置 MinerU Token");
+  if (!meta.batchId) throw new Error("缺少 MinerU 原解析任务，无法补齐图片缓存");
+  const result = await downloadMineruResult(meta.batchId, { token });
+  meta.assets = await saveMineruAssets(itemKey, result.assets ?? {});
+  await io().writeUTF8(path, JSON.stringify(meta, null, 2));
+}
+
+export async function readMineruAsset(itemKey: string, sourcePath: string): Promise<{
+  path: string;
+  bytes: Uint8Array;
+  mediaType: string;
+} | null> {
+  const path = mineruImagePath(sourcePath);
+  if (!path) return null;
+  const extension = path.split(".").pop()!.toLowerCase();
+  try {
+    const bytes = await io().read(appendLocalPath(mineruCacheFolder(itemKey), "assets", path));
+    return { path, bytes, mediaType: `image/${extension === "jpg" ? "jpeg" : extension}` };
+  } catch {
+    return null;
+  }
 }

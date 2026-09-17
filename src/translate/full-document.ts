@@ -21,6 +21,7 @@ import {
 
 export type FullTranslationBlockKind =
   | "title"
+  | "metadata"
   | "abstract"
   | "heading"
   | "paragraph"

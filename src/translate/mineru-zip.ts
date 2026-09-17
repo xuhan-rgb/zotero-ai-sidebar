@@ -1,6 +1,4 @@
-const LOCAL_HEADER = 0x04034b50;
-const CENTRAL_HEADER = 0x02014b50;
-const EOCD_HEADER = 0x06054b50;
+import { strFromU8, unzipSync } from "fflate";
 
 export interface MineruZipTextFile {
   name: string;
@@ -10,12 +8,14 @@ export interface MineruZipTextFile {
 export interface MineruZipContents {
   markdown: string;
   contentList: unknown | null;
+  assets: Record<string, Uint8Array>;
 }
 
 export async function extractMineruZip(
   bytes: Uint8Array,
 ): Promise<MineruZipContents> {
-  const files = await unzipTextFiles(bytes);
+  const unzipped = unzipMineruFiles(bytes, true);
+  const files = textFiles(unzipped);
   const markdownFile = pickFile(files, [
     /(?:^|\/)full\.md$/i,
     /(?:^|\/)markdown\.md$/i,
@@ -28,9 +28,20 @@ export async function extractMineruZip(
   if (!markdownFile && !listFile) {
     throw new Error("MinerU 结果包里没有 Markdown 或 content_list");
   }
+  const documentPath = markdownFile?.name ?? listFile!.name;
+  const prefix = documentPath.slice(0, documentPath.lastIndexOf("/") + 1);
+  const assets = Object.fromEntries(
+    Object.entries(unzipped).flatMap(([name, data]) => {
+      const normalized = name.replace(/\\/g, "/");
+      if (!normalized.startsWith(prefix)) return [];
+      const path = mineruImagePath(normalized.slice(prefix.length));
+      return path ? [[path, data]] : [];
+    }),
+  );
   return {
     markdown: markdownFile?.text ?? "",
     contentList: listFile ? JSON.parse(listFile.text) : null,
+    assets,
   };
 }
 
@@ -39,7 +50,9 @@ function pickFile(
   patterns: RegExp[],
 ): MineruZipTextFile | undefined {
   for (const pattern of patterns) {
-    const match = files.find((file) => pattern.test(file.name.replace(/\\/g, "/")));
+    const match = files.find((file) =>
+      pattern.test(file.name.replace(/\\/g, "/")),
+    );
     if (match) return match;
   }
   return undefined;
@@ -48,113 +61,40 @@ function pickFile(
 export async function unzipTextFiles(
   bytes: Uint8Array,
 ): Promise<MineruZipTextFile[]> {
-  const records = centralDirectory(bytes);
-  const files: MineruZipTextFile[] = [];
-  for (const record of records) {
-    const name = record.name.replace(/\\/g, "/");
-    if (name.endsWith("/") || !/\.(md|json|txt)$/i.test(name)) continue;
-    const data = await readLocalFile(bytes, record);
-    files.push({ name, text: new TextDecoder("utf-8").decode(data) });
-  }
-  return files;
+  return textFiles(unzipMineruFiles(bytes, false));
 }
 
-interface ZipRecord {
-  name: string;
-  method: number;
-  compressedSize: number;
-  uncompressedSize: number;
-  localOffset: number;
+export function mineruImagePath(path: string): string | null {
+  const normalized = path.replace(/\\/g, "/").replace(/^\.\//, "");
+  if (
+    normalized.startsWith("/") ||
+    /[:\x00]/.test(normalized) ||
+    normalized.split("/").some((part) => part === ".." || part === "." || !part) ||
+    !/\.(png|jpe?g|gif|webp)$/i.test(normalized)
+  ) return null;
+  return normalized;
 }
 
-function centralDirectory(bytes: Uint8Array): ZipRecord[] {
-  const eocd = findEocd(bytes);
-  const count = u16(bytes, eocd + 10);
-  let offset = u32(bytes, eocd + 16);
-  const records: ZipRecord[] = [];
-  for (let index = 0; index < count; index++) {
-    if (u32(bytes, offset) !== CENTRAL_HEADER) {
-      throw new Error("MinerU zip 目录损坏");
-    }
-    const method = u16(bytes, offset + 10);
-    const compressedSize = u32(bytes, offset + 20);
-    const uncompressedSize = u32(bytes, offset + 24);
-    const nameLength = u16(bytes, offset + 28);
-    const extraLength = u16(bytes, offset + 30);
-    const commentLength = u16(bytes, offset + 32);
-    const localOffset = u32(bytes, offset + 42);
-    const name = decodeName(
-      bytes.subarray(offset + 46, offset + 46 + nameLength),
-      u16(bytes, offset + 8),
-    );
-    records.push({
-      name,
-      method,
-      compressedSize,
-      uncompressedSize,
-      localOffset,
+function unzipMineruFiles(bytes: Uint8Array, images: boolean): Record<string, Uint8Array> {
+  // fflate, not DecompressionStream: the plugin sandbox does not expose that
+  // Web API (same constraint as arxiv-archive.ts).
+  let unzipped: Record<string, Uint8Array>;
+  try {
+    unzipped = unzipSync(bytes, {
+      filter: (file) => /\.(md|json|txt)$/i.test(file.name) ||
+        (images && /\.(png|jpe?g|gif|webp)$/i.test(file.name)),
     });
-    offset += 46 + nameLength + extraLength + commentLength;
+  } catch (error) {
+    throw new Error(
+      `无法解压 MinerU zip：${error instanceof Error ? error.message : String(error)}`,
+    );
   }
-  return records;
+  return unzipped;
 }
 
-function findEocd(bytes: Uint8Array): number {
-  const min = Math.max(0, bytes.length - 22 - 65535);
-  for (let offset = bytes.length - 22; offset >= min; offset--) {
-    if (u32(bytes, offset) === EOCD_HEADER) return offset;
-  }
-  throw new Error("不是有效的 MinerU zip 结果包");
-}
-
-async function readLocalFile(
-  bytes: Uint8Array,
-  record: ZipRecord,
-): Promise<Uint8Array> {
-  const offset = record.localOffset;
-  if (u32(bytes, offset) !== LOCAL_HEADER) {
-    throw new Error(`zip 条目损坏：${record.name}`);
-  }
-  const nameLength = u16(bytes, offset + 26);
-  const extraLength = u16(bytes, offset + 28);
-  const start = offset + 30 + nameLength + extraLength;
-  const compressed = bytes.subarray(start, start + record.compressedSize);
-  if (record.method === 0) return compressed.slice();
-  if (record.method === 8) return inflateRaw(compressed, record.uncompressedSize);
-  throw new Error(`不支持的 zip 压缩方式 ${record.method}`);
-}
-
-async function inflateRaw(
-  data: Uint8Array,
-  uncompressedSize: number,
-): Promise<Uint8Array> {
-  if (typeof DecompressionStream === "undefined") {
-    throw new Error("当前环境无法解压 MinerU zip");
-  }
-  const stream = new Blob([data]).stream().pipeThrough(
-    new DecompressionStream("deflate-raw"),
-  );
-  const inflated = new Uint8Array(await new Response(stream).arrayBuffer());
-  if (uncompressedSize && inflated.length !== uncompressedSize) {
-    throw new Error("MinerU zip 解压长度不匹配");
-  }
-  return inflated;
-}
-
-function decodeName(bytes: Uint8Array, flags: number): string {
-  return new TextDecoder(flags & 0x800 ? "utf-8" : "latin1").decode(bytes);
-}
-
-function u16(bytes: Uint8Array, offset: number): number {
-  return bytes[offset]! | (bytes[offset + 1]! << 8);
-}
-
-function u32(bytes: Uint8Array, offset: number): number {
-  return (
-    (bytes[offset]! |
-      (bytes[offset + 1]! << 8) |
-      (bytes[offset + 2]! << 16) |
-      (bytes[offset + 3]! << 24)) >>>
-    0
-  );
+function textFiles(unzipped: Record<string, Uint8Array>): MineruZipTextFile[] {
+  return Object.entries(unzipped).filter(([name]) => /\.(md|json|txt)$/i.test(name)).map(([name, data]) => ({
+    name: name.replace(/\\/g, "/"),
+    text: strFromU8(data),
+  }));
 }

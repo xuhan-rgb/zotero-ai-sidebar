@@ -350,9 +350,9 @@ export function createZoteroAgentToolSession(
         const itemID = currentItemID(options);
         if (itemID == null)
           return errorResult("No Zotero item is currently selected.");
-        // Reuse a frozen copy if one exists (cache-existence check); only
-        // extract when there is no usable cache.
-        let text = await getFrozenFullText(itemID);
+        // A completed parse supersedes text frozen before parsing finished.
+        const parsedText = await options.source.getParsedPdfText?.(itemID);
+        let text = parsedText ? null : await getFrozenFullText(itemID);
         if (text != null && isArxivTocBlock(text)) text = null;
         if (text != null) {
           text = normalizeLatexSourceCommands(
@@ -366,7 +366,7 @@ export function createZoteroAgentToolSession(
           // Extract path: getToolPdfText and zoteroSourceContext are
           // independent — run them in parallel.
           const [pdfText, ctx] = await Promise.all([
-            getToolPdfText(options, itemID),
+            parsedText || getToolPdfText(options, itemID),
             zoteroSourceContext(options, itemID),
           ]);
           sourceContext = ctx;
@@ -379,7 +379,7 @@ export function createZoteroAgentToolSession(
           totalChars = text.length;
           sourceContext = await zoteroSourceContext(options, itemID);
         }
-        const fullTextSource = await fullTextSourceForTool(options);
+        const fullTextSource = parsedText ? "pdf" : await fullTextSourceForTool(options);
         const frontBlockDebugPath = await options.debugFullTextSaver?.(text, {
           source: fullTextSource,
           tool: "zotero_get_full_pdf",

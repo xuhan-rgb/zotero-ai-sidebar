@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
+import { zipSync, strToU8 } from "fflate";
 import { parsePdfWithMineru, probeMineruToken } from "../../src/translate/mineru-client";
-import { unzipTextFiles } from "../../src/translate/mineru-zip";
+import { extractMineruZip, unzipTextFiles } from "../../src/translate/mineru-zip";
 
 function storeZip(files: Array<{ name: string; text: string }>): Uint8Array {
   const encoder = new TextEncoder();
@@ -63,6 +64,33 @@ function writeU32(bytes: Uint8Array, offset: number, value: number): void {
 }
 
 describe("MinerU zip extract", () => {
+  it("keeps image bytes relative to the result document", async () => {
+    const image = new Uint8Array([137, 80, 78, 71]);
+    const result = await extractMineruZip(zipSync({
+      "paper/full.md": strToU8("![Figure](images/figure.png)"),
+      "paper/images/figure.png": image,
+      "paper/../escape.png": image,
+      "paper/origin.pdf": new Uint8Array([1]),
+    }));
+    expect(result.assets).toEqual({ "images/figure.png": image });
+  });
+  it("inflates a deflated zip without DecompressionStream", async () => {
+    const original = globalThis.DecompressionStream;
+    // @ts-expect-error test the Zotero sandbox fallback
+    delete globalThis.DecompressionStream;
+    try {
+      const bytes = zipSync({
+        "full.md": strToU8("# Hello"),
+        "paper_content_list.json": strToU8('[{"type":"text","text":"Hi"}]'),
+      });
+      const extracted = await extractMineruZip(bytes);
+      expect(extracted.markdown).toBe("# Hello");
+      expect(extracted.contentList).toEqual([{ type: "text", text: "Hi" }]);
+    } finally {
+      if (original) globalThis.DecompressionStream = original;
+    }
+  });
+
   it("reads full.md and content_list.json from a stored zip", async () => {
     const bytes = storeZip([
       { name: "demo/full.md", text: "# Hello" },

@@ -44,6 +44,7 @@ import {
 } from "../context/tex-clean";
 import { zoteroContextSource } from "../context/zotero-source";
 import { renderLatexSourceControls } from "./latex-source-controls";
+import { renderPdfParseControls } from "./pdf-parse-controls";
 import { getProvider } from "../providers/factory";
 import type {
   AssistantAnnotationDraft,
@@ -68,7 +69,6 @@ import {
   setPaperPinned,
 } from "../settings/paper-cache";
 import { loadQuickPromptSettings } from "../settings/quick-prompts";
-import { loadMineruSettings } from "../settings/mineru";
 import {
   loadMineruFullTranslationSession,
   pdfTranslationDocumentId,
@@ -1987,30 +1987,60 @@ export function getActiveSidebarPresetId(): string | null {
   return null;
 }
 
-function openAddonPreferences(doc: Document): void {
+let pendingPreferenceFocus: string | null = null;
+
+export function tryFocusPendingPreference(doc: Document): void {
+  if (!pendingPreferenceFocus) return;
+  const field = doc.getElementById(pendingPreferenceFocus) as HTMLElement | null;
+  if (!field) return;
+  pendingPreferenceFocus = null;
+  field.scrollIntoView({ block: "center", inline: "nearest" });
+  if ("focus" in field && typeof field.focus === "function") field.focus();
+}
+
+function openAddonPreferences(doc: Document, focusId?: string): void {
+  if (focusId) pendingPreferenceFocus = focusId;
   const paneID = `${addon.data.config.addonRef}-prefs`;
   const zotero = Zotero as unknown as {
     PreferencePanes?: { open?: (id?: string) => void };
     Utilities?: { Internal?: { openPreferences?: (id?: string) => void } };
+    getMainWindows?: () => Window[];
   };
   try {
     if (typeof zotero.PreferencePanes?.open === "function") {
       zotero.PreferencePanes.open(paneID);
-      return;
-    }
-  } catch {}
-  try {
-    if (typeof zotero.Utilities?.Internal?.openPreferences === "function") {
+    } else if (typeof zotero.Utilities?.Internal?.openPreferences === "function") {
       zotero.Utilities.Internal.openPreferences(paneID);
-      return;
+    } else {
+      doc.defaultView?.openDialog(
+        "chrome://zotero/content/preferences/preferences.xhtml",
+        "zotero-prefs",
+        "chrome,titlebar,toolbar,centerscreen",
+        paneID,
+      );
     }
-  } catch {}
-  doc.defaultView?.openDialog(
-    "chrome://zotero/content/preferences/preferences.xhtml",
-    "zotero-prefs",
-    "chrome,titlebar,toolbar,centerscreen",
-    paneID,
-  );
+  } catch {
+    doc.defaultView?.openDialog(
+      "chrome://zotero/content/preferences/preferences.xhtml",
+      "zotero-prefs",
+      "chrome,titlebar,toolbar,centerscreen",
+      paneID,
+    );
+  }
+  if (!focusId) return;
+  const deadline = Date.now() + 4000;
+  const poll = () => {
+    const windows = zotero.getMainWindows?.() ?? [];
+    for (const win of windows) {
+      tryFocusPendingPreference(win.document);
+      if (!pendingPreferenceFocus) return;
+    }
+    tryFocusPendingPreference(doc);
+    if (pendingPreferenceFocus && Date.now() < deadline) {
+      doc.defaultView?.setTimeout(poll, 200);
+    }
+  };
+  doc.defaultView?.setTimeout(poll, 200);
 }
 
 export function renderContextCard(
@@ -2052,30 +2082,41 @@ export function renderContextCard(
   );
   card.append(el(doc, "div", "ctx-title", title), metaRow);
   const arxivId = resolveArxivIdForItemID(itemID);
-  if (arxivId) {
-    metaRow.append(
-      renderLatexSourceControls(doc, arxivId, () => {
-        const sidebar = findSidebarStateByDocument(doc);
-        if (sidebar) void showFullTranslation(sidebar);
-      }),
-    );
-  } else {
-    metaRow.append(renderPdfFullTranslationButton(doc));
-  }
-  return card;
-}
-
-function renderPdfFullTranslationButton(doc: Document): HTMLElement {
-  const button = doc.createElement("button");
-  button.type = "button";
-  button.className = "arxiv-full-translation-button";
-  button.textContent = "全文翻译";
-  button.title = "用 MinerU 解析当前 PDF 后进入全文翻译";
-  button.addEventListener("click", () => {
+  const openTranslation = () => {
     const sidebar = findSidebarStateByDocument(doc);
     if (sidebar) void showFullTranslation(sidebar);
-  });
-  return button;
+  };
+  const entry = doc.createElement("span");
+  entry.className = "full-translation-entry";
+  if (arxivId) {
+    entry.append(
+      renderLatexSourceControls(doc, arxivId, openTranslation, {
+        onAvailability: (result) => {
+          const existing = entry.querySelector(".pdf-parse-controls");
+          if (result === "available") {
+            existing?.remove();
+            return;
+          }
+          if (!existing && itemID != null) {
+            entry.append(
+              renderPdfParseControls(doc, itemID, openTranslation, {
+                onConfigureToken: () =>
+                  openAddonPreferences(doc, "zai-mineru-token"),
+              }),
+            );
+          }
+        },
+      }),
+    );
+  } else if (itemID != null) {
+    entry.append(
+      renderPdfParseControls(doc, itemID, openTranslation, {
+        onConfigureToken: () => openAddonPreferences(doc, "zai-mineru-token"),
+      }),
+    );
+  }
+  if (entry.childElementCount) metaRow.append(entry);
+  return card;
 }
 
 function safeGetItem(
@@ -7748,9 +7789,10 @@ async function resolvePinnedFullText(
     if (tocBlock) return tocBlock;
     if (options.suppressPinned) return undefined;
   }
-  const frozen = await getFrozenFullText(itemID);
+  const parsedText = await source.getParsedPdfText?.(itemID);
+  const frozen = parsedText ? null : await getFrozenFullText(itemID);
   if (frozen != null && !isArxivTocBlock(frozen)) return frozen;
-  const pdfText = await source.getFullText(itemID);
+  const pdfText = parsedText || await source.getFullText(itemID);
   if (!pdfText) return undefined;
   const text = truncateByTokenBudget(pdfText, policy.fullPdfTokenBudget);
   await freezeFullText(itemID, text);
@@ -10818,17 +10860,8 @@ async function showFullTranslation(sidebar: WindowSidebarState): Promise<void> {
 async function loadMineruTranslationForItem(
   sidebar: WindowSidebarState,
   itemID: number | null,
-  request: symbol,
+  _request: symbol,
 ): Promise<Awaited<ReturnType<typeof loadFullTranslationSession>>> {
-  const token = loadMineruSettings(zoteroPrefs()).token;
-  if (!token) {
-    renderFullTranslationNotice(
-      sidebar,
-      "没有 LaTeX 源时需要 MinerU。请先在设置 → 沉浸阅读中填写 MinerU Token。",
-      true,
-    );
-    return null;
-  }
   if (itemID == null) {
     renderFullTranslationNotice(sidebar, "请先选择一篇带 PDF 的文献。", true);
     return null;
@@ -10837,28 +10870,15 @@ async function loadMineruTranslationForItem(
   if (!pdf) {
     renderFullTranslationNotice(
       sidebar,
-      "当前条目没有可用的 PDF 附件，无法用 MinerU 解析。",
+      "当前条目没有可用的 PDF 附件。",
       true,
     );
     return null;
   }
-  renderFullTranslationNotice(sidebar, "正在用 MinerU 解析 PDF…");
+  renderFullTranslationNotice(sidebar, "正在打开已解析的 PDF…");
   return loadMineruFullTranslationSession({
     itemKey: pdf.itemKey,
     pdfPath: pdf.path,
-    fileName: pdf.name,
-    token,
-    onProgress: (message) => {
-      if (
-        isCurrentFullTranslation(
-          sidebar,
-          pdfTranslationDocumentId(pdf.itemKey),
-          request,
-        )
-      ) {
-        renderFullTranslationNotice(sidebar, message);
-      }
-    },
   });
 }
 
@@ -11245,6 +11265,7 @@ async function startFullTranslation(
       ...session.state,
       presetId: translator.preset.id,
       model: translator.model,
+      lastError: undefined,
     };
     await saveFullTranslationState(session.state);
     renderFullTranslationPanel(sidebar);

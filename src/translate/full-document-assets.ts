@@ -1,6 +1,8 @@
 import { arxivFolderPath, readArxivSourceAsset } from "../context/arxiv-store";
 import { appendLocalPath } from "../utils/local-path";
 import type { FullTranslationDocument } from "./full-document";
+import { isPdfTranslationDocumentId, PDF_TRANSLATION_PREFIX } from "./mineru-document";
+import { ensureMineruCachedAssets, readMineruAsset } from "./mineru-store";
 
 export const PDFJS_MODULE_URL = "resource://zotero/reader/pdf/build/pdf.mjs";
 export const PDFJS_WORKER_URL =
@@ -41,6 +43,18 @@ export async function loadFullTranslationAssetPreviews(
     ...new Set(document.blocks.flatMap((block) => block.assets ?? [])),
   ];
   const previews: FullTranslationAssetPreviews = {};
+  if (paths.length && isPdfTranslationDocumentId(document.arxivId)) {
+    try {
+      await ensureMineruCachedAssets(document.arxivId.slice(PDF_TRANSLATION_PREFIX.length));
+    } catch (error) {
+      for (const path of paths) {
+        const preview = { sourcePath: path, error: error instanceof Error ? error.message : String(error) };
+        previews[path] = preview;
+        onAsset?.(path, preview);
+      }
+      return previews;
+    }
+  }
   for (const path of paths) {
     const preview = await cachedPreview(document.arxivId, path, doc);
     previews[path] = preview;
@@ -75,8 +89,11 @@ async function loadPreview(
   sourcePath: string,
   doc: Document,
 ): Promise<FullTranslationAssetPreview> {
-  const asset = await readArxivSourceAsset(arxivId, sourcePath);
-  if (!asset) return { sourcePath, error: "未找到 LaTeX 图源" };
+  const mineru = isPdfTranslationDocumentId(arxivId);
+  const asset = mineru
+    ? await readMineruAsset(arxivId.slice(PDF_TRANSLATION_PREFIX.length), sourcePath)
+    : await readArxivSourceAsset(arxivId, sourcePath);
+  if (!asset) return { sourcePath, error: mineru ? "未找到 PDF 解析图片" : "未找到 LaTeX 图源" };
   try {
     if (asset.mediaType === "application/pdf") {
       const nativePreview = await renderNativePdfSourceAsset(

@@ -3,6 +3,7 @@ import type {
   FullTranslationDocument,
   FullTranslationTable,
 } from "./full-document";
+import { mineruImagePath } from "./mineru-zip";
 
 export const PDF_TRANSLATION_PREFIX = "pdf:";
 
@@ -21,6 +22,14 @@ export function buildMineruTranslationDocument(
 ): FullTranslationDocument {
   const fromList = blocksFromContentList(contentList);
   const blocks = fromList.length ? fromList : blocksFromMarkdown(markdown);
+  let inReferences = false;
+  for (const block of blocks) {
+    if (block.kind === "heading" || block.kind === "title") {
+      inReferences = /^(?:(?:\d+(?:\.\d+)*|[IVXLCDM]+)[.)]?\s+)?(?:references|bibliography|参考文献)\s*[:.]?$/i.test(block.source.trim());
+    } else if (inReferences) {
+      block.translatable = false;
+    }
+  }
   if (blocks.length === 0) {
     throw new Error("MinerU 解析结果没有可翻译的正文");
   }
@@ -28,7 +37,7 @@ export function buildMineruTranslationDocument(
     schemaVersion: 1,
     arxivId: documentId,
     sourceHash: stableSourceHash(
-      `${markdown}\0${JSON.stringify(contentList ?? null)}`,
+      `mineru-document-v2\0${markdown}\0${JSON.stringify(contentList ?? null)}`,
     ),
     blocks,
   };
@@ -71,6 +80,7 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
         kind: "figure-caption",
         source: item.text,
         translatable: !!item.text,
+        ...(item.asset ? { assets: [item.asset] } : {}),
       });
       continue;
     }
@@ -81,6 +91,7 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
         source: item.text,
         translatable: !!item.text,
         ...(item.table ? { table: item.table } : {}),
+        ...(!item.table && item.asset ? { assets: [item.asset] } : {}),
       });
       continue;
     }
@@ -88,14 +99,38 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
     paragraphIndex += 1;
     blocks.push({
       id: `${sectionID}-p${paragraphIndex}`,
-      kind: paragraphIndex === 1 && sectionID === "front" && !hasKind(blocks, "abstract")
+      kind: sectionID === "front" && !hasKind(blocks, "abstract")
         ? guessAbstract(item.text)
         : "paragraph",
       source: item.text,
       translatable: true,
     });
   }
-  return blocks;
+  return compactFrontMatter(blocks, items);
+}
+
+function compactFrontMatter(blocks: FullTranslationBlock[], items: FlatItem[]): FullTranslationBlock[] {
+  const abstractIndex = items.findIndex((item) => /^abstract\b/i.test(item.text));
+  if (blocks.length !== items.length || blocks[0]?.kind !== "title" || abstractIndex <= 1) return blocks;
+  const title = items[0]!;
+  const abstract = items[abstractIndex]!;
+  const authors = items.slice(1, abstractIndex);
+  // Only group a positioned front-matter region bounded by title and abstract.
+  if (!title.bbox || !abstract.bbox || title.page == null || abstract.page !== title.page ||
+    authors.some((item) => item.kind !== "paragraph" || !item.bbox || item.page !== title.page ||
+      item.bbox[1] < title.bbox![3] || item.bbox[3] > abstract.bbox![1])) return blocks;
+  const groups: FlatItem[][] = [];
+  for (const item of authors) {
+    const center = (item.bbox![0] + item.bbox![2]) / 2;
+    const group = groups.find(([first]) => center >= first!.bbox![0] && center <= first!.bbox![2]);
+    if (group) group.push(item);
+    else groups.push([item]);
+  }
+  groups.sort((a, b) => a[0]!.bbox![0] - b[0]!.bbox![0]);
+  const source = groups.map((group) => group
+    .sort((a, b) => a.bbox![1] - b.bbox![1])
+    .map((item) => item.text).join(" · ")).join("  \n");
+  return [blocks[0]!, { id: "front-metadata", kind: "metadata", source, translatable: false }, ...blocks.slice(abstractIndex)];
 }
 
 function guessAbstract(text: string): FullTranslationBlock["kind"] {
@@ -114,6 +149,9 @@ interface FlatItem {
   text: string;
   level: number;
   table?: FullTranslationTable;
+  asset?: string;
+  page?: number;
+  bbox?: [number, number, number, number];
 }
 
 function flattenContentList(value: unknown): FlatItem[] {
@@ -137,6 +175,16 @@ function flattenContentList(value: unknown): FlatItem[] {
 
 function flattenItem(value: unknown): FlatItem[] {
   if (!isRecord(value)) return [];
+  return flattenItemContent(value).map((item) => ({
+    ...item,
+    page: typeof value.page_idx === "number" ? value.page_idx : undefined,
+    bbox: Array.isArray(value.bbox) && value.bbox.length === 4 && value.bbox.every((n) => typeof n === "number" && Number.isFinite(n))
+      ? value.bbox as [number, number, number, number] : undefined,
+  }));
+}
+
+function flattenItemContent(value: unknown): FlatItem[] {
+  if (!isRecord(value)) return [];
   const type = stringValue(value.type).toLowerCase();
   if (
     type === "header" ||
@@ -152,8 +200,9 @@ function flattenItem(value: unknown): FlatItem[] {
   if (type === "equation" || type === "formula" || type === "display_equation") {
     return text ? [{ kind: "formula", text, level: 0 }] : [];
   }
-  if (type === "image" || type === "figure") {
-    return [{ kind: "figure", text: captionText(value) || text, level: 0 }];
+  const asset = mineruImagePath(stringValue(value.img_path)) ?? undefined;
+  if (type === "image" || type === "figure" || type === "chart") {
+    return [{ kind: "figure", text: captionText(value) || text, level: 0, asset }];
   }
   if (type === "table") {
     return [
@@ -162,6 +211,7 @@ function flattenItem(value: unknown): FlatItem[] {
         text: captionText(value),
         level: 0,
         table: tableFromHtml(stringValue(value.table_body) || stringValue(value.html)),
+        asset,
       },
     ];
   }
@@ -180,7 +230,7 @@ function headingLevel(value: Record<string, unknown>, type: string): number {
 }
 
 function captionText(value: Record<string, unknown>): string {
-  const caption = value.image_caption ?? value.table_caption ?? value.caption;
+  const caption = value.image_caption ?? value.chart_caption ?? value.table_caption ?? value.caption;
   if (Array.isArray(caption)) {
     return caption.map((item) => stringValue(item)).filter(Boolean).join(" ");
   }
@@ -239,6 +289,18 @@ function blocksFromMarkdown(markdown: string): FullTranslationBlock[] {
   for (const raw of chunks) {
     const chunk = raw.trim();
     if (!chunk) continue;
+    const image = chunk.match(/^!\[([^\]]*)\]\(([^\s)]+)\)$/);
+    const asset = image ? mineruImagePath(image[2]!) : null;
+    if (image && asset) {
+      blocks.push({
+        id: `figure-${blocks.length + 1}-caption`,
+        kind: "figure-caption",
+        source: image[1]!,
+        translatable: !!image[1],
+        assets: [asset],
+      });
+      continue;
+    }
     const heading = chunk.match(/^(#{1,6})\s+(.+)$/);
     if (heading) {
       paragraphIndex = 0;

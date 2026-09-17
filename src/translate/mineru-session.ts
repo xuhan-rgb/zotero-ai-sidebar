@@ -3,16 +3,11 @@ import {
   loadFullTranslationState,
   reconcileFullTranslationState,
 } from "../settings/full-translation-store";
-import { parsePdfWithMineru } from "./mineru-client";
 import {
   buildMineruTranslationDocument,
   pdfTranslationDocumentId,
 } from "./mineru-document";
-import {
-  loadMineruCache,
-  readPdfFingerprint,
-  saveMineruCache,
-} from "./mineru-store";
+import { loadMineruCache, readPdfFingerprint } from "./mineru-store";
 import type { FullTranslationSession } from "./full-document-session";
 
 export { pdfTranslationDocumentId };
@@ -82,63 +77,35 @@ function isPdf(item: ZoteroMineruItem): boolean {
 export async function loadMineruFullTranslationSession(options: {
   itemKey: string;
   pdfPath: string;
-  fileName: string;
-  token: string;
-  signal?: AbortSignal;
-  onProgress?: (message: string) => void;
 }): Promise<FullTranslationSession> {
   const documentId = pdfTranslationDocumentId(options.itemKey);
-  options.onProgress?.("正在读取 PDF…");
   const fingerprint = await readPdfFingerprint(options.pdfPath);
   const cached = await loadMineruCache(
     options.itemKey,
     fingerprint.size,
     fingerprint.mtime,
   );
-  const parsed =
-    cached ??
-    (await parsePdfWithMineru(
-      {
-        name: options.fileName,
-        bytes: fingerprint.bytes,
-        dataId: options.itemKey,
-      },
-      {
-        token: options.token,
-        signal: options.signal,
-        onProgress: (progress) => {
-          options.onProgress?.(progressLabel(progress.state, progress.extractedPages, progress.totalPages));
-        },
-      },
-    ));
+  if (!cached) {
+    throw new Error("PDF 尚未解析完成，请等待解析后再打开全文翻译。");
+  }
   const document = buildMineruTranslationDocument(
     documentId,
-    parsed.markdown,
-    parsed.contentList,
+    cached.markdown,
+    cached.contentList,
   );
-  if (!cached) {
-    await saveMineruCache(options.itemKey, fingerprint, parsed, document.sourceHash);
-  }
   const stored = await loadFullTranslationState(documentId, document.sourceHash);
   const state = stored
     ? reconcileFullTranslationState(stored, document)
     : createFullTranslationState(document, "", "");
-  return { document, state, assets: {} };
-}
-
-function progressLabel(
-  state: string,
-  extracted?: number,
-  total?: number,
-): string {
-  if (state === "waiting-file") return "正在上传 PDF…";
-  if (state === "pending") return "MinerU 排队中…";
-  if (state === "converting") return "MinerU 正在转换格式…";
-  if (state === "running") {
-    return total
-      ? `MinerU 解析中（${extracted ?? 0}/${total} 页）…`
-      : "MinerU 正在解析 PDF…";
+  let removedError = false;
+  for (const block of document.blocks) {
+    if (!block.translatable && state.blocks[block.id]?.status !== "skipped") {
+      removedError ||= state.blocks[block.id]?.status === "error";
+      state.blocks[block.id] = { status: "skipped" };
+    }
   }
-  if (state === "done") return "正在读取解析结果…";
-  return "正在用 MinerU 解析 PDF…";
+  if (removedError && !Object.values(state.blocks).some((block) => block.status === "error")) {
+    delete state.lastError;
+  }
+  return { document, state, assets: {} };
 }

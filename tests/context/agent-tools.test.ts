@@ -1270,6 +1270,20 @@ describe("createZoteroAgentTools", () => {
     });
   });
 
+  it("zotero_get_full_pdf prefers completed parsing over an older frozen text", async () => {
+    paperCacheStore = JSON.stringify({ "item:1": { fullText: "OLD INDEX", source: "full_pdf" } });
+    const parsedSource = {
+      ...source,
+      getParsedPdfText: async () => "PARSED PAPER [1] References: Anguloc",
+      getFullText: async () => "OLD INDEX",
+    };
+    const tool = createZoteroAgentTools({ source: parsedSource, itemID: 1 })
+      .find((t) => t.name === "zotero_get_full_pdf")!;
+    const result = await tool.execute({});
+    expect(result.frontBlock).toBe("PARSED PAPER [1] References: Anguloc");
+    expect(result.context?.fullTextSource).toBe("pdf");
+  });
+
   it("zotero_get_full_pdf reuses a frozen cache entry without re-extracting", async () => {
     // Pre-seed the in-memory paper-cache file with a frozen entry for item 1.
     paperCacheStore = JSON.stringify({

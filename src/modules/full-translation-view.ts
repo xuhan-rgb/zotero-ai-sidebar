@@ -1,5 +1,6 @@
 import { attachFullTranslationLinks } from "./full-translation-links";
 import { renderMarkdownInto } from "./markdown-render";
+import { isPdfTranslationDocumentId } from "../translate/mineru-document";
 import { normalizeLatexTextCommands } from "../context/tex-clean";
 import { normalizeAlgorithmDisplay, hasAlgorithmSyntax, type AlgorithmDisplayState } from "../translate/algorithm-display";
 import {
@@ -91,10 +92,20 @@ export function renderFullTranslationView(
     root.dataset.sourceQuote = options.highlightedSourceQuote.quote;
   }
   root.append(renderToolbar(doc, options));
-  if (options.runError) {
-    const error = doc.createElement("div");
+  const runError = options.runError || (!options.running ? options.state.lastError?.message : undefined);
+  if (runError) {
+    const error = doc.createElement("details");
     error.className = "zai-ft-run-error";
-    error.textContent = `翻译中断：${options.runError}`;
+    const summary = doc.createElement("summary");
+    summary.textContent = `翻译中断：${runError}`;
+    const label = doc.createElement("div");
+    label.textContent = "网页原始返回";
+    const response = doc.createElement("pre");
+    response.className = "zai-ft-error-response";
+    response.textContent = options.state.lastError?.message === runError
+      ? options.state.lastError.rawResponse ?? "此次错误没有可用的网页返回内容。"
+      : "此次错误没有保存网页返回内容。";
+    error.append(summary, label, response);
     root.append(error);
   }
 
@@ -102,7 +113,7 @@ export function renderFullTranslationView(
   content.className = "zai-ft-content";
   const algorithmStates = { source: { depth: 0 }, translation: { depth: 0 } };
   const algorithmGroups = new Map<string, HTMLElement>();
-  for (const block of options.document.blocks) {
+  for (const [index, block] of options.document.blocks.entries()) {
     if (block.kind === "heading" || block.kind === "title") {
       algorithmStates.source.depth = 0;
       algorithmStates.translation.depth = 0;
@@ -111,6 +122,15 @@ export function renderFullTranslationView(
       algorithmStates.translation.depth = algorithmStates.source.depth;
     }
     const row = renderBlockPair(doc, block, options, algorithmStates);
+    if (isPdfTranslationDocumentId(options.document.arxivId)) {
+      const nextIsList = isParsedListItem(options.document.blocks[index + 1]);
+      if (isParsedListItem(block)) {
+        row.classList.add("zai-ft-list-item");
+        if (nextIsList) row.classList.add("zai-ft-list-continues");
+      } else if (nextIsList && block.kind === "paragraph" && /[:：]\s*$/.test(block.source)) {
+        row.classList.add("zai-ft-list-lead");
+      }
+    }
     if (block.algorithmId) {
       let group = algorithmGroups.get(block.algorithmId);
       if (!group) {
@@ -1070,6 +1090,13 @@ function renderBlockPair(
   const row = doc.createElement("article");
   row.className = `zai-ft-block zai-ft-${block.kind}`;
   row.dataset.blockId = block.id;
+  if (block.kind === "metadata") {
+    const body = doc.createElement("div");
+    body.className = "zai-ft-block-body";
+    renderMarkdownInto(body, block.source);
+    row.append(body);
+    return row;
+  }
   if (block.kind === "abstract") {
     const label = doc.createElement("h2");
     label.className = "zai-ft-section-label";
@@ -1093,6 +1120,7 @@ function renderBlockPair(
   }
 
   if (!isSharedFormula) {
+    const parsedListItem = isPdfTranslationDocumentId(options.document.arxivId) && isParsedListItem(block);
     const isPairedInterleavedHeading =
       block.kind === "heading" &&
       options.layout === "interleaved" &&
@@ -1106,6 +1134,7 @@ function renderBlockPair(
       undefined,
       reading,
       algorithmStates.source,
+      parsedListItem,
     );
     const translation = renderBlockSide(
       doc,
@@ -1116,6 +1145,7 @@ function renderBlockPair(
       blockStatus,
       reading,
       algorithmStates.translation,
+      parsedListItem,
     );
     if (reading.languageMode === "translation" && block.source.trim()) {
       const label = doc.createElement("span");
@@ -1310,6 +1340,10 @@ function normalizeTranslationDisplayText(
   ) ?? text;
 }
 
+function isParsedListItem(block: FullTranslationBlock | undefined): boolean {
+  return block?.kind === "paragraph" && /^\s*[•*+-]\s+\S/.test(block.source);
+}
+
 function renderBlockSide(
   doc: Document,
   block: FullTranslationBlock,
@@ -1319,6 +1353,7 @@ function renderBlockSide(
   status?: string,
   readingSettings?: FullTranslationReadingSettings,
   algorithmState?: AlgorithmDisplayState,
+  parsedListItem = false,
 ): HTMLElement {
   const cell = doc.createElement("div");
   cell.className = `zai-ft-cell zai-ft-${side}`;
@@ -1380,6 +1415,10 @@ function renderBlockSide(
       body.append(row);
     }
   } else {
+    // Keep cached text and block IDs intact; restore list structure only for display.
+    if (parsedListItem && (side === "source" || status === "done" || status === "skipped")) {
+      text = `- ${text.trim().replace(/^[•*+-]\s+/, "")}`;
+    }
     renderMarkdownInto(
       body,
       block.kind === "formula"
@@ -1438,7 +1477,10 @@ function renderSharedVisual(
   if (block.kind === "formula") {
     const body = doc.createElement("div");
     body.className = "zai-ft-block-body zai-ft-shared-formula";
-    renderMarkdownInto(body, `$$\n${block.source}\n$$`);
+    const formula = block.source.trim();
+    const hasDelimiters = (formula.startsWith("$$") && formula.endsWith("$$")) ||
+      (formula.startsWith("\\[") && formula.endsWith("\\]"));
+    renderMarkdownInto(body, hasDelimiters ? formula : `$$\n${formula}\n$$`);
     visual.append(body);
   }
   return visual;

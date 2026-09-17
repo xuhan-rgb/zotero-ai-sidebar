@@ -116,6 +116,22 @@ function render(layout: FullTranslationLayout = "parallel") {
   });
 }
 
+it("renders author metadata once without translation placeholders or paired cells", () => {
+  const paper: FullTranslationDocument = {
+    ...document,
+    blocks: [{ id: "front-metadata", kind: "metadata", source: "Author · University · author@example.org", translatable: false }],
+  };
+  const view = renderFullTranslationView(globalThis.document, {
+    document: paper, state: createFullTranslationState(paper, "", ""),
+    layout: "parallel", running: false, assets: {},
+    onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(), onCancel: vi.fn(), onExit: vi.fn(),
+  });
+  const metadata = view.querySelector('[data-block-id="front-metadata"]')!;
+  expect(metadata.textContent).toBe("Author · University · author@example.org");
+  expect(metadata.querySelectorAll(".zai-ft-cell")).toHaveLength(0);
+  expect(metadata.textContent).not.toContain("等待翻译");
+});
+
 function openBlockContextMenu(view: HTMLElement, blockId: string): HTMLElement {
   const body = view.querySelector<HTMLElement>(
     `[data-block-id="${blockId}"] .zai-ft-translation .zai-ft-block-body`,
@@ -132,6 +148,53 @@ function openBlockContextMenu(view: HTMLElement, blockId: string): HTMLElement {
 }
 
 describe("renderFullTranslationView", () => {
+  it.each(["dollars", "brackets", "bare"])("renders a parsed multiline equation with %s delimiters only once", (delimiter) => {
+    const formula = String.raw`\begin{array}{l} P o A _ {1} = P o D _ {1} + \Phi_ {p 1} \\ P o A _ {2} = P o D _ {2} + \Phi_ {p 2} \\ P o A _ {2} - P o A _ {1} = \Delta_ {\phi} + \Phi_ {p 2} - \Phi_ {p 1} \end{array}\tag{2}`;
+    const source = delimiter === "dollars" ? `$$\n${formula}\n$$`
+      : delimiter === "brackets" ? `\\[\n${formula}\n\\]` : formula;
+    const paper: FullTranslationDocument = { ...document, arxivId: "pdf:ITEM", blocks: [
+      { id: "formula-1", kind: "formula", source, translatable: false },
+    ] };
+    const view = renderFullTranslationView(globalThis.document, {
+      document: paper, state: createFullTranslationState(paper, "preset-1", "model-1"),
+      layout: "parallel", running: false, assets: {},
+      onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(), onCancel: vi.fn(), onExit: vi.fn(),
+    });
+    const body = view.querySelector(".zai-ft-shared-formula")!;
+    expect(body.querySelectorAll(".katex-display")).toHaveLength(1);
+    expect(body.querySelectorAll(".katex-error")).toHaveLength(0);
+    expect(body.querySelector(".katex-html .mtable")).not.toBeNull();
+    expect(body.querySelector(".katex-html .tag")?.textContent).toContain("2");
+    expect(Array.from(body.childNodes).filter((node) => node.nodeType === 3).map((node) => node.textContent).join("").trim()).toBe("");
+    expect(paper.blocks[0].source).toBe(source);
+  });
+
+  it.each(["parallel", "interleaved"] as const)("renders parsed PDF bullets as compact list items in %s mode", (layout) => {
+    const paper: FullTranslationDocument = { ...document, arxivId: "pdf:ITEM", blocks: [
+      { id: "intro", kind: "paragraph", source: "Our contributions:", translatable: true },
+      { id: "p1", kind: "paragraph", source: "• First contribution with $x$.", translatable: true },
+      { id: "p2", kind: "paragraph", source: "• Second contribution.", translatable: true },
+      { id: "after", kind: "paragraph", source: "Normal paragraph.", translatable: true },
+    ] };
+    const cached = createFullTranslationState(paper, "preset-1", "model-1");
+    cached.blocks.p1 = { status: "done", translation: "第一项贡献。" };
+    const render = (doc: FullTranslationDocument) => renderFullTranslationView(globalThis.document, {
+      document: doc, state: cached, layout, running: false, assets: {},
+      onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(), onCancel: vi.fn(), onExit: vi.fn(),
+    });
+    const view = render(paper);
+    expect(view.querySelectorAll(".zai-ft-list-item")).toHaveLength(2);
+    expect(view.querySelector('[data-block-id="intro"]')?.classList.contains("zai-ft-list-lead")).toBe(true);
+    expect(view.querySelector('[data-block-id="p1"]')?.classList.contains("zai-ft-list-continues")).toBe(true);
+    expect(view.querySelector('[data-block-id="p2"]')?.classList.contains("zai-ft-list-continues")).toBe(false);
+    expect(view.querySelector('[data-block-id="p1"] .zai-ft-source li')?.textContent).toContain("First contribution");
+    expect(view.querySelector('[data-block-id="p1"] .zai-ft-translation li')?.textContent).toBe("第一项贡献。");
+    expect(view.querySelector('[data-block-id="p2"] .zai-ft-translation li')).toBeNull();
+    expect(view.querySelector('[data-block-id="after"] ul')).toBeNull();
+    expect(paper.blocks[1].source).toBe("• First contribution with $x$.");
+    expect(render({ ...paper, arxivId: "2504.16054" }).querySelectorAll(".zai-ft-list-item")).toHaveLength(0);
+  });
+
   it.each(["parallel", "interleaved"] as const)("keeps a split algorithm in one visual container in %s mode", (layout) => {
     const paper: FullTranslationDocument = { ...document, blocks: [
       { id: "a1", kind: "paragraph", source: String.raw`\begin{algorithm}\KwIn{Video}`, translatable: true, algorithmId: "algorithm-1" },
@@ -1585,6 +1648,20 @@ describe("renderFullTranslationView", () => {
       "Hit 200",
     );
     expect(view.querySelector(".zai-ft-content")).not.toBeNull();
+  });
+
+  it("offers an expandable persisted failure response as literal text", () => {
+    const saved = { ...state(), lastError: { message: "段落 p1 未翻译", rawResponse: "<script>alert(1)</script>\n$$x$$\n<<<ZAI_TRANSLATION:p1>>>" } };
+    const view = renderFullTranslationView(globalThis.document, {
+      document, state: saved, layout: "parallel", running: false, assets: {},
+      onLayoutChange: vi.fn(), onRun: vi.fn(), onRetranslate: vi.fn(), onCancel: vi.fn(), onExit: vi.fn(),
+    });
+    const details = view.querySelector("details.zai-ft-run-error") as HTMLDetailsElement;
+    expect(details).not.toBeNull();
+    expect(details.open).toBe(false);
+    expect(details.querySelector("summary")?.textContent).toContain("段落 p1 未翻译");
+    expect(details.querySelector("pre")?.textContent).toBe(saved.lastError.rawResponse);
+    expect(details.querySelector("script, .katex")).toBeNull();
   });
 
   it("summarizes cache tokens reported outside the raw input count", () => {

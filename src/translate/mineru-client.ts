@@ -12,6 +12,23 @@ export interface MineruParseResult {
   markdown: string;
   contentList: unknown | null;
   batchId: string;
+  assets?: Record<string, Uint8Array>;
+}
+
+export async function downloadMineruResult(
+  batchId: string,
+  options: MineruClientOptions,
+): Promise<MineruParseResult> {
+  const response = await requestJson(options, "GET", `/extract-results/batch/${encodeURIComponent(batchId)}`);
+  if (response.code !== 0) throw new Error(mineruErrorMessage(response));
+  const result = firstExtractResult(response.data);
+  const zipUrl = stringField(result, "full_zip_url");
+  if (stringField(result, "state") !== "done" || !zipUrl) {
+    throw new Error("MinerU 原解析结果已不可用，无法补齐图片缓存");
+  }
+  const zip = await (options.fetch ?? fetch)(zipUrl);
+  if (!zip.ok) throw new Error(`下载 MinerU 图片失败（HTTP ${zip.status}）`);
+  return { ...await extractMineruZip(new Uint8Array(await zip.arrayBuffer())), batchId };
 }
 
 export interface MineruClientOptions {
@@ -153,10 +170,10 @@ async function requestJson(
 
 function mineruErrorMessage(response: MineruResponse): string {
   if (response.msg === "A0202" || /A0202/.test(response.msg ?? "")) {
-    return "MinerU Token 无效，请到 mineru.net/apiManage 重新创建";
+    return "MinerU Token 无效，请到 https://mineru.net/apiManage/token 重新申请";
   }
   if (response.msg === "A0211") {
-    return "MinerU Token 已过期，请重新创建";
+    return "MinerU Token 已过期，请到 https://mineru.net/apiManage/token 重新申请";
   }
   return response.msg || `MinerU 接口错误（${response.code}）`;
 }

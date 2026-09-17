@@ -43,6 +43,23 @@ function translator(signal = new AbortController().signal) {
   });
 }
 describe("WEB full-document translation", () => {
+  it("preserves valid batch paragraphs when another paragraph is not translated", async () => {
+    const t = translator();
+    const paper = { schemaVersion: 1 as const, arxivId: "pdf:TEST", sourceHash: "x", blocks: [
+      { id: "good", kind: "paragraph" as const, source: "This is the first paragraph.", translatable: true },
+      { id: "bad", kind: "paragraph" as const, source: "This is the second paragraph.", translatable: true },
+    ] };
+    let saved = createFullTranslationState(paper, "web:deepseek", "deepseek");
+    const pending = runFullDocumentTranslation({ ...t, document: paper, state: saved,
+      signal: new AbortController().signal, onState: (s) => { saved = s; } });
+    const check = expect(pending).rejects.toThrow("bad");
+    await vi.waitFor(() => expect(mocks.tasks).toHaveLength(1));
+    await mocks.tasks[0].onImport({ answer: block("good", "这是第一段。") + "\n" + block("bad", "This is the second paragraph.") });
+    await check;
+    expect(saved.blocks.good).toMatchObject({ status: "done", translation: "这是第一段。" });
+    expect(saved.blocks.bad.status).toBe("error");
+    expect(saved.lastError?.rawResponse).toBe(block("good", "这是第一段。") + "\n" + block("bad", "This is the second paragraph."));
+  });
   it("uses the website task and restores protected math without API usage", async () => {
     const t = translator();
     const pending = translateProtectedBlock(
@@ -191,7 +208,9 @@ it("preserves raw LaTeX commands, quotes and newlines in fenced batch replies", 
   await mocks.tasks[0].onImport({
     answer: "```text\n" + block("algorithm", text) + "\n```",
   });
-  expect(await pending).toEqual([{ id: "algorithm", text }]);
+  const result = await pending;
+  expect(Array.from(result)).toEqual([{ id: "algorithm", text }]);
+  expect(result.rawResponse).toBe("```text\n" + block("algorithm", text) + "\n```");
 });
 
 it.each([
@@ -224,7 +243,7 @@ it.each([
     await mocks.tasks[0].onImport({
       answer: wrap(block("section-2-1-p4", text)),
     });
-    expect(await pending).toEqual([{ id: "section-2-1-p4", text }]);
+    expect(Array.from(await pending)).toEqual([{ id: "section-2-1-p4", text }]);
   },
 );
 
@@ -234,5 +253,13 @@ it("rejects a truncated extra block even when the requested block is complete", 
   await mocks.tasks[0].onImport({
     answer: block("a", "译文") + "\n<<<ZAI_TRANSLATION:b>>>\n未完成",
   });
+  await check;
+});
+
+it("retains malformed protocol output on the error for inspection", async () => {
+  const answer = "```text\n<<<ZAI_TRANSLATION:a>>>\n只有开头标记\n```";
+  const pending = translator().translateBatch([{ id: "a", text: "Source" }]);
+  const check = expect(pending).rejects.toMatchObject({ rawResponse: answer });
+  await mocks.tasks[0].onImport({ answer });
   await check;
 });

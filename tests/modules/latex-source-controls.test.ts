@@ -147,16 +147,22 @@ describe("LaTeX proxy controls", () => {
     expect(root.querySelector(".latex-proxy-settings")).toBeNull();
   });
 
-  it("offers MinerU full translation when there is no LaTeX source", async () => {
+  it("does not show full translation until PDF parse when there is no LaTeX source", async () => {
     check.mockResolvedValue("no-source");
-    const translate = vi.fn();
-    const root = renderLatexSourceControls(document, "no-tex", translate);
+    const onAvailability = vi.fn();
+    const root = renderLatexSourceControls(document, "no-tex", vi.fn(), {
+      onAvailability,
+    });
     await flush();
     expect(root.querySelector(".arxiv-source-badge")?.textContent).toBe(
       "无 LaTeX 源",
     );
-    click(root, "全文翻译");
-    expect(translate).toHaveBeenCalledOnce();
+    expect(
+      Array.from(root.querySelectorAll("button")).some(
+        (button) => button.textContent === "全文翻译" && !button.hidden,
+      ),
+    ).toBe(false);
+    expect(onAvailability).toHaveBeenCalledWith("no-source");
   });
 
   it("keeps translation available and supports using system proxy settings", async () => {

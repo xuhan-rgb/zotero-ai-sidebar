@@ -21,6 +21,15 @@ harness enforcement.
 - Full PDF text is attached only for the current turn and is not replayed from
   history.
 - Tool traces should be visible in the chat UI and Markdown export.
+- Papers with available arXiv LaTeX source retain their existing source, TOC
+  and analysis workflow. Otherwise search, ranges, outline and full-text reads
+  prefer completed MinerU Markdown matching the current PDF's size/mtime. This keeps
+  references, formulas and tables available to question answering without a
+  Token check, upload or parse request. Missing, empty or stale parse caches
+  fall back to Zotero's text index. Parsed text also supersedes older frozen
+  PDF text; existing arXiv TOC behavior,
+  selection suppression and full-text budgets still apply. Reader text tools
+  retain PDF.js text for coordinate-based annotations.
 
 ## WEB Conversation Ownership (Development)
 
