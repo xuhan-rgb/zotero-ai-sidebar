@@ -30,11 +30,16 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
-### Unreleased
+### What's new in v0.8.11
 
 - **Quick prompts live in a data-directory file**: built-in and custom prompts are stored as `zotero-ai-sidebar-quick-prompts.json` next to your PDFs (usually `Zotero/` in your home folder), not as a large blob in `prefs.js`. The first launch after upgrade migrates any existing preference value and clears it only after the file write succeeds. Import/export and WebDAV `state.json` still include the prompt library.
 - **Full-document translation for ordinary PDFs via MinerU**: when no arXiv LaTeX source is available, full-document translation uploads the PDF to MinerU’s precise parsing API, then reuses the existing bilingual reader. Set a mineru.net token in settings.
-- **Upgrade**: install the new XPI and restart Zotero. Existing prompt edits are kept; the error-console warning about writing ~10KB to `extensions.zotero-ai-sidebar.quickPrompts` should stop after restart.
+- **Sentence-level bilingual alignment**: with the **逐段** layout and **按句换行**, each translated sentence now sits directly under its source sentence. When the two sides split into a different number of sentences, the translation stays as one block under the paragraph instead of being paired wrongly. **阅读设置** also controls font size, line height, font family (system / serif / sans), sentence markers, and the line-break style.
+- **Original-PDF comparison**: reading pages for ordinary PDFs can show the real PDF page beside the parsed text or translation. Click a paragraph to locate its PDF region, click a region box to locate the paragraph, and page or zoom as needed; coordinates already cached by MinerU are reused. Outside comparison mode, only **核对 PDF 原文** opens a crop of the original page. LaTeX reading is unchanged.
+- **WEB paper material follows the parse**: a cached LaTeX main file is still preferred, but with no source the Markdown parsed by MinerU (`full.md`) is sent once parsing has finished, and the PDF only while parsing is still pending. A conversation whose first message carried the PDF automatically switches to the Markdown on its next message.
+- **WEB uploads no longer stall**: attachment progress is now matched against the file name the website really renders, so tasks that previously sat in the upload stage and failed after two minutes now submit. A failed or cancelled task also releases the stuck "processing the previous request" composer placeholder.
+- **Deleted DeepSeek chats recover**: when a bound website conversation has been deleted, the plugin detects the missing chat and starts a fresh one instead of failing the task.
+- **Upgrade**: install the 0.8.11 XPI and restart Zotero. Existing prompt edits are kept; the error-console warning about writing ~10KB to `extensions.zotero-ai-sidebar.quickPrompts` should stop after restart. WEB users keep their browser login; the paired runtime is reused when its checksum already matches.
 
 ### What's new in v0.8.10
 
