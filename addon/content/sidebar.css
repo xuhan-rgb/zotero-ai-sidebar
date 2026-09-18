@@ -3840,6 +3840,33 @@ div.math-fallback {
   color: var(--zai-accent-strong);
 }
 
+.input-row .composer-web-notice-chip {
+  position: absolute;
+  right: 48px;
+  bottom: 9px;
+  display: inline-flex;
+  align-items: center;
+  height: 30px;
+  padding: 0 11px;
+  border: 1px solid rgba(154, 145, 134, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--zai-faint);
+  font: 600 11px/1 var(--zai-font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.input-row .composer-web-notice-chip:hover {
+  border-color: rgba(154, 145, 134, 0.6);
+  background: #fff;
+  color: var(--zai-muted);
+}
+
+.input-row.input-row-has-stop .composer-web-notice-chip {
+  right: 66px;
+}
+
 .composer-footer-actions {
   display: inline-flex;
   align-items: center;
@@ -8380,3 +8407,162 @@ div.math-fallback {
 .zai-pdf-source-crop { position: relative; width: 100%; overflow: hidden; background: white; }
 .zai-pdf-source-crop > img { position: absolute; max-width: none; height: auto; display: block; }
 .zai-ft-pdf-toggle[aria-pressed="true"] { color: #315ce0; border-color: #597ee4; }
+
+.zai-web-notice-layer {
+  position: fixed;
+  z-index: 12500;
+  inset: 0;
+  display: flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(35, 31, 26, 0.38);
+  font-family: var(--zai-font);
+  -moz-user-select: text;
+  user-select: text;
+  animation: zai-quick-ask-layer-in 130ms ease-out;
+}
+
+.zai-web-notice {
+  display: grid;
+  width: min(620px, calc(100vw - 48px));
+  max-height: min(86vh, 720px);
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  box-sizing: border-box;
+  overflow: hidden;
+  border: 1px solid rgba(120, 88, 57, 0.3);
+  border-radius: 16px;
+  background: linear-gradient(135deg, #fffaf2, #fffdf9 48%);
+  box-shadow:
+    0 24px 64px rgba(43, 32, 21, 0.26),
+    0 2px 7px rgba(66, 45, 26, 0.12);
+  color: var(--zai-text);
+}
+
+.zai-web-notice-header {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 16px 10px;
+  border-bottom: 1px solid rgba(130, 101, 70, 0.16);
+}
+
+.zai-web-notice-title {
+  flex: 1;
+  font-size: 15px;
+}
+
+.zai-web-notice-close {
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgba(130, 101, 70, 0.25);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.8);
+  color: var(--zai-muted);
+  cursor: pointer;
+  font: 600 15px/1 var(--zai-font);
+}
+
+.zai-web-notice-close:hover {
+  background: #fff;
+  color: var(--zai-text);
+}
+
+.zai-web-notice-body {
+  display: grid;
+  gap: 14px;
+  padding: 14px 16px;
+  overflow-y: auto;
+  font-size: 12.5px;
+  line-height: 1.6;
+}
+
+.zai-web-notice-callout {
+  display: grid;
+  gap: 4px;
+  padding: 10px 12px;
+  border-left: 3px solid var(--zai-accent);
+  border-radius: 0 10px 10px 0;
+  background: var(--zai-accent-soft);
+  color: #7c4a2c;
+}
+
+.zai-web-notice-callout-title {
+  color: var(--zai-accent-strong);
+  font-size: 13px;
+}
+
+.zai-web-notice-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.zai-web-notice-table th,
+.zai-web-notice-table td {
+  padding: 6px 8px;
+  border: 1px solid rgba(130, 101, 70, 0.2);
+  text-align: left;
+  vertical-align: top;
+}
+
+.zai-web-notice-table th {
+  background: rgba(247, 241, 232, 0.85);
+  font-size: 11.5px;
+}
+
+.zai-web-notice-table .zai-web-notice-item {
+  width: 84px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.zai-web-notice-table .is-web {
+  background: rgba(255, 240, 231, 0.5);
+}
+
+.zai-web-notice-section {
+  display: grid;
+  gap: 6px;
+}
+
+.zai-web-notice-section > strong {
+  font-size: 13px;
+}
+
+.zai-web-notice-list {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding-left: 16px;
+  color: var(--zai-muted);
+}
+
+.zai-web-notice-list b {
+  color: var(--zai-text);
+}
+
+.zai-web-notice-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 7px;
+  padding: 10px 16px 14px;
+  border-top: 1px solid rgba(130, 101, 70, 0.16);
+}
+
+.zai-web-notice-actions button {
+  min-height: 30px;
+  padding: 0 14px;
+  border: 1px solid rgba(130, 101, 70, 0.25);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.78);
+  color: var(--zai-text);
+  cursor: pointer;
+  font: 650 12px/1 var(--zai-font);
+}
+
+.zai-web-notice-actions button:hover {
+  background: #fff;
+}

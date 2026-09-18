@@ -242,6 +242,7 @@ import {
   hideWebAccount,
   openWebAccount,
 } from "./web-agent-client";
+import { openWebUsageNotice } from "./web-usage-notice";
 import {
   getWebAgentBrowsers,
   addWebAgentBrowser,
@@ -3285,6 +3286,9 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     attachmentMenuContent.append(screenshotAttach, imageAttach);
     row.append(attachmentMenu);
   }
+  if (webPromptTarget && !state.networkDiagramTarget) {
+    row.append(renderWebUsageNoticeChip(doc, mount));
+  }
   const send = buttonEl(doc, conversationSending ? "↑ 排队" : "↑");
   send.className = conversationSending ? "send-btn send-queue-btn" : "send-btn";
   send.disabled = !canSubmit;
@@ -3319,6 +3323,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
       }
     });
     row.append(stop);
+    row.classList.add("input-row-has-stop");
   }
   if (!state.networkDiagramTarget) {
     const selectionChip = state.chatSelectionQuote
@@ -4758,6 +4763,19 @@ function shouldExportWholePaperFrontBlock(messages: Message[]): boolean {
 
 function normalizeSelectionForTurnMode(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+/** WEB mode sends text material only; the notice spells out what that means. */
+function renderWebUsageNoticeChip(
+  doc: Document,
+  mount: HTMLElement,
+): HTMLElement {
+  const chip = buttonEl(doc, "使用须知");
+  chip.className = "composer-web-notice-chip";
+  chip.title = "WEB 默认不发送图片；查看 API 与 WEB 的差别和看图办法";
+  chip.setAttribute("aria-label", "WEB 模式使用须知");
+  chip.addEventListener("click", () => openWebUsageNotice(mount));
+  return chip;
 }
 
 function renderComposerFooter(
