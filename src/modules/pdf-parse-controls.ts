@@ -10,7 +10,10 @@ export function renderPdfParseControls(
   doc: Document,
   itemID: number,
   onTranslate: () => void,
-  options?: { onConfigureToken?: () => void },
+  options?: {
+    onConfigureToken?: () => void;
+    onState?: (state: MineruParseState | undefined) => void;
+  },
 ): HTMLElement {
   const root = doc.createElement("span");
   root.className = "latex-source-controls pdf-parse-controls";
@@ -45,6 +48,7 @@ export function renderPdfParseControls(
   });
   const apply = (state: MineruParseState | undefined) => {
     current = state;
+    options?.onState?.(state);
     retry.hidden = true;
     applyToken.hidden = true;
     translate.hidden = true;

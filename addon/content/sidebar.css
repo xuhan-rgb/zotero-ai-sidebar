@@ -1817,6 +1817,16 @@ button:disabled,
   font: 11px/1.4 var(--zai-mono);
 }
 
+.ctx-web-material-note {
+  width: fit-content;
+  margin-top: 5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--zai-accent-soft);
+  color: var(--zai-accent-strong);
+  font: 11px/1.4 var(--zai-font);
+}
+
 .ctx-github-repository {
   color: var(--zai-blue);
   font-weight: 700;

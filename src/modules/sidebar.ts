@@ -2089,12 +2089,37 @@ export function renderContextCard(
     const sidebar = findSidebarStateByDocument(doc);
     if (sidebar) void showFullTranslation(sidebar);
   };
+  // The web model receives the paper as text (LaTeX source or MinerU Markdown),
+  // so it never sees the figures. Say so where the paper material is shown, and
+  // only while that text material actually exists.
+  const webTextMaterial = { ready: false };
+  const webMaterialNote = el(
+    doc,
+    "div",
+    "ctx-web-material-note",
+    "WEB 模式只发送论文文字，图不会发送",
+  );
+  webMaterialNote.title =
+    "网页模型看不到论文里的图和版式；需要看图时，请在问题里描述图表内容，或在网页中手动附加图片或原始 PDF。";
+  webMaterialNote.hidden = true;
+  const syncWebMaterialNote = () => {
+    try {
+      webMaterialNote.hidden =
+        loadLocalUiSettings(zoteroPrefs()).chatSendMode !== "web" ||
+        !webTextMaterial.ready;
+    } catch {
+      webMaterialNote.hidden = true;
+    }
+  };
+  card.append(webMaterialNote);
   const entry = doc.createElement("span");
   entry.className = "full-translation-entry";
   if (arxivId) {
     entry.append(
       renderLatexSourceControls(doc, arxivId, openTranslation, {
         onAvailability: (result) => {
+          webTextMaterial.ready = result === "available";
+          syncWebMaterialNote();
           const existing = entry.querySelector(".pdf-parse-controls");
           if (result === "available") {
             existing?.remove();
@@ -2105,6 +2130,10 @@ export function renderContextCard(
               renderPdfParseControls(doc, itemID, openTranslation, {
                 onConfigureToken: () =>
                   openAddonPreferences(doc, "zai-mineru-token"),
+                onState: (state) => {
+                  webTextMaterial.ready = state?.status === "ready";
+                  syncWebMaterialNote();
+                },
               }),
             );
           }
@@ -2115,6 +2144,10 @@ export function renderContextCard(
     entry.append(
       renderPdfParseControls(doc, itemID, openTranslation, {
         onConfigureToken: () => openAddonPreferences(doc, "zai-mineru-token"),
+        onState: (state) => {
+          webTextMaterial.ready = state?.status === "ready";
+          syncWebMaterialNote();
+        },
       }),
     );
   }
