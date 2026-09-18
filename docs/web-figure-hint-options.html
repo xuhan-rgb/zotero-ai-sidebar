@@ -1,0 +1,304 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero AI Sidebar · 「WEB 不发图」提示位置方案</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f4ef;
+        --paper: #fffdf9;
+        --text: #2d2925;
+        --muted: #756c64;
+        --faint: #9a9186;
+        --border: #dfd3c6;
+        --border-strong: #d8c9b6;
+        --blue: #28759a;
+        --blue-soft: #eaf5fa;
+        --accent: #b7653d;
+        --accent-soft: #fff0e7;
+        --green: #31734a;
+        --green-soft: #e9f5ee;
+        --shadow: 0 16px 42px rgba(62, 47, 33, 0.1);
+        --mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        background: radial-gradient(circle at 10% 0%, #fff 0, transparent 34%), var(--bg);
+        color: var(--text);
+        font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+        line-height: 1.65;
+      }
+      main { width: min(1500px, calc(100% - 40px)); margin: 40px auto 72px; }
+      .hero, .card {
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: rgba(255, 253, 249, 0.94);
+        box-shadow: var(--shadow);
+      }
+      .hero { padding: 28px 32px; }
+      .eyebrow { margin: 0 0 8px; color: var(--blue); font-size: 12px; font-weight: 800; letter-spacing: 0.12em; }
+      h1 { margin: 0 0 10px; font-size: 26px; }
+      .hero p { margin: 0; color: var(--muted); max-width: 90ch; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(392px, 1fr)); gap: 22px; margin-top: 24px; }
+      .card { padding: 18px; display: flex; flex-direction: column; gap: 14px; }
+      .card h2 { margin: 0; font-size: 15px; display: flex; align-items: center; gap: 8px; }
+      .tag { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; }
+      .tag.now { background: var(--blue-soft); color: var(--blue); }
+      .tag.rec { background: var(--green-soft); color: var(--green); }
+      .tag.alt { background: #f1ece4; color: var(--muted); }
+      .notes { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+      .notes li { margin: 2px 0; }
+      .notes b { color: var(--text); }
+      .mock {
+        position: relative;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        background: var(--paper);
+        padding: 10px 12px 12px;
+        font-size: 12px;
+      }
+      .toolbar { display: flex; gap: 5px; align-items: center; color: var(--muted); font-size: 11px; }
+      .toolbar span { border: 1px solid var(--border); border-radius: 7px; padding: 1px 7px; }
+      .toolbar span.on { background: var(--blue-soft); border-color: var(--blue); color: var(--blue); font-weight: 700; }
+      .ctx { border-bottom: 1px solid var(--border); padding: 8px 0 9px; margin-top: 8px; }
+      .ctx-title { font-size: 12px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+      .ctx-meta { display: flex; flex-wrap: wrap; gap: 7px; align-items: center; margin-top: 3px; color: var(--muted); font: 11px/1.4 var(--mono); }
+      .badge { color: var(--green); font-weight: 700; }
+      .btn-ghost { border: 1px solid var(--border); border-radius: 999px; padding: 1px 8px; font-size: 10px; color: var(--muted); }
+      .web-note {
+        width: fit-content; margin-top: 6px; padding: 3px 8px; border-radius: 6px;
+        background: var(--accent-soft); color: var(--accent);
+        font-size: 11px; line-height: 1.4;
+      }
+      .thread { padding: 9px 2px 4px; color: var(--muted); font-size: 11.5px; }
+      .thread b { color: var(--text); display: block; margin-bottom: 3px; font-size: 12.5px; }
+      .thread ul { margin: 0 0 6px; padding-left: 16px; }
+      .composer { border-top: 1px solid var(--border); padding-top: 9px; margin-top: 6px; }
+      .input {
+        border: 1px solid var(--border-strong); border-radius: 12px; background: #fff;
+        padding: 8px 10px; min-height: 54px;
+      }
+      .input .ph { color: var(--faint); font-size: 12px; }
+      .row { display: flex; align-items: center; gap: 6px; margin-top: 7px; }
+      .row .grow { flex: 1; }
+      .pill { border: 1px solid var(--border); border-radius: 999px; padding: 2px 9px; color: var(--muted); font-size: 11px; white-space: nowrap; }
+      .pill.soft { border-style: dashed; color: var(--faint); }
+      .send {
+        margin-left: 2px; width: 26px; height: 26px; border-radius: 50%;
+        background: var(--accent); color: #fff; display: grid; place-items: center; font-size: 13px;
+      }
+      .micro {
+        border: 1px dashed var(--accent); border-radius: 999px; padding: 1px 8px;
+        color: var(--accent); font-size: 10.5px; background: var(--accent-soft); white-space: nowrap;
+      }
+      .caret { color: var(--faint); }
+      .footer-row { display: flex; align-items: center; gap: 7px; margin-top: 9px; color: var(--muted); font-size: 11px; }
+      .mode { display: flex; border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+      .mode span { padding: 1px 9px; }
+      .mode span.on { background: var(--blue-soft); color: var(--blue); font-weight: 700; }
+      .status-badge {
+        padding: 1px 9px; border-radius: 999px; background: var(--accent-soft);
+        color: var(--accent); font-size: 10.5px; white-space: nowrap;
+      }
+      .spacer { flex: 1; }
+      .hot { outline: 2px solid #29b6d8; outline-offset: 3px; border-radius: 10px; }
+      .tooltip-demo {
+        margin-top: 8px; border: 1px solid var(--border-strong); border-radius: 8px;
+        background: #2d2925; color: #fff; padding: 6px 9px; font-size: 11px; line-height: 1.5;
+      }
+      .tooltip-demo em { color: #ffd9c2; font-style: normal; }
+      .legend { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 22px; color: var(--muted); font-size: 12px; }
+      .legend b { color: var(--text); }
+      .flow { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--muted); }
+      .flow i { font-style: normal; border: 1px solid var(--border); border-radius: 8px; padding: 3px 9px; background: #fff; }
+      .flow .arrow { color: var(--faint); }
+      .rule { width: 100%; border: 0; border-top: 1px dashed var(--border); margin: 10px 0 0; }
+      code { font: 11px/1.5 var(--mono); background: #f3ede4; padding: 1px 5px; border-radius: 5px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">ZOTERO AI SIDEBAR · UI 方案</p>
+        <h1>「WEB 模式不发图」提示放在哪里</h1>
+        <p>
+          前提：WEB 模式发给网页的是文字材料（LaTeX 源码或 MinerU 解析出的 Markdown），
+          图只带标题文字、不带图像本身。所以提示必须同时满足两点——
+          <b>只在文字材料真的就绪时出现</b>（否则解析未完成、发的是 PDF，网站自己能读图，提示会撒谎），
+          以及 <b>在用户按下发送之前看得见</b>。
+        </p>
+        <div class="flow">
+          <i>解析控件 onState / onAvailability</i><span class="arrow">→</span>
+          <i>状态桥（按 itemID 记「文字材料就绪」）</i><span class="arrow">→</span>
+          <i>论文卡片常驻说明</i><span class="arrow">+</span>
+          <i>composer 短提示</i>
+        </div>
+        <div class="legend">
+          <span><b>青色描边</b>＝该方案里新增的位置</span>
+          <span>卡片里的橙色胶囊＝当前已实现的常驻说明</span>
+          <span>缩略的界面按真实侧边栏比例绘制（窄面板场景）</span>
+        </div>
+      </section>
+
+      <div class="grid">
+      <section class="card">
+        <h2>现状：卡片常驻说明 <span class="tag now">已装到本地预览版 0.8.11</span></h2>
+        <div class="mock">
+          <div class="toolbar"><span>打开笔记</span><span class="on">模式</span><span>沉浸</span><span>设置</span><span>调试</span><span>»</span></div>
+          <div class="ctx">
+          <div class="ctx-title">OccWorld: Learning a 3D Occupancy World Model for Autonomous Driving</div>
+          <div class="ctx-meta"><span>Item ID: 1648</span><span class="badge">LaTeX 源</span><span class="btn-ghost">代理设置</span><span class="btn-ghost">全文翻译</span></div>
+          <div class="web-note hot">WEB 模式只发送论文文字，图不会发送</div>
+        </div>
+          <div class="thread">
+          <b>可能反例与后续改进方向</b>
+          <ul>
+            <li>长时预测衰减快：1 秒规划尚可，3 秒 L2 明显落后于 UniAD</li>
+            <li>碰撞率不占优：缺少 freespace 或框监督时，安全轨迹学习更难</li>
+          </ul>
+        </div>
+          <div class="composer">
+          <div class="input"><span class="ph">发送到 DeepSeek… (Enter 发送)</span></div>
+          <div class="row">
+            <span class="pill">＋</span><span class="pill">联网</span><span class="pill">原文</span>
+            <span class="grow"></span>
+            
+            <span class="send">↑</span>
+          </div>
+          <div class="footer-row">
+            <span class="mode"><span>API</span><span class="on">WEB</span></span>
+            <span>DeepSeek</span><span>账号 <span class="caret">▼</span></span>
+            <span class="spacer"></span>
+            
+          </div>
+        </div>
+        </div>
+        <ul class="notes"><li>位置：论文卡片里，**PDF 已解析 / LaTeX 源** 徽章下面一行</li><li>已在本地预览版里实现（commit <code>ff095f7</code>），可以直接重启 Zotero 看</li><li>优点：固定表头常驻、空间够、语义就是「这份材料的属性」</li><li>缺点：离按下发送的那一刻有距离</li></ul>
+      </section>
+      <section class="card">
+        <h2>方案 A · 卡片讲清楚 + 输入行临门一脚 <span class="tag rec">推荐</span></h2>
+        <div class="mock">
+          <div class="toolbar"><span>打开笔记</span><span class="on">模式</span><span>沉浸</span><span>设置</span><span>调试</span><span>»</span></div>
+          <div class="ctx">
+          <div class="ctx-title">OccWorld: Learning a 3D Occupancy World Model for Autonomous Driving</div>
+          <div class="ctx-meta"><span>Item ID: 1648</span><span class="badge">LaTeX 源</span><span class="btn-ghost">代理设置</span><span class="btn-ghost">全文翻译</span></div>
+          <div class="web-note">WEB 模式只发送论文文字，图不会发送</div>
+        </div>
+          <div class="thread">
+          <b>可能反例与后续改进方向</b>
+          <ul>
+            <li>长时预测衰减快：1 秒规划尚可，3 秒 L2 明显落后于 UniAD</li>
+            <li>碰撞率不占优：缺少 freespace 或框监督时，安全轨迹学习更难</li>
+          </ul>
+        </div>
+          <div class="composer">
+          <div class="input"><span class="ph">发送到 DeepSeek… (Enter 发送)</span></div>
+          <div class="row">
+            <span class="pill">＋</span><span class="pill">联网</span><span class="pill">原文</span>
+            <span class="grow"></span>
+            <span class="micro hot">WEB 不含图</span>
+            <span class="send">↑</span>
+          </div>
+          <div class="footer-row">
+            <span class="mode"><span>API</span><span class="on">WEB</span></span>
+            <span>DeepSeek</span><span>账号 <span class="caret">▼</span></span>
+            <span class="spacer"></span>
+            
+          </div>
+        </div>
+        </div>
+        <ul class="notes"><li>卡片保留完整句子；输入行只放极短 chip，hover 出完整解释</li><li>chip 将来可以直接变成 <code>@</code> 选图入口，不用二次改版</li><li>成本：需要一个状态桥（解析控件 → composer），约 20 行</li><li>风险：面板极窄时，chip 会和 ＋ / ↑ / 停止 抢位置，所以文案必须短</li></ul>
+      </section>
+      <section class="card">
+        <h2>方案 B · 只放输入行 <span class="tag alt">最干净，但说不清原因</span></h2>
+        <div class="mock">
+          <div class="toolbar"><span>打开笔记</span><span class="on">模式</span><span>沉浸</span><span>设置</span><span>调试</span><span>»</span></div>
+          <div class="ctx">
+          <div class="ctx-title">OccWorld: Learning a 3D Occupancy World Model for Autonomous Driving</div>
+          <div class="ctx-meta"><span>Item ID: 1648</span><span class="badge">LaTeX 源</span><span class="btn-ghost">代理设置</span><span class="btn-ghost">全文翻译</span></div>
+          <div class="web-note">WEB 模式只发送论文文字，图不会发送</div>
+        </div>
+          <div class="thread">
+          <b>可能反例与后续改进方向</b>
+          <ul>
+            <li>长时预测衰减快：1 秒规划尚可，3 秒 L2 明显落后于 UniAD</li>
+            <li>碰撞率不占优：缺少 freespace 或框监督时，安全轨迹学习更难</li>
+          </ul>
+        </div>
+          <div class="composer">
+          <div class="input"><span class="ph">发送到 DeepSeek… (Enter 发送)</span></div>
+          <div class="row">
+            <span class="pill">＋</span><span class="pill">联网</span><span class="pill">原文</span>
+            <span class="grow"></span>
+            <span class="micro hot">WEB 不含图</span>
+            <span class="send">↑</span>
+          </div>
+          <div class="footer-row">
+            <span class="mode"><span>API</span><span class="on">WEB</span></span>
+            <span>DeepSeek</span><span>账号 <span class="caret">▼</span></span>
+            <span class="spacer"></span>
+            
+          </div>
+        </div>
+        </div>
+        <ul class="notes"><li>卡片保持干净，只留一个短 chip（tooltip 里写全）</li><li>优点：视觉最简，动作时刻唯一一处提示</li><li>缺点：窄面板下拥挤；用户看不到「为什么」，只能靠 hover</li><li>不建议单独使用：解释力不足</li></ul>
+      </section>
+      <section class="card">
+        <h2>方案 C · 放到 composer 状态行 <span class="tag alt">和 Images 1 同一区域</span></h2>
+        <div class="mock">
+          <div class="toolbar"><span>打开笔记</span><span class="on">模式</span><span>沉浸</span><span>设置</span><span>调试</span><span>»</span></div>
+          <div class="ctx">
+          <div class="ctx-title">OccWorld: Learning a 3D Occupancy World Model for Autonomous Driving</div>
+          <div class="ctx-meta"><span>Item ID: 1648</span><span class="badge">LaTeX 源</span><span class="btn-ghost">代理设置</span><span class="btn-ghost">全文翻译</span></div>
+          
+        </div>
+          <div class="thread">
+          <b>可能反例与后续改进方向</b>
+          <ul>
+            <li>长时预测衰减快：1 秒规划尚可，3 秒 L2 明显落后于 UniAD</li>
+            <li>碰撞率不占优：缺少 freespace 或框监督时，安全轨迹学习更难</li>
+          </ul>
+        </div>
+          <div class="composer">
+          <div class="input"><span class="ph">发送到 DeepSeek… (Enter 发送)</span></div>
+          <div class="row">
+            <span class="pill">＋</span><span class="pill">联网</span><span class="pill">原文</span>
+            <span class="grow"></span>
+            
+            <span class="send">↑</span>
+          </div>
+          <div class="footer-row">
+            <span class="mode"><span>API</span><span class="on">WEB</span></span>
+            <span>DeepSeek</span><span>账号 <span class="caret">▼</span></span>
+            <span class="spacer"></span>
+            <span class="status-badge hot">WEB 只发送文字材料 · 图不会发送</span>
+          </div>
+        </div>
+        </div>
+        <ul class="notes"><li>位置：composer 底栏 <code>composer-footer-left</code>，即 <code>Images 1 / Pasted 2</code> 出现的地方</li><li>优点：本来就是徽章区，加一条很自然；切换 API/WEB 时就在旁边</li><li>缺点：位置比输入行靠下；只有这一条时会把底栏撑出一整行</li><li>同样需要状态桥；和卡片说明二选一即可</li></ul>
+      </section>
+      </div>
+
+      <section class="card" style="margin-top: 22px">
+        <h2>细节：短提示的文案和悬停说明</h2>
+        <ul class="notes">
+          <li>输入行 chip 候选（必须短）：<code>WEB 不含图</code> · <code>仅文字</code> · <code>文字版 · 无图</code></li>
+          <li>卡片长句（现有）：<code>WEB 模式只发送论文文字，图不会发送</code></li>
+          <li>两种位置的悬停说明共用同一段文字，见下方预览</li>
+          <li>将来 <code>@</code> 选图做好后，chip 改成可点击：<code>@ 附图</code>，点击直接打开图/表选择面板</li>
+        </ul>
+        <div class="tooltip-demo">
+          网页模型看不到论文里的图和版式；需要看图时，请在问题里描述图表内容，或在网页中手动附加图片或原始 PDF。
+        </div>
+        <hr class="rule" />
+        <ul class="notes">
+          <li><b>不做的事</b>：无条件显示（解析未完成时会误报）；靠问题里出现「图 / figure」才提示（漏判时用户不知道为什么答错）；卡片和输入行都写长句（重复且吵）。</li>
+          <li><b>技术前提</b>：<code>composeInputStatus()</code> 是同步函数，拿不到 MinerU 的异步解析状态，所以方案 A/B/C 都需要上面那条状态桥。</li>
+        </ul>
+      </section>
+    </main>
+  </body>
+</html>
