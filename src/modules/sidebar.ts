@@ -150,13 +150,17 @@ import {
 import {
   addDraftImageAssets,
   addDraftImages,
-  insertComposerText,
   pastedImageFiles,
   renderDraftImages,
   renderImageAttachButton,
   renderScreenshotAttachButton,
   type DraftImage,
 } from "./composer-images";
+import {
+  addDraftMaterial,
+  expandDraftMaterials,
+  renderDraftMaterials,
+} from "./composer-materials";
 import {
   assistantProgressFor,
   renderAssistantProgress,
@@ -786,6 +790,8 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
       pasteBlocks: [],
       draftImages: [],
       nextPasteID: 1,
+      draftMaterials: [],
+      nextMaterialID: 1,
       localUiSettings: loadLocalUiSettings(zoteroPrefs()),
       paperPinned: itemID != null,
       fullTextTurnMode: "auto",
@@ -1808,6 +1814,7 @@ function applyConversation(
   );
   state.pasteBlocks = [];
   state.draftImages = [];
+  state.draftMaterials = [];
   resetMessagesScrollForConversation(state);
   state.queueOpen = false;
   resetComposerPromptHistory(state);
@@ -3252,6 +3259,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   if (!state.networkDiagramTarget) {
     inputStack.append(
       renderDraftImages(doc, mount, state, input, { renderPanel }),
+      renderDraftMaterials(doc, mount, state, input, { renderPanel }),
     );
   }
   inputStack.append(slashMenu, ...(figurePicker ? [figurePicker.menu] : []), input);
@@ -3453,7 +3461,7 @@ async function sendWebPromptMessage(
     retrySelectionSnapshot?: SelectionAnnotationDraft | null;
   } = {},
 ): Promise<void> {
-  const content = text.trim();
+  const content = expandDraftMaterials(text, state.draftMaterials).trim();
   if (!content) return;
   if (webPromptTaskPending(state)) return;
   const sourceItemID = state.itemID;
@@ -3990,6 +3998,7 @@ async function sendWebPromptMessage(
   state.draftSelectionEnd = 0;
   state.skipNextDraftCapture = true;
   state.draftImages = [];
+  state.draftMaterials = [];
   state.pasteBlocks = [];
   state.scrollToBottom = true;
   await persistPanelConversations(state);
@@ -4788,12 +4797,15 @@ async function attachPaperFigure(
   input: HTMLTextAreaElement,
   figure: PaperFigure,
 ): Promise<void> {
-  const latex = paperFigureLatex(figure);
-  if (latex) {
-    insertComposerText(input, latex);
-    captureDraftFromInput(input, state);
-    autoResizeInput(input);
-    input.focus();
+  if (paperFigureLatex(figure)) {
+    if (addDraftMaterial(state, figure, input)) {
+      captureDraftFromInput(input, state);
+      autoResizeInput(input);
+      renderPanel(mount, state);
+      const nextInput = (mount.querySelector(".input-row textarea") ??
+        input) as HTMLTextAreaElement;
+      nextInput.focus();
+    }
     return;
   }
   const doc = (input.ownerDocument ?? mount.ownerDocument) as Document;
@@ -6124,7 +6136,8 @@ async function sendMessage(
   text: string,
   options: SendMessageOptions = {},
 ) {
-  const baseContent = text.trim();
+  const content = expandDraftMaterials(text, state.draftMaterials);
+  const baseContent = content.trim();
   const preset = selectedChatPreset(state);
   const images = state.draftImages
     .filter((image) => text.includes(image.marker))
@@ -6247,6 +6260,7 @@ async function sendMessage(
   state.skipNextDraftCapture = true;
   state.pasteBlocks = [];
   state.draftImages = [];
+  state.draftMaterials = [];
   state.chatSelectionQuote = undefined;
   state.chatSelectionPreviewOpen = false;
   resetTurnFullTextMode(state);

@@ -167,7 +167,7 @@ function removeDraftImage<TState extends DraftImageState>(
   input: HTMLTextAreaElement,
   image: DraftImage,
 ) {
-  input.value = removeImageMarkerFromText(input.value, image.marker);
+  input.value = removeComposerMarkerFromText(input.value, image.marker);
   state.draftImages = state.draftImages.filter(
     (candidate) => candidate.id !== image.id,
   );
@@ -266,14 +266,19 @@ export function insertComposerText(input: HTMLTextAreaElement, text: string) {
   input.selectionEnd = cursor;
 }
 
-function removeImageMarkerFromText(text: string, marker: string): string {
+/** Drops a marker and the blank lines it leaves behind. */
+export function removeComposerMarkerFromText(
+  text: string,
+  marker: string,
+): string {
   const index = text.indexOf(marker);
   if (index < 0) return text;
   const before = text.slice(0, index);
   const after = text.slice(index + marker.length);
   return `${before}${after}`
     .replace(/[ \t]+\n/g, "\n")
-    .replace(/\n{3,}/g, "\n\n");
+    .replace(/\n{3,}/g, "\n\n")
+    .replace(/^\n+|\n+$/g, "");
 }
 
 function relabelDraftImages<TState extends DraftImageState>(

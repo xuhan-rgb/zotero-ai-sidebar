@@ -21,6 +21,7 @@ import type { TranslateModeController } from "../translate/translate-mode";
 import type { AskModeController } from "../translate/ask-mode";
 import type { AssistantProgressStage } from "./assistant-progress";
 import type { DraftImage } from "./composer-images";
+import type { DraftMaterial } from "./composer-materials";
 import type { PasteBlock } from "./composer-paste";
 import type {
   NoteCaretSnapshot,
@@ -212,6 +213,10 @@ export interface PanelState {
   pasteBlocks: PasteBlock[];
   draftImages: DraftImage[];
   nextPasteID: number;
+  // Tables and formulas picked with `@`: only their marker sits in the
+  // composer until the message is sent.
+  draftMaterials: DraftMaterial[];
+  nextMaterialID: number;
   localUiSettings: LocalUiSettings;
   webAccountConfigured?: boolean;
   webAccountNotice?: string;

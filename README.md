@@ -32,7 +32,7 @@ Installed plugins also update automatically: each release publishes `update.json
 
 ### What's new in v0.8.12
 
-- **`@` picks the paper's material**: typing `@` in the composer lists the paper's pictures, tables, and formulas. For a MinerU-parsed PDF — including the PDF opened next to a LaTeX paper — material on the page you are reading is listed first and marked 本页, and the chips at the top switch between 本页 / 全部 / 图片 / 表格 / 公式. A picked picture is sent as an image; a picked table or formula is inserted as its LaTeX source.
+- **`@` picks the paper's material**: typing `@` in the composer lists the paper's pictures, tables, and formulas. For a MinerU-parsed PDF — including the PDF opened next to a LaTeX paper — material on the page you are reading is listed first and marked 本页, and the chips at the top switch between 本页 / 全部 / 图片 / 表格 / 公式. A picked picture is sent as an image; a picked table or formula stays a short `[表 #1]` marker in the composer and expands to its LaTeX source when you send.
 - **`@` works for LaTeX-only papers**: arXiv figure files that are PDF or EPS are rasterised into pictures on the fly, and `\input` / `\include` files are expanded first, so papers whose sections live in separate `.tex` files no longer show an empty list.
 - **WEB images are really uploaded**: pictures attached in the composer, including the ones picked with `@`, now travel with the message instead of being silently dropped.
 - **A WEB usage notice**: the low-contrast 使用须知 chip right of 原文 in the input row explains what differs between API and WEB mode — above all that WEB sends no figures by default — and how to send pictures, tables, and formulas in either mode. The paper card no longer repeats that warning.
