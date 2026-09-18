@@ -5,6 +5,22 @@ import {
 } from "../../src/translate/mineru-document";
 
 describe("MinerU translation document", () => {
+  it("retains valid PDF coordinates on text, figures, formulas and tables", () => {
+    const document = buildMineruTranslationDocument("pdf:TEST", "", [
+      { type: "title", text: "Title", page_idx: 0, bbox: [10, 20, 900, 80] },
+      { type: "text", text: "Text", page_idx: 2, bbox: [503, 232, 923, 369] },
+      { type: "equation", text: "E=mc^2", page_idx: 2, bbox: [10, 400, 900, 450] },
+      { type: "image", img_path: "images/one.png", page_idx: 3, bbox: [10, 20, 900, 800] },
+      { type: "table", table_caption: ["Results"], page_idx: 4, bbox: [10, 20, 900, 800] },
+      { type: "text", text: "Invalid region", page_idx: -1, bbox: [10, 20, 900, 800] },
+      { type: "text", text: "No coordinates" },
+      { type: "text", text: "Inverted region", page_idx: 2, bbox: [900, 20, 10, 800] },
+    ]);
+    expect(document.blocks.slice(0, 5).map((block) => block.pdfLocation?.pageIndex)).toEqual([0, 2, 2, 3, 4]);
+    expect(document.blocks[1]?.pdfLocation?.bbox).toEqual([503, 232, 923, 369]);
+    expect(document.blocks.slice(5).every((block) => !block.pdfLocation)).toBe(true);
+  });
+
   it.each(["References", "VII. REFERENCES", "Bibliography", "参考文献"])(
     "preserves entries under %s while translating prose and appendices",
     (heading) => {

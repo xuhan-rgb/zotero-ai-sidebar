@@ -6,12 +6,27 @@ interface DomPoint {
   offset: number;
 }
 
-interface ReadingBoundary {
-  offset: number;
+interface SentenceRowSpan {
+  start: number;
+  end: number;
+  index: number;
+}
+
+export interface SentenceRowPlan {
+  container: HTMLElement;
+  /** Sentence boundaries: `cuts[i]`..`cuts[i + 1]` holds sentence `i`. */
+  cuts: Array<{ node: Node; offset: number }>;
+}
+
+export interface SentenceMarkerSpec {
   placement: "before" | "after";
   sentenceIndex: number;
   lineBreak: boolean;
   marker: string;
+}
+
+export interface ReadingBoundary extends SentenceMarkerSpec {
+  offset: number;
 }
 
 interface LogicalText {
@@ -114,21 +129,29 @@ function decorateProseContainer(
     const parent = point.node.parentNode;
     if (!parent) continue;
     const tail = point.node.splitText(point.offset);
-    const marker = doc.createElement("span");
-    marker.className = "zai-ft-sentence-boundary";
-    marker.dataset.marker = boundary.marker;
-    marker.setAttribute("aria-hidden", "true");
-    if (boundary.lineBreak) marker.classList.add("is-line-break");
-    if (boundary.placement === "before" && boundary.marker) {
-      marker.classList.add("is-prefix-marker");
-    }
-    if (settings.markerColorMode === "palette") {
-      marker.classList.add(`tone-${(boundary.sentenceIndex - 1) % 6}`);
-    } else {
-      marker.style.setProperty("--zai-ft-marker-color", settings.markerColor);
-    }
-    parent.insertBefore(marker, tail);
+    parent.insertBefore(createSentenceMarker(doc, settings, boundary), tail);
   }
+}
+
+export function createSentenceMarker(
+  doc: Document,
+  settings: FullTranslationReadingSettings,
+  boundary: SentenceMarkerSpec,
+): HTMLSpanElement {
+  const marker = doc.createElement("span");
+  marker.className = "zai-ft-sentence-boundary";
+  marker.dataset.marker = boundary.marker;
+  marker.setAttribute("aria-hidden", "true");
+  if (boundary.lineBreak) marker.classList.add("is-line-break");
+  if (boundary.placement === "before" && boundary.marker) {
+    marker.classList.add("is-prefix-marker");
+  }
+  if (settings.markerColorMode === "palette") {
+    marker.classList.add(`tone-${(boundary.sentenceIndex - 1) % 6}`);
+  } else {
+    marker.style.setProperty("--zai-ft-marker-color", settings.markerColor);
+  }
+  return marker;
 }
 
 function logicalText(
@@ -190,10 +213,7 @@ function isAtomicElement(element: HTMLElement): boolean {
   );
 }
 
-function readingBoundaries(
-  text: string,
-  settings: FullTranslationReadingSettings,
-): ReadingBoundary[] {
+function sentenceSpansFor(text: string): SentenceRowSpan[] {
   const sentenceOffsets = new Set<number>();
   const segmentationText = maskSentenceClosers(text);
   for (const sentence of splitSentences(segmentationText)) {
@@ -214,23 +234,29 @@ function readingBoundaries(
   const sentenceEnds = Array.from(sentenceOffsets).sort(
     (left, right) => left - right,
   );
-  const sentenceSpans: Array<{ start: number; end: number; index: number }> =
-    [];
+  const spans: SentenceRowSpan[] = [];
   let sentenceStart = 0;
   sentenceEnds.forEach((end, index) => {
     while (sentenceStart <= end && /\s/.test(text[sentenceStart] ?? "")) {
       sentenceStart += 1;
     }
     if (sentenceStart <= end) {
-      sentenceSpans.push({ start: sentenceStart, end, index: index + 1 });
+      spans.push({ start: sentenceStart, end, index: index + 1 });
     }
     sentenceStart = end + 1;
   });
+  return spans;
+}
 
+function readingBoundaries(
+  text: string,
+  settings: FullTranslationReadingSettings,
+): ReadingBoundary[] {
+  const sentenceSpans = sentenceSpansFor(text);
   const markerAtStart = usesSentencePrefix(settings.markerStyle);
   const boundaries: ReadingBoundary[] = [];
   for (const sentence of sentenceSpans) {
-    const marker = sentenceMarker(settings, sentence.index);
+    const marker = sentenceMarkerText(settings, sentence.index);
     if (markerAtStart && marker) {
       boundaries.push({
         offset: sentence.start,
@@ -271,7 +297,7 @@ function readingBoundaries(
   return boundaries.sort((left, right) => left.offset - right.offset);
 }
 
-function usesSentencePrefix(
+export function usesSentencePrefix(
   style: FullTranslationReadingSettings["markerStyle"],
 ): boolean {
   return style === "circled" || style === "decimal" || style === "dot";
@@ -323,7 +349,7 @@ function maskSentenceClosers(text: string): string {
   }).join("");
 }
 
-function sentenceMarker(
+export function sentenceMarkerText(
   settings: FullTranslationReadingSettings,
   index: number,
 ): string {
@@ -341,4 +367,94 @@ function sentenceMarker(
     case "off":
       return "";
   }
+}
+
+/**
+ * Sentence-level pairing support.
+ *
+ * `decorateSentenceBoundaries` only inserts markers, so both language sides
+ * stay separate blocks. The paired layout needs each sentence to become its
+ * own element so the two sides can be interleaved. Planning runs before any
+ * DOM change: when either side cannot be split cleanly, callers fall back to
+ * the marker-only rendering and nothing has been mutated.
+ */
+export function planSentenceRows(root: HTMLElement): SentenceRowPlan[] | null {
+  const nested = Array.from(
+    root.querySelectorAll(PROSE_CONTAINERS),
+  ) as HTMLElement[];
+  const containers = nested.length ? nested : [root];
+  const containerSet = new Set(containers);
+  const plans: SentenceRowPlan[] = [];
+  for (const container of containers) {
+    const logical = logicalText(container, containerSet);
+    const spans = sentenceSpansFor(logical.text);
+    if (!spans.length) continue;
+    // Sentences are cut apart, not copied: each row takes everything from the
+    // previous sentence's end. Inline math and code between two sentences are
+    // atomic (no text point), so a per-sentence range would leave them behind.
+    const cuts: Array<{ node: Node; offset: number }> = [
+      { node: container, offset: 0 },
+    ];
+    for (let index = 0; index < spans.length - 1; index++) {
+      const cut = nearestPoint(logical.afterPoints, spans[index]!.end, 1);
+      if (!cut) return null;
+      cuts.push(cut);
+    }
+    cuts.push({ node: container, offset: container.childNodes.length });
+    plans.push({ container, cuts });
+  }
+  return plans.length ? plans : null;
+}
+
+export function countPlannedSentences(plans: SentenceRowPlan[]): number {
+  return plans.reduce((total, plan) => total + plan.cuts.length - 1, 0);
+}
+
+export function applySentenceRows(
+  plan: SentenceRowPlan,
+  settings: FullTranslationReadingSettings,
+  firstIndex: number,
+): HTMLElement[] {
+  const doc = plan.container.ownerDocument;
+  if (!doc) return [];
+  const prefixMarker = usesSentencePrefix(settings.markerStyle);
+  const rows: HTMLElement[] = [];
+  // Back to front: splitting a text node truncates it, which would invalidate
+  // the cut points of any earlier sentence sharing that node.
+  for (let index = plan.cuts.length - 2; index >= 0; index--) {
+    const range = doc.createRange();
+    const start = plan.cuts[index]!;
+    const end = plan.cuts[index + 1]!;
+    range.setStart(start.node, start.offset);
+    range.setEnd(end.node, end.offset);
+    const row = doc.createElement("span");
+    row.className = "zai-ft-sentence";
+    row.append(range.extractContents());
+    range.insertNode(row);
+    const marker = sentenceMarkerText(settings, firstIndex + index);
+    if (marker) {
+      const element = createSentenceMarker(doc, settings, {
+        placement: prefixMarker ? "before" : "after",
+        sentenceIndex: firstIndex + index,
+        lineBreak: false,
+        marker,
+      });
+      if (prefixMarker) row.prepend(element);
+      else row.append(element);
+    }
+    rows.unshift(row);
+  }
+  return rows;
+}
+
+function nearestPoint(
+  points: Array<DomPoint | null>,
+  index: number,
+  step: number,
+): DomPoint | null {
+  for (let cursor = index; cursor >= 0 && cursor < points.length; cursor += step) {
+    const point = points[cursor];
+    if (point) return point;
+  }
+  return null;
 }

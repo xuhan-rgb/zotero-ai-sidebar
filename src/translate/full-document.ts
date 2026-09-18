@@ -40,6 +40,8 @@ export interface FullTranslationBlock {
   number?: number | string;
   assets?: string[];
   table?: FullTranslationTable;
+  /** MinerU page index (zero based) and top-left bounds normalized to 0..1000. */
+  pdfLocation?: { pageIndex: number; bbox: [number, number, number, number] };
 }
 
 export interface FullTranslationTable {

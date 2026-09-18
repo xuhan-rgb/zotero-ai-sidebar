@@ -1,4 +1,5 @@
 import { attachFullTranslationLinks } from "./full-translation-links";
+import { attachPdfSourceView, type PdfSourceOptions } from "./full-translation-pdf-source";
 import { renderMarkdownInto } from "./markdown-render";
 import { isPdfTranslationDocumentId } from "../translate/mineru-document";
 import { normalizeLatexTextCommands } from "../context/tex-clean";
@@ -29,7 +30,12 @@ import type { FullTranslationAssetPreviews } from "../translate/full-document-as
 import type { FullTranslationAssetPreview } from "../translate/full-document-assets";
 import { splitSentences } from "../translate/sentence-splitter";
 import { isTranslationPlaceholderReply } from "../translate/translator";
-import { decorateSentenceBoundaries } from "./full-translation-sentence-markers";
+import {
+  applySentenceRows,
+  countPlannedSentences,
+  decorateSentenceBoundaries,
+  planSentenceRows,
+} from "./full-translation-sentence-markers";
 import type { TranslateThinking } from "../settings/types";
 
 export type FullTranslationLayout = "parallel" | "interleaved";
@@ -55,6 +61,7 @@ export interface FullTranslationViewOptions {
   runError?: string;
   translationBackend?: string;
   assets: FullTranslationAssetPreviews;
+  pdfSource?: PdfSourceOptions;
   readingSettings?: FullTranslationReadingSettings;
   expandedSourceBlockId?: string;
   highlightedSourceQuote?: { blockId: string; quote: string };
@@ -87,6 +94,9 @@ export function renderFullTranslationView(
         ? "is-translation-only"
         : "is-source-only",
   ].join(" ");
+  root.style.setProperty("--zai-ft-font-size", `${reading.fontSizePx}px`);
+  root.style.setProperty("--zai-ft-line-height", String(reading.lineHeight));
+  root.dataset.ftFontFamily = reading.fontFamily;
   if (options.highlightedSourceQuote) {
     root.dataset.sourceQuoteBlockId = options.highlightedSourceQuote.blockId;
     root.dataset.sourceQuote = options.highlightedSourceQuote.quote;
@@ -153,6 +163,9 @@ export function renderFullTranslationView(
   reader.append(renderOutline(doc, options, content), content);
   const blockMenu = renderBlockContextMenu(doc, root, content, options);
   root.append(reader, blockMenu);
+  if (options.pdfSource && isPdfTranslationDocumentId(options.document.arxivId)) {
+    attachPdfSourceView(root, options.document.blocks, options.pdfSource);
+  }
   attachFullTranslationLinks(root, options.document);
   root.addEventListener("click", (event) => {
     const target = event.target as Node | null;
@@ -896,6 +909,36 @@ function renderReadingSettingsControl(
   panel.className = "zai-ft-reading-settings-panel";
   const form = doc.createElement("form");
 
+  const fontSize = doc.createElement("input");
+  fontSize.type = "number";
+  fontSize.name = "fontSizePx";
+  fontSize.min = "14";
+  fontSize.max = "24";
+  fontSize.step = "1";
+  fontSize.value = String(current.fontSizePx);
+  form.append(settingsField(doc, "字号", fontSize));
+
+  const lineHeight = doc.createElement("input");
+  lineHeight.type = "number";
+  lineHeight.name = "lineHeight";
+  lineHeight.min = "1.3";
+  lineHeight.max = "2.4";
+  lineHeight.step = "0.1";
+  lineHeight.value = String(current.lineHeight);
+  form.append(settingsField(doc, "行距", lineHeight));
+
+  const fontFamily = settingsSelect(
+    doc,
+    "fontFamily",
+    [
+      ["system", "跟随系统"],
+      ["serif", "衬线（宋体类）"],
+      ["sans", "无衬线（黑体类）"],
+    ],
+    current.fontFamily,
+  );
+  form.append(settingsField(doc, "字体样式", fontFamily));
+
   const markerStyle = settingsSelect(
     doc,
     "markerStyle",
@@ -970,6 +1013,9 @@ function renderReadingSettingsControl(
     options.onReadingSettingsChange?.(
       normalizeFullTranslationReadingSettings({
         ...current,
+        fontSizePx: Number(fontSize.value),
+        lineHeight: Number(lineHeight.value),
+        fontFamily: fontFamily.value,
         markerStyle: markerStyle.value,
         customMarker: customMarker.value,
         markerColorMode: colorMode.value,
@@ -1081,6 +1127,111 @@ function layoutAlgorithmGroup(group: HTMLElement, options: FullTranslationViewOp
   });
 }
 
+const SENTENCE_PAIR_KINDS = new Set<FullTranslationBlock["kind"]>([
+  "abstract",
+  "paragraph",
+  "list",
+]);
+
+// Sentence-level pairing only makes sense when both languages share one column;
+// the left/right layout already pairs whole blocks side by side.
+function pairsSentences(
+  block: FullTranslationBlock,
+  blockStatus: FullTranslationBlockStatus | undefined,
+  options: FullTranslationViewOptions,
+  reading: FullTranslationReadingSettings,
+): boolean {
+  return (
+    options.layout === "interleaved" &&
+    reading.languageMode === "bilingual" &&
+    reading.lineBreakMode !== "continuous" &&
+    blockStatus === "done" &&
+    // Algorithm bodies are laid out by their own group container.
+    !block.algorithmId &&
+    SENTENCE_PAIR_KINDS.has(block.kind)
+  );
+}
+
+function pairBlockSentences(
+  row: HTMLElement,
+  source: HTMLElement,
+  translation: HTMLElement,
+  reading: FullTranslationReadingSettings,
+): boolean {
+  const sourceBody = source.querySelector<HTMLElement>(".zai-ft-block-body");
+  const translationBody = translation.querySelector<HTMLElement>(
+    ".zai-ft-block-body",
+  );
+  if (!sourceBody || !translationBody) return false;
+  // Algorithm bodies are stacked lines, not prose sentences.
+  if (
+    sourceBody.classList.contains("zai-ft-algorithm") ||
+    translationBody.classList.contains("zai-ft-algorithm")
+  ) {
+    return false;
+  }
+  const sourcePlans = planSentenceRows(sourceBody);
+  const translationPlans = planSentenceRows(translationBody);
+  if (!sourcePlans || !translationPlans) return false;
+  const count = countPlannedSentences(sourcePlans);
+  // Mirroring sentences is only faithful when both sides segment identically.
+  // A different count would silently attach a translation to the wrong source
+  // sentence, so fall back to the stacked block rendering instead.
+  if (count < 2 || count !== countPlannedSentences(translationPlans)) {
+    return false;
+  }
+  const sourceRows: HTMLElement[] = [];
+  const translationRows: HTMLElement[] = [];
+  for (const plan of sourcePlans) {
+    sourceRows.push(...applySentenceRows(plan, reading, sourceRows.length + 1));
+  }
+  for (const plan of translationPlans) {
+    translationRows.push(
+      ...applySentenceRows(plan, reading, translationRows.length + 1),
+    );
+  }
+  if (sourceRows.length !== count || translationRows.length !== count) {
+    return false;
+  }
+  // Markdown wraps prose in <p>/<ul>, which would keep each side in its own
+  // block box and defeat the interleaving. Flatten every wrapper between a row
+  // and its cell so both sides become items of the one column.
+  row.classList.add("is-sentence-paired");
+  for (const [cell, rows] of [
+    [source, sourceRows],
+    [translation, translationRows],
+  ] as const) {
+    for (const sentence of rows) {
+      let wrapper = sentence.parentElement;
+      while (wrapper && wrapper !== cell) {
+        wrapper.classList.add("zai-ft-sentence-flatten");
+        wrapper = wrapper.parentElement;
+      }
+    }
+  }
+  sourceRows.forEach((element, index) => {
+    element.style.setProperty("order", String(index * 2 + 1));
+  });
+  translationRows.forEach((element, index) => {
+    element.classList.add("is-translation");
+    element.style.setProperty("order", String(index * 2 + 2));
+  });
+  return true;
+}
+
+function decorateSideSentences(
+  cell: HTMLElement,
+  block: FullTranslationBlock,
+  side: "source" | "translation",
+  status: FullTranslationBlockStatus | undefined,
+  reading: FullTranslationReadingSettings,
+): void {
+  if (block.kind === "heading" || block.kind === "title") return;
+  if (side === "translation" && status !== "done" && status !== "skipped") return;
+  const body = cell.querySelector<HTMLElement>(".zai-ft-block-body");
+  if (body) decorateSentenceBoundaries(body, reading);
+}
+
 function renderBlockPair(
   doc: Document,
   block: FullTranslationBlock,
@@ -1132,7 +1283,6 @@ function renderBlockPair(
       "source",
       !hasSharedVisual,
       undefined,
-      reading,
       algorithmStates.source,
       parsedListItem,
     );
@@ -1143,7 +1293,6 @@ function renderBlockPair(
       "translation",
       !hasSharedVisual && !isPairedInterleavedHeading,
       blockStatus,
-      reading,
       algorithmStates.translation,
       parsedListItem,
     );
@@ -1158,6 +1307,13 @@ function renderBlockPair(
       translation.prepend(renderSourceGutterToggle(doc, row));
     }
     row.append(source, translation);
+    if (
+      !pairsSentences(block, blockStatus, options, reading) ||
+      !pairBlockSentences(row, source, translation, reading)
+    ) {
+      decorateSideSentences(source, block, "source", blockStatus, reading);
+      decorateSideSentences(translation, block, "translation", blockStatus, reading);
+    }
     if (
       reading.languageMode === "translation" &&
       options.expandedSourceBlockId === block.id
@@ -1351,7 +1507,6 @@ function renderBlockSide(
   side: "source" | "translation",
   showMarker: boolean,
   status?: string,
-  readingSettings?: FullTranslationReadingSettings,
   algorithmState?: AlgorithmDisplayState,
   parsedListItem = false,
 ): HTMLElement {
@@ -1433,14 +1588,6 @@ function renderBlockSide(
     if (!node.parentElement?.closest(".katex")) {
       node.textContent = node.textContent?.replace(/\\#/g, "#") ?? "";
     }
-  }
-  if (
-    readingSettings &&
-    block.kind !== "heading" &&
-    block.kind !== "title" &&
-    (side === "source" || status === "done" || status === "skipped")
-  ) {
-    decorateSentenceBoundaries(body, readingSettings);
   }
   cell.append(body);
   if (titleDescription) {

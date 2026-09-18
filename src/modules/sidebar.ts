@@ -201,6 +201,7 @@ import {
   unmountFullTranslationHost,
   type FullTranslationHost,
 } from "./full-translation-host";
+import { createPdfSourcePreview } from "./pdf-source-preview";
 import {
   formatConversationMarkdown,
   messageToClipboard,
@@ -257,6 +258,7 @@ import {
   createWebContextAttachment,
   createWebTocAttachment,
   resolveWebPaperMaterial,
+  webPaperMaterialKind,
 } from "./web-paper-material";
 import {
   clearPendingSidebarCopy,
@@ -656,6 +658,7 @@ const fullTranslationHosts = new WeakMap<
   FullTranslationHost
 >();
 const fullTranslationRequests = new WeakMap<WindowSidebarState, symbol>();
+const pdfSourcePreviews = new WeakMap<HTMLElement, ReturnType<typeof createPdfSourcePreview>>();
 const fullTranslationModelSettingsOpen = new WeakMap<
   WindowSidebarState,
   boolean
@@ -3564,11 +3567,7 @@ async function sendWebPromptMessage(
     selectedTextOrigin: chatQuote ? "chat" : "pdf",
     history: webHistory,
     paperUrl: material.paperUrl,
-    attachmentKind:
-      material.attachment?.kind === "latex" ||
-      material.attachment?.kind === "pdf"
-        ? material.attachment.kind
-        : undefined,
+    attachmentKind: webPaperMaterialKind(material.attachment),
     historyAttachmentAvailable: !!contextAttachment,
     historyAttachmentName: contextAttachment?.name,
     tocAttachmentAvailable: !!tocAttachment,
@@ -3585,11 +3584,7 @@ async function sendWebPromptMessage(
     selectedTextOrigin: chatQuote ? "chat" : "pdf",
     history: webHistory,
     paperUrl: material.paperUrl,
-    attachmentKind:
-      material.attachment?.kind === "latex" ||
-      material.attachment?.kind === "pdf"
-        ? material.attachment.kind
-        : undefined,
+    attachmentKind: webPaperMaterialKind(material.attachment),
     attachmentAlreadyAvailable: !!material.attachment,
     historyAttachmentAvailable: !!contextAttachment,
     historyAttachmentName: contextAttachment?.name,
@@ -3803,6 +3798,12 @@ async function sendWebPromptMessage(
       if (status === "failed" || status === "cancelled") {
         cancelWebProgress();
         releaseWebPromptLock();
+        // The composer paints the busy placeholder separately from this
+        // bubble, so repaint it here or a settled failure keeps showing
+        // "正在处理上一条请求…" until the next unrelated render.
+        if (state.activeConversationID === sourceConversationID) {
+          renderPanel(mount, state);
+        }
       }
       if (status === "failed") {
         target.content += `\n\n[打开手动 Prompt Hub](${task.url})`;
@@ -10920,7 +10921,10 @@ function ensureFullTranslationHost(
     syncFullTranslationHostBounds(previous);
     return previous;
   }
-  if (previous) unmountFullTranslationHost(previous);
+  if (previous) {
+    pdfSourcePreviews.get(previous.root)?.dispose();
+    unmountFullTranslationHost(previous);
+  }
   const hostWindow = hostWindowForSidebar(sidebar);
   if (!hostWindow) return null;
   const host = mountFullTranslationHost(
@@ -11010,6 +11014,29 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
         }
       : undefined;
   const webTranslation = panelState?.localUiSettings.chatSendMode === "web";
+  let pdfSource: import("./full-translation-pdf-source").PdfSourceOptions | undefined;
+  if (session.document.arxivId.startsWith("pdf:")) {
+    let preview = pdfSourcePreviews.get(host.root);
+    if (!preview) {
+      const itemID = panelState?.itemID;
+      const documentId = session.document.arxivId;
+      preview = createPdfSourcePreview(doc, async () => {
+        const pdf = itemID == null ? null : await resolveItemPdfForMineru(itemID);
+        if (!pdf || pdfTranslationDocumentId(pdf.itemKey) !== documentId) {
+          throw new Error("找不到当前论文的原始 PDF 附件");
+        }
+        return pdf.path;
+      });
+      pdfSourcePreviews.set(host.root, preview);
+    }
+    pdfSource = {
+      getPage: preview.getPage,
+      compare: currentView?.dataset.pdfCompare === "true",
+      blockId: currentView?.dataset.pdfBlockId,
+      inlineBlockId: currentView?.dataset.pdfInlineBlockId,
+      pageIndex: currentView?.dataset.pdfPageIndex != null ? Number(currentView.dataset.pdfPageIndex) : undefined,
+    };
+  }
   const modelSettings = webTranslation ? undefined : fullTranslationModelSettings(sidebar);
   const view = renderFullTranslationView(doc, {
     document: session.document,
@@ -11022,6 +11049,7 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
       ? `WEB · ${webProviderName(panelState, panelState.localUiSettings.webPromptProvider)}`
       : "API",
     assets: session.assets,
+    pdfSource,
     readingSettings,
     expandedSourceBlockId,
     highlightedSourceQuote,
@@ -11310,7 +11338,11 @@ function closeFullTranslation(sidebar: WindowSidebarState): void {
   sidebar.fullTranslationActive = false;
   fullTranslationRequests.delete(sidebar);
   const host = fullTranslationHosts.get(sidebar);
-  if (host) unmountFullTranslationHost(host);
+  if (host) {
+    pdfSourcePreviews.get(host.root)?.dispose();
+    pdfSourcePreviews.delete(host.root);
+    unmountFullTranslationHost(host);
+  }
   fullTranslationHosts.delete(sidebar);
   fullTranslationModelSettingsOpen.delete(sidebar);
   const hadNoteSnapshot = fullTranslationNoteVisibility.has(sidebar);

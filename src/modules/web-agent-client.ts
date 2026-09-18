@@ -5,7 +5,7 @@ import type {
 } from "../settings/local-ui-settings";
 
 export interface WebAgentAttachment {
-  kind: "latex" | "pdf" | "text";
+  kind: "latex" | "pdf" | "markdown" | "text";
   path: string;
   name: string;
   mimeType: "text/plain" | "application/pdf";

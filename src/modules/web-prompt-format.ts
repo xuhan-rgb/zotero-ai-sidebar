@@ -11,7 +11,7 @@ export interface WebPromptFormatInput {
   selectedTextOrigin?: "pdf" | "chat";
   history: Message[];
   paperUrl?: string;
-  attachmentKind?: "latex" | "pdf";
+  attachmentKind?: "latex" | "pdf" | "markdown";
   attachmentAlreadyAvailable?: boolean;
   historyAttachmentAvailable?: boolean;
   historyAttachmentName?: string;
@@ -35,15 +35,25 @@ export function buildWebPrompt(input: WebPromptFormatInput): string {
     blocks.push(section("论文链接", input.paperUrl.trim()));
   }
   if (input.attachmentKind) {
-    const availability = input.attachmentAlreadyAvailable
-      ? input.attachmentKind === "latex"
-        ? "本网页对话的前序消息已经附加论文 LaTeX 主文件，无需重复上传。请继续使用该附件作答。"
-        : "本网页对话的前序消息已经附加论文 PDF，无需重复上传。请继续使用该附件作答。"
-      : input.attachmentKind === "latex"
-        ? "已随本消息附加论文的 LaTeX 主文件。请先读取附件，再结合当前任务作答。"
-        : "已随本消息附加论文 PDF。请先读取附件，再结合当前任务作答。";
+    const material = {
+      latex: [
+        "本网页对话的前序消息已经附加论文 LaTeX 主文件，无需重复上传。请继续使用该附件作答。",
+        "已随本消息附加论文的 LaTeX 主文件。请先读取附件，再结合当前任务作答。",
+      ],
+      pdf: [
+        "本网页对话的前序消息已经附加论文 PDF，无需重复上传。请继续使用该附件作答。",
+        "已随本消息附加论文 PDF。请先读取附件，再结合当前任务作答。",
+      ],
+      markdown: [
+        "本网页对话的前序消息已经附加论文 Markdown 全文（由 PDF 解析生成），无需重复上传。请继续使用该附件作答。",
+        "已随本消息附加论文 Markdown 全文（由 PDF 解析生成）。请先读取附件，再结合当前任务作答。",
+      ],
+    }[input.attachmentKind];
     blocks.push(
-      section("论文材料", availability),
+      section(
+        "论文材料",
+        material[input.attachmentAlreadyAvailable ? 0 : 1],
+      ),
     );
   }
   if (input.selectedText.trim()) {
@@ -101,15 +111,23 @@ export function buildWebPrompt(input: WebPromptFormatInput): string {
     );
   }
 
-  const materialBoundary = input.attachmentAlreadyAvailable
-    ? input.attachmentKind === "pdf"
-      ? "你可以读取本网页对话前序消息附加的 PDF；不要声称读取附件之外、且未提供的材料。"
-      : "你可以读取本网页对话前序消息附加的 LaTeX；不要声称读取了未提供的 PDF 内容。"
-    : input.attachmentKind === "pdf"
-      ? "你可以读取随消息附加的 PDF；不要声称读取附件之外、且未提供的材料。"
-      : input.attachmentKind === "latex"
-        ? "你可以读取随消息附加的 LaTeX；不要声称读取了未提供的 PDF 内容。"
-        : "你只能看到本 Prompt 中提供的论文信息和选区；不要声称读取了未提供的 PDF 内容。";
+  const freshMaterialBoundary: Record<string, string> = {
+    pdf: "你可以读取随消息附加的 PDF；不要声称读取附件之外、且未提供的材料。",
+    latex: "你可以读取随消息附加的 LaTeX；不要声称读取了未提供的 PDF 内容。",
+    markdown:
+      "你可以读取随消息附加的 Markdown 全文（由 PDF 解析生成）；不要声称读取了未提供的 PDF 内容。",
+  };
+  const reusedMaterialBoundary: Record<string, string> = {
+    pdf: "你可以读取本网页对话前序消息附加的 PDF；不要声称读取附件之外、且未提供的材料。",
+    latex: "你可以读取本网页对话前序消息附加的 LaTeX；不要声称读取了未提供的 PDF 内容。",
+    markdown:
+      "你可以读取本网页对话前序消息附加的 Markdown 全文；不要声称读取了未提供的 PDF 内容。",
+  };
+  const materialBoundary =
+    (input.attachmentAlreadyAvailable
+      ? reusedMaterialBoundary
+      : freshMaterialBoundary)[input.attachmentKind || ""] ||
+    "你只能看到本 Prompt 中提供的论文信息和选区；不要声称读取了未提供的 PDF 内容。";
   if (requestsFileArtifact(input.content)) {
     const isDeepSeek = input.webProvider === "deepseek";
     blocks.push(

@@ -45,7 +45,9 @@ describe("paper context card", () => {
     const card = renderContextCard(document, 1494);
 
     expect(card.querySelector(".ctx-github-repository")).toBeNull();
-    expect(card.querySelector(".ctx-meta")?.textContent).toBe("Item ID: 1494");
+    expect(card.querySelector(".ctx-item-id")?.textContent).toBe(
+      "Item ID: 1494",
+    );
   });
 
   it("passes the linked repository while the paper network view is open", () => {

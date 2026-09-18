@@ -80,6 +80,27 @@ function state() {
   return value;
 }
 
+function renderSentences(
+  sentenceDocument: FullTranslationDocument,
+  sentenceState: ReturnType<typeof state>,
+  layout: FullTranslationLayout,
+  readingSettings: typeof DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+) {
+  return renderFullTranslationView(globalThis.document, {
+    document: sentenceDocument,
+    state: sentenceState,
+    layout,
+    running: false,
+    assets: {},
+    readingSettings,
+    onLayoutChange: vi.fn(),
+    onRun: vi.fn(),
+    onRetranslate: vi.fn(),
+    onCancel: vi.fn(),
+    onExit: vi.fn(),
+  });
+}
+
 type UsageEvent = {
   blockId: string;
   usage: {
@@ -999,6 +1020,13 @@ describe("renderFullTranslationView", () => {
       ".zai-ft-reading-settings",
     ) as HTMLDetailsElement;
     const form = settings.querySelector("form") as HTMLFormElement;
+    const fontSize = form.elements.namedItem("fontSizePx") as HTMLInputElement;
+    const lineHeight = form.elements.namedItem(
+      "lineHeight",
+    ) as HTMLInputElement;
+    const fontFamily = form.elements.namedItem(
+      "fontFamily",
+    ) as HTMLSelectElement;
     const markerStyle = form.elements.namedItem(
       "markerStyle",
     ) as HTMLSelectElement;
@@ -1013,6 +1041,9 @@ describe("renderFullTranslationView", () => {
     ) as HTMLSelectElement;
 
     expect(settings.querySelector("summary")?.textContent).toBe("阅读设置");
+    fontSize.value = "22";
+    lineHeight.value = "1.9";
+    fontFamily.value = "serif";
     markerStyle.value = "circled";
     colorMode.value = "single";
     markerColor.value = "#336699";
@@ -1023,11 +1054,40 @@ describe("renderFullTranslationView", () => {
 
     expect(onReadingSettingsChange).toHaveBeenCalledWith({
       ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+      fontSizePx: 22,
+      lineHeight: 1.9,
+      fontFamily: "serif",
       markerStyle: "circled",
       markerColorMode: "single",
       markerColor: "#336699",
       lineBreakMode: "sentence-semicolon",
     });
+  });
+
+  it("applies font reading settings as CSS variables on the view root", () => {
+    const view = renderFullTranslationView(globalThis.document, {
+      document,
+      state: state(),
+      layout: "interleaved",
+      running: false,
+      assets: {},
+      readingSettings: {
+        ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+        fontSizePx: 20,
+        lineHeight: 2,
+        fontFamily: "serif",
+      },
+      onReadingSettingsChange: vi.fn(),
+      onLayoutChange: vi.fn(),
+      onRun: vi.fn(),
+      onRetranslate: vi.fn(),
+      onCancel: vi.fn(),
+      onExit: vi.fn(),
+    });
+
+    expect(view.style.getPropertyValue("--zai-ft-font-size")).toBe("20px");
+    expect(view.style.getPropertyValue("--zai-ft-line-height")).toBe("2");
+    expect(view.dataset.ftFontFamily).toBe("serif");
   });
 
   it("adds display-only sentence markers without splitting abbreviations or math", () => {
@@ -1861,5 +1921,265 @@ describe("renderFullTranslationView", () => {
       behavior: "smooth",
       block: "start",
     });
+  });
+});
+
+describe("sentence pairing", () => {
+  const pairedDocument: FullTranslationDocument = {
+    ...document,
+    blocks: [
+      {
+        id: "paired-paragraph",
+        kind: "paragraph",
+        source: "First finding. Second finding. Third finding.",
+        translatable: true,
+      },
+    ],
+  };
+  const sentenceReading = {
+    ...DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+    lineBreakMode: "sentence" as const,
+    markerStyle: "circled" as const,
+  };
+
+  function pairedState(translation: string) {
+    const value = createFullTranslationState(
+      pairedDocument,
+      "preset-1",
+      "model-1",
+    );
+    value.blocks["paired-paragraph"] = { status: "done", translation };
+    return value;
+  }
+
+  it("sits each translated sentence under its own source sentence", () => {
+    const view = renderSentences(
+      pairedDocument,
+      pairedState("第一个结论。第二个结论。第三个结论。"),
+      "interleaved",
+      sentenceReading,
+    );
+    const row = view.querySelector(
+      '[data-block-id="paired-paragraph"]',
+    ) as HTMLElement;
+    const sentences = Array.from(
+      row.querySelectorAll<HTMLElement>(".zai-ft-sentence"),
+    );
+
+    expect(row.classList.contains("is-sentence-paired")).toBe(true);
+    // Both cells stay intact so the existing source/translation selectors and
+    // the PDF verification flow keep working; only the visual order changes.
+    expect(
+      sentences.map((sentence) =>
+        sentence.classList.contains("is-translation"),
+      ),
+    ).toEqual([false, false, false, true, true, true]);
+
+    // Markdown renders the prose into a <p>; that is the wrapper that must not
+    // keep its own block box, or the order values below are silently ignored.
+    expect(sentences[0]!.parentElement?.tagName).toBe("P");
+    // Every wrapper between a row and the block has to be flattened, otherwise
+    // each language keeps its own block box and the order values are ignored.
+    for (const sentence of sentences) {
+      const cell = sentence.parentElement?.closest(
+        ".zai-ft-source, .zai-ft-translation",
+      );
+      expect(cell).not.toBeNull();
+      let wrapper = sentence.parentElement;
+      while (wrapper && wrapper !== cell) {
+        expect(wrapper.classList.contains("zai-ft-sentence-flatten")).toBe(true);
+        wrapper = wrapper.parentElement;
+      }
+      expect(wrapper).toBe(cell);
+    }
+
+    const painted = sentences
+      .map((element) => ({
+        element,
+        order: Number(element.style.getPropertyValue("order")),
+      }))
+      .sort((left, right) => left.order - right.order);
+
+    expect(painted.map(({ order }) => order)).toEqual([1, 2, 3, 4, 5, 6]);
+    // The inter-sentence space travels with the following row and collapses
+    // once the row renders as a block.
+    expect(
+      painted.map(({ element }) => element.textContent?.trim()),
+    ).toEqual([
+      "First finding.",
+      "第一个结论。",
+      "Second finding.",
+      "第二个结论。",
+      "Third finding.",
+      "第三个结论。",
+    ]);
+    expect(
+      painted.map(
+        ({ element }) =>
+          element.querySelector<HTMLElement>(".zai-ft-sentence-boundary")
+            ?.dataset.marker,
+      ),
+    ).toEqual(["①", "①", "②", "②", "③", "③"]);
+  });
+
+  it("keeps inline math inside its own sentence pair", () => {
+    const mathDocument: FullTranslationDocument = {
+      ...pairedDocument,
+      blocks: [
+        {
+          id: "paired-paragraph",
+          kind: "paragraph",
+          source: "See Dr. Smith. Loss $L = 1.2$ works.",
+          translatable: true,
+        },
+      ],
+    };
+    const mathState = createFullTranslationState(
+      mathDocument,
+      "preset-1",
+      "model-1",
+    );
+    mathState.blocks["paired-paragraph"] = {
+      status: "done",
+      translation: "参见 Smith 博士。损失 $L = 1.2$ 有效。",
+    };
+    const view = renderSentences(
+      mathDocument,
+      mathState,
+      "interleaved",
+      { ...sentenceReading, markerStyle: "slashes" },
+    );
+    const row = view.querySelector(
+      '[data-block-id="paired-paragraph"]',
+    ) as HTMLElement;
+    const painted = Array.from(
+      row.querySelectorAll<HTMLElement>(".zai-ft-sentence"),
+    )
+      .map((element) => ({
+        element,
+        order: Number(element.style.getPropertyValue("order")),
+      }))
+      .sort((left, right) => left.order - right.order);
+
+    expect(painted).toHaveLength(4);
+    expect(painted[0]!.element.textContent).toBe("See Dr. Smith.");
+    expect(painted[1]!.element.textContent).toBe("参见 Smith 博士。");
+    // The abbreviation ends sentence one, so the formula belongs to sentence two.
+    expect(painted[0]!.element.querySelector(".math-inline")).toBeNull();
+    expect(painted[1]!.element.querySelector(".math-inline")).toBeNull();
+    expect(painted[2]!.element.querySelector(".math-inline")).not.toBeNull();
+    expect(painted[3]!.element.querySelector(".math-inline")).not.toBeNull();
+    expect(
+      painted[2]!.element.querySelector(".math-inline .zai-ft-sentence-boundary"),
+    ).toBeNull();
+    expect(
+      painted.map(
+        ({ element }) =>
+          element.querySelector<HTMLElement>(".zai-ft-sentence-boundary")
+            ?.dataset.marker,
+      ),
+    ).toEqual(["//", "//", "//", "//"]);
+  });
+
+  it("keeps inline math inside the sentence row that owns it", () => {
+    const formulaDocument: FullTranslationDocument = {
+      ...pairedDocument,
+      blocks: [
+        {
+          id: "paired-paragraph",
+          kind: "paragraph",
+          source: "$x = 1$. $y = 2$.",
+          translatable: true,
+        },
+      ],
+    };
+    const formulaState = createFullTranslationState(
+      formulaDocument,
+      "preset-1",
+      "model-1",
+    );
+    formulaState.blocks["paired-paragraph"] = {
+      status: "done",
+      translation: "$x = 1$。$y = 2$。",
+    };
+    const view = renderSentences(
+      formulaDocument,
+      formulaState,
+      "interleaved",
+      sentenceReading,
+    );
+    const row = view.querySelector(
+      '[data-block-id="paired-paragraph"]',
+    ) as HTMLElement;
+    const painted = Array.from(
+      row.querySelectorAll<HTMLElement>(".zai-ft-sentence"),
+    )
+      .map((element) => ({
+        element,
+        order: Number(element.style.getPropertyValue("order")),
+      }))
+      .sort((left, right) => left.order - right.order);
+
+    expect(row.classList.contains("is-sentence-paired")).toBe(true);
+    expect(painted).toHaveLength(4);
+    // A sentence that starts with a formula still carries it into its own row.
+    expect(
+      painted.map(
+        ({ element }) => element.querySelectorAll(".math-inline").length,
+      ),
+    ).toEqual([1, 1, 1, 1]);
+    expect(
+      row.querySelectorAll(".zai-ft-block-body > .math-inline"),
+    ).toHaveLength(0);
+  });
+
+  it("keeps stacked blocks when the two sides segment differently", () => {
+    const view = renderSentences(
+      pairedDocument,
+      pairedState("第一个结论。第二个结论。"),
+      "interleaved",
+      sentenceReading,
+    );
+    const row = view.querySelector(
+      '[data-block-id="paired-paragraph"]',
+    ) as HTMLElement;
+
+    expect(row.classList.contains("is-sentence-paired")).toBe(false);
+    expect(row.querySelectorAll(".zai-ft-sentence")).toHaveLength(0);
+    const markers = (side: string) =>
+      Array.from(
+        row.querySelectorAll<HTMLElement>(
+          `.zai-ft-${side} .zai-ft-sentence-boundary`,
+        ),
+      ).filter((marker) => marker.dataset.marker);
+
+    expect(markers("source")).toHaveLength(3);
+    expect(markers("translation")).toHaveLength(2);
+  });
+
+  it("leaves the parallel layout and continuous breaks untouched", () => {
+    const parallel = renderSentences(
+      pairedDocument,
+      pairedState("第一个结论。第二个结论。第三个结论。"),
+      "parallel",
+      sentenceReading,
+    );
+    const continuous = renderSentences(
+      pairedDocument,
+      pairedState("第一个结论。第二个结论。第三个结论。"),
+      "interleaved",
+      {
+        ...sentenceReading,
+        lineBreakMode: "continuous",
+      },
+    );
+
+    for (const view of [parallel, continuous]) {
+      const row = view.querySelector(
+        '[data-block-id="paired-paragraph"]',
+      ) as HTMLElement;
+      expect(row.classList.contains("is-sentence-paired")).toBe(false);
+      expect(row.querySelectorAll(".zai-ft-sentence")).toHaveLength(0);
+    }
   });
 });

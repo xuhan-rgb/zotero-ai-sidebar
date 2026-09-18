@@ -49,6 +49,10 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
   let sectionID = "front";
   let paragraphIndex = 0;
   for (const item of items) {
+    const location = item.page != null && Number.isInteger(item.page) && item.page >= 0 &&
+      item.bbox && item.bbox.every((n) => n >= 0 && n <= 1000) &&
+      item.bbox[2] > item.bbox[0] && item.bbox[3] > item.bbox[1]
+      ? { pdfLocation: { pageIndex: item.page, bbox: item.bbox } } : {};
     if (item.kind === "heading") {
       paragraphIndex = 0;
       const id =
@@ -62,6 +66,7 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
         source: item.text,
         translatable: true,
         level: item.level,
+        ...location,
       });
       continue;
     }
@@ -71,6 +76,7 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
         kind: "formula",
         source: item.text,
         translatable: false,
+        ...location,
       });
       continue;
     }
@@ -80,6 +86,7 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
         kind: "figure-caption",
         source: item.text,
         translatable: !!item.text,
+        ...location,
         ...(item.asset ? { assets: [item.asset] } : {}),
       });
       continue;
@@ -90,6 +97,7 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
         kind: "table-caption",
         source: item.text,
         translatable: !!item.text,
+        ...location,
         ...(item.table ? { table: item.table } : {}),
         ...(!item.table && item.asset ? { assets: [item.asset] } : {}),
       });
@@ -104,6 +112,7 @@ function blocksFromContentList(value: unknown): FullTranslationBlock[] {
         : "paragraph",
       source: item.text,
       translatable: true,
+      ...location,
     });
   }
   return compactFrontMatter(blocks, items);

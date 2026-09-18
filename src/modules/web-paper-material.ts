@@ -4,6 +4,11 @@ import {
   readArxivMeta,
 } from "../context/arxiv-store";
 import { appendLocalPath } from "../utils/local-path";
+import {
+  loadMineruCache,
+  mineruCacheFolder,
+  readPdfStat,
+} from "../translate/mineru-store";
 import type { WebAgentAttachment } from "./web-agent-client";
 import type { Message } from "../providers/types";
 
@@ -79,6 +84,7 @@ export function webArxivTocDirectory(
 
 interface ZoteroWebItem {
   id?: number;
+  key?: string;
   parentID?: number;
   attachmentContentType?: string;
   getField?(field: string): string;
@@ -124,7 +130,47 @@ export async function resolveWebPaperMaterial(
   }
 
   const pdf = await firstPdfAttachment(root, selected);
-  return pdf ? { paperUrl, attachment: pdf } : { paperUrl };
+  if (!pdf) return { paperUrl };
+  const markdown = await mineruMarkdownAttachment(
+    pdf,
+    root.key || selected.key || "",
+  );
+  return { paperUrl, attachment: markdown ?? pdf };
+}
+
+// WHY markdown over PDF: a chat may start before MinerU finishes parsing, so
+// its first message carries the PDF. Once the parse lands, later messages must
+// switch to the cached `full.md`; the web agent re-uploads whenever the bound
+// material changes.
+async function mineruMarkdownAttachment(
+  pdf: WebAgentAttachment,
+  itemKey: string,
+): Promise<WebAgentAttachment | undefined> {
+  if (!itemKey) return undefined;
+  try {
+    const stat = await readPdfStat(pdf.path);
+    const cached = await loadMineruCache(itemKey, stat.size, stat.mtime);
+    if (!cached?.markdown?.trim()) return undefined;
+    return {
+      kind: "markdown",
+      path: appendLocalPath(mineruCacheFolder(itemKey), "full.md"),
+      name: `${pdf.name.replace(/\.pdf$/i, "") || "paper"}.md`,
+      mimeType: "text/plain",
+    };
+  } catch {
+    // A broken or unreadable parse cache must never block the PDF fallback.
+    return undefined;
+  }
+}
+
+export function webPaperMaterialKind(
+  attachment: WebAgentAttachment | undefined,
+): "latex" | "pdf" | "markdown" | undefined {
+  return attachment?.kind === "latex" ||
+    attachment?.kind === "pdf" ||
+    attachment?.kind === "markdown"
+    ? attachment.kind
+    : undefined;
 }
 
 function canonicalPaperUrl(

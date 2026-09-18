@@ -69,10 +69,14 @@ export type FullTranslationLineBreakMode =
   | "continuous"
   | "sentence"
   | "sentence-semicolon";
+export type FullTranslationFontFamily = "system" | "serif" | "sans";
 
 export interface FullTranslationReadingSettings {
   languageMode: FullTranslationLanguageMode;
   layout: FullTranslationReadingLayout;
+  fontSizePx: number;
+  lineHeight: number;
+  fontFamily: FullTranslationFontFamily;
   markerStyle: FullTranslationMarkerStyle;
   customMarker: string;
   markerColorMode: FullTranslationMarkerColorMode;
@@ -84,6 +88,9 @@ export const DEFAULT_FULL_TRANSLATION_READING_SETTINGS: FullTranslationReadingSe
   {
     languageMode: "bilingual",
     layout: "interleaved",
+    fontSizePx: 18,
+    lineHeight: 1.7,
+    fontFamily: "system",
     markerStyle: "slashes",
     customMarker: "//",
     markerColorMode: "palette",
@@ -113,6 +120,10 @@ export const DEFAULT_LOCAL_UI_SETTINGS: LocalUiSettings = {
 const KEY = "extensions.zotero-ai-sidebar.localUiSettings";
 const MIN_CHAT_FONT_SIZE = 11;
 const MAX_CHAT_FONT_SIZE = 22;
+const MIN_READING_FONT_SIZE = 14;
+const MAX_READING_FONT_SIZE = 24;
+const MIN_READING_LINE_HEIGHT = 1.3;
+const MAX_READING_LINE_HEIGHT = 2.4;
 
 export function loadLocalUiSettings(prefs: PrefsStore): LocalUiSettings {
   const raw = prefs.get(KEY);
@@ -408,6 +419,13 @@ export function normalizeFullTranslationReadingSettings(
       ["parallel", "interleaved"] as const,
       DEFAULT_FULL_TRANSLATION_READING_SETTINGS.layout,
     ),
+    fontSizePx: normalizeReadingFontSize(input.fontSizePx),
+    lineHeight: normalizeReadingLineHeight(input.lineHeight),
+    fontFamily: oneOf(
+      input.fontFamily,
+      ["system", "serif", "sans"] as const,
+      DEFAULT_FULL_TRANSLATION_READING_SETTINGS.fontFamily,
+    ),
     markerStyle: oneOf(
       input.markerStyle,
       ["slashes", "circled", "decimal", "dot", "custom", "off"] as const,
@@ -440,6 +458,27 @@ function normalizeChatFontSize(value: unknown): number {
     MIN_CHAT_FONT_SIZE,
     Math.min(MAX_CHAT_FONT_SIZE, Math.round(numeric)),
   );
+}
+
+function normalizeReadingFontSize(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric))
+    return DEFAULT_FULL_TRANSLATION_READING_SETTINGS.fontSizePx;
+  return Math.max(
+    MIN_READING_FONT_SIZE,
+    Math.min(MAX_READING_FONT_SIZE, Math.round(numeric)),
+  );
+}
+
+function normalizeReadingLineHeight(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric))
+    return DEFAULT_FULL_TRANSLATION_READING_SETTINGS.lineHeight;
+  const clamped = Math.max(
+    MIN_READING_LINE_HEIGHT,
+    Math.min(MAX_READING_LINE_HEIGHT, numeric),
+  );
+  return Math.round(clamped * 10) / 10;
 }
 
 function normalizeMarker(value: unknown): string {

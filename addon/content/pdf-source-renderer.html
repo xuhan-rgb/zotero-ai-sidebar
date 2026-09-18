@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <title>PDF source preview</title>
+  </head>
+  <body>
+    <script type="module">
+      try {
+        const { WorkerMessageHandler } =
+          await import("resource://zotero/reader/pdf/build/pdf.worker.mjs");
+        globalThis.pdfjsWorker = { WorkerMessageHandler };
+        const { getDocument } =
+          await import("resource://zotero/reader/pdf/build/pdf.mjs");
+        let pdf;
+        window.openSourcePdf = async (input) => {
+          pdf = await getDocument({ data: new Uint8Array(input) }).promise;
+          return pdf.numPages;
+        };
+        window.renderSourcePage = async (pageIndex) => {
+          const page = await pdf.getPage(pageIndex + 1);
+          // Use the document's native rotation, as in MinerU's page image.
+          const initial = page.getViewport({ scale: 1 });
+          const scale = Math.min(
+            2,
+            1800 / initial.width,
+            2400 / initial.height,
+          );
+          const viewport = page.getViewport({ scale });
+          const canvas = document.createElement("canvas");
+          canvas.width = Math.ceil(viewport.width);
+          canvas.height = Math.ceil(viewport.height);
+          try {
+            const context = canvas.getContext("2d");
+            if (!context) throw new Error("无法创建 PDF 画布");
+            // Hidden browser windows do not receive animation frames.
+            // PDF.js print intent schedules rendering with microtasks instead.
+            await page.render({
+              canvasContext: context,
+              viewport,
+              intent: "print",
+            }).promise;
+            return {
+              url: canvas.toDataURL("image/png"),
+              width: canvas.width,
+              height: canvas.height,
+              pageCount: pdf.numPages,
+            };
+          } finally {
+            page.cleanup();
+            canvas.width = canvas.height = 0;
+          }
+        };
+      } catch (error) {
+        window.pdfSourceError = String(error);
+      }
+    </script>
+  </body>
+</html>

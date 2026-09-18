@@ -7740,6 +7740,38 @@ div.math-fallback {
   --zai-ft-marker-color: #46777b;
 }
 
+.zai-ft-sentence {
+  display: block;
+}
+
+/* Sentence pairing: both language sides become flex items of one column so a
+   translated sentence can sit directly under the sentence it belongs to. */
+.zai-ft-block.is-sentence-paired {
+  display: flex;
+  flex-direction: column;
+  padding: 13px 17px 14px 20px;
+}
+
+.zai-ft-block.is-sentence-paired > .zai-ft-cell,
+.zai-ft-block.is-sentence-paired .zai-ft-sentence-flatten {
+  display: contents;
+}
+
+.zai-ft-block.is-sentence-paired .zai-ft-sentence {
+  margin-top: 2px;
+}
+
+.zai-ft-block.is-sentence-paired .zai-ft-sentence.is-translation {
+  padding-left: 10px;
+  margin-bottom: 8px;
+  border-left: 2px solid rgba(47, 111, 79, 0.35);
+}
+
+/* Verification buttons and their preview panels stay at the end of the block. */
+.zai-ft-block.is-sentence-paired > :not(.zai-ft-cell) {
+  order: 9999;
+}
+
 .zai-ft-block-body > :first-child {
   margin-top: 0;
 }
@@ -8173,8 +8205,10 @@ div.math-fallback {
 .zai-full-translation.is-parallel .zai-ft-source { border-right: 0; }
 .zai-full-translation.is-parallel .zai-ft-translation { border-left: 2px solid #b5cbb9; }
 .zai-full-translation.is-parallel .zai-ft-block { column-gap: 28px; }
-.zai-ft-block-body { font-size: 18px; line-height: 1.7; color: #272d30; }
-.zai-ft-translation .zai-ft-block-body { line-height: 1.95; color: #294434; }
+.zai-ft-block-body { font-size: var(--zai-ft-font-size, 18px); line-height: var(--zai-ft-line-height, 1.7); color: #272d30; }
+.zai-ft-translation .zai-ft-block-body { line-height: calc(var(--zai-ft-line-height, 1.7) * 1.15); color: #294434; }
+.zai-full-translation[data-ft-font-family="serif"] .zai-ft-content { font-family: Georgia, "Times New Roman", "Songti SC", "SimSun", serif; }
+.zai-full-translation[data-ft-font-family="sans"] .zai-ft-content { font-family: var(--zai-font); }
 .zai-ft-content > .zai-ft-title {
   display: block;
   max-width: none;
@@ -8184,8 +8218,8 @@ div.math-fallback {
   text-align: center;
 }
 .zai-full-translation .zai-ft-title .zai-ft-cell { padding: 8px 0; border: 0; }
-.zai-ft-title .zai-ft-source .zai-ft-block-body { font-size: 32px; line-height: 1.3; font-weight: 700; max-width: 920px; margin: auto; }
-.zai-ft-title .zai-ft-translation .zai-ft-block-body { font-size: 20px; line-height: 1.7; font-weight: 400; }
+.zai-ft-title .zai-ft-source .zai-ft-block-body { font-size: calc(var(--zai-ft-font-size, 18px) * 1.78); line-height: 1.3; font-weight: 700; max-width: 920px; margin: auto; }
+.zai-ft-title .zai-ft-translation .zai-ft-block-body { font-size: calc(var(--zai-ft-font-size, 18px) * 1.11); line-height: var(--zai-ft-line-height, 1.7); font-weight: 400; }
 .zai-ft-title-description { margin: 12px auto 0; max-width: 760px; font: 13px/1.8 var(--zai-font); text-align: left; color: #727975; }
 .zai-ft-title-description summary { text-align: center; cursor: pointer; }
 .zai-ft-content > .zai-ft-metadata {
@@ -8208,8 +8242,8 @@ div.math-fallback {
 .zai-ft-list-item .zai-ft-block-body li { padding-inline-start: 0.2em; }
 .zai-ft-list-item .zai-ft-block-body li > p { margin: 0; }
 .zai-ft-footnote .zai-ft-block-body { font-size: 12px; color: #727975; }
-.zai-ft-heading .zai-ft-block-body { font-size: 23px; }
-.zai-ft-heading .zai-ft-translation .zai-ft-block-body { font-size: 18px; }
+.zai-ft-heading .zai-ft-block-body { font-size: calc(var(--zai-ft-font-size, 18px) * 1.28); }
+.zai-ft-heading .zai-ft-translation .zai-ft-block-body { font-size: var(--zai-ft-font-size, 18px); }
 .zai-ft-shared-visual { background: transparent; border-bottom: 0; }
 .zai-ft-figure-caption .zai-ft-block-body,
 .zai-ft-table-caption .zai-ft-block-body { font-size: 14px; }
@@ -8218,8 +8252,8 @@ div.math-fallback {
 @media (max-width: 900px) {
   .zai-ft-content { padding: 24px 16px 40px; }
   .zai-full-translation.is-parallel .zai-ft-block { column-gap: 12px; }
-  .zai-ft-block-body { font-size: 16px; }
-  .zai-ft-title .zai-ft-source .zai-ft-block-body { font-size: 26px; }
+  .zai-ft-block-body { font-size: calc(var(--zai-ft-font-size, 18px) * 0.89); }
+  .zai-ft-title .zai-ft-source .zai-ft-block-body { font-size: calc(var(--zai-ft-font-size, 18px) * 1.44); }
 }
 
 .zai-ft-reference-body,
@@ -8267,3 +8301,72 @@ div.math-fallback {
 
 .composer-browser-file-actions { display: flex; gap: 6px; }
 .composer-browser-file-actions button { flex: 1; white-space: nowrap; }
+
+/* Ordinary PDF source verification, isolated from the LaTeX reader. */
+.zai-pdf-source-pane[hidden] { display: none; }
+.zai-pdf-source-pane {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 50%;
+  min-width: 0;
+  min-height: 0;
+  border-right: 1px solid var(--zai-border);
+  background: #f4f4f4;
+}
+.is-pdf-compare .zai-ft-outline { display: none; }
+.is-pdf-compare .zai-ft-content { padding: 24px 20px 40px; }
+.is-pdf-compare.is-parallel .zai-ft-block { grid-template-columns: minmax(0, 1fr); }
+.zai-pdf-source-controls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 8px;
+  background: var(--zai-bg, white);
+}
+.zai-pdf-source-body { flex: 1; min-height: 0; overflow: auto; padding: 12px; }
+.zai-pdf-source-page { position: relative; margin: 0 auto; line-height: 0; }
+.zai-pdf-source-page > img { display: block; width: 100%; height: auto; }
+.zai-pdf-source-page > .zai-pdf-source-box {
+  position: absolute;
+  box-sizing: border-box;
+  padding: 0;
+  min-width: 0;
+  min-height: 0;
+  margin: 0;
+  border: 1px solid #597ee4;
+  border-radius: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.zai-pdf-source-page > .zai-pdf-source-box:is(:hover, :focus-visible, .is-selected) {
+  background: rgba(64, 111, 230, 0.16);
+  border: 2px solid #315ce0;
+}
+.zai-ft-block.is-pdf-source-selected { outline: 1px solid #597ee4; outline-offset: 3px; }
+.zai-pdf-source-trigger {
+  position: static;
+  display: block;
+  grid-column: 1 / -1;
+  justify-self: end;
+  margin: 6px 0 0 auto;
+  font-size: 11px;
+  opacity: 0;
+  pointer-events: none;
+}
+.zai-ft-block:is(:hover, :focus-within) > .zai-pdf-source-trigger { opacity: 1; pointer-events: auto; }
+.zai-pdf-source-inline {
+  grid-column: 1 / -1;
+  padding: 12px;
+  margin-top: 8px;
+  border: 1px solid #597ee4;
+  border-radius: 6px;
+  background: #f4f6fc;
+  color: #253653;
+  font: 13px/1.6 sans-serif;
+}
+.zai-pdf-source-inline > button { margin-bottom: 8px; }
+.zai-pdf-source-crop { position: relative; width: 100%; overflow: hidden; background: white; }
+.zai-pdf-source-crop > img { position: absolute; max-width: none; height: auto; display: block; }
+.zai-ft-pdf-toggle[aria-pressed="true"] { color: #315ce0; border-color: #597ee4; }

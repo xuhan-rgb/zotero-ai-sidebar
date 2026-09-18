@@ -28,7 +28,7 @@ export async function validateWebAttachment(value) {
   }
   const { kind, path: filePath, name, mimeType } = value;
   if (
-    !["latex", "pdf", "text"].includes(kind) ||
+    !["latex", "pdf", "markdown", "text"].includes(kind) ||
     typeof filePath !== "string" ||
     !path.isAbsolute(filePath) ||
     typeof name !== "string" ||

@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { readFile, stat } from "node:fs/promises";
 import { mkdir } from "node:fs/promises";
 import { mkdtemp } from "node:fs/promises";
 import { rm } from "node:fs/promises";
@@ -10,6 +10,7 @@ import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import http from "node:http";
 import process from "node:process";
+import path from "node:path";
 import { pathToFileURL, URL } from "node:url";
 import { chromium } from "playwright-core";
 
@@ -375,7 +376,16 @@ async function runTask(task) {
     .locator(selectorList(adapter.composer))
     .filter({ visible: true })
     .first();
-  const uploadMaterial = !!task.attachment && !session.materialUploaded;
+  const materialKey = task.attachment
+    ? await webMaterialKey(task.attachment)
+    : "";
+  // A conversation can outlive its paper material: a chat that started before
+  // the PDF parse finished uploaded the PDF, and later messages must switch to
+  // the parsed Markdown. Re-upload whenever the bound material changed.
+  const uploadMaterial =
+    !!task.attachment &&
+    (!session.materialUploaded ||
+      (!!materialKey && session.materialKey !== materialKey));
   const submissionPrompt = uploadMaterial
     ? task.prompt
     : task.continuationPrompt;
@@ -385,11 +395,9 @@ async function runTask(task) {
     ...(task.contextAttachment ? [task.contextAttachment] : []),
     ...(task.tocAttachment ? [task.tocAttachment] : []),
   ];
-  const attachments = await stageTaskAttachments(
-    task,
-    adapter,
-    sourceAttachments,
-  );
+  const attachments = (
+    await stageTaskAttachments(task, adapter, sourceAttachments)
+  ).map(uploadedFileName);
   if (attachments.length) {
     await callback(task, "uploading_attachment");
     await runWithEarlyPageNotice(task, async () => {
@@ -442,7 +450,10 @@ async function runTask(task) {
   task.submissionAttempted = true;
   await submitPrompt(page, composer, adapter, previousAnswerCount, task, session);
   task.submissionConfirmed = true;
-  if (uploadMaterial) session.materialUploaded = true;
+  if (uploadMaterial) {
+    session.materialUploaded = true;
+    session.materialKey = materialKey;
+  }
   if (!session.conversationUrl) {
     const deadline = Date.now() + 5_000;
     while (Date.now() < deadline) {
@@ -456,6 +467,7 @@ async function runTask(task) {
   await saveConversationBinding(session.slot, {
     url: session.conversationUrl || "",
     materialUploaded: session.materialUploaded,
+    materialKey: session.materialKey,
     titleApplied: session.titleApplied,
   });
 
@@ -511,6 +523,7 @@ async function runTask(task) {
       await saveConversationBinding(session.slot, {
         url: session.conversationUrl,
         materialUploaded: session.materialUploaded,
+        materialKey: session.materialKey,
         titleApplied: true,
       }).catch(() =>
         console.warn("[web-agent] conversation title receipt could not be saved"),
@@ -535,6 +548,29 @@ async function stageTaskAttachments(task, adapter, attachments) {
       stageWebAttachment(attachment, adapter, task.attachmentStageDir),
     ),
   );
+}
+
+// Material identity is what the conversation received, not where the file sat
+// on disk (LaTeX uploads are staged into a fresh directory each task).
+async function webMaterialKey(attachment) {
+  try {
+    const info = await stat(attachment.path);
+    return `${attachment.kind}:${attachment.name}:${info.size}`;
+  } catch {
+    return "";
+  }
+}
+
+// An upload is named after the file on disk, not after the display name we
+// asked for: Playwright's file input and a `text/uri-list` paste both take the
+// path's basename. Waiting on the display name therefore never matches
+// attachments whose two names differ (MinerU's cached `full.md`, sent under
+// the paper-derived name), so wait on what the page will really render.
+function uploadedFileName(attachment) {
+  const basename = path.basename(attachment.path || "");
+  return basename && basename !== attachment.name
+    ? { ...attachment, name: basename }
+    : attachment;
 }
 
 async function cancelTask(id) {
@@ -585,6 +621,7 @@ async function submitPrompt(page, composer, adapter, previousAnswerCount, task, 
       await saveConversationBinding(session.slot, {
         url: "",
         materialUploaded: false,
+        materialKey: "",
       });
       assertConversationPage(session, adapter);
     }
@@ -763,6 +800,7 @@ async function webSession(browserContext, task, adapter) {
     slot: bindingSlot,
     conversationUrl: binding?.url,
     materialUploaded: binding?.materialUploaded || false,
+    materialKey: binding?.materialKey || "",
     titleApplied: binding?.titleApplied === true,
   };
   sessions.set(sessionSlot, session);
@@ -802,8 +840,14 @@ async function webSession(browserContext, task, adapter) {
         return session;
       await page.waitForTimeout(100);
     }
-    if (await zaiConversationMissing(page, adapter, session.conversationUrl)) {
+    if (
+      (await zaiConversationMissing(page, adapter, session.conversationUrl)) ||
+      (await deepseekConversationMissing(page, adapter, session.conversationUrl))
+    ) {
       await saveConversationBinding(session.slot, null);
+      session.conversationUrl = undefined;
+      session.materialUploaded = false;
+      session.materialKey = "";
       return webSession(browserContext, task, adapter);
     }
     throw new Error(
@@ -841,6 +885,43 @@ async function zaiConversationMissing(page, adapter, boundURL) {
       return body?.detail === `failed to get chat: chat not found: ${id}`;
     }, id)
     .catch(() => false);
+}
+
+// DeepSeek answers a deleted or otherwise inaccessible conversation by bouncing
+// the tab back to its home page and flashing a "Chat not found." toast. The
+// toast fades within seconds, so watch for it while the redirect settles
+// instead of leaving the paper bound to a conversation that no longer exists.
+async function deepseekConversationMissing(page, adapter, boundURL) {
+  if (adapter.host !== "chat.deepseek.com") return false;
+  if (!boundURL || !conversationIdentity(boundURL, adapter)) return false;
+  let home;
+  try {
+    home = new URL(adapter.url).origin;
+  } catch {
+    return false;
+  }
+  const deadline = Date.now() + 3_000;
+  try {
+    for (;;) {
+      const current = new URL(page.url());
+      if (current.origin !== home) return false;
+      // Any conversation address means the restore landed on a real conversation.
+      if (conversationIdentity(page.url(), adapter)) return false;
+      const notices = await page
+        .locator("[class*='ds-toast']")
+        .filter({ visible: true })
+        .all();
+      for (const notice of notices) {
+        const text = ((await notice.textContent()) || "").trim();
+        if (/^chat not found[.!]?$/i.test(text)) return true;
+      }
+      if (Date.now() > deadline) return false;
+      await page.waitForTimeout(200);
+    }
+  } catch {
+    // A navigating page must not replace the restore-failure report below.
+    return false;
+  }
 }
 
 async function conversationDeletedNotice(page, adapter) {
