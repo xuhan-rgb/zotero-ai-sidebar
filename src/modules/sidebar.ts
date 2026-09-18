@@ -148,6 +148,7 @@ import {
   type FullTranslationSession,
 } from "../translate/full-document-session";
 import {
+  addDraftImageAssets,
   addDraftImages,
   pastedImageFiles,
   renderDraftImages,
@@ -243,6 +244,14 @@ import {
   openWebAccount,
 } from "./web-agent-client";
 import { openWebUsageNotice } from "./web-usage-notice";
+import { createFigurePicker } from "./figure-picker";
+import {
+  loadPaperFigures,
+  paperFigureFileName,
+  readPaperFigureBytes,
+  readPaperFigureDataUrl,
+  type PaperFigure,
+} from "./paper-figures";
 import {
   getWebAgentBrowsers,
   addWebAgentBrowser,
@@ -257,6 +266,7 @@ import {
 } from "./web-agent-installer";
 import {
   createWebContextAttachment,
+  createWebImageAttachments,
   createWebTocAttachment,
   resolveWebPaperMaterial,
   webPaperMaterialKind,
@@ -3136,15 +3146,32 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   input.style.height = "auto";
   const slashMenu = el(doc, "div", "slash-command-menu");
   slashMenu.style.display = "none";
+  const figurePicker = state.networkDiagramTarget
+    ? null
+    : createFigurePicker({
+        doc,
+        input,
+        load: () => loadPaperFigures(state.itemID),
+        preview: readPaperFigureDataUrl,
+        pick: (figure) => {
+          void attachPaperFigure(mount, state, input, figure);
+        },
+      });
 
   const updateStatus = (captureFocus = true) => {
     captureDraftFromInput(input, state, captureFocus);
     autoResizeInput(input);
     renderInputStatus(status, input, state);
     renderSlashCommandMenu(slashMenu, input, state);
+    figurePicker?.refresh();
   };
 
   input.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (figurePicker?.onKeydown(event)) {
+      captureDraftFromInput(input, state);
+      updateStatus();
+      return;
+    }
     const slashTarget = activeSlashCommandTarget(input);
     const slashMatches = slashTarget
       ? matchingSlashCommandsForSendMode(
@@ -3252,12 +3279,15 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
       renderDraftImages(doc, mount, state, input, { renderPanel }),
     );
   }
-  inputStack.append(slashMenu, input);
+  inputStack.append(slashMenu, ...(figurePicker ? [figurePicker.menu] : []), input);
   const composerSwitchers = el(doc, "div", "composer-switchers");
   if (!state.networkDiagramTarget) {
     composerSwitchers.append(renderWebSearchSwitcher(doc, mount, state));
     if (!getStoredSelectedText(state.itemID)) {
       composerSwitchers.append(renderPaperPinSwitcher(doc, mount, state));
+    }
+    if (webPromptTarget) {
+      composerSwitchers.append(renderWebUsageNoticeChip(doc, mount));
     }
     row.append(inputStack, composerSwitchers);
   } else {
@@ -3285,9 +3315,6 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
       compactMenu(doc, "composer-attachment-menu", "＋", "添加截图或图片");
     attachmentMenuContent.append(screenshotAttach, imageAttach);
     row.append(attachmentMenu);
-  }
-  if (webPromptTarget && !state.networkDiagramTarget) {
-    row.append(renderWebUsageNoticeChip(doc, mount));
   }
   const send = buttonEl(doc, conversationSending ? "↑ 排队" : "↑");
   send.className = conversationSending ? "send-btn send-queue-btn" : "send-btn";
@@ -3323,7 +3350,6 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
       }
     });
     row.append(stop);
-    row.classList.add("input-row-has-stop");
   }
   if (!state.networkDiagramTarget) {
     const selectionChip = state.chatSelectionQuote
@@ -3598,6 +3624,14 @@ async function sendWebPromptMessage(
     : options.annotationBatch
     ? webAnnotationTaskQuestion()
     : content;
+  // Images ride along with the message that mentions their marker.
+  const messageImages = state.draftImages.filter((image) =>
+    content.includes(image.marker),
+  );
+  const imageAttachments = await createWebImageAttachments(messageImages);
+  const imageLabels = messageImages.map(
+    (image) => `${image.marker} ${image.name}`,
+  );
   const prompt = buildWebPrompt({
     content: webContent,
     title,
@@ -3614,6 +3648,7 @@ async function sendWebPromptMessage(
     annotationBatch: options.annotationBatch,
     annotationSuggestion: options.explainSelection,
     annotationColorGuide,
+    imageLabels,
   });
   const continuationPrompt = buildWebPrompt({
     content: webContent,
@@ -3632,6 +3667,7 @@ async function sendWebPromptMessage(
     annotationBatch: options.annotationBatch,
     annotationSuggestion: options.explainSelection,
     annotationColorGuide,
+    imageLabels,
   });
   const createdAt = Date.now();
   let taskID = "";
@@ -3993,6 +4029,7 @@ async function sendWebPromptMessage(
       paperUrl: material.paperUrl,
       paperTitle: title,
       hideBrowser: state.localUiSettings.hideWebBrowser,
+      ...(imageAttachments.length ? { imageAttachments } : {}),
       chatgptOptions:
         provider === "chatgpt" ? state.localUiSettings.chatgptWeb : undefined,
       customProvider,
@@ -4766,6 +4803,39 @@ function normalizeSelectionForTurnMode(text: string): string {
 }
 
 /** WEB mode sends text material only; the notice spells out what that means. */
+/**
+ * Attaches a figure that was picked from `@` in the composer. The bytes feed
+ * the API payload and the on-disk path lets WEB mode upload the same file.
+ */
+async function attachPaperFigure(
+  mount: HTMLElement,
+  state: PanelState,
+  input: HTMLTextAreaElement,
+  figure: PaperFigure,
+): Promise<void> {
+  const bytes = await readPaperFigureBytes(figure);
+  if (!bytes) return;
+  await addDraftImageAssets(
+    input.ownerDocument!,
+    state,
+    [
+      {
+        name: paperFigureFileName(figure),
+        mediaType: figure.mediaType,
+        bytes,
+        path: figure.path,
+      },
+    ],
+    input,
+  );
+  captureDraftFromInput(input, state);
+  autoResizeInput(input);
+  renderPanel(mount, state);
+  const nextInput = (mount.querySelector(".input-row textarea") ??
+    input) as HTMLTextAreaElement;
+  nextInput.focus();
+}
+
 function renderWebUsageNoticeChip(
   doc: Document,
   mount: HTMLElement,

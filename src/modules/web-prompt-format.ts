@@ -17,6 +17,8 @@ export interface WebPromptFormatInput {
   historyAttachmentName?: string;
   tocAttachmentAvailable?: boolean;
   tocAttachmentName?: string;
+  /** Labels of the images uploaded with this single message. */
+  imageLabels?: string[];
   webProvider?: "chatgpt" | "deepseek" | string;
   annotationBatch?: boolean;
   annotationSuggestion?: boolean;
@@ -50,10 +52,7 @@ export function buildWebPrompt(input: WebPromptFormatInput): string {
       ],
     }[input.attachmentKind];
     blocks.push(
-      section(
-        "论文材料",
-        material[input.attachmentAlreadyAvailable ? 0 : 1],
-      ),
+      section("论文材料", material[input.attachmentAlreadyAvailable ? 0 : 1]),
     );
   }
   if (input.selectedText.trim()) {
@@ -102,6 +101,17 @@ export function buildWebPrompt(input: WebPromptFormatInput): string {
       ),
     );
   }
+  if (input.imageLabels?.length) {
+    blocks.push(
+      section(
+        "本消息附带的图片",
+        [
+          "以下图片已作为附件随本条消息上传，请直接查看附件中的图片内容后再回答。",
+          ...input.imageLabels.map((label) => `- ${label}`),
+        ].join("\n"),
+      ),
+    );
+  }
   if (input.tocAttachmentAvailable) {
     blocks.push(
       section(
@@ -119,7 +129,8 @@ export function buildWebPrompt(input: WebPromptFormatInput): string {
   };
   const reusedMaterialBoundary: Record<string, string> = {
     pdf: "你可以读取本网页对话前序消息附加的 PDF；不要声称读取附件之外、且未提供的材料。",
-    latex: "你可以读取本网页对话前序消息附加的 LaTeX；不要声称读取了未提供的 PDF 内容。",
+    latex:
+      "你可以读取本网页对话前序消息附加的 LaTeX；不要声称读取了未提供的 PDF 内容。",
     markdown:
       "你可以读取本网页对话前序消息附加的 Markdown 全文；不要声称读取了未提供的 PDF 内容。",
   };

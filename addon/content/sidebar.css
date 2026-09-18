@@ -3704,6 +3704,89 @@ div.math-fallback {
   box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
 }
 
+.figure-menu {
+  position: absolute;
+  left: 6px;
+  right: 6px;
+  bottom: calc(100% + 6px);
+  z-index: 40;
+  max-height: 320px;
+  overflow-y: auto;
+  border: 1px solid rgba(44, 44, 44, 0.14);
+  border-radius: 8px;
+  background: rgba(252, 252, 252, 0.98);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.18);
+}
+
+.figure-menu-note {
+  padding: 10px 12px;
+  color: var(--zai-faint);
+  font-size: 12px;
+}
+
+.figure-menu-list {
+  display: grid;
+}
+
+.input-row .figure-item {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-items: center;
+  gap: 0 9px;
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-bottom: 1px solid rgba(44, 44, 44, 0.07);
+  border-radius: 0;
+  background: transparent;
+  color: var(--zai-text);
+  text-align: left;
+}
+
+.input-row .figure-item:hover {
+  background: var(--zai-accent-soft);
+  color: var(--zai-text);
+}
+
+.input-row .figure-item-selected {
+  background: var(--zai-blue-soft);
+  color: var(--zai-text);
+}
+
+.figure-item-thumb {
+  display: grid;
+  grid-row: 1 / span 2;
+  width: 44px;
+  height: 34px;
+  place-items: center;
+  overflow: hidden;
+  border: 1px solid var(--zai-border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--zai-faint);
+  font: 650 11px/1 var(--zai-font);
+}
+
+.figure-item-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.figure-item-label {
+  font: 650 12px/1.4 var(--zai-font);
+}
+
+.figure-item-caption {
+  overflow: hidden;
+  color: var(--zai-muted);
+  font-size: 11px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .input-row .slash-command-menu .slash-command-item {
   display: block;
   width: 100%;
@@ -3840,14 +3923,13 @@ div.math-fallback {
   color: var(--zai-accent-strong);
 }
 
-.input-row .composer-web-notice-chip {
-  position: absolute;
-  right: 48px;
-  bottom: 9px;
+.composer-switchers .composer-web-notice-chip {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
-  height: 30px;
-  padding: 0 11px;
+  min-height: 24px;
+  margin-left: 4px;
+  padding: 0 9px;
   border: 1px solid rgba(154, 145, 134, 0.35);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.72);
@@ -3857,14 +3939,10 @@ div.math-fallback {
   cursor: pointer;
 }
 
-.input-row .composer-web-notice-chip:hover {
+.composer-switchers .composer-web-notice-chip:hover {
   border-color: rgba(154, 145, 134, 0.6);
   background: #fff;
   color: var(--zai-muted);
-}
-
-.input-row.input-row-has-stop .composer-web-notice-chip {
-  right: 66px;
 }
 
 .composer-footer-actions {

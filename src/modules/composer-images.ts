@@ -1,4 +1,7 @@
-import { captureDraftFromInput, type ComposerDraftState } from "./composer-state";
+import {
+  captureDraftFromInput,
+  type ComposerDraftState,
+} from "./composer-state";
 import { buttonEl, el } from "./dom-utils";
 import { appendLocalPath } from "../utils/local-path";
 
@@ -11,6 +14,8 @@ export interface DraftImage {
   mediaType: string;
   dataUrl: string;
   size: number;
+  /** Set when the picture already exists on disk, so WEB chat can upload it. */
+  path?: string;
 }
 
 export interface DraftImageState extends ComposerDraftState {
@@ -206,7 +211,44 @@ export async function addDraftImages<TState extends DraftImageState>(
   if (input) captureDraftFromInput(input, state);
 }
 
-function nextImageMarker<TState extends DraftImageState>(state: TState): string {
+export interface DraftImageAsset {
+  name: string;
+  mediaType: string;
+  bytes: Uint8Array;
+  path?: string;
+}
+
+/** Adds pictures that already exist on disk (parsed figures, LaTeX sources). */
+export async function addDraftImageAssets<TState extends DraftImageState>(
+  doc: Document,
+  state: TState,
+  assets: DraftImageAsset[],
+  input?: HTMLTextAreaElement,
+) {
+  for (const asset of assets) {
+    const file = new File([asset.bytes as unknown as BlobPart], asset.name, {
+      type: asset.mediaType,
+    });
+    const imageData = await fileToPromptImageData(doc, file);
+    const marker = nextImageMarker(state);
+    const image: DraftImage = {
+      id: `image-${Date.now()}-${state.nextPasteID++}`,
+      marker,
+      name: asset.name,
+      mediaType: imageData.mediaType,
+      dataUrl: imageData.dataUrl,
+      size: imageData.size,
+      ...(asset.path ? { path: asset.path } : {}),
+    };
+    state.draftImages.push(image);
+    if (input) insertImageMarker(input, marker);
+  }
+  if (input) captureDraftFromInput(input, state);
+}
+
+function nextImageMarker<TState extends DraftImageState>(
+  state: TState,
+): string {
   return `[Image #${state.draftImages.length + 1}]`;
 }
 

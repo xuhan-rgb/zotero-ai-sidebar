@@ -27,13 +27,17 @@ export async function validateWebAttachment(value) {
     throw new Error("invalid attachment");
   }
   const { kind, path: filePath, name, mimeType } = value;
+  const imageMimeTypes = ["image/png", "image/jpeg", "image/webp", "image/gif"];
+  const mimeTypeAllowed =
+    ["text/plain", "application/pdf"].includes(mimeType) ||
+    (kind === "image" && imageMimeTypes.includes(mimeType));
   if (
-    !["latex", "pdf", "markdown", "text"].includes(kind) ||
+    !["latex", "pdf", "markdown", "text", "image"].includes(kind) ||
     typeof filePath !== "string" ||
     !path.isAbsolute(filePath) ||
     typeof name !== "string" ||
     !name.trim() ||
-    !["text/plain", "application/pdf"].includes(mimeType)
+    !mimeTypeAllowed
   ) {
     throw new Error("invalid attachment fields");
   }

@@ -394,6 +394,8 @@ async function runTask(task) {
     ...(uploadMaterial && task.attachment ? [task.attachment] : []),
     ...(task.contextAttachment ? [task.contextAttachment] : []),
     ...(task.tocAttachment ? [task.tocAttachment] : []),
+    // Images belong to the message itself, so they upload on every task.
+    ...(task.imageAttachments ?? []),
   ];
   const attachments = (
     await stageTaskAttachments(task, adapter, sourceAttachments)
@@ -2701,6 +2703,17 @@ async function validateTask(value) {
     value.contextAttachment,
   );
   const tocAttachment = await validateWebAttachment(value.tocAttachment);
+  const imageAttachments = Array.isArray(value.imageAttachments)
+    ? (
+        await Promise.all(
+          value.imageAttachments.map((item) =>
+            validateWebAttachment(item).catch((error) => {
+              throw new Error(`invalid image attachment: ${error.message}`);
+            }),
+          ),
+        )
+      ).filter(Boolean)
+    : [];
   const chatgptOptions = validateChatGPTOptions(value.chatgptOptions);
   return {
     id: value.id,
@@ -2716,6 +2729,7 @@ async function validateTask(value) {
     attachment,
     contextAttachment,
     tocAttachment,
+    imageAttachments,
   };
 }
 

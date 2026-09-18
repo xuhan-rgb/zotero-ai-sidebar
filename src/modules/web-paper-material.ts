@@ -1,8 +1,5 @@
 import { resolveArxivIdForItemID } from "../context/arxiv-id";
-import {
-  arxivFolderPath,
-  readArxivMeta,
-} from "../context/arxiv-store";
+import { arxivFolderPath, readArxivMeta } from "../context/arxiv-store";
 import { appendLocalPath } from "../utils/local-path";
 import {
   loadMineruCache,
@@ -32,13 +29,17 @@ export async function createWebContextAttachment(
   const root = (Zotero as any).DataDirectory?.dir;
   const io = (globalThis as any).IOUtils;
   if (!root || !io?.writeUTF8 || !io?.makeDirectory) return undefined;
-  const token = (Zotero as any).Utilities?.randomString?.(10) || String(Date.now());
+  const token =
+    (Zotero as any).Utilities?.randomString?.(10) || String(Date.now());
   const dir = appendLocalPath(root, "zai-web-context");
   const name = `zai-web-context-${Date.now()}-${token}.txt`;
   const path = appendLocalPath(dir, name);
   await io.makeDirectory(dir, { createAncestors: true });
   const historyBody = completed
-    .map((message) => `${message.role === "user" ? "用户" : "助手"}：${message.content.trim()}`)
+    .map(
+      (message) =>
+        `${message.role === "user" ? "用户" : "助手"}：${message.content.trim()}`,
+    )
     .join("\n\n");
   const body = `## 前序 Zotero 对话\n${historyBody}`;
   await io.writeUTF8(path, body);
@@ -53,7 +54,8 @@ export async function createWebTocAttachment(
   const root = (Zotero as any).DataDirectory?.dir;
   const io = (globalThis as any).IOUtils;
   if (!root || !io?.writeUTF8 || !io?.makeDirectory) return undefined;
-  const token = (Zotero as any).Utilities?.randomString?.(10) || String(Date.now());
+  const token =
+    (Zotero as any).Utilities?.randomString?.(10) || String(Date.now());
   const dir = appendLocalPath(root, "zai-web-context");
   const name = `zai-arxiv-toc-${Date.now()}-${token}.txt`;
   const path = appendLocalPath(dir, name);
@@ -248,4 +250,95 @@ async function pathExists(path: string): Promise<boolean> {
 
 function fileName(path: string): string {
   return path.replace(/\\/g, "/").split("/").pop() ?? "";
+}
+
+export interface WebDraftImageInput {
+  name: string;
+  mediaType: string;
+  dataUrl: string;
+  path?: string;
+}
+
+/**
+ * The chat page consumes images per message, so every task uploads its own.
+ * Pictures picked from the parsed paper already exist on disk; screenshots and
+ * pasted images are written to a temp file first.
+ */
+export async function createWebImageAttachments(
+  images: WebDraftImageInput[],
+): Promise<WebAgentAttachment[]> {
+  const attachments: WebAgentAttachment[] = [];
+  for (const image of images) {
+    const mediaType = webImageMediaType(image.mediaType);
+    if (!mediaType) continue;
+    const path = image.path ?? (await writeDraftImageFile(image, mediaType));
+    if (!path) continue;
+    attachments.push({
+      kind: "image",
+      path,
+      name: fileName(path) || image.name || "image.png",
+      mimeType: mediaType,
+    });
+  }
+  return attachments;
+}
+
+function webImageMediaType(
+  mediaType: string,
+): "image/png" | "image/jpeg" | "image/webp" | "image/gif" | null {
+  return mediaType === "image/png" ||
+    mediaType === "image/jpeg" ||
+    mediaType === "image/webp" ||
+    mediaType === "image/gif"
+    ? mediaType
+    : null;
+}
+
+async function writeDraftImageFile(
+  image: WebDraftImageInput,
+  mediaType: string,
+): Promise<string | null> {
+  const root = (Zotero as any).DataDirectory?.dir;
+  const io = (globalThis as any).IOUtils;
+  if (!root || !io?.write || !io?.makeDirectory) return null;
+  const bytes = dataUrlBytes(image.dataUrl);
+  if (!bytes) return null;
+  const dir = appendLocalPath(root, "zai-web-images");
+  const path = appendLocalPath(
+    dir,
+    `${Date.now()}-${safeImageName(image.name, mediaType)}`,
+  );
+  try {
+    await io.makeDirectory(dir, { createAncestors: true });
+    await io.write(path, bytes);
+    return path;
+  } catch {
+    return null;
+  }
+}
+
+function dataUrlBytes(dataUrl: string): Uint8Array | null {
+  const match = /^data:([^;,]*)(;base64)?,([\s\S]*)$/.exec(dataUrl);
+  if (!match) return null;
+  if (!match[2]) return new TextEncoder().encode(decodeURIComponent(match[3]));
+  try {
+    const binary = atob(match[3]);
+    const bytes = new Uint8Array(binary.length);
+    for (let index = 0; index < binary.length; index += 1) {
+      bytes[index] = binary.charCodeAt(index);
+    }
+    return bytes;
+  } catch {
+    return null;
+  }
+}
+
+function safeImageName(name: string, mediaType: string): string {
+  const extension = mediaType.split("/")[1].replace("jpeg", "jpg");
+  const stem =
+    (name || "image")
+      .replace(/\.[^.]+$/, "")
+      .replace(/[^\w\u4e00-\u9fa5-]+/g, "-")
+      .slice(0, 40) || "image";
+  return `${stem}.${extension}`;
 }

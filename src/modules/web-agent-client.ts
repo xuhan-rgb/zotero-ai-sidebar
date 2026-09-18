@@ -4,11 +4,17 @@ import type {
   CustomWebProvider,
 } from "../settings/local-ui-settings";
 
+export type WebAgentImageMediaType =
+  | "image/png"
+  | "image/jpeg"
+  | "image/webp"
+  | "image/gif";
+
 export interface WebAgentAttachment {
-  kind: "latex" | "pdf" | "markdown" | "text";
+  kind: "latex" | "pdf" | "markdown" | "text" | "image";
   path: string;
   name: string;
-  mimeType: "text/plain" | "application/pdf";
+  mimeType: "text/plain" | "application/pdf" | WebAgentImageMediaType;
 }
 
 export interface WebAgentConfig {
@@ -85,6 +91,8 @@ export async function dispatchWebAgentTask(input: {
   attachment?: WebAgentAttachment;
   contextAttachment?: WebAgentAttachment;
   tocAttachment?: WebAgentAttachment;
+  /** Images the user picked or pasted for this single message. */
+  imageAttachments?: WebAgentAttachment[];
 }): Promise<void> {
   const config = await loadWebAgentConfig();
   const health = await webAgentHealth(config);
@@ -107,8 +115,12 @@ export async function dispatchWebAgentTask(input: {
     );
   }
   if (
-    input.provider === "zai" && account.guest &&
-    (input.attachment || input.contextAttachment || input.tocAttachment)
+    input.provider === "zai" &&
+    account.guest &&
+    (input.attachment ||
+      input.contextAttachment ||
+      input.tocAttachment ||
+      input.imageAttachments?.length)
   ) {
     throw new Error(
       "Z.ai 游客可进行文字聊天，上传附件需要登录；请点击账号完成登录后重试",
