@@ -12,7 +12,6 @@ export function renderPdfParseControls(
   onTranslate: () => void,
   options?: {
     onConfigureToken?: () => void;
-    onState?: (state: MineruParseState | undefined) => void;
   },
 ): HTMLElement {
   const root = doc.createElement("span");
@@ -48,7 +47,6 @@ export function renderPdfParseControls(
   });
   const apply = (state: MineruParseState | undefined) => {
     current = state;
-    options?.onState?.(state);
     retry.hidden = true;
     applyToken.hidden = true;
     translate.hidden = true;

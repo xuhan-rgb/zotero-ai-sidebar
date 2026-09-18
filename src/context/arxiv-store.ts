@@ -352,6 +352,19 @@ export function matchSourceAssetFile(
 
   const requestedStem = requested.replace(/\.[^./]+$/, "").toLowerCase();
   const basenameStem = basename(requestedStem);
+  // Extraction rewrites spaces and parentheses to underscores and may drop the
+  // archive's top-level folder, so a name like "latex/figure/A B (c).pdf" has
+  // to still find "figure/A_B__c_.pdf".
+  const normalizeName = (value: string) =>
+    value.toLowerCase().replace(/[^a-z0-9]+/g, "");
+  const normalizedStem = normalizeName(basename(requestedStem));
+  const byNormalizedStem = supported.find(
+    (path) =>
+      normalizedStem &&
+      normalizeName(basename(path).replace(/\.[^./]+$/, "")) === normalizedStem,
+  );
+  if (byNormalizedStem) return byNormalizedStem;
+
   const candidates = supported.filter((path) => {
     const pathStem = path.replace(/\.[^./]+$/, "").toLowerCase();
     return pathStem === requestedStem || basename(pathStem) === basenameStem;

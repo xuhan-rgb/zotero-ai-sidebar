@@ -206,7 +206,7 @@ export async function addDraftImages<TState extends DraftImageState>(
       size: imageData.size,
     };
     state.draftImages.push(image);
-    if (input) insertImageMarker(input, marker);
+    if (input) insertComposerText(input, marker);
   }
   if (input) captureDraftFromInput(input, state);
 }
@@ -241,7 +241,7 @@ export async function addDraftImageAssets<TState extends DraftImageState>(
       ...(asset.path ? { path: asset.path } : {}),
     };
     state.draftImages.push(image);
-    if (input) insertImageMarker(input, marker);
+    if (input) insertComposerText(input, marker);
   }
   if (input) captureDraftFromInput(input, state);
 }
@@ -252,15 +252,16 @@ function nextImageMarker<TState extends DraftImageState>(
   return `[Image #${state.draftImages.length + 1}]`;
 }
 
-function insertImageMarker(input: HTMLTextAreaElement, marker: string) {
+/** Inserts text at the caret on its own line, used for markers and LaTeX. */
+export function insertComposerText(input: HTMLTextAreaElement, text: string) {
   const start = input.selectionStart ?? input.value.length;
   const end = input.selectionEnd ?? start;
   const before = input.value.slice(0, start);
   const after = input.value.slice(end);
   const prefix = before && !/\s$/.test(before) ? "\n" : "";
   const suffix = after && !/^\s/.test(after) ? "\n" : "";
-  input.value = `${before}${prefix}${marker}${suffix}${after}`;
-  const cursor = before.length + prefix.length + marker.length;
+  input.value = `${before}${prefix}${text}${suffix}${after}`;
+  const cursor = before.length + prefix.length + text.length;
   input.selectionStart = cursor;
   input.selectionEnd = cursor;
 }

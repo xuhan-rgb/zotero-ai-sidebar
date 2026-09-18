@@ -50,13 +50,6 @@ describe("paper context card", () => {
     );
   });
 
-  it("starts with the WEB figure limitation note hidden", () => {
-    const card = renderContextCard(document, 1494);
-    const note = card.querySelector<HTMLElement>(".ctx-web-material-note");
-    expect(note?.textContent).toContain("图不会发送");
-    expect(note?.hidden).toBe(true);
-  });
-
   it("passes the linked repository while the paper network view is open", () => {
     expect(sidebarSource).toContain(
       'sidebar?.overviewNav?.activeView === "network"',

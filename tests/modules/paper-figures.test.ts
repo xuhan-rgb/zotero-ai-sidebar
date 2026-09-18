@@ -10,8 +10,19 @@ const contentList = [
     type: "image",
     img_path: "images/fig1.jpg",
     image_caption: ["Figure 1: System overview of the model."],
+    page_idx: "2",
   },
-  { type: "chart", img_path: "images/chart1.png", chart_caption: "Figure 2: Latency." },
+  {
+    type: "chart",
+    img_path: "images/chart1.png",
+    chart_caption: "Figure 2: Latency.",
+    page_idx: "4",
+  },
+  {
+    type: "equation",
+    text: "$$\nE = m c ^ {2}\\tag{7}\n$$",
+    page_idx: "4",
+  },
   {
     type: "table",
     img_path: "images/table1.jpg",
@@ -85,10 +96,23 @@ describe("paper figures from the MinerU cache", () => {
   it("labels figures and tables and skips missing or unsafe images", async () => {
     const figures = await loadPaperFigures(10);
 
-    expect(figures.map((figure) => figure.label)).toEqual(["图 1", "图 2", "表 1"]);
+    expect(figures.map((figure) => figure.label)).toEqual([
+      "图 1",
+      "图 2",
+      "公式 7",
+      "表 1",
+    ]);
+    expect(figures.map((figure) => figure.kind)).toEqual([
+      "figure",
+      "figure",
+      "equation",
+      "table",
+    ]);
     expect(figures[0].caption).toBe("Figure 1: System overview of the model.");
     expect(figures[0].path).toBe(`${CACHE}/assets/images/fig1.jpg`);
     expect(figures[0].mediaType).toBe("image/jpeg");
-    expect(figures[2].mediaType).toBe("image/jpeg");
+    expect(figures[0].page).toBe(2);
+    expect(figures[2].latex).toContain("E = m c ^ {2}");
+    expect(figures[3].mediaType).toBe("image/jpeg");
   });
 });

@@ -185,7 +185,7 @@ async function renderNativePdfSourceAsset(
   }
 }
 
-async function renderPdfPreview(
+export async function renderPdfPreview(
   doc: Document,
   bytes: Uint8Array,
 ): Promise<string> {

@@ -33,10 +33,25 @@ const MODE_ROWS: Array<[string, string, string]> = [
 ];
 
 const IMAGE_PATHS: Array<[string, string]> = [
-  ["截图 / 本机图片", "输入框 ＋ → 截图 / 图片，图片会随消息一起发送。"],
+  ["截图 / 本机图片", "输入框 ＋ → 截图 / 图片，图片会随消息一起上传给网页。"],
   [
-    "解析稿里的图 / 表",
-    "输入框里打 @ 选择这篇论文已解析出的图或表；需要论文已经解析完成。",
+    "@ 选论文素材",
+    "输入框里打 @ 挑图片、表格和公式；已解析的 PDF 会先列出你正在看的那一页，也可以按「图片 / 表格 / 公式」切换。图片随消息上传，表格和公式以 LaTeX 文字插入。",
+  ],
+];
+
+const API_PATHS: Array<[string, string]> = [
+  [
+    "图片随消息发送",
+    "输入框 ＋ → 截图 / 图片，或直接 Ctrl+V 粘贴，图片与消息一起发给模型。",
+  ],
+  [
+    "图表与公式",
+    "输入框里打 @：图片、表格、公式都能选；表格和公式直接插入 LaTeX 源码。",
+  ],
+  [
+    "论文上下文",
+    "由输入行的「原文」控制：附带 LaTeX 源码、MinerU 解析稿或 PDF 原件。",
   ],
 ];
 
@@ -75,7 +90,10 @@ export function renderWebUsageNotice(
     ),
   );
   body.append(callout, renderModeTable(doc));
-  body.append(renderImagePaths(doc));
+  body.append(renderNoticeSection(doc, "API 模式", API_PATHS));
+  body.append(
+    renderNoticeSection(doc, "WEB 模式：想让网页模型看图", IMAGE_PATHS),
+  );
   dialog.append(header, body);
 
   const footer = el(doc, "footer", "zai-web-notice-actions");
@@ -113,11 +131,15 @@ function renderModeTable(doc: Document): HTMLElement {
   return table;
 }
 
-function renderImagePaths(doc: Document): HTMLElement {
+function renderNoticeSection(
+  doc: Document,
+  title: string,
+  rows: Array<[string, string]>,
+): HTMLElement {
   const section = el(doc, "div", "zai-web-notice-section");
-  section.append(el(doc, "strong", "", "想让网页模型看图"));
+  section.append(el(doc, "strong", "", title));
   const list = el(doc, "ul", "zai-web-notice-list");
-  for (const [name, detail] of IMAGE_PATHS) {
+  for (const [name, detail] of rows) {
     const item = doc.createElement("li");
     item.append(el(doc, "b", "", name), el(doc, "span", "", detail));
     list.append(item);

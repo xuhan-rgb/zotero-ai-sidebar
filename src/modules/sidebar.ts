@@ -150,6 +150,7 @@ import {
 import {
   addDraftImageAssets,
   addDraftImages,
+  insertComposerText,
   pastedImageFiles,
   renderDraftImages,
   renderImageAttachButton,
@@ -248,8 +249,9 @@ import { createFigurePicker } from "./figure-picker";
 import {
   loadPaperFigures,
   paperFigureFileName,
-  readPaperFigureBytes,
+  paperFigureLatex,
   readPaperFigureDataUrl,
+  readPaperFigureImage,
   type PaperFigure,
 } from "./paper-figures";
 import {
@@ -438,6 +440,8 @@ import {
   firstText,
   getActiveReader,
   getActiveReaderForItem,
+  activeReaderPageIndex,
+  activeReaderPageTexts,
   getActiveReaderSelection,
   getReaderForAttachmentOrItem,
   getReaderForCurrentSelection,
@@ -2100,37 +2104,12 @@ export function renderContextCard(
     const sidebar = findSidebarStateByDocument(doc);
     if (sidebar) void showFullTranslation(sidebar);
   };
-  // The web model receives the paper as text (LaTeX source or MinerU Markdown),
-  // so it never sees the figures. Say so where the paper material is shown, and
-  // only while that text material actually exists.
-  const webTextMaterial = { ready: false };
-  const webMaterialNote = el(
-    doc,
-    "div",
-    "ctx-web-material-note",
-    "WEB 模式只发送论文文字，图不会发送",
-  );
-  webMaterialNote.title =
-    "网页模型看不到论文里的图和版式；需要看图时，请在问题里描述图表内容，或在网页中手动附加图片或原始 PDF。";
-  webMaterialNote.hidden = true;
-  const syncWebMaterialNote = () => {
-    try {
-      webMaterialNote.hidden =
-        loadLocalUiSettings(zoteroPrefs()).chatSendMode !== "web" ||
-        !webTextMaterial.ready;
-    } catch {
-      webMaterialNote.hidden = true;
-    }
-  };
-  card.append(webMaterialNote);
   const entry = doc.createElement("span");
   entry.className = "full-translation-entry";
   if (arxivId) {
     entry.append(
       renderLatexSourceControls(doc, arxivId, openTranslation, {
         onAvailability: (result) => {
-          webTextMaterial.ready = result === "available";
-          syncWebMaterialNote();
           const existing = entry.querySelector(".pdf-parse-controls");
           if (result === "available") {
             existing?.remove();
@@ -2141,10 +2120,6 @@ export function renderContextCard(
               renderPdfParseControls(doc, itemID, openTranslation, {
                 onConfigureToken: () =>
                   openAddonPreferences(doc, "zai-mineru-token"),
-                onState: (state) => {
-                  webTextMaterial.ready = state?.status === "ready";
-                  syncWebMaterialNote();
-                },
               }),
             );
           }
@@ -2155,10 +2130,6 @@ export function renderContextCard(
     entry.append(
       renderPdfParseControls(doc, itemID, openTranslation, {
         onConfigureToken: () => openAddonPreferences(doc, "zai-mineru-token"),
-        onState: (state) => {
-          webTextMaterial.ready = state?.status === "ready";
-          syncWebMaterialNote();
-        },
       }),
     );
   }
@@ -3151,8 +3122,12 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     : createFigurePicker({
         doc,
         input,
-        load: () => loadPaperFigures(state.itemID),
-        preview: readPaperFigureDataUrl,
+        load: () =>
+          loadPaperFigures(state.itemID, {
+            pageTexts: activeReaderPageTexts(doc.defaultView, state.itemID),
+          }),
+        preview: (figure) => readPaperFigureDataUrl(figure, doc),
+        currentPage: () => activeReaderPageIndex(doc.defaultView, state.itemID),
         pick: (figure) => {
           void attachPaperFigure(mount, state, input, figure);
         },
@@ -4802,10 +4777,10 @@ function normalizeSelectionForTurnMode(text: string): string {
   return text.replace(/\s+/g, " ").trim();
 }
 
-/** WEB mode sends text material only; the notice spells out what that means. */
 /**
- * Attaches a figure that was picked from `@` in the composer. The bytes feed
- * the API payload and the on-disk path lets WEB mode upload the same file.
+ * Attaches material picked from `@` in the composer. Pictures become draft
+ * images (API sends them with the message, WEB uploads them); tables and
+ * equations are inserted as LaTeX, which is what a text model can use.
  */
 async function attachPaperFigure(
   mount: HTMLElement,
@@ -4813,17 +4788,30 @@ async function attachPaperFigure(
   input: HTMLTextAreaElement,
   figure: PaperFigure,
 ): Promise<void> {
-  const bytes = await readPaperFigureBytes(figure);
-  if (!bytes) return;
+  const latex = paperFigureLatex(figure);
+  if (latex) {
+    insertComposerText(input, latex);
+    captureDraftFromInput(input, state);
+    autoResizeInput(input);
+    input.focus();
+    return;
+  }
+  const doc = (input.ownerDocument ?? mount.ownerDocument) as Document;
+  const image = await readPaperFigureImage(figure, doc);
+  if (!image) return;
   await addDraftImageAssets(
-    input.ownerDocument!,
+    doc,
     state,
     [
       {
-        name: paperFigureFileName(figure),
-        mediaType: figure.mediaType,
-        bytes,
-        path: figure.path,
+        name: paperFigureFileName(figure, image.mediaType),
+        mediaType: image.mediaType,
+        bytes: image.bytes,
+        // Reuse the on-disk file only when it already is a picture; rasterised
+        // PDF/EPS figures are uploaded from the converted bytes instead.
+        ...(image.mediaType === figure.mediaType && figure.path
+          ? { path: figure.path }
+          : {}),
       },
     ],
     input,

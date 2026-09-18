@@ -59,6 +59,66 @@ export function activeReaderViews(reader: any): any[] {
   return views;
 }
 
+// The page the user is currently looking at, 0-based so it lines up with
+// MinerU's `page_idx` and with Zotero's own pageIndex. The reader embeds a
+// PDF.js viewer, which is the only place that knows the visible page.
+export function activeReaderPageIndex(
+  win: Window | null | undefined,
+  itemID: number | null,
+): number | null {
+  return readerPageIndex(getActiveReaderForItem(win, itemID));
+}
+
+export function readerPageIndex(reader: unknown): number | null {
+  for (const view of activeReaderViews(reader as any)) {
+    const pageNumber = readerPageNumber(view);
+    if (pageNumber != null) return pageNumber - 1;
+  }
+  return null;
+}
+
+// Reader text per page, used to place LaTeX floats (which carry no page
+// numbers of their own) on the page their caption renders on.
+export function activeReaderPageTexts(
+  win: Window | null | undefined,
+  itemID: number | null,
+): string[] | undefined {
+  return readerPageTexts(getActiveReaderForItem(win, itemID));
+}
+
+export function readerPageTexts(reader: unknown): string[] | undefined {
+  const view = activeReaderViews(reader as any)[0];
+  const pages = view?._pdfPages;
+  if (!pages) return undefined;
+  const list: unknown[] = Array.isArray(pages)
+    ? pages
+    : Object.keys(pages)
+        .sort((left, right) => Number(left) - Number(right))
+        .map((key) => pages[key]);
+  const texts = list.map((page) => readerCharsText((page as any)?.chars));
+  return texts.some(Boolean) ? texts : undefined;
+}
+
+function readerPageNumber(view: any): number | null {
+  const value =
+    view?._iframeWindow?.PDFViewerApplication?.pdfViewer?.currentPageNumber ??
+    view?._pdfViewer?.currentPageNumber;
+  const pageNumber = Number(value);
+  return Number.isFinite(pageNumber) && pageNumber >= 1
+    ? Math.floor(pageNumber)
+    : null;
+}
+
+function readerCharsText(chars: unknown): string {
+  if (!Array.isArray(chars)) return "";
+  let text = "";
+  for (const char of chars) {
+    const value = (char as { c?: unknown })?.c;
+    if (typeof value === "string") text += value;
+  }
+  return text;
+}
+
 export function readerItemIDs(
   reader: unknown,
   fallbackItemID: number | null,

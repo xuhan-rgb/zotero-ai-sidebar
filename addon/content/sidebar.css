@@ -1817,16 +1817,6 @@ button:disabled,
   font: 11px/1.4 var(--zai-mono);
 }
 
-.ctx-web-material-note {
-  width: fit-content;
-  margin-top: 5px;
-  padding: 3px 8px;
-  border-radius: 6px;
-  background: var(--zai-accent-soft);
-  color: var(--zai-accent-strong);
-  font: 11px/1.4 var(--zai-font);
-}
-
 .ctx-github-repository {
   color: var(--zai-blue);
   font-weight: 700;
@@ -3724,6 +3714,50 @@ div.math-fallback {
   font-size: 12px;
 }
 
+.figure-menu-filters {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  padding: 6px 8px 5px;
+  border-bottom: 1px solid rgba(44, 44, 44, 0.07);
+  background: rgba(252, 252, 252, 0.98);
+}
+
+.figure-chip {
+  flex: 0 0 auto;
+  padding: 2px 8px;
+  border: 1px solid rgba(44, 44, 44, 0.16);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--zai-muted);
+  font: 600 11px/1.5 var(--zai-font);
+  cursor: pointer;
+}
+
+.figure-chip:hover {
+  background: var(--zai-accent-soft);
+  color: var(--zai-text);
+}
+
+.figure-chip-active {
+  border-color: var(--zai-blue);
+  background: var(--zai-blue-soft);
+  color: var(--zai-text);
+}
+
+.figure-menu-foot {
+  position: sticky;
+  bottom: 0;
+  padding: 5px 9px 6px;
+  border-top: 1px solid rgba(44, 44, 44, 0.07);
+  background: rgba(252, 252, 252, 0.96);
+  color: var(--zai-faint);
+  font-size: 11px;
+}
+
 .figure-menu-list {
   display: grid;
 }
@@ -3775,7 +3809,32 @@ div.math-fallback {
 }
 
 .figure-item-label {
+  overflow: hidden;
   font: 650 12px/1.4 var(--zai-font);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.figure-item-label-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.figure-item-meta {
+  flex: 0 0 auto;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--zai-accent-soft);
+  color: var(--zai-faint);
+  font: 600 10px/1.6 var(--zai-font);
+}
+
+.figure-item-thumb.is-text {
+  background: var(--zai-accent-soft);
+  color: var(--zai-muted);
+  letter-spacing: 0.02em;
 }
 
 .figure-item-caption {
