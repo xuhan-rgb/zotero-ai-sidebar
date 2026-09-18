@@ -297,6 +297,8 @@ Downloads run in the background; chat preparation does not wait for them. Attach
 
 WEB mode mirrors a real AI website into the Zotero conversation. It is useful when you want to use a website account instead of an API key. API mode remains independent and does not need Chrome or the companion process.
 
+> **WEB mode does not send the paper's figures.** The attached paper material is text: cached LaTeX source, or the Markdown parsed by MinerU. Figure captions travel with the text, but the image files themselves do not, so the web model cannot see diagrams or page layout. Tables are text and remain readable. The local full-translation view is unaffected and still shows images. When a question depends on a figure, describe it in the question or attach the image or original PDF inside the website.
+
 > The automatic port allocation, Z.ai support, and login detection described here apply to `v0.8.9`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
 **One-time installation (Windows / Linux / macOS):**
