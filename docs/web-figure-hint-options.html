@@ -104,6 +104,8 @@
         color: var(--accent); font-size: 10.5px; white-space: nowrap;
       }
       .spacer { flex: 1; }
+      .ready { color: var(--blue); white-space: nowrap; }
+      .footer-row { flex-wrap: wrap; }
       .hot { outline: 2px solid #29b6d8; outline-offset: 3px; border-radius: 10px; }
       .tooltip-demo {
         margin-top: 8px; border: 1px solid var(--border-strong); border-radius: 8px;
@@ -136,11 +138,6 @@
           <i>论文卡片常驻说明</i><span class="arrow">+</span>
           <i>composer 短提示</i>
         </div>
-        <div class="legend">
-          <span><b>青色描边</b>＝该方案里新增的位置</span>
-          <span>卡片里的橙色胶囊＝当前已实现的常驻说明</span>
-          <span>缩略的界面按真实侧边栏比例绘制（窄面板场景）</span>
-        </div>
       </section>
 
       <div class="grid">
@@ -172,6 +169,7 @@
             <span class="mode"><span>API</span><span class="on">WEB</span></span>
             <span>DeepSeek</span><span>账号 <span class="caret">▼</span></span>
             <span class="spacer"></span>
+            <span class="ready">DeepSeek 已就绪</span>
             
           </div>
         </div>
@@ -206,6 +204,7 @@
             <span class="mode"><span>API</span><span class="on">WEB</span></span>
             <span>DeepSeek</span><span>账号 <span class="caret">▼</span></span>
             <span class="spacer"></span>
+            <span class="ready">DeepSeek 已就绪</span>
             
           </div>
         </div>
@@ -240,6 +239,7 @@
             <span class="mode"><span>API</span><span class="on">WEB</span></span>
             <span>DeepSeek</span><span>账号 <span class="caret">▼</span></span>
             <span class="spacer"></span>
+            <span class="ready">DeepSeek 已就绪</span>
             
           </div>
         </div>
@@ -274,11 +274,12 @@
             <span class="mode"><span>API</span><span class="on">WEB</span></span>
             <span>DeepSeek</span><span>账号 <span class="caret">▼</span></span>
             <span class="spacer"></span>
+            <span class="ready">DeepSeek 已就绪</span>
             <span class="status-badge hot">WEB 只发送文字材料 · 图不会发送</span>
           </div>
         </div>
         </div>
-        <ul class="notes"><li>位置：composer 底栏 <code>composer-footer-left</code>，即 <code>Images 1 / Pasted 2</code> 出现的地方</li><li>优点：本来就是徽章区，加一条很自然；切换 API/WEB 时就在旁边</li><li>缺点：位置比输入行靠下；只有这一条时会把底栏撑出一整行</li><li>同样需要状态桥；和卡片说明二选一即可</li></ul>
+        <ul class="notes"><li>位置：composer 底栏，和 <code>DeepSeek 已就绪</code>、<code>Images 1 / Pasted 2</code> 同一行</li><li>这一行已经被账号状态占用（<code>webAccountNotice</code>），再加一条就要换行</li><li>窄面板下会挤成两行，把底栏撑高，反而容易被当噪音忽略</li><li>结论：基本排除；同样需要状态桥</li></ul>
       </section>
       </div>
 
