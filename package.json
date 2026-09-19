@@ -43,6 +43,7 @@
     "fflate": "^0.8.3",
     "katex": "^0.16.45",
     "openai": "^6.35.0",
+    "qrcode-generator": "^1.4.4",
     "react": "^19.2.5",
     "react-dom": "^19.2.5",
     "react-markdown": "^10.1.0",

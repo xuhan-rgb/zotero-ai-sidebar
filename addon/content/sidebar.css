@@ -3726,7 +3726,9 @@ div.math-fallback {
   background: rgba(252, 252, 252, 0.98);
 }
 
-.figure-chip {
+/* Scoped to the chip row so these win over `.input-row button`, which fills
+   every composer button with the accent colour. */
+.figure-menu-filters .figure-chip {
   flex: 0 0 auto;
   padding: 2px 8px;
   border: 1px solid rgba(44, 44, 44, 0.16);
@@ -3737,15 +3739,20 @@ div.math-fallback {
   cursor: pointer;
 }
 
-.figure-chip:hover {
+.figure-menu-filters .figure-chip:hover {
   background: var(--zai-accent-soft);
   color: var(--zai-text);
 }
 
-.figure-chip-active {
-  border-color: var(--zai-blue);
-  background: var(--zai-blue-soft);
-  color: var(--zai-text);
+/* The scope in use is the filled one: an outlined row of peers with a single
+   solid chip reads as "selected", the reverse (what the composer's button rule
+   produced) read as everything pressed at once. */
+.figure-menu-filters .figure-chip.figure-chip-active,
+.figure-menu-filters .figure-chip.figure-chip-active:hover {
+  border-color: transparent;
+  background: var(--zai-accent);
+  color: #fff;
+  font-weight: 700;
 }
 
 .figure-menu-foot {
@@ -3764,7 +3771,7 @@ div.math-fallback {
 
 .input-row .figure-item {
   display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
+  grid-template-columns: auto minmax(0, 1fr);
   grid-template-rows: auto auto;
   align-items: center;
   gap: 0 9px;
@@ -3792,6 +3799,7 @@ div.math-fallback {
   display: grid;
   grid-row: 1 / span 2;
   width: 44px;
+  min-width: 44px;
   height: 34px;
   place-items: center;
   overflow: hidden;
@@ -3800,6 +3808,14 @@ div.math-fallback {
   background: #fff;
   color: var(--zai-faint);
   font: 650 11px/1 var(--zai-font);
+  /* The thumb is a picture of the material, not a control: clicks anywhere on
+   * the row must select the row, never grab a scrollbar inside the preview. */
+  pointer-events: none;
+  scrollbar-width: none;
+}
+
+.figure-item-thumb::-webkit-scrollbar {
+  display: none;
 }
 
 .figure-item-thumb img {
@@ -3831,10 +3847,78 @@ div.math-fallback {
   font: 600 10px/1.6 var(--zai-font);
 }
 
+/* 推测页范围（相邻公式页码插值）：虚线边框和琥珀色与普通页码区分。 */
+.figure-item-meta.is-estimated {
+  background: transparent;
+  border: 1px dashed var(--zai-faint);
+  color: var(--zai-muted);
+}
+
 .figure-item-thumb.is-text {
   background: var(--zai-accent-soft);
   color: var(--zai-muted);
   letter-spacing: 0.02em;
+}
+
+/* Rendered LaTeX: KaTeX for formulas, a miniature grid for tables. */
+.figure-item-thumb.is-latex {
+  width: 88px;
+  height: 40px;
+  padding: 2px 4px;
+}
+
+.figure-item-math {
+  display: block;
+  max-width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+  color: var(--zai-text);
+  scrollbar-width: none;
+}
+
+.figure-item-math::-webkit-scrollbar {
+  display: none;
+}
+
+.figure-item-math .katex {
+  font-size: 8px;
+}
+
+.figure-item-math .katex-display {
+  margin: 0;
+}
+
+.figure-item-math .katex-display > .katex {
+  white-space: nowrap;
+}
+
+.figure-item-table {
+  display: block;
+  width: 100%;
+  max-height: 100%;
+  overflow: hidden;
+}
+
+.figure-item-table table {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font: 550 7px/1.15 var(--zai-font);
+  color: var(--zai-muted);
+}
+
+.figure-item-table th,
+.figure-item-table td {
+  overflow: hidden;
+  padding: 0 2px;
+  border-bottom: 1px solid rgba(44, 44, 44, 0.08);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.figure-item-table th {
+  color: var(--zai-text);
 }
 
 .figure-item-caption {
@@ -4053,6 +4137,39 @@ div.math-fallback {
   text-align: left;
 }
 
+/* Standalone 素材 chip in the composer switcher line (＋ 联网 原文 …). */
+.composer-switchers .composer-material-chip {
+  flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  margin-left: 4px;
+  padding: 0 9px;
+  border: 1px solid rgba(154, 145, 134, 0.35);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--zai-faint);
+  font: 600 11px/1 var(--zai-font);
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.composer-switchers .composer-material-chip:hover {
+  border-color: rgba(154, 145, 134, 0.6);
+  background: #fff;
+  color: var(--zai-muted);
+}
+
+.composer-switchers .composer-material-chip.is-active {
+  border-color: var(--zai-accent);
+  background: var(--zai-accent-soft);
+  color: var(--zai-accent-strong);
+}
+
+.composer-switchers .composer-material-chip:first-child {
+  margin-left: 0;
+}
+
 .draft-images {
   display: flex;
   flex-wrap: wrap;
@@ -4133,6 +4250,46 @@ div.math-fallback {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.draft-material-label.is-previewable {
+  cursor: pointer;
+}
+
+.draft-material-label.is-previewable:hover {
+  text-decoration: underline dotted;
+}
+
+.draft-material-label.is-jumpable {
+  cursor: pointer;
+}
+
+.draft-material-label.is-jumpable:hover {
+  text-decoration: underline;
+}
+
+/* The expanded render-proof under a clicked chip: spans the whole tray row. */
+.draft-material-preview {
+  flex-basis: 100%;
+  margin: 2px 0 4px;
+  padding: 8px 10px;
+  overflow-x: auto;
+  border: 1px solid var(--zai-border);
+  border-radius: 8px;
+  background: var(--zai-panel-strong);
+}
+
+.draft-material-preview .figure-item-math .katex {
+  font-size: 13px;
+}
+
+.draft-material-preview .figure-item-table table {
+  font-size: 11px;
+}
+
+.draft-material-preview .figure-item-table th,
+.draft-material-preview .figure-item-table td {
+  white-space: normal;
 }
 
 .draft-material button {
@@ -8723,6 +8880,119 @@ div.math-fallback {
   color: var(--zai-text);
 }
 
+.zai-web-notice-shortcut {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.zai-web-notice-shortcut-field {
+  width: 140px;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid rgba(130, 101, 70, 0.3);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.9);
+  color: var(--zai-text);
+  cursor: pointer;
+  font: 650 12px/1 var(--zai-font);
+  text-align: center;
+}
+.zai-web-notice-shortcut-field:focus {
+  border-color: var(--zai-accent);
+  outline: 2px solid var(--zai-accent-soft);
+}
+.zai-web-notice-shortcut-hint {
+  color: var(--zai-muted);
+}
+
+.zai-web-notice-project {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(130, 101, 70, 0.16);
+  color: var(--zai-muted);
+}
+.zai-web-notice-project a {
+  color: var(--zai-accent);
+  text-decoration: none;
+}
+.zai-web-notice-project a:hover {
+  text-decoration: underline;
+}
+.zai-web-notice-project-sep {
+  color: rgba(130, 101, 70, 0.45);
+}
+.zai-web-notice-copy-env {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--zai-accent);
+  cursor: pointer;
+  font: inherit;
+}
+.zai-web-notice-copy-env:hover {
+  text-decoration: underline;
+}
+.zai-web-notice-copy-env:disabled {
+  color: var(--zai-muted);
+  cursor: default;
+}
+
+.zai-web-notice-support {
+  display: grid;
+  gap: 8px;
+}
+.zai-web-notice-support-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  justify-self: start;
+  min-height: 26px;
+  padding: 0 12px;
+  border: 1px dashed rgba(130, 101, 70, 0.4);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--zai-muted);
+  cursor: pointer;
+  font: 650 12px/1 var(--zai-font);
+}
+.zai-web-notice-support-toggle:hover {
+  border-color: var(--zai-accent);
+  color: var(--zai-text);
+}
+.zai-web-notice-support-toggle.is-open {
+  border-style: solid;
+  color: var(--zai-text);
+}
+.zai-web-notice-support-brand {
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(22, 119, 255, 0.12);
+  color: #1677ff;
+  font: 650 11px/18px var(--zai-font);
+}
+.zai-web-notice-support-panel {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  padding: 12px;
+  border: 1px solid rgba(130, 101, 70, 0.2);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.72);
+}
+.zai-web-notice-support-panel[hidden] {
+  display: none;
+}
+.zai-web-notice-qr-frame {
+  padding: 8px;
+  border-radius: 10px;
+  background: #fff;
+}
+.zai-web-notice-qr {
+  display: block;
+}
 .zai-web-notice-actions {
   display: flex;
   justify-content: flex-end;

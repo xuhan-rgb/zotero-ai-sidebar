@@ -432,7 +432,17 @@ describe("AI dialog toolbar", () => {
     expect(sidebarCSS).toMatch(
       /\.input-row > \.composer-switchers\s*\{[^}]*gap:\s*2px;/s,
     );
-    expect(sidebarSource).toContain('"＋\\u00a0联网"');
+    expect(sidebarSource).toContain('"🌐\\u00a0联网"');
+    expect(sidebarSource).not.toContain('"＋\\u00a0联网"');
+    // One click toggles web search; the old one-item popup is gone.
+    expect(contextSwitchersSource).not.toContain("web-search-popup");
+    expect(contextSwitchersSource).not.toContain("aria-haspopup");
+    expect(contextSwitchersSource).toContain(
+      'webSearchMode: enabled ? "disabled" : "live"',
+    );
+    expect(contextSwitchersSource).toMatch(
+      /trigger\.addEventListener\("click", \(\) => \{\s*saveToolSettings\(/,
+    );
     expect(sidebarSource).toContain('"＋\\u00a0原文"');
     expect(sidebarSource).not.toContain('"web-search-trigger-icon"');
     expect(sidebarSource).not.toContain('"web-search-trigger-label"');
@@ -441,6 +451,23 @@ describe("AI dialog toolbar", () => {
     );
     expect(sidebarCSS).toMatch(
       /\.preset-switcher-bottom\s*\{[^}]*overflow:\s*visible;/s,
+    );
+  });
+
+  it("offers the usage notice in API mode as well", () => {
+    expect(inputSource).toContain(
+      "renderWebUsageNoticeChip(doc, mount, webPromptTarget)",
+    );
+    expect(sidebarSource).toContain(
+      '"查看论文材料来源（LaTeX / MinerU）、素材的选法与发法，以及 API 与 WEB 的差别"',
+    );
+  });
+
+  it("takes the half-typed @ away with the list the 素材 chip closes", () => {
+    // Disarming alone would leave the token behind, and the next keystroke
+    // would reopen the list the user just closed.
+    expect(inputSource).toMatch(
+      /if \(figurePicker\.isArmed\(\) \|\| figurePicker\.isOpen\(\)\) \{\s*figurePicker\.dismiss\(\);/s,
     );
   });
 

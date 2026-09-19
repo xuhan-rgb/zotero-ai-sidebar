@@ -176,7 +176,7 @@ export async function jumpToPdfLocationOnly(
   state: PanelState,
   locator: PdfSelectionLocator,
   referenceKind?: ReadingRouteReferenceKind,
-  opts?: { emphatic?: boolean },
+  opts?: RouteHighlightOptions,
 ) {
   const win = mount.ownerDocument?.defaultView;
   const activeReader = getActiveReader(win);
@@ -606,6 +606,13 @@ export function destroyGuardAfterDelay(
   void sleepInWindow(win, delayMs).then(() => guard.destroy());
 }
 
+export interface RouteHighlightOptions {
+  /** Pulse the cue and drop it as soon as the pointer enters the PDF. */
+  emphatic?: boolean;
+  /** Dashed "referenced this round" mark that stays until the next round. */
+  reference?: boolean;
+}
+
 export function destroyActiveRouteHighlight(mount: HTMLElement): void {
   activeRouteHighlights.get(mount)?.destroy();
   activeRouteHighlights.delete(mount);
@@ -624,6 +631,11 @@ export function ensureRouteHighlightStyle(doc: Document): void {
   pointer-events: none;
   mix-blend-mode: multiply;
   z-index: 5;
+}
+.zai-route-highlight--reference {
+  background: rgba(90, 200, 160, 0.16);
+  border: 1.5px dashed rgba(20, 150, 110, 0.95);
+  border-radius: 3px;
 }
 .zai-route-highlight--emphatic {
   background: rgba(255, 190, 60, 0.42);
@@ -656,7 +668,7 @@ export function mountRouteHighlightOnReader(
   mount: HTMLElement,
   reader: unknown,
   locator: PdfSelectionLocator,
-  opts?: { emphatic?: boolean },
+  opts?: RouteHighlightOptions,
 ): void {
   for (const view of activeReaderViews(reader as any)) {
     if (view?._iframeWindow) {
@@ -670,7 +682,7 @@ export function mountRouteHighlightOverlay(
   mount: HTMLElement,
   view: any,
   locator: PdfSelectionLocator,
-  opts?: { emphatic?: boolean },
+  opts?: RouteHighlightOptions,
 ): void {
   destroyActiveRouteHighlight(mount);
   const rects = pdfRects(locator.position?.rects);
@@ -679,12 +691,8 @@ export function mountRouteHighlightOverlay(
   if (!rects.length || pageIndex == null) return;
 
   const iframeDoc = view?._iframeWindow?.document as Document | undefined;
-  const pageEl = iframeDoc?.querySelector(
-    `[data-page-number="${pageIndex + 1}"]`,
-  ) as HTMLElement | null;
-  const viewport =
-    iframeDoc?.defaultView?.PDFViewerApplication?.pdfViewer?._pages?.[pageIndex]
-      ?.viewport;
+  const pageEl = readerPageElement(iframeDoc, pageIndex);
+  const viewport = readerPageViewport(iframeDoc, pageIndex);
   if (!iframeDoc || !pageEl || !viewport) {
     debugZai("route-highlight.mount.skipped", {
       hasIframeDoc: !!iframeDoc,
@@ -695,9 +703,68 @@ export function mountRouteHighlightOverlay(
     return;
   }
 
-  ensureRouteHighlightStyle(iframeDoc);
+  paintRouteHighlightOverlay(
+    mount,
+    iframeDoc,
+    pageEl,
+    pdfRectsToViewport(viewport, rects),
+    opts,
+  );
+}
 
-  const overlays: HTMLElement[] = [];
+/**
+ * Highlight a MinerU-style box — `[left, top, right, bottom]` normalized to
+ * 0..1000 of the rendered page — without navigating the reader or touching its
+ * text selection. The `@` menu uses this to preview where a figure sits while
+ * the pointer rests on its row.
+ */
+export function mountNormalizedPdfHighlight(
+  mount: HTMLElement,
+  view: any,
+  pageIndex: number,
+  bbox: [number, number, number, number],
+  opts?: RouteHighlightOptions,
+): void {
+  if (!bbox.every((part) => Number.isFinite(part))) return;
+  const iframeDoc = view?._iframeWindow?.document as Document | undefined;
+  const pageEl = readerPageElement(iframeDoc, pageIndex);
+  const viewport = readerPageViewport(iframeDoc, pageIndex);
+  if (!iframeDoc || !pageEl || !viewport) return;
+  const rects = normalizedRectsForPage(viewport, bbox);
+  if (!rects.length) return;
+  paintRouteHighlightOverlay(mount, iframeDoc, pageEl, rects, opts);
+}
+
+/**
+ * MinerU normalizes to 0..1000 of the rendered page with a TOP-LEFT origin,
+ * while `pdfRects` are PDF user space with the origin at the bottom left.
+ * Convert through the viewport, whose coordinate space already matches the
+ * page element the overlay is appended to.
+ */
+function normalizedRectsForPage(
+  viewport: any,
+  bbox: [number, number, number, number],
+): PdfRectTuple[] {
+  const width = Number(viewport?.width);
+  const height = Number(viewport?.height);
+  if (!Number.isFinite(width) || !Number.isFinite(height)) return [];
+  if (width <= 0 || height <= 0) return [];
+  const [left, top, right, bottom] = bbox;
+  return [
+    [
+      (left / 1000) * width,
+      (top / 1000) * height,
+      (right / 1000) * width,
+      (bottom / 1000) * height,
+    ],
+  ];
+}
+
+function pdfRectsToViewport(
+  viewport: any,
+  rects: PdfRectTuple[],
+): PdfRectTuple[] {
+  const converted: PdfRectTuple[] = [];
   for (const [x1, y1, x2, y2] of rects) {
     try {
       const [vx1, vy2] = viewport.convertToViewportPoint(x1, y1) as [
@@ -708,10 +775,51 @@ export function mountRouteHighlightOverlay(
         number,
         number,
       ];
+      converted.push([vx1, vy2, vx2, vy1]);
+    } catch {
+      /* best effort */
+    }
+  }
+  return converted;
+}
+
+function readerPageElement(
+  iframeDoc: Document | undefined,
+  pageIndex: number,
+): HTMLElement | null {
+  if (!iframeDoc || !Number.isFinite(pageIndex)) return null;
+  return iframeDoc.querySelector(
+    `[data-page-number="${Math.floor(pageIndex) + 1}"]`,
+  ) as HTMLElement | null;
+}
+
+function readerPageViewport(
+  iframeDoc: Document | undefined,
+  pageIndex: number,
+): any {
+  if (!iframeDoc || !Number.isFinite(pageIndex)) return null;
+  const viewer = (iframeDoc.defaultView as any)?.PDFViewerApplication?.pdfViewer;
+  const pages = viewer?._pages;
+  return pages?.[Math.floor(pageIndex)]?.viewport ?? null;
+}
+
+function paintRouteHighlightOverlay(
+  mount: HTMLElement,
+  iframeDoc: Document,
+  pageEl: HTMLElement,
+  rects: PdfRectTuple[],
+  opts?: RouteHighlightOptions,
+): void {
+  destroyActiveRouteHighlight(mount);
+  ensureRouteHighlightStyle(iframeDoc);
+
+  const overlays: HTMLElement[] = [];
+  for (const [vx1, vy1, vx2, vy2] of rects) {
+    try {
       const div = iframeDoc.createElement("div");
-      div.className = opts?.emphatic
-        ? "zai-route-highlight zai-route-highlight--emphatic"
-        : "zai-route-highlight";
+      div.className = "zai-route-highlight";
+      if (opts?.emphatic) div.classList.add("zai-route-highlight--emphatic");
+      if (opts?.reference) div.classList.add("zai-route-highlight--reference");
       div.style.left = `${Math.min(vx1, vx2)}px`;
       div.style.top = `${Math.min(vy1, vy2)}px`;
       div.style.width = `${Math.max(1, Math.abs(vx2 - vx1))}px`;

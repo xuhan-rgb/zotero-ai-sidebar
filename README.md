@@ -15,6 +15,7 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 - **Open Quick Ask anywhere and keep following up** — press `Alt+Q` by default for a temporary conversation that remembers turns while the window stays open, is destroyed on close, and can be explicitly transferred into the current paper's research chat.
 - **See the whole paper at a glance** — generate a *全文总览* map: a phase-grouped section skeleton (motivation / method / validation) with one-line gists, innovation / result markers, and a structural flowchart. Click a section to jump to that spot in the PDF; your reading position is remembered per paper and synced across machines.
 - **arXiv papers come through clean** — equations and figures are pulled from the LaTeX source instead of broken PDF text. *"Explain Eq. (3)"* and *"walk me through Figure 2"* actually work.
+- **Ask with the paper's own material** — type `@` to list the paper's pictures, tables, and formulas, starting with the page you are reading (本页 / 全部 / 图片 / 表格 / 公式). Click 素材 (default `Ctrl+Shift+M`) to pick them straight on the PDF instead. A picked picture is sent as an image; a table or formula stays a short `[表 #1]` marker in the composer and expands to its LaTeX source on send.
 - **Immersive PDF translation** — turn on immersive mode, click a sentence to get a translation card in place; walk the paper with `Enter` / `Shift+Enter`, `/` jumps the cursor into the ask box, and `Esc` closes the card while keeping the sentence on the reading highlight.
 - **Write back into Zotero** — append answers to the paper's note, or ask the model to add color-coded highlights to the PDF (gated by per-preset permission).
 - **Bring your own model** — Anthropic, OpenAI, or any OpenAI-compatible endpoint; all configured locally in Zotero preferences.
@@ -35,62 +36,12 @@ Installed plugins also update automatically: each release publishes `update.json
 - **`@` picks the paper's material**: typing `@` in the composer lists the paper's pictures, tables, and formulas. For a MinerU-parsed PDF — including the PDF opened next to a LaTeX paper — material on the page you are reading is listed first and marked 本页, and the chips at the top switch between 本页 / 全部 / 图片 / 表格 / 公式. A picked picture is sent as an image; a picked table or formula stays a short `[表 #1]` marker in the composer and expands to its LaTeX source when you send.
 - **`@` works for LaTeX-only papers**: arXiv figure files that are PDF or EPS are rasterised into pictures on the fly, and `\input` / `\include` files are expanded first, so papers whose sections live in separate `.tex` files no longer show an empty list.
 - **WEB images are really uploaded**: pictures attached in the composer, including the ones picked with `@`, now travel with the message instead of being silently dropped.
-- **A WEB usage notice**: the low-contrast 使用须知 chip right of 原文 in the input row explains what differs between API and WEB mode — above all that WEB sends no figures by default — and how to send pictures, tables, and formulas in either mode. The paper card no longer repeats that warning.
+- **Pick on the PDF, not just in the list**: the 素材 chip left of the composer arms click-to-pick (the default `Ctrl+Shift+M` does the same) — click a picture, table, or formula on the page to attach it, pick the same kind again to stack, and a green dashed box marks the current round's references. The page's text is locked while picking, so prose cannot be grabbed into a quote by accident; closing the list with the chip or `Esc` also deletes the half-typed `@`.
+- **Straight answers about pages and sources**: material pages are resolved from the page text the reader prints (第 N–M 页·推测 when only the neighbours bound them), a list opened before that text is ready says so and is never cached, and on a LaTeX-only paper a click on the PDF points back to the list instead of pretending there is nothing to pick.
+- **A usage notice**: the low-contrast 使用须知 chip right of 原文 in the input row now opens with where the paper's material comes from (LaTeX source / MinerU parse / neither yet) and how material is used (`@` list, picking on the PDF, `[表 #1]` markers, definite pages vs 推测 ranges), then what differs between API and WEB mode — above all that WEB sends no figures by default — and records the 素材 shortcut (default `Ctrl+Shift+M`). The paper card no longer repeats that warning.
 - **Upgrade**: install the 0.8.12 XPI and restart Zotero. Existing settings, prompt edits, and WEB logins are kept.
 
-### What's new in v0.8.11
-
-- **Quick prompts live in a data-directory file**: built-in and custom prompts are stored as `zotero-ai-sidebar-quick-prompts.json` next to your PDFs (usually `Zotero/` in your home folder), not as a large blob in `prefs.js`. The first launch after upgrade migrates any existing preference value and clears it only after the file write succeeds. Import/export and WebDAV `state.json` still include the prompt library.
-- **Full-document translation for ordinary PDFs via MinerU**: when no arXiv LaTeX source is available, full-document translation uploads the PDF to MinerU’s precise parsing API, then reuses the existing bilingual reader. Set a mineru.net token in settings.
-- **Sentence-level bilingual alignment**: with the **逐段** layout and **按句换行**, each translated sentence now sits directly under its source sentence. When the two sides split into a different number of sentences, the translation stays as one block under the paragraph instead of being paired wrongly. **阅读设置** also controls font size, line height, font family (system / serif / sans), sentence markers, and the line-break style.
-- **Original-PDF comparison**: reading pages for ordinary PDFs can show the real PDF page beside the parsed text or translation. Click a paragraph to locate its PDF region, click a region box to locate the paragraph, and page or zoom as needed; coordinates already cached by MinerU are reused. Outside comparison mode, only **核对 PDF 原文** opens a crop of the original page. LaTeX reading is unchanged.
-- **WEB paper material follows the parse**: a cached LaTeX main file is still preferred, but with no source the Markdown parsed by MinerU (`full.md`) is sent once parsing has finished, and the PDF only while parsing is still pending. A conversation whose first message carried the PDF automatically switches to the Markdown on its next message. That Markdown is plain text, so figures are referenced by relative path and the image files are not uploaded; the web model cannot see them (the local full-translation view is unaffected).
-- **WEB uploads no longer stall**: attachment progress is now matched against the file name the website really renders, so tasks that previously sat in the upload stage and failed after two minutes now submit. A failed or cancelled task also releases the stuck "processing the previous request" composer placeholder.
-- **Deleted DeepSeek chats recover**: when a bound website conversation has been deleted, the plugin detects the missing chat and starts a fresh one instead of failing the task.
-- **Upgrade**: install the 0.8.11 XPI and restart Zotero. Existing prompt edits are kept; the error-console warning about writing ~10KB to `extensions.zotero-ai-sidebar.quickPrompts` should stop after restart. WEB users keep their browser login; the paired runtime is reused when its checksum already matches.
-
-### What's new in v0.8.10
-
-- **Choose your WEB browser**: use Chrome, Microsoft Edge, or a user-named Chromium-compatible browser from the arrow next to **Account**. Detected executable paths are visible and editable; **Choose program file…** and **Detect again** help correct custom or mistaken paths. Each browser entry keeps its own login profile.
-- **Native browser dropdown fix**: selecting a browser keeps the configuration menu open; clicking outside dismisses it. Zotero's native dropdown options are recognized as part of the current selection interaction.
-- **WEB reading routes and overviews**: generate both through the selected website using an independent task session. Send available LaTeX source first, otherwise the paper PDF, without chat history or selected-text context. API generation retains its existing flow.
-- **Batched LaTeX translation**: send multiple blocks per WEB request, validate returned block markers, and pause on incomplete responses. Improve bilingual reading layout and reference interactions.
-- **Chat scroll behavior**: PDF color annotations preserve the current chat position through necessary refreshes; switching papers opens the conversation at the bottom. The fix is shared across Zotero versions.
-- **Upgrade**: install the 0.8.10 XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime; an unchanged runtime package is reused with existing login data.
-
-### What's new in v0.8.9
-
-- **Complete algorithm displays**: LaTeX algorithm fragments share one visual region in both source and translation. Loop indentation continues across fragments; comments retain `/* … */` or `//`. Existing translations are reused. This is a reconstructed reader, not a pixel-identical LaTeX compiler.
-- **LaTeX download controls**: choose system proxy or direct access from the paper header. The proxy port follows the operating system unless overridden; settings apply only to LaTeX downloads. Chat preparation uses completed local source caches or local PDF text instead of waiting for downloads.
-- **More stable reading and chat**: correct sidebar alignment after startup stylesheet loading, retain available tools with attached full text, improve heading matching and streaming scroll behavior, and keep the open note panel following the selected paper.
-- **Output budget**: new model presets default to 32768 output tokens. Saved presets keep their existing values; endpoint/model limits still apply.
-- **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to verify or update the paired runtime ZIP. See the updated [full-translation tutorial](docs/USAGE.md#211-read-an-arxiv-paper-in-full-document-translation).
-
-### What's new in v0.8.7
-
-- **Automatic port allocation**: the Web Agent and dedicated browser dynamically select free ports to reduce conflicts with MCP and other plugins; the XPI reads the Agent's actual address.
-- **Runtime paired with the XPI**: the Web Agent no longer has an independent release version. Installation and manual updates validate the paired ZIP; ordinary use does not recompute checksums, and upgrades preserve login data.
-- **New Z.ai website entry**: configured separately from ChatGLM, with guest text chat and login required for attachments. Login status is detected automatically without closing Chrome.
-- **ChatGLM sessions and answers**: preserve the browser session, separate reasoning from the final answer, and remove the fixed restriction label while continuing to report actual website verification states.
-- **Setup and tutorial updates**: correct Windows configuration paths and clarify environment checks, manual ZIP installation, and account status in the bilingual guides and illustrated tutorial.
-
-### What's new in v0.8.6
-
-- **The XPI stays lightweight**: each version Release carries a separate, prebuilt `zai-web-agent-runtime.zip`; the plugin downloads and verifies the matching asset without running npm on the user's computer.
-- **Web Agent setup is recoverable**: failed downloads expose the Release page, direct link, and local-ZIP picker; checksum, version, protocol, and health checks complete before a new runtime replaces a working compatible version.
-
-### What's new in v0.8.2
-
-- **Kimi is now a built-in WEB provider**: existing `kimi.com` custom configurations migrate automatically, while ChatGPT, DeepSeek, ChatGLM, Kimi, and third-party sites retain isolated adapters and account sessions.
-- **WEB tasks recover and finish more reliably**: retry stays with the original website instead of falling through to the API path, completed answers no longer remain stuck behind a stale Stop state, and `Esc` or the composer Stop button releases interrupted tasks without restarting Zotero.
-- **Website failures are visible in Zotero**: login, quota, server, and unsupported-upload page notices are mirrored as clearly distinguished error responses, while normal answers continue to stream incrementally.
-- **The composer is tighter and mode-aware**: API-only controls no longer crowd WEB mode, footer status text remains readable in narrow sidebars, and hidden status rows no longer leave blank space.
-
-### What's new in v0.8.1
-
-- **WEB paper context is cleaner**: the current paper is uploaded as a real LaTeX/PDF attachment, while the separate arXiv directory TXT contains only the section hierarchy, numbers, and titles.
-- **WEB answers can become PDF annotation drafts**: whole-paper highlighting and selection explanation recognize the structured annotation block, locate verbatim quotes locally, and let you preview, relocate, and explicitly save the matches to Zotero without calling a model API.
-- **API and WEB controls are now clearly separated**: WEB uses the website's own network/model/search state and paper-attachment flow, so the API-only `Network` and `Original` toggles are disabled there. Enter and the send arrow share the same live account check, and the footer/status layout has been tightened for narrow sidebars.
+Older release notes: see [CHANGELOG.md](CHANGELOG.md).
 
 ## Configuration
 
@@ -154,11 +105,13 @@ In WEB mode, paper material is attached automatically for paper-reading tasks. T
 - **AI chat inside Zotero**: open a dedicated sidebar and discuss the current paper without leaving Zotero.
 - **Stable browser-backed WEB chat**: send to ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or custom ChatGPT-like sites through a localhost-authenticated companion; account setup is opened from Zotero, the dedicated browser is hidden by default during chat, and staged progress plus incremental answer snapshots remain visible in the sidebar.
 - **Temporary multi-turn Quick Ask**: press `Alt+Q` by default, ask follow-up questions in the same popup, copy the latest answer, or transfer every turn into the research chat. It neither reads research-chat history nor persists after the popup closes.
-- **Configurable providers**: supports Anthropic, OpenAI, and OpenAI-compatible endpoints through local Zotero preferences. Model presets include connectivity tests and a per-preset model list with a footer switcher.
+- **Configurable providers**: supports Anthropic, OpenAI, and OpenAI-compatible endpoints through local Zotero preferences. Model presets include connectivity tests plus a **cache test** that runs a prompt-cache self-check for one preset and reports hit / miss and hit rate, and a per-preset model list with a footer switcher.
 - **Quick prompts & slash commands**: customizable prompt buttons next to the composer plus built-in slash commands (`/arxiv-search`, `/web-search`) that expand into explicit instructions for the model.
 - **Markdown output**: renders headings, lists, code blocks, quotes, links, thinking/context blocks, and tool-call traces.
 - **Selection context bar**: when PDF text is selected, the composer shows whether the next turn is `只看选区` or `选区 + 全文`, with a one-turn full-text override and selection preview.
-- **Customizable chat UI**: nickname and avatar (emoji or image URL) for both user and AI, plus an ordered list of empty-chat reminders that can be edited, reordered, or dismissed on hover. Per-message action placement and layout remain configurable.
+- **Customizable chat UI**: nickname and avatar (emoji or image URL) for both user and AI, plus an ordered list of empty-chat reminders that can be edited, reordered, or dismissed on hover. Per-message action placement and layout, chat layout (original / focus), sidebar placement (reader sidebar / docked right), and whether deleting a chat asks for confirmation are all configurable.
+- **Queued and parallel chats**: with **allow queuing new messages while a reply is running**, messages sent during an answer run in submission order once the current reply finishes, and the PDF selection is captured at queue time; **parallel conversations** (2 by default, 1–8) decides how many chats may answer at once, while one chat always stays sequential.
+- **Per-reply token usage**: the reply footer shows this turn's cache hit / miss input, output, and hit rate; hover for `Input raw`, `Token total`, and the counting method. It is for checking only, not a billing total, and WEB replies add no stats.
 - **Clean / debug copy modes**: copy the conversation as Markdown with the paper introduction, dialogue, and selected PDF text; debug mode also includes tool context, PDF snippets, model-input layout, and thinking summaries.
 
 ### Paper overview map
@@ -177,6 +130,15 @@ In WEB mode, paper material is attached automatically for paper-reading tasks. T
 - **Image context**: attach screenshots/images so the model can analyze figures, UI states, or PDF screenshots. The toolbar screenshot button captures a Reader region on Linux and Windows.
 - **Customizable annotation color guide**: edit the natural-language rubric the model uses when picking PDF highlight colors, with a default that maps Zotero's six preset hexes to common review categories (background, problem, method, dataset, results, etc.).
 - **arXiv paper tools**: `paper_search_arxiv` and `paper_fetch_arxiv_fulltext` let the model search arXiv and fetch full text on demand.
+- **Annotation colors and added text**: edit the color rubric or reset it to the default; the default font size for `🅣 新增文字` is configurable from 8–48 PDF points.
+- **Export to PDF**: turn the note, reading route, or overview map into a PDF from the panel's `⋯` menu (`▣ 转为 PDF`).
+
+### Paper material
+
+- **`@` material list**: typing `@` opens the paper's pictures, tables, and formulas, with a pinned 本页 / 全部 / 图片 / 表格 / 公式 scope row; hovering a row shows where that material sits in the PDF. A picture is sent as an image, while a table or formula becomes a short `[表 #1]` / `[公式 #2]` marker that expands to the full LaTeX source only when you send — so the composer never fills up with table code. Tables parsed by MinerU travel as LaTeX (`tabular`) instead of a page crop.
+- **Pick on the PDF**: click 素材 (or press the default `Ctrl+Shift+M`) to arm click-to-pick on the left page — click a picture, table, or formula to attach it, pick the same kind again to stack, and a green dashed box marks the references the current round uses. While picking, the page text is locked (crosshair cursor, no text selection), so prose cannot be grabbed into a quote by accident; a selection made before picking started is left untouched.
+- **Honest pages, honest sources**: page numbers come from the page text the reader prints, and 第 N–M 页·推测 marks material that can only be bounded between its neighbours; when that page text is not ready yet the list says so, and the result is never cached. On a LaTeX-only paper nothing can be clicked on the PDF — a click points you back to the list.
+- **The 使用须知 chip**: the low-contrast chip right of `原文` covers where the material comes from (LaTeX source / MinerU parse / neither yet), how it is sent in API vs WEB mode, and where to rebind the 素材 shortcut.
 
 ### Notes
 

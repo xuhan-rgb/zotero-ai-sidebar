@@ -1,6 +1,7 @@
 import { captureDraftFromInput, type ComposerDraftState } from "./composer-state";
 import {
   insertComposerText,
+  renameComposerMarker,
   removeComposerMarkerFromText,
 } from "./composer-images";
 import { buttonEl, el } from "./dom-utils";
@@ -9,6 +10,14 @@ import {
   type PaperFigure,
   type PaperFigureKind,
 } from "./paper-figures";
+import { latexMaterialPreview } from "./latex-preview";
+
+/**
+ * Chips whose rendered preview the user expanded by clicking the label. Kept
+ * outside the draft state so a panel repaint (typing, relabeling) does not
+ * collapse previews the user is reading.
+ */
+const expandedMaterialPreviews = new Set<string>();
 
 /**
  * Tables and formulas picked with `@`. The composer only carries a short
@@ -21,6 +30,8 @@ export interface DraftMaterial {
   kind: PaperFigureKind;
   label: string;
   latex: string;
+  /** The `@` item this came from, for dropping its PDF reference box. */
+  figureId?: string;
 }
 
 export interface DraftMaterialState extends ComposerDraftState {
@@ -47,6 +58,7 @@ export function addDraftMaterial<TState extends DraftMaterialState>(
     kind: figure.kind,
     label: figure.label,
     latex,
+    figureId: figure.id,
   };
   state.draftMaterials.push(material);
   relabelDraftMaterials(state, input);
@@ -62,7 +74,13 @@ export function renderDraftMaterials<TState extends DraftMaterialState>(
   mount: HTMLElement,
   state: TState,
   input: HTMLTextAreaElement,
-  deps: { renderPanel(mount: HTMLElement, state: TState): void },
+  deps: {
+    renderPanel(mount: HTMLElement, state: TState): void;
+    /** The chip's × was clicked: drop its dashed box on the PDF, if any. */
+    unmarkReference?(material: DraftMaterial): void;
+    /** The chip's label was clicked: jump to and highlight this material on the PDF. */
+    jumpToMaterial?(material: DraftMaterial): void;
+  },
 ): HTMLElement {
   const tray = el(
     doc,
@@ -72,27 +90,66 @@ export function renderDraftMaterials<TState extends DraftMaterialState>(
   for (const material of state.draftMaterials) {
     const chip = el(doc, "span", "draft-material");
     chip.title = `发送时展开为 LaTeX：\n${material.latex}`;
-    chip.append(
-      el(doc, "span", "draft-material-label", `${material.marker} ${material.label}`),
+    const label = el(
+      doc,
+      "span",
+      "draft-material-label",
+      `${material.marker} ${material.label}`,
     );
+    const previewNode = latexMaterialPreview(doc, material.kind, material.latex);
+    if (previewNode) {
+      label.classList.add("is-previewable");
+      label.title = "点击预览/收起此素材，并跳转到所在页";
+      label.addEventListener("click", () => {
+        if (!expandedMaterialPreviews.delete(material.id)) {
+          expandedMaterialPreviews.add(material.id);
+        }
+        deps.renderPanel(mount, state);
+        deps.jumpToMaterial?.(material);
+      });
+    } else {
+      // KaTeX could not typeset this source: fall back to locating it on the PDF.
+      label.classList.add("is-jumpable");
+      label.title = "点击在 PDF 中查看此素材";
+      label.addEventListener("click", () => {
+        deps.jumpToMaterial?.(material);
+      });
+    }
+    chip.append(label);
     const remove = buttonEl(doc, "×");
     remove.title = "移除素材";
     remove.addEventListener("click", () => {
-      input.value = removeComposerMarkerFromText(
-        input.value,
-        material.marker,
-      );
-      state.draftMaterials = state.draftMaterials.filter(
-        (candidate) => candidate.id !== material.id,
-      );
-      relabelDraftMaterials(state, input);
-      captureDraftFromInput(input, state);
+      deps.unmarkReference?.(material);
+      removeDraftMaterial(state, input, material);
       deps.renderPanel(mount, state);
     });
     chip.append(remove);
     tray.append(chip);
+    if (previewNode && expandedMaterialPreviews.has(material.id)) {
+      const preview = el(doc, "div", "draft-material-preview");
+      preview.append(previewNode);
+      tray.append(preview);
+    }
   }
   return tray;
+}
+
+/**
+ * Drops one table or formula and its marker. The caller clears the PDF mark,
+ * because only it knows the reader and why the material goes away.
+ */
+export function removeDraftMaterial<TState extends DraftMaterialState>(
+  state: TState,
+  input: HTMLTextAreaElement,
+  material: DraftMaterial,
+): void {
+  input.value = removeComposerMarkerFromText(input.value, material.marker);
+  state.draftMaterials = state.draftMaterials.filter(
+    (candidate) => candidate.id !== material.id,
+  );
+  expandedMaterialPreviews.delete(material.id);
+  relabelDraftMaterials(state, input);
+  captureDraftFromInput(input, state);
 }
 
 /** Swaps every marker that is still in the text for its LaTeX source. */
@@ -108,22 +165,34 @@ export function expandDraftMaterials(
   return out;
 }
 
+/**
+ * Drops the tables and formulas whose marker the user deleted from the text,
+ * then renumbers what is left — the same rule pictures follow.
+ */
+export function dropDraftMaterialsMissingMarker<
+  TState extends DraftMaterialState,
+>(state: TState, input: HTMLTextAreaElement): boolean {
+  const kept = state.draftMaterials.filter((material) =>
+    input.value.includes(material.marker),
+  );
+  if (kept.length === state.draftMaterials.length) return false;
+  state.draftMaterials = kept;
+  relabelDraftMaterials(state, input);
+  return true;
+}
+
 /** Numbers markers per kind again after a material was removed. */
 export function relabelDraftMaterials<TState extends DraftMaterialState>(
   state: TState,
   input?: HTMLTextAreaElement,
 ): void {
   const counts = new Map<PaperFigureKind, number>();
-  let text = input?.value;
   for (const material of state.draftMaterials) {
     const next = (counts.get(material.kind) ?? 0) + 1;
     counts.set(material.kind, next);
     const marker = `[${KIND_LABELS[material.kind]} #${next}]`;
     if (material.marker === marker) continue;
-    if (text != null && material.marker) {
-      text = text.split(material.marker).join(marker);
-    }
+    if (input) renameComposerMarker(input, material.marker, marker);
     material.marker = marker;
   }
-  if (input && text != null) input.value = text;
 }

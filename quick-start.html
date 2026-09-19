@@ -427,6 +427,7 @@
 
     <div class="tip">💡 ChatGLM 和 Z.ai 的“隐藏”采用最小化并保留会话；其他服务在配置完成后关闭可见窗口，后台任务按需启动无界面 Chrome，仍运行真实网页。Agent 与浏览器使用动态端口，无需手动逐次加一；切换到 Z.ai 若提示其他 WEB 任务未结束，先完成或取消该任务。</div>
     <div class="warn-box">⚠️ 第三方网页 DOM、上传和下载机制会变化。网页只返回 <span class="kbd">sandbox:/...</span> 文本路径时，没有可下载文件；详细排障见 <b>docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md</b>。</div>
+    <div class="warn-box">🖼️ WEB 默认不带论文插图：附带给网页的是 LaTeX 源码或 MinerU 解析出的 Markdown，图只有图注文字。需要按图提问时，用 <span class="kbd">＋ → 截图 / 图片</span> 附图，或在输入框打 <span class="kbd">@</span> 选论文素材（选中的图片会真实上传，表格和公式以短标签 + LaTeX 文字发送）；输入行「原文」右边的「<b>使用须知</b>」标签里有同一份说明。</div>
   </section>
 
   <!-- ============ 4. API 对话 ============ -->
@@ -438,6 +439,7 @@
       <div class="step"><b>聚焦某段</b><p>在 PDF 里选中一段，输入框上方出现<b>选中片段 chip</b>，提问时选区会叠加在全文之上；想<b>只看选区</b>就关掉「📄 原文」。</p></div>
       <div class="step"><b>截图 / 贴图</b><p>底栏「截图 / 图片」把画面作为图片附件发给多模态模型——既显示在对话里，也真正发给模型。</p></div>
       <div class="step"><b>公式 / 图表也能直接问</b><p>带 <span class="badge">LaTeX 源</span> 的论文，问「公式1是什么意思」「figure1 在讲什么」会从 <b>LaTeX 源</b>精确命中（含图像），而不是 PDF 文本层乱码——同样是自然语言，不用记任何指令。</p></div>
+      <div class="step"><b>选论文素材（@ / 素材）</b><p>在输入框打 <span class="kbd">@</span> 打开素材列表（本页 / 全部 / 图片 / 表格 / 公式），或点输入行里的「<b>素材</b>」（默认 <span class="kbd">Ctrl+Shift+M</span>）后在左侧 PDF 上直接点图片 / 表格 / 公式。图片随消息发送；表格和公式只插入 <code>[表 #1]</code> 这样的短标签，发送时才展开成 LaTeX 源码。取点期间左侧文字锁住，不会顺手把正文划成引用。</p></div>
       <div class="step"><b>让 AI 高亮 / 加注释</b><p>给 PDF 加高亮 / 批注是 Agent <b>已内置的写入工具</b>，直接用自然语言喊就行：「<b>把这段的重点句子高亮</b>」「给这段加条注释说明它在讲什么」。模型会自己选中对应段落、按颜色分类上高亮或加文本批注，trace 里能看到它选了哪段、上了什么色。颜色分类在设置的「PDF 注释颜色预设」里统一定义。</p></div>
     </div>
     <div class="tip">✍️ 这类「写回 PDF」都是 Agent <b>显式工具调用</b>、过程可见、且受权限控制——默认模式会先确认，开 <b>YOLO</b> 可直接执行，不会偷偷改你的 PDF。</div>
@@ -642,6 +644,7 @@
       <tr><th>操作</th><th>默认键</th><th>说明</th></tr>
       <tr><td>发送提问</td><td><span class="kbd">Enter</span></td><td>输入框里发送；<span class="kbd">Shift+Enter</span> 换行</td></tr>
       <tr><td>打开 Quick Ask</td><td><span class="kbd">Alt+Q</span></td><td>打开临时连续对话；可在设置中修改，输入框聚焦时不会触发</td></tr>
+      <tr><td>选论文素材</td><td><span class="kbd">Ctrl+Shift+M</span></td><td>等价于点输入行的「素材」：在左侧 PDF 上点选图片 / 表格 / 公式；LaTeX 源论文改为打开 <span class="kbd">@</span> 列表（可在「使用须知」里改键）</td></tr>
       <tr><td>沉浸 · 下一句</td><td><span class="kbd">Enter</span></td><td>卡片开着时翻下一句；没开卡时移动「在读高亮」</td></tr>
       <tr><td>沉浸 · 上一句</td><td><span class="kbd">Shift+Enter</span></td><td>同上，反方向</td></tr>
       <tr><td>沉浸 · 选区快译</td><td><span class="kbd">空格</span></td><td>翻当前在读 / 选中的句子；无高亮时照常翻页（键可改）</td></tr>

@@ -1,0 +1,56 @@
+name: 使用求助
+description: 配置 / 使用上的问题（不是 Bug）
+title: "[Question] "
+labels: ["question"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提问前请先看 [使用教程](https://github.com/xuhan-rgb/zotero-ai-sidebar/blob/master/docs/USAGE.zh-CN.md) 的「故障排查」，以及侧边栏里的「使用须知」。
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已经看过使用教程和相关文档，但没有找到答案
+          required: true
+        - label: 我没有把 API Key / 密码或私人笔记内容贴进来
+          required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息（可选）
+      description: 在侧边栏「使用须知」底部点「复制环境信息」后粘贴到这里，方便判断你的版本与系统。
+      placeholder: "XPI 0.8.22 · Zotero 10.0.3 · Linux 5.15.0-191-generic"
+    validations:
+      required: false
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 对话模式
+      options:
+        - API 模式
+        - WEB 模式
+        - 还没配好，进不去对话
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: 你想做什么
+      description: 说清目标和当前卡在哪一步
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: 已经试过什么（可选）
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: 截图（可选）
+      description: 截图可直接拖进输入框；请先抹掉 API Key 与个人信息。
+    validations:
+      required: false

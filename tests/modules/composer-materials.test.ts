@@ -1,7 +1,9 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   addDraftMaterial,
+  dropDraftMaterialsMissingMarker,
   expandDraftMaterials,
+  removeDraftMaterial,
   renderDraftMaterials,
   type DraftMaterialState,
 } from "../../src/modules/composer-materials";
@@ -45,6 +47,32 @@ describe("composer materials", () => {
     expect(expandDraftMaterials(input.value, state.draftMaterials)).toBe(
       `这张表说明了什么 ${table.latex}`,
     );
+  });
+
+  it("drops the table a newer table replaces and keeps the formula", () => {
+    const state = draftState();
+    const input = textarea();
+    addDraftMaterial(state, table, input);
+    addDraftMaterial(
+      state,
+      {
+        ...table,
+        id: "latex:equation:1",
+        kind: "equation",
+        label: "公式 1",
+        latex: "\\begin{equation}\na = b\\end{equation}",
+      },
+      input,
+    );
+    addDraftMaterial(state, { ...table, id: "latex:table:2", label: "表 2" }, input);
+
+    removeDraftMaterial(state, input, state.draftMaterials[0]);
+
+    expect(state.draftMaterials.map((entry) => entry.marker)).toEqual([
+      "[公式 #1]",
+      "[表 #1]",
+    ]);
+    expect(input.value).toBe("[公式 #1]\n[表 #1]");
   });
 
   it("numbers markers per kind and drops removed ones", () => {
@@ -96,5 +124,23 @@ describe("composer materials", () => {
 
   it("leaves unknown markers alone", () => {
     expect(expandDraftMaterials("hello [表 #4]", [])).toBe("hello [表 #4]");
+  });
+
+  it("drops a table when its marker is deleted from the text", () => {
+    const state = draftState();
+    const input = textarea();
+    addDraftMaterial(state, table, input);
+    addDraftMaterial(state, { ...table, id: "latex:table:2", label: "表 2" }, input);
+    expect(input.value).toBe("[表 #1]\n[表 #2]");
+
+    input.value = "[表 #2]";
+
+    expect(dropDraftMaterialsMissingMarker(state, input)).toBe(true);
+    expect(state.draftMaterials.map((item) => item.marker)).toEqual(["[表 #1]"]);
+    expect(state.draftMaterials.map((item) => item.label)).toEqual(["表 2"]);
+    expect(input.value).toBe("[表 #1]");
+    expect(expandDraftMaterials(input.value, state.draftMaterials)).toBe(
+      table.latex,
+    );
   });
 });

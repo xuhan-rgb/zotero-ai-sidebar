@@ -1,0 +1,80 @@
+name: 报告 Bug
+description: 插件报错、崩溃或行为不对
+title: "[Bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        感谢反馈。请尽量填全下面的信息——缺少版本号和复现步骤的问题通常无法定位。
+        环境信息不用手打：打开侧边栏右下角的「使用须知」，在最下面点**复制环境信息**，粘到「环境信息」一栏即可。
+        **请勿粘贴 API Key、WebDAV 密码或包含个人信息的完整笔记。**
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已经搜索过现有 issue，确认没有重复
+          required: true
+        - label: 我已经看过使用教程的「故障排查」，并升级到最新版 XPI 复现过
+          required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: 对话模式
+      options:
+        - API 模式（模型预设 / API Key）
+        - WEB 模式（ChatGPT / DeepSeek / ChatGLM / Z.ai / Kimi 等）
+        - 两种模式都会出现
+        - 不确定
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: 环境信息
+      description: 在侧边栏「使用须知」底部点「复制环境信息」后粘贴到这里；系统一栏只有 Windows / macOS / Linux 时，请补上具体版本。
+      placeholder: "XPI 0.8.22 · Zotero 10.0.3 · Linux 5.15.0-191-generic"
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: 能否稳定复现
+      options:
+        - 每次都能复现
+        - 偶尔出现
+        - 只出现过一次
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: 复现步骤
+      description: 从打开侧边栏开始，一步步写清你点了什么、输入了什么
+      placeholder: |
+        1. 打开某篇 PDF
+        2. 输入 @ 选择公式
+        3. …
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期望结果
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 实际结果
+      description: 有报错请贴原始报错文字，不要只写「报错了」
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: 日志 / 截图（可选）
+      description: Zotero 帮助 → 调试输出… 里与插件相关的行；截图可直接拖进输入框。请先抹掉 API Key 与个人信息。
+    validations:
+      required: false

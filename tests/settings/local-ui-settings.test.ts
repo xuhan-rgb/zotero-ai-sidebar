@@ -370,4 +370,5 @@ describe("local UI settings storage", () => {
       customMarker: "",
     });
   });
+
 });

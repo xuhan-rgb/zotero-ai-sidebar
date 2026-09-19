@@ -1,6 +1,8 @@
 import { traceBrowserPicker } from "./browser-picker-debug";
 import { webPaperSessionKey, prepareWebOverview, webOverviewPrompt, parseWebOverview, webReadingRoutePrompt, parseWebReadingRoute, type WebPaperAction } from "./web-paper-actions";
 import { createFullDocumentWebTranslator } from "../translate/full-document-web";
+import { setMaterialPickCursor } from "./pdf-pick-cursor";
+import { flashMaterialPickHint } from "./pdf-pick-hint";
 import { abortable } from "../utils/abortable";
 import { buildContext } from "../context/builder";
 import type { ContextSource } from "../context/builder";
@@ -150,16 +152,20 @@ import {
 import {
   addDraftImageAssets,
   addDraftImages,
+  dropDraftImagesMissingMarker,
   pastedImageFiles,
   renderDraftImages,
   renderImageAttachButton,
   renderScreenshotAttachButton,
+  removeDraftImage,
   type DraftImage,
 } from "./composer-images";
 import {
   addDraftMaterial,
+  dropDraftMaterialsMissingMarker,
   expandDraftMaterials,
   renderDraftMaterials,
+  removeDraftMaterial,
 } from "./composer-materials";
 import {
   assistantProgressFor,
@@ -197,6 +203,10 @@ import {
   renderQuickAskDialog,
   type QuickAskModelOption,
 } from "./quick-ask-dialog";
+import {
+  getMaterialPickShortcut,
+  isMaterialPickShortcut,
+} from "./material-shortcut";
 import {
   selectConversationHistory,
   type ConversationHistoryMode,
@@ -249,14 +259,24 @@ import {
   openWebAccount,
 } from "./web-agent-client";
 import { openWebUsageNotice } from "./web-usage-notice";
-import { createFigurePicker } from "./figure-picker";
+import { createFigurePicker, type PagePickResult } from "./figure-picker";
+import {
+  advanceReferenceRound,
+  clearFigureReferenceMark,
+  clearSelectionReferenceMarks,
+  clearStaleReferenceMarks,
+  markFigureReference,
+  markSelectionReference,
+} from "./pdf-reference-marks";
 import {
   loadPaperFigures,
   paperFigureFileName,
   paperFigureLatex,
+  paperFigureCacheItemKey,
   readPaperFigureDataUrl,
   readPaperFigureImage,
   type PaperFigure,
+  type PaperFigureKind,
 } from "./paper-figures";
 import {
   getWebAgentBrowsers,
@@ -424,6 +444,7 @@ import {
   jumpToPdfLocationOnly,
   jumpToPdfSelectionPreview,
   jumpToReadingRouteReference,
+  mountNormalizedPdfHighlight,
   pdfSelectionLocatorFromLocateResult,
   resolveItemKeyForCache,
   selectionRangeOffset,
@@ -444,8 +465,8 @@ import {
   firstText,
   getActiveReader,
   getActiveReaderForItem,
+  activeReaderAllPageTexts,
   activeReaderPageIndex,
-  activeReaderPageTexts,
   getActiveReaderSelection,
   getReaderForAttachmentOrItem,
   getReaderForCurrentSelection,
@@ -881,6 +902,10 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
   const restoreRebuiltMessages = state.networkDiagramTarget
     ? null
     : prepareMessagesScrollRestore(state);
+  // The previous composer's picker is about to lose its menu. Disarm it here,
+  // or the detached picker keeps swallowing page clicks and shows pick hints
+  // long after the 素材 chip went dark.
+  disposeComposerPicker(mount);
   mount.replaceChildren();
   mount.append(panel);
   const shouldScroll = state.scrollToBottom;
@@ -3124,6 +3149,124 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   input.style.height = "auto";
   const slashMenu = el(doc, "div", "slash-command-menu");
   slashMenu.style.display = "none";
+  // Hover previews use their own registry slot: the persistent reading-route
+  // highlight is keyed by the panel mount and must not be swapped out by a
+  // pointer that merely passes over the `@` list.
+  const figureHoverSlot = doc.createElement("div");
+  const clearFigureHover = () => destroyActiveRouteHighlight(figureHoverSlot);
+  const previewFigureHover = (figure: PaperFigure) => {
+    clearFigureHover();
+    const page = figure.page;
+    const bbox = figure.bbox;
+    if (page == null || !bbox) return;
+    // Only locate inside the reader showing THIS paper; never the composer.
+    const reader = getActiveReaderForItem(doc.defaultView, state.itemID);
+    for (const view of activeReaderViews(reader)) {
+      if (view?._iframeWindow) {
+        mountNormalizedPdfHighlight(figureHoverSlot, view, page, bbox);
+        return;
+      }
+    }
+  };
+
+  // `@` + a click on the left PDF picks the material under the pointer. The
+  // listener lives on the reader's own document because that is where the page
+  // elements are, and it captures the pointerdown so the reader never starts a
+  // text selection: while material is being picked, the page is a pick surface
+  // rather than prose, and a click that hits no 图片/公式/表格 box (or a paper
+  // whose material has no PDF box at all) must not leave a stray selection.
+  const watchFigurePdfPick = (
+    onPick: (pageIndex: number, x: number, y: number) => PagePickResult,
+    onHover?: (pageIndex: number, x: number, y: number) => void,
+  ): (() => void) | null => {
+    const reader = getActiveReaderForItem(doc.defaultView, state.itemID);
+    const cleanups: Array<() => void> = [];
+    for (const view of activeReaderViews(reader)) {
+      const iframeWin = (view as { _iframeWindow?: Window })?._iframeWindow;
+      const iframeDoc = iframeWin?.document;
+      if (!iframeWin || !iframeDoc) continue;
+      // Armed picking is invisible otherwise: the pages look like ordinary text.
+      setMaterialPickCursor(iframeDoc, true);
+      // Extract coordinate normalization to avoid duplication
+      const normalizePoint = (
+        event: PointerEvent,
+        target: Node,
+      ): [number, number, number] | null => {
+        const page = pdfPageViewAt(iframeWin, target);
+        if (!page) return null;
+        const rect = page.div.getBoundingClientRect();
+        if (!rect.width || !rect.height) return null;
+        const x = ((event.clientX - rect.left) / rect.width) * 1000;
+        const y = ((event.clientY - rect.top) / rect.height) * 1000;
+        return [page.index, x, y];
+      };
+      const onPointerDown = (event: PointerEvent) => {
+        // Only an armed chip (or its open list) may take a click away from the
+        // page: with picking off, a page click stays an ordinary click.
+        if (!materialPickingMounts.has(mount)) return;
+        const point = normalizePoint(event, event.target as Node);
+        if (!point) return;
+        const [pageIndex, x, y] = point;
+        // LaTeX-sourced material has no PDF position, so no click can ever
+        // pick: say why instead of swallowing the click in silence.
+        if (onPick(pageIndex, x, y) === "unpickable") {
+          flashMaterialPickHint(iframeDoc, event.clientX, event.clientY);
+        }
+        event.preventDefault();
+        event.stopPropagation();
+      };
+      const onPointerMove = (event: PointerEvent) => {
+        if (!onHover) return;
+        const point = normalizePoint(event, event.target as Node);
+        if (!point) {
+          // Off a page (page gap, toolbar, scrollbar) -> no material below.
+          onHover(-1, -1, -1);
+          return;
+        }
+        const [pageIndex, x, y] = point;
+        onHover(pageIndex, x, y);
+      };
+      const onPointerLeave = () => {
+        if (!onHover) return;
+        onHover(-1, -1, -1);
+      };
+      iframeDoc.addEventListener("pointerdown", onPointerDown, true);
+      // Gecko opens a selection on `selectstart`; refusing it is the direct
+      // statement of "nothing on this page is selectable right now", and it
+      // holds whichever pointer handler the reader installed for itself.
+      const onSelectStart = (event: Event) => {
+        if (!materialPickingMounts.has(mount)) return;
+        event.preventDefault();
+      };
+      iframeDoc.addEventListener("selectstart", onSelectStart, true);
+      iframeDoc.addEventListener("pointermove", onPointerMove, true);
+      iframeDoc.addEventListener("pointerleave", onPointerLeave, true);
+      cleanups.push(() =>
+        iframeDoc.removeEventListener("pointerdown", onPointerDown, true),
+      );
+      cleanups.push(() =>
+        iframeDoc.removeEventListener("pointermove", onPointerMove, true),
+      );
+      cleanups.push(() =>
+        iframeDoc.removeEventListener("selectstart", onSelectStart, true),
+      );
+      cleanups.push(() =>
+        iframeDoc.removeEventListener("pointerleave", onPointerLeave, true),
+      );
+      cleanups.push(() => setMaterialPickCursor(iframeDoc, false));
+    }
+    // Nothing to give back means the reader was not resolvable yet; answering
+    // with a live disposer would latch the picker to that empty attach and it
+    // would never arm on a later open.
+    if (!cleanups.length) return null;
+    return () => {
+      for (const cleanup of cleanups) cleanup();
+    };
+  };
+
+  /* The 素材 chip is painted once per composer render, so it needs the picker
+     to tell it when the list opens or closes under it. */
+  let materialPick: HTMLButtonElement | null = null;
   const figurePicker = state.networkDiagramTarget
     ? null
     : createFigurePicker({
@@ -3131,14 +3274,33 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
         input,
         load: () =>
           loadPaperFigures(state.itemID, {
-            pageTexts: activeReaderPageTexts(doc.defaultView, state.itemID),
+            pageTexts: () =>
+              activeReaderAllPageTexts(doc.defaultView, state.itemID),
           }),
-        preview: (figure) => readPaperFigureDataUrl(figure, doc),
+        preview: (figure) =>
+          paperFigureCacheItemKey(state.itemID).then((cacheKey) =>
+            readPaperFigureDataUrl(figure, doc, undefined, cacheKey || undefined),
+          ),
         currentPage: () => activeReaderPageIndex(doc.defaultView, state.itemID),
         pick: (figure) => {
+          markFigureReference(
+            getActiveReaderForItem(doc.defaultView, state.itemID),
+            figure,
+          );
           void attachPaperFigure(mount, state, input, figure);
         },
+        hover: previewFigureHover,
+        hoverEnd: clearFigureHover,
+        watchPdf: watchFigurePdfPick,
+        onVisibilityChange: (open) => {
+          materialPick?.classList.toggle("is-active", open);
+          if (open) materialPickingMounts.add(mount);
+          else materialPickingMounts.delete(mount);
+        },
       });
+  if (figurePicker) {
+    composerPickerDisposers.set(mount, () => figurePicker.disarm());
+  }
 
   const updateStatus = (captureFocus = true) => {
     captureDraftFromInput(input, state, captureFocus);
@@ -3146,6 +3308,9 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
     renderInputStatus(status, input, state);
     renderSlashCommandMenu(slashMenu, input, state);
     figurePicker?.refresh();
+    clearStaleReferenceMarks(
+      getActiveReaderForItem(doc.defaultView, state.itemID),
+    );
   };
 
   input.addEventListener("keydown", (event: KeyboardEvent) => {
@@ -3224,6 +3389,15 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
 
   input.addEventListener("input", () => {
     resetComposerPromptHistory(state);
+    if (
+      !state.networkDiagramTarget &&
+      dropComposerAttachmentsMissingMarker(mount, state, input)
+    ) {
+      captureDraftFromInput(input, state);
+      renderPanel(mount, state);
+      scheduleDraftConversationSave(mount, state);
+      return;
+    }
     updateStatus();
     if (!state.networkDiagramTarget) {
       scheduleDraftConversationSave(mount, state);
@@ -3258,20 +3432,88 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   const inputStack = el(doc, "div", "input-stack");
   if (!state.networkDiagramTarget) {
     inputStack.append(
-      renderDraftImages(doc, mount, state, input, { renderPanel }),
-      renderDraftMaterials(doc, mount, state, input, { renderPanel }),
+      renderDraftImages(doc, mount, state, input, {
+        renderPanel,
+        unmarkReference: (image) => {
+          if (!image.figureId) return;
+          clearFigureReferenceMark(
+            getActiveReaderForItem(doc.defaultView, state.itemID),
+            image.figureId,
+          );
+        },
+      }),
+      renderDraftMaterials(doc, mount, state, input, {
+        renderPanel,
+        unmarkReference: (material) => {
+          if (!material.figureId) return;
+          clearFigureReferenceMark(
+            getActiveReaderForItem(doc.defaultView, state.itemID),
+            material.figureId,
+          );
+        },
+        jumpToMaterial: (material) => {
+          const reader = getActiveReaderForItem(doc.defaultView, state.itemID);
+          if (!reader || typeof reader.navigate !== "function") return;
+          if (!material.figureId) return;
+          void loadPaperFigures(state.itemID, {
+            pageTexts: () => activeReaderAllPageTexts(doc.defaultView, state.itemID),
+          }).then((figures) => {
+            const figure = figures.find((fig) => fig.id === material.figureId);
+            const page = figure?.page ?? figure?.pageRange?.[0];
+            if (!figure || page == null) return;
+            void reader.navigate({
+              pageNumber: page + 1, // Zotero uses 1-based page numbers
+              location: "top",
+            });
+            markFigureReference(reader, figure);
+          });
+        },
+      }),
     );
   }
   inputStack.append(slashMenu, ...(figurePicker ? [figurePicker.menu] : []), input);
   const composerSwitchers = el(doc, "div", "composer-switchers");
   if (!state.networkDiagramTarget) {
+    if (figurePicker) {
+      const materialChip = buttonEl(doc, "素材");
+      materialChip.type = "button";
+      materialChip.className = "composer-material-chip";
+      if (figurePicker.isOpen()) {
+        materialChip.classList.add("is-active");
+      }
+      materialChip.title =
+        "点亮后在左侧 PDF 直接点击公式/图片/表格（仅版面解析过的论文可用，LaTeX 源论文自动改为打开列表）；素材列表仍可用 @ 打开";
+      materialChip.addEventListener("click", () => {
+        clearStaleReferenceMarks(
+          getActiveReaderForItem(doc.defaultView, state.itemID),
+        );
+        // Toggle: an armed chip or an open list both close, and a half-typed
+        // `@` in the composer closes with the list it opened.
+        if (figurePicker.isArmed() || figurePicker.isOpen()) {
+          figurePicker.dismiss();
+          return;
+        }
+        // LaTeX-sourced material has no PDF box to click: arming would only
+        // swallow page clicks, so the chip opens the list instead.
+        void figurePicker.canPickOnPdf().then((canPick) => {
+          if (canPick) {
+            figurePicker.arm();
+          } else {
+            figurePicker.open();
+          }
+        });
+      });
+      materialPick = materialChip;
+      composerSwitchers.append(materialChip);
+    }
     composerSwitchers.append(renderWebSearchSwitcher(doc, mount, state));
     if (!getStoredSelectedText(state.itemID)) {
       composerSwitchers.append(renderPaperPinSwitcher(doc, mount, state));
     }
-    if (webPromptTarget) {
-      composerSwitchers.append(renderWebUsageNoticeChip(doc, mount));
-    }
+    // The notice compares both modes, so API mode needs it just as much.
+    composerSwitchers.append(
+      renderWebUsageNoticeChip(doc, mount, webPromptTarget),
+    );
     row.append(inputStack, composerSwitchers);
   } else {
     row.append(inputStack);
@@ -3461,6 +3703,9 @@ async function sendWebPromptMessage(
     retrySelectionSnapshot?: SelectionAnnotationDraft | null;
   } = {},
 ): Promise<void> {
+  advanceReferenceRound(
+    getActiveReaderForItem(mount.ownerDocument?.defaultView, state.itemID),
+  );
   const content = expandDraftMaterials(text, state.draftMaterials).trim();
   if (!content) return;
   if (webPromptTaskPending(state)) return;
@@ -4787,16 +5032,75 @@ function normalizeSelectionForTurnMode(text: string): string {
 }
 
 /**
+ * A fresh pick from the paper replaces the previous pick of the same kind, so
+ * clicking a second figure does not leave the first one attached. Pictures the
+ * user pasted or screenshotted carry no `figureId` and are never touched.
+ */
+/**
+ * A chip exists only as long as its `[Image #N]` / `[表 #N]` marker is in the
+ * text: deleting the marker deletes the attachment, exactly like its × does.
+ */
+function dropComposerAttachmentsMissingMarker(
+  mount: HTMLElement,
+  state: PanelState,
+  input: HTMLTextAreaElement,
+): boolean {
+  const figureIdsBefore = new Set(
+    [...state.draftImages, ...state.draftMaterials]
+      .map((attachment) => attachment.figureId)
+      .filter((id): id is string => Boolean(id)),
+  );
+  const images = dropDraftImagesMissingMarker(state, input);
+  const materials = dropDraftMaterialsMissingMarker(state, input);
+  const dropped = [...figureIdsBefore].filter(
+    (id) =>
+      ![...state.draftImages, ...state.draftMaterials].some(
+        (attachment) => attachment.figureId === id,
+      ),
+  );
+  if (dropped.length) {
+    const reader = getActiveReaderForItem(
+      (mount.ownerDocument as Document).defaultView,
+      state.itemID,
+    );
+    for (const id of dropped) clearFigureReferenceMark(reader, id);
+  }
+  return images || materials;
+}
+
+/**
  * Attaches material picked from `@` in the composer. Pictures become draft
  * images (API sends them with the message, WEB uploads them); tables and
  * equations are inserted as LaTeX, which is what a text model can use.
  */
+/** The PDF.js page view a pointer landed on, with its 0-based index. */
+function pdfPageViewAt(
+  iframeWin: Window,
+  target: Node | null,
+): { index: number; div: HTMLElement } | null {
+  if (!target) return null;
+  const pages = (iframeWin as { PDFViewerApplication?: any }).PDFViewerApplication
+    ?.pdfViewer?._pages;
+  if (!Array.isArray(pages)) return null;
+  for (let index = 0; index < pages.length; index += 1) {
+    const div = pages[index]?.div as HTMLElement | undefined;
+    if (div?.contains(target)) return { index, div };
+  }
+  return null;
+}
+
 async function attachPaperFigure(
   mount: HTMLElement,
   state: PanelState,
   input: HTMLTextAreaElement,
   figure: PaperFigure,
 ): Promise<void> {
+  const doc = (input.ownerDocument ?? mount.ownerDocument) as Document;
+  // The pick already marked this round; the marks left over from the round
+  // that was sent must not survive into this one.
+  clearStaleReferenceMarks(
+    getActiveReaderForItem(doc.defaultView, state.itemID),
+  );
   if (paperFigureLatex(figure)) {
     if (addDraftMaterial(state, figure, input)) {
       captureDraftFromInput(input, state);
@@ -4808,7 +5112,6 @@ async function attachPaperFigure(
     }
     return;
   }
-  const doc = (input.ownerDocument ?? mount.ownerDocument) as Document;
   const image = await readPaperFigureImage(figure, doc);
   if (!image) return;
   await addDraftImageAssets(
@@ -4824,6 +5127,7 @@ async function attachPaperFigure(
         ...(image.mediaType === figure.mediaType && figure.path
           ? { path: figure.path }
           : {}),
+        figureId: figure.id,
       },
     ],
     input,
@@ -4839,11 +5143,14 @@ async function attachPaperFigure(
 function renderWebUsageNoticeChip(
   doc: Document,
   mount: HTMLElement,
+  webMode: boolean,
 ): HTMLElement {
   const chip = buttonEl(doc, "使用须知");
   chip.className = "composer-web-notice-chip";
-  chip.title = "WEB 默认不发送图片；查看 API 与 WEB 的差别和看图办法";
-  chip.setAttribute("aria-label", "WEB 模式使用须知");
+  chip.title = webMode
+    ? "论文素材来自 LaTeX 源或 MinerU 解析稿；查看素材怎么选、怎么发，以及 API 与 WEB 的差别"
+    : "查看论文材料来源（LaTeX / MinerU）、素材的选法与发法，以及 API 与 WEB 的差别";
+  chip.setAttribute("aria-label", "使用须知");
   chip.addEventListener("click", () => openWebUsageNotice(mount));
   return chip;
 }
@@ -5731,7 +6038,7 @@ function renderWebSearchSwitcher(
   const trigger = doc.createElement("button");
   trigger.type = "button";
   trigger.className = "web-search-trigger";
-  trigger.textContent = enabled ? "🌐\u00a0联网" : "＋\u00a0联网";
+  trigger.textContent = enabled ? "🌐\u00a0联网" : "联网";
   trigger.title = webMode
     ? "WEB 模式使用网页自身的联网能力；此开关仅用于 API 模式"
     : enabledForPreset
@@ -5741,71 +6048,17 @@ function renderWebSearchSwitcher(
     webMode ||
     !enabledForPreset ||
     conversationIsSending(state, state.activeConversationID);
-  trigger.setAttribute("aria-haspopup", "menu");
-  trigger.setAttribute("aria-expanded", "false");
-
-  const popup = el(doc, "div", "web-search-popup");
-  popup.setAttribute("role", "menu");
-  popup.style.display = "none";
-
-  const closePopup = () => {
-    if (popup.style.display === "none") return;
-    popup.style.display = "none";
-    trigger.setAttribute("aria-expanded", "false");
-    doc.removeEventListener("mousedown", outsideHandler, true);
-    doc.removeEventListener("keydown", escapeHandler, true);
-  };
-  const openPopup = () => {
-    if (popup.style.display !== "none") return;
-    popup.style.display = "";
-    trigger.setAttribute("aria-expanded", "true");
-    doc.addEventListener("mousedown", outsideHandler, true);
-    doc.addEventListener("keydown", escapeHandler, true);
-  };
-  const outsideHandler = (event: Event) => {
-    if (!wrap.contains(event.target as Node)) closePopup();
-  };
-  const escapeHandler = (event: KeyboardEvent) => {
-    if (event.key === "Escape") {
-      closePopup();
-      trigger.focus();
-    }
-  };
-
-  const item = doc.createElement("button");
-  item.type = "button";
-  item.className = enabled
-    ? "web-search-item web-search-item-active"
-    : "web-search-item";
-  item.setAttribute("role", "menuitemcheckbox");
-  item.setAttribute("aria-checked", enabled ? "true" : "false");
-  item.addEventListener("click", () => {
-    closePopup();
+  // One click toggles; the cached/live choice lives in the settings. A popup
+  // with a single item just made every toggle a two-click affair.
+  trigger.addEventListener("click", () => {
     saveToolSettings(zoteroPrefs(), {
       ...settings,
       webSearchMode: enabled ? "disabled" : "live",
     });
     renderPanel(mount, state);
   });
-  item.append(
-    el(doc, "span", "web-search-item-icon", enabled ? "🌐" : "＋"),
-    el(doc, "span", "web-search-item-main", "联网"),
-    el(doc, "span", "web-search-item-check", enabled ? "✓" : ""),
-    el(
-      doc,
-      "span",
-      "web-search-item-detail",
-      enabled ? "已开启；模式在设置中修改" : "点击开启；模式在设置中修改",
-    ),
-  );
-  popup.append(item);
 
-  trigger.addEventListener("click", () => {
-    if (popup.style.display === "none") openPopup();
-    else closePopup();
-  });
-
-  wrap.append(trigger, popup);
+  wrap.append(trigger);
   return wrap;
 }
 
@@ -6136,6 +6389,9 @@ async function sendMessage(
   text: string,
   options: SendMessageOptions = {},
 ) {
+  advanceReferenceRound(
+    getActiveReaderForItem(mount.ownerDocument?.defaultView, state.itemID),
+  );
   const content = expandDraftMaterials(text, state.draftMaterials);
   const baseContent = content.trim();
   const preset = selectedChatPreset(state);
@@ -8261,6 +8517,30 @@ async function ensureHistoryLoaded(mount: HTMLElement, state: PanelState) {
 // `readerItemIDs`); the same selection appears under both parent and
 // attachment IDs so the chip survives switching between them.
 
+// Composer 素材 chip: armed, or its list open. While a mount is in here the
+// pages of its reader are a pick surface, so a drag that still happens there
+// belongs to picking material — never to the composer's text selection.
+const materialPickingMounts = new Set<HTMLElement>();
+
+// Every composer render builds its own 素材 picker, and a re-render drops that
+// picker's menu without touching the listeners it put on the reader pages. Keep
+// the live one per mount so renderPanel can stop it before swapping the panel.
+const composerPickerDisposers = new WeakMap<HTMLElement, () => void>();
+
+function disposeComposerPicker(mount: HTMLElement): void {
+  const dispose = composerPickerDisposers.get(mount);
+  composerPickerDisposers.delete(mount);
+  dispose?.();
+}
+
+function isMaterialPicking(): boolean {
+  for (const mount of materialPickingMounts) {
+    if (mount.isConnected) return true;
+    materialPickingMounts.delete(mount);
+  }
+  return false;
+}
+
 async function getSelectedTextForPrompt(
   mount: HTMLElement,
   itemID: number | null,
@@ -8273,11 +8553,14 @@ async function getSelectedTextForPrompt(
   const reader = getActiveReader(win);
   const ids = readerItemIDs(reader, itemID);
   const draft = firstUsableStoredSelectionAnnotation(ids);
-  const rangeText = getActiveReaderSelectionRangeText(reader);
-  const visualSelection = getActiveReaderVisualSelection(reader);
+  const picking = isMaterialPicking();
+  const rangeText = picking ? "" : getActiveReaderSelectionRangeText(reader);
+  const visualSelection = picking
+    ? { text: "", rectCount: 0, source: "" }
+    : getActiveReaderVisualSelection(reader);
   const visualText =
     visualSelection.source === "dom-rects" ? visualSelection.text : "";
-  const liveText = getActiveReaderSelection(reader);
+  const liveText = picking ? "" : getActiveReaderSelection(reader);
   if (rangeText) {
     rememberReaderSelection(reader, itemID, rangeText, draft?.annotation);
   } else if (liveText) {
@@ -8330,13 +8613,21 @@ function refreshActiveReaderSelection(
 ): string {
   const reader = getActiveReader(win);
   const ids = readerItemIDs(reader, itemID);
+  // Picking material leaves the stored selection untouched: the drag on the
+  // page is the pick gesture, so it may neither add text nor clear the chip.
+  if (isMaterialPicking()) return firstUsableStoredSelectedText(ids);
   const text = getActiveReaderSelection(reader);
   if (text) {
     rememberReaderSelection(reader, itemID, text);
     return shouldIgnoreSelectedText(ids, text) ? "" : text;
   }
   if (clearWhenEmpty) {
+    const hadSelection = !!firstStoredSelectedText(ids);
     clearStoredSelectedText(ids);
+    // Clicking a blank spot in the PDF drops Zotero's own selection, so the
+    // chip disappears; our dashed reference box is a plain overlay nobody
+    // destroys, so drop it in the same breath to keep both sides in sync.
+    if (hadSelection) clearSelectionReferenceMarks(reader);
     return "";
   }
   return firstUsableStoredSelectedText(ids);
@@ -8495,6 +8786,9 @@ function registerReaderSelectionCapture() {
       reader?: unknown;
       params?: { annotation?: { text?: string } & Record<string, unknown> };
     };
+    // Material picking owns the page gesture; a drag-select that happened
+    // anyway must not be remembered as the composer's selection.
+    if (isMaterialPicking()) return;
     const officialText = normalizeSelectedText(e.params?.annotation?.text);
     const visualSelection = getActiveReaderVisualSelection(e.reader);
     const text = officialText || visualSelection.text;
@@ -8595,14 +8889,24 @@ function updateSelectionIndicators(mount: HTMLElement, _itemID: number | null) {
       ".composer-switchers",
     ) as HTMLElement | null;
     if (state && switchers) {
-      switchers.replaceChildren(
-        renderWebSearchSwitcher(mount.ownerDocument!, mount, state),
+      // INVARIANT: this row also carries the 素材 chip and the 使用须知 chip,
+      // which this refresh does not own. Rebuilding every child deleted both,
+      // so the row showed only 联网/原文 (and the 素材 chip could no longer
+      // mirror the picker) until the next full render.
+      const materialChip = switchers.querySelector(
+        ":scope > .composer-material-chip",
       );
-      if (!getStoredSelectedText(state.itemID)) {
-        switchers.append(
-          renderPaperPinSwitcher(mount.ownerDocument!, mount, state),
-        );
-      }
+      const noticeChip = switchers.querySelector(
+        ":scope > .composer-web-notice-chip",
+      );
+      switchers.replaceChildren(
+        ...(materialChip ? [materialChip] : []),
+        renderWebSearchSwitcher(mount.ownerDocument!, mount, state),
+        ...(getStoredSelectedText(state.itemID)
+          ? []
+          : [renderPaperPinSwitcher(mount.ownerDocument!, mount, state)]),
+        ...(noticeChip ? [noticeChip] : []),
+      );
     }
     const input = mount.querySelector(
       ".input-row textarea",
@@ -8634,19 +8938,27 @@ function rememberReaderSelection(
   if (attachmentID != null) {
     readerByAttachmentID.set(attachmentID, reader);
   }
+  const snapshot = annotation ? detachAnnotationSnapshot(annotation) : null;
   for (const id of ids) {
     if (ignoredSelectedTextByItem.get(id) === normalized) {
       continue;
     }
     ignoredSelectedTextByItem.delete(id);
     selectedTextByItem.set(id, normalized);
-    if (annotation && attachmentID != null) {
+    if (snapshot && attachmentID != null) {
       selectedAnnotationByItem.set(id, {
         text: normalized,
-        annotation: detachAnnotationSnapshot(annotation),
+        annotation: snapshot,
         attachmentID,
       });
     }
+  }
+  // Mark the quoted text on the page so the current round's reference is
+  // visible; the next round (or dismissing the chip) drops it again.
+  if (snapshot && attachmentID != null) {
+    const draft = { text: normalized, annotation: snapshot, attachmentID };
+    const locator = pdfSelectionLocatorFromDraft(draft, normalized);
+    if (locator) markSelectionReference(reader, locator);
   }
 }
 
@@ -8720,6 +9032,7 @@ function ignoreSelectedTextForPrompt(
     selectedTextByItem.delete(id);
     selectedAnnotationByItem.delete(id);
   }
+  clearSelectionReferenceMarks(reader);
   if (fullTranslationSidebarForMount(mount)) {
     hostWindow?.getSelection()?.removeAllRanges();
     return;
@@ -13798,6 +14111,7 @@ function installReaderPromptShortcutHandler(
     const handler = (event: KeyboardEvent) => {
       if (handleImmersiveModeShortcut(win, event)) return;
       if (handleQuickAskShortcut(win, sidebar, event)) return;
+      if (handleMaterialPickShortcut(sidebar, event)) return;
       if (handleReaderTaskEscape(win, targetWin, sidebar, event)) return;
       void handleReaderPromptShortcut(win, targetWin, sidebar, event);
     };
@@ -13856,6 +14170,33 @@ function handleQuickAskShortcut(
   event.preventDefault();
   event.stopImmediatePropagation();
   void openQuickAsk(win, sidebar);
+  return true;
+}
+
+/**
+ * The 素材 chip owns the pick-mode toggle — arm on the PDF, or open the list
+ * when the paper's material has no position to click — so the shortcut just
+ * presses that chip and both input paths stay on one code path.
+ */
+function handleMaterialPickShortcut(
+  sidebar: WindowSidebarState,
+  event: KeyboardEvent,
+): boolean {
+  if (
+    event.defaultPrevented ||
+    event.isComposing ||
+    isEditableEventTarget(event.target) ||
+    !isMaterialPickShortcut(event, getMaterialPickShortcut(zoteroPrefs()))
+  ) {
+    return false;
+  }
+  const chip = sidebar.mount.querySelector<HTMLElement>(
+    ".composer-material-chip",
+  );
+  if (!chip) return false;
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  chip.click();
   return true;
 }
 

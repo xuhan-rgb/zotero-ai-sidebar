@@ -24,6 +24,7 @@ beforeEach(() => {
       if (!files.has(path)) throw new Error("missing");
       return new TextDecoder().decode(files.get(path)!);
     },
+    exists: async (path: string) => files.has(path),
   });
 });
 afterEach(() => vi.unstubAllGlobals());
@@ -72,5 +73,25 @@ describe("MinerU image cache", () => {
     await expect(ensureMineruCachedAssets("ITEM")).rejects.toThrow("expired");
     expect(fetch).toHaveBeenCalledTimes(2);
     expect(JSON.parse(new TextDecoder().decode(files.get(`${root}/meta.json`))).assets).toBeUndefined();
+  });
+
+  it("re-downloads pictures whose files disappeared from the cache", async () => {
+    await saveMineruCache("ITEM", { size: 12, mtime: 1 }, {
+      markdown: "# Title", contentList: [], batchId: "batch",
+      assets: { "images/figure.png": image },
+    }, "hash");
+    files.delete(`${root}/assets/images/figure.png`);
+    const zip = zipSync({ "result/full.md": strToU8("# Title"), "result/images/figure.png": image });
+    const fetch = vi.fn(async (url: string) => {
+      if (url.endsWith("/extract-results/batch/batch")) {
+        return Response.json({ code: 0, data: { extract_result: [{ state: "done", full_zip_url: "https://example.test/result.zip" }] } });
+      }
+      if (url === "https://example.test/result.zip") return new Response(zip);
+      throw new Error("unexpected request");
+    });
+    vi.stubGlobal("fetch", fetch);
+    await ensureMineruCachedAssets("ITEM");
+    expect(fetch).toHaveBeenCalledTimes(2);
+    expect((await readMineruAsset("ITEM", "images/figure.png"))?.bytes).toEqual(image);
   });
 });

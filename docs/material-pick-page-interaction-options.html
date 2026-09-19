@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Zotero AI Sidebar · 拾取素材时左侧 PDF 该怎么响应</title>
+    <style>
+      :root {
+        color-scheme: light;
+        --bg: #f7f4ef; --paper: #fffdf9; --text: #2d2925; --muted: #756c64;
+        --faint: #9a9186; --border: #dfd3c6; --border-strong: #d8c9b6;
+        --blue: #28759a; --blue-soft: #eaf5fa; --accent: #b7653d;
+        --accent-soft: #fff0e7; --green: #31734a; --green-soft: #e9f5ee;
+        --red: #b34040; --red-soft: #fdeeee;
+        --shadow: 0 16px 42px rgba(62, 47, 33, 0.1);
+        --mono: "JetBrains Mono", "Fira Code", ui-monospace, monospace;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; color: var(--text); line-height: 1.65;
+        background: radial-gradient(circle at 10% 0%, #fff 0, transparent 34%), var(--bg);
+        font-family: Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+      }
+      main { width: min(1460px, calc(100% - 40px)); margin: 40px auto 72px; }
+      .hero, .card {
+        border: 1px solid var(--border); border-radius: 18px;
+        background: rgba(255, 253, 249, 0.94); box-shadow: var(--shadow);
+      }
+      .hero { padding: 28px 32px; }
+      .eyebrow { margin: 0 0 8px; color: var(--blue); font-size: 12px; font-weight: 800; letter-spacing: 0.12em; }
+      h1 { margin: 0 0 10px; font-size: 26px; }
+      h2 { margin: 34px 0 0; font-size: 17px; }
+      h2 small { color: var(--muted); font-weight: 500; font-size: 12.5px; margin-left: 8px; }
+      .hero p { margin: 0 0 8px; color: var(--muted); max-width: 96ch; }
+      .hero p:last-child { margin-bottom: 0; }
+      .hero code, .notes code, .foot code { font: 11.5px/1.4 var(--mono); background: #f1ece4; border-radius: 5px; padding: 1px 5px; }
+      .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(336px, 1fr)); gap: 20px; margin-top: 18px; }
+      .card { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
+      .card > h3 { margin: 0; font-size: 14.5px; display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+      .tag { font-size: 10px; font-weight: 800; letter-spacing: 0.06em; padding: 2px 7px; border-radius: 999px; }
+      .tag.now { background: var(--blue-soft); color: var(--blue); }
+      .tag.rec { background: var(--green-soft); color: var(--green); }
+      .tag.alt { background: #f1ece4; color: var(--muted); }
+      .tag.bad { background: var(--red-soft); color: var(--red); }
+      .notes { margin: 0; padding-left: 18px; color: var(--muted); font-size: 12.5px; }
+      .notes li { margin: 2px 0; }
+      .notes b { color: var(--text); }
+      .mock { border: 1px solid var(--border); border-radius: 14px; background: var(--paper); padding: 10px 12px 12px; font-size: 12px; }
+      .toolbar { display: flex; gap: 5px; align-items: center; color: var(--muted); font-size: 11px; margin-bottom: 8px; }
+      .toolbar span { border: 1px solid var(--border); border-radius: 7px; padding: 1px 7px; }
+      .toolbar span.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); font-weight: 700; }
+      .pg { position: relative; border: 1px dashed var(--border-strong); border-radius: 10px; background: #fff; padding: 10px 12px; }
+      .pg.pick, .pg.pick * { cursor: crosshair; }
+      .pg.none, .pg.none * { user-select: none; }
+      .pg p { margin: 0 0 7px; color: #4a443d; line-height: 1.5; }
+      .box { border: 1px solid #cfe3ee; border-radius: 8px; background: var(--blue-soft); padding: 6px 8px; margin: 0 0 7px; }
+      .box b { display: block; font-size: 11px; color: var(--blue); }
+      .box span { color: var(--muted); font-size: 11px; }
+      .box.eq { font: 12px/1.5 var(--mono); text-align: center; }
+      .box.picked { border-color: var(--accent); background: var(--accent-soft); }
+      .box.picked b { color: var(--accent); }
+      .ann { color: var(--blue); text-decoration: underline dotted; }
+      .log { margin-top: 9px; min-height: 30px; padding: 5px 8px; border-radius: 8px; background: #f4f1ec; color: var(--muted); font: 11.5px/1.5 var(--mono); }
+      table { width: 100%; border-collapse: collapse; margin-top: 16px; font-size: 12.5px; background: rgba(255, 253, 249, 0.94); }
+      th, td { border: 1px solid var(--border); padding: 7px 9px; text-align: left; vertical-align: top; }
+      th { background: #f1ece4; font-size: 12px; }
+      td b { color: var(--text); }
+      .yes { color: var(--green); font-weight: 700; }
+      .no { color: var(--red); font-weight: 700; }
+      .foot { margin-top: 14px; border: 1px solid var(--border); border-radius: 18px; background: rgba(255, 253, 249, 0.94); box-shadow: var(--shadow); padding: 20px 26px; }
+      .foot h3 { margin: 0 0 8px; font-size: 15px; }
+      .foot ul { margin: 6px 0 0; padding-left: 18px; color: var(--muted); font-size: 13px; }
+      pre { margin: 10px 0 0; padding: 10px 12px; border-radius: 10px; background: #2d2925; color: #f4f1ec; font: 11.5px/1.6 var(--mono); overflow-x: auto; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">ZOTERO AI SIDEBAR · 素材拾取态</p>
+        <h1>拾取素材时，左侧 PDF 该怎样响应？</h1>
+        <p>
+          进入拾取态（点「素材」按钮，或按 <code>@</code> 打开素材列表）之后，左侧 PDF 同时还是一个正常的阅读器：
+          它可以划选文字、可以点注释和超链接。两种身份叠在一起，才有了下面这些取舍。
+        </p>
+        <p>
+          四个沙盒都可以直接上手试：<b>点空白处</b>、<b>在空白处划选文字</b>、<b>点蓝色素材框</b>、<b>点 <span class="ann">[12]</span> 链接</b>。
+          下方文字会实时告诉你在该方案下发生了什么。
+        </p>
+      </section>
+
+      <div class="grid">
+        <section class="card">
+          <h3>A 全吞<small class="tag now">已选定</small></h3>
+          <div class="mock" data-policy="A">
+            <div class="toolbar"><span>第 3 页</span><span class="on">拾取中</span></div>
+            <div class="pg pick">
+              <p>式 (4) 的重构项约束了场景的几何一致性。</p>
+              <div class="box fig" data-name="图 5"><b>图 5</b><span>Visualizations of the forecasting results</span></div>
+              <div class="box eq" data-name="公式 (4)">L = ‖x − x̂‖ + λ·‖z − ẑ‖</div>
+              <p>参考 <span class="ann">[12]</span> 的做法，可以进一步约束时序。</p>
+            </div>
+            <div class="log">动手试试：点空白 / 划选 / 点框 / 点 [12]</div>
+          </div>
+          <ul class="notes">
+            <li>命中框 → 选中素材；<b>空白处点击也一并吞掉</b>，不做任何事。</li>
+            <li>文字锁是三层的：CSS <code>user-select: none</code>、拒掉 <code>selectstart</code>、以及右侧不接受拾取期间产生的选区。阅读器自己的选择逻辑不经过我们的监听器，光吞 <code>pointerdown</code> 拦不住那一下拖拽。</li>
+            <li>代价：拾取期间<b>复制不了原文</b>，也点不开注释和链接；空白处点击毫无反馈，容易被当成卡死。</li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h3>B 只吞命中框<small class="tag alt">上一版</small></h3>
+          <div class="mock" data-policy="B">
+            <div class="toolbar"><span>第 3 页</span><span class="on">拾取中</span></div>
+            <div class="pg pick">
+              <p>式 (4) 的重构项约束了场景的几何一致性。</p>
+              <div class="box fig" data-name="图 5"><b>图 5</b><span>Visualizations of the forecasting results</span></div>
+              <div class="box eq" data-name="公式 (4)">L = ‖x − x̂‖ + λ·‖z − ẑ‖</div>
+              <p>参考 <span class="ann">[12]</span> 的做法，可以进一步约束时序。</p>
+            </div>
+            <div class="log">动手试试：点空白 / 划选 / 点框 / 点 [12]</div>
+          </div>
+          <ul class="notes">
+            <li>只有点进蓝色素材框才吞事件，其他一律放行。</li>
+            <li>问题：光标已经是<b>十字准星</b>，空白处却还能划选文字、点链接 —— 同一块画布两套语义。</li>
+            <li>这正是你说的「我正在选公式图片表格，却还能选文字很奇怪」。</li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h3>C 吞选择、放行链接<small class="tag rec">建议</small></h3>
+          <div class="mock" data-policy="C">
+            <div class="toolbar"><span>第 3 页</span><span class="on">拾取中</span></div>
+            <div class="pg pick">
+              <p>式 (4) 的重构项约束了场景的几何一致性。</p>
+              <div class="box fig" data-name="图 5"><b>图 5</b><span>Visualizations of the forecasting results</span></div>
+              <div class="box eq" data-name="公式 (4)">L = ‖x − x̂‖ + λ·‖z − ẑ‖</div>
+              <p>参考 <span class="ann">[12]</span> 的做法，可以进一步约束时序。</p>
+            </div>
+            <div class="log">动手试试：点空白 / 划选 / 点框 / 点 [12]</div>
+          </div>
+          <ul class="notes">
+            <li>和 A 一样吞掉划选，但<b>命中链接 / 注释时不拦截</b>，交给 Zotero 自己处理。</li>
+            <li>读论文时最常用的两个动作（选素材、点引用）都不受打扰，语义仍然统一。</li>
+            <li>代价：多一次「这点是不是落在链接上」的判断，一行 <code>closest()</code>。</li>
+          </ul>
+        </section>
+
+        <section class="card">
+          <h3>D 只用 CSS 禁选<small class="tag bad">需真机验证</small></h3>
+          <div class="mock" data-policy="D">
+            <div class="toolbar"><span>第 3 页</span><span class="on">拾取中</span></div>
+            <div class="pg none">
+              <p>式 (4) 的重构项约束了场景的几何一致性。</p>
+              <div class="box fig" data-name="图 5"><b>图 5</b><span>Visualizations of the forecasting results</span></div>
+              <div class="box eq" data-name="公式 (4)">L = ‖x − x̂‖ + λ·‖z − ẑ‖</div>
+              <p>参考 <span class="ann">[12]</span> 的做法，可以进一步约束时序。</p>
+            </div>
+            <div class="log">动手试试：点空白 / 划选 / 点框 / 点 [12]</div>
+          </div>
+          <ul class="notes">
+            <li>不给页面挂监听，只注入 <code>user-select: none</code>。</li>
+            <li>划选没了，链接和注释自然是原生的；看起来最省事。</li>
+            <li>但「点中素材框」也就没人监听了 —— 要么另加一层别的机制，要么这个方案直接不成立。注释层是否吃 <code>user-select</code> 也<b>必须在真机上验</b>。</li>
+          </ul>
+        </section>
+      </div>
+
+      <h2>四个方案对照<small>拾取态下，同一块 PDF 页面上四种动作的结果</small></h2>
+      <table>
+        <thead>
+          <tr>
+            <th>方案</th><th>点空白处</th><th>空白处划选文字</th><th>点中素材框</th><th>点链接 / 注释</th><th>代价</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td><b>A 全吞</b></td>
+            <td class="no">吞掉，无反应</td><td class="no">选不中</td><td class="yes">选中素材</td><td class="no">打不开</td>
+            <td>拾取期间没法复制原文；空白点击无反馈，像卡死。</td>
+          </tr>
+          <tr>
+            <td><b>B 只吞命中框</b></td>
+            <td class="yes">放行</td><td class="yes">可以划选</td><td class="yes">选中素材</td><td class="yes">正常打开</td>
+            <td>十字准星下还能划字，两套语义打架。</td>
+          </tr>
+          <tr>
+            <td><b>C 吞选择、放行链接</b></td>
+            <td class="no">吞掉，无反应</td><td class="no">选不中</td><td class="yes">选中素材</td><td class="yes">正常打开</td>
+            <td>多一次链接命中判断（一行）。</td>
+          </tr>
+          <tr>
+            <td><b>D 只禁选</b></td>
+            <td class="yes">放行</td><td class="no">选不中</td><td class="no">无反应</td><td class="yes">正常打开</td>
+            <td>不监听就没法拾取素材；注释层行为待验证。</td>
+          </tr>
+        </tbody>
+      </table>
+
+      <section class="foot">
+        <h3>已选定：A（全吞）</h3>
+        <ul>
+          <li>决定：拾取态下左侧文字不可选择，空白处点击也不做事 —— 状态唯一，不会出现「正在选公式却选中了一段文字」。</li>
+          <li>落地一：<code>src/modules/pdf-pick-cursor.ts</code> 在拾取态往阅读器文档注入 <code>.page, .page * { cursor: crosshair; user-select: none }</code>，关闭拾取时整块移除。</li>
+          <li>落地二：<code>src/modules/sidebar.ts</code> 的 <code>watchFigurePdfPick → onPointerDown</code> 继续吞掉 <code>pointerdown</code>；CSS 锁负责兜住阅读器自己发起的那次拖拽。</li>
+          <li>落地三：<code>src/modules/figure-picker.ts</code> 的 <code>startPdfWatch</code> / <code>figureAtPoint</code> 不变，命中素材框仍然选中。</li>
+          <li>落地四（兜底）：万一还是划出了选区，它<b>也不会进到右侧对话</b>。拾取期间 <code>selectstart</code> 被拒、监听器与轮询都不再记录选中的文字，发送时也只用拾取开始前已经存下的选区。</li>
+          <li>如果以后想放开注释和引用，再把 C 的那行 <code>closest("a[href], .annotationLayer")</code> 提前 <code>return</code> 加回来即可。</li>
+        </ul>
+        <pre>const onPointerDown = (event: PointerEvent) =&gt; {
+  const point = normalizePoint(event, event.target as Node);
+  if (!point) return;
+  const [pageIndex, x, y] = point;
+  onPick(pageIndex, x, y);
+  event.preventDefault();
+  event.stopPropagation();
+};</pre>
+        <ul>
+          <li>与方案无关、维持现状：素材来自 LaTeX 源时没有 <code>bbox</code>，压根不进拾取态，点「素材」直接打开列表；列表底部现在也写了这句。</li>
+          <li>注意：列表开着（按 <code>@</code> 或点「素材」）也算拾取态，所以这时左侧同样划不中文字，要看原文先把列表关掉。</li>
+        </ul>
+      </section>
+    </main>
+    <script>
+      const say = (mock, text) => {
+        mock.querySelector(".log").textContent = text;
+      };
+      const hitOf = (event) => {
+        const box = event.target.closest ? event.target.closest(".box") : null;
+        if (box) return { kind: "box", el: box };
+        if (event.target.closest && event.target.closest(".ann")) {
+          return { kind: "link" };
+        }
+        return { kind: "blank" };
+      };
+      const pick = (mock, hit) => {
+        if (!hit.el) return;
+        hit.el.classList.add("picked");
+        window.setTimeout(() => hit.el.classList.remove("picked"), 700);
+        say(mock, "吞掉事件 → 选中「" + hit.el.dataset.name + "」");
+      };
+      document.querySelectorAll(".mock").forEach((mock) => {
+        const policy = mock.dataset.policy;
+        const page = mock.querySelector(".pg");
+        page.addEventListener("pointerdown", (event) => {
+          const hit = hitOf(event);
+          if (policy === "D") {
+            say(mock, "无监听：事件全交给 PDF 自己（链接正常，文字选不中）");
+            return;
+          }
+          if (policy === "A") {
+            event.preventDefault();
+            event.stopPropagation();
+            if (hit.kind === "box") pick(mock, hit);
+            else if (hit.kind === "link") say(mock, "吞掉事件 → 链接点不开");
+            else say(mock, "吞掉事件 → 空白处毫无反应（像卡死）");
+            return;
+          }
+          if (policy === "B" && hit.kind !== "box") {
+            say(
+              mock,
+              hit.kind === "link"
+                ? "放行 → 链接正常打开（但光标还是十字准星）"
+                : "放行 → 空白处可以划选文字（但光标还是十字准星）",
+            );
+            return;
+          }
+          if (policy === "C" && hit.kind === "link") {
+            say(mock, "放行 → 链接 / 注释交给 Zotero，不吞事件");
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          if (hit.kind === "box") pick(mock, hit);
+          else say(mock, "吞掉事件 → 空白处不响应，也划不中文字");
+        });
+        page.addEventListener("click", (event) => {
+          if (!event.target.closest || !event.target.closest(".ann")) return;
+          event.preventDefault();
+          if (policy !== "A") say(mock, "（演示页不跳转）真机里这里会打开引用 [12]");
+        });
+      });
+    </script>
+  </body>
+</html>

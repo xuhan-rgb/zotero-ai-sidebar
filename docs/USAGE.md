@@ -28,6 +28,7 @@ This document targets **end users** and is split in two halves:
   - [2.10 Use Quick Ask for a temporary multi-turn conversation](#210-use-quick-ask-for-a-temporary-multi-turn-conversation)
   - [2.11 Read an arXiv paper in full-document translation](#211-read-an-arxiv-paper-in-full-document-translation)
   - [2.12 Use a built-in website through WEB mode](#212-use-a-built-in-website-through-web-mode)
+  - [2.13 Pick the paper's material (pictures / tables / formulas)](#213-pick-the-papers-material-pictures--tables--formulas)
 - [3. Reference Manual](#3-reference-manual)
   - [3.1 Model presets](#31-model-presets)
   - [3.2 Sidebar UI map](#32-sidebar-ui-map)
@@ -45,6 +46,8 @@ This document targets **end users** and is split in two halves:
   - [3.14 Paper overview map & reading routes](#314-paper-overview-map--reading-routes)
   - [3.15 API and WEB chat modes](#315-api-and-web-chat-modes)
   - [3.16 Empty-chat signatures](#316-empty-chat-signatures)
+  - [3.17 Material list and picking on the PDF](#317-material-list-and-picking-on-the-pdf)
+  - [3.18 Queues, parallel chats, and usage](#318-queues-parallel-chats-and-usage)
 - [Troubleshooting](#troubleshooting)
 - [Related docs](#related-docs)
 
@@ -123,6 +126,7 @@ Two ways to scope what the AI looks at:
 - Disabling `原文` saves tokens but can leave the model without crucial context for whole-paper questions ("what does this paper conclude" with `原文` off may fail).
 - The selection chip never auto-clears — click × on the chip when you're done with it.
 - The sidebar doesn't re-render when the PDF selection changes; the chip is the only visible signal.
+- Clicking a blank area in the PDF clears both the selection chip and its dashed reference box, keeping the left PDF and right sidebar in sync.
 
 ### 2.2 Translate a PDF immersively (Immersive mode)
 
@@ -339,6 +343,23 @@ The Web Agent uses a dedicated Chrome profile and a random localhost bearer toke
 
 ---
 
+### 2.13 Pick the paper's material (pictures / tables / formulas)
+
+You do not need screenshots for the paper's figures, tables, and formulas: type `@` to open the material list, or click 素材 and pick them on the left PDF.
+
+**How to use it:**
+
+- **The `@` list**: typing `@` opens the material list with **本页 / 全部 / 图片 / 表格 / 公式** as the scope row, starting with the page you are reading (for a LaTeX paper the page is resolved from the rendered Figure / Table numbers). Hover a row to see where that material sits in the PDF.
+- **Picking on the PDF**: click 素材 left of the composer (or press the default `Ctrl+Shift+M`), then click a picture, table, or formula on the left page; click 素材 again — or pick one item — to leave. Picking the same kind again stacks them (Figure 1 + Figure 2).
+- **What actually travels**: a picked picture is sent as an image; a table or formula only leaves a short `[表 #1]` / `[公式 #2]` marker in the composer and expands to the full LaTeX source when you send, so the input box is never filled with table code. Remove a marker with its × at any time.
+
+**Details worth knowing:**
+
+- Material taken from the LaTeX source (say `figure2.pdf`) has no position in the PDF: 素材 opens the list instead of arming picking, and clicking the PDF only pops a hint.
+- A page that can only be bounded between its neighbours is written `第 N–M 页·推测`; before the reader's page text is ready the list explains why, and reopening it later resolves the pages.
+- Where the material comes from, how API and WEB differ, and where to rebind the 素材 shortcut are all in the **使用须知** chip right of `原文`.
+- While picking is active the left page's text is locked, so prose cannot be grabbed into a quote by accident. Full rules: [§3.17](#317-material-list-and-picking-on-the-pdf).
+
 ## 3. Reference Manual
 
 ### 3.1 Model presets
@@ -361,6 +382,8 @@ Each preset is a complete `provider + endpoint + model + parameters` set. Save a
 
 Each preset maintains its own model list — same base URL, different model ids, fast switch.
 
+**Cache test** — the row below the preset list in the account & model card — runs a fixed test passage against a chosen preset and reports the request's cache hit / miss input, output, and hit rate, so you can confirm whether the endpoint really uses prompt caching; the passage is tiny and is only a self-check, not your real usage.
+
 ### 3.2 Sidebar UI map
 
 Top to bottom:
@@ -379,7 +402,8 @@ Top to bottom:
 │  You: ...                                      │
 ├───────────────────────────────────────────────┤
 │  [📎 Selection: "..." × ]                     │  ← chip (selection / images)
-│  [📄 原文]  [+ 本轮原文]  [🌐 联网]            │  ← context toggles
+│  [素材] [📄 原文] [+ 本轮原文] [🌐 联网]       │  ← material / context toggles
+│  [使用须知]                                    │  ← API vs WEB differences, 素材 key
 │  ┌─────────────────────────┐                   │
 │  │  / ...                   │                   │  ← composer
 │  └─────────────────────────┘                   │
@@ -396,8 +420,14 @@ Things to know:
   - **🎚** — a slider-icon button; click it to open a small popup with the chat **字号 (font size)** selector.
   - **调试 (Debug)** — a toggle. When ON, **复制MD** includes the tool context, PDF passages, and thinking; when OFF it copies only the paper intro and the conversation.
 - **`📄 原文` toggle** (on by default): pins the paper's text into every turn. Turn it off for selection-only questions; click `+ 本轮原文` for a one-time full-paper send.
+- **`素材` chip** — click it to pick the paper's pictures, tables, and formulas straight on the left PDF; the default `Ctrl+Shift+M` does the same, while a LaTeX-sourced paper opens the list instead. See [§2.13](#213-pick-the-papers-material-pictures--tables--formulas).
+- **`使用须知` chip** (right of the toggles) — where the paper's material comes from, how it is sent in API vs WEB mode, and where to rebind the 素材 key.
+- **`@` in the composer** — opens the paper's material list (本页 / 全部 / 图片 / 表格 / 公式); see [§3.17](#317-material-list-and-picking-on-the-pdf).
 - **`LaTeX 源` badge** appears next to the title when the paper is being read from its arXiv LaTeX source. Equations come out exact. See [§3.13](#313-arxiv-latex-source-mode).
 - **Note column tabs** (via **Open Note**): `AI 笔记` / `阅读路线` / `总览` — the default note, the reading-route note, and the overview map.
+- **Message UI options** (Settings → Display settings → Message UI): chat layout `原始排版` / `专注模式`, sidebar placement `阅读器侧栏` / `右侧并排`, per-message button position and style, and whether deleting a chat asks for confirmation. See [§3.18](#318-queues-parallel-chats-and-usage).
+- **Queue & parallel** — with queuing on, messages sent during an answer run in order after the current reply; `同时回答的对话数` (2 by default, 1–8) sets how many chats may answer at once. See [§3.18](#318-queues-parallel-chats-and-usage).
+- **Usage line** — each reply footer shows this turn's tokens (cache hit / miss, output, hit rate). It is for checking only, not a billing total, and WEB replies add no stats.
 
 ### 3.3 Agent tools
 
@@ -498,6 +528,7 @@ Target layout: `PDF Reader | Note panel | AI chat`.
 - **Decoupled from chat** — opening, closing, or editing the note never re-renders the sidebar, resets composer drafts, or interrupts streaming.
 - **AI writes** — `zotero_append_to_note` finds the paper's child note (or creates one) and appends.
 - **Three tabs** — the note column header switches between `AI 笔记` (the default note that chat "Write to note" appends to), `阅读路线` (a dedicated *AI 阅读路线* reading-guide note; the button morphs `生成路线` → `阅读路线` → `更新路线`), and `总览` (the overview map view — see [§3.14](#314-paper-overview-map--reading-routes)). Regenerating a route overwrites its AI section but keeps your own `「我的补充笔记」`.
+- **`▣ 转为 PDF`** — the note column's `⋯` menu exports the current `AI 笔记` / `阅读路线` / `总览` as a PDF file (the overview and note are first turned into self-contained HTML and then printed); the file name carries the paper title and panel name.
 
 ### 3.8 Screenshots and multimodal input
 
@@ -512,6 +543,8 @@ On send, images are passed as **real multimodal inputs** to the provider (not ju
 Zotero's six default annotation colors are exposed by hex code. This plugin maps each color to a semantic label (background / problem / method / dataset / results / …) and injects the rubric as a natural-language prompt so the model can pick a color when calling `zotero_add_annotation_to_selection`.
 
 The rubric is editable in settings — for a literature review you might switch to *"established / contested / my critique / …"*; the model will follow.
+
+Two related settings sit in the same card: `恢复默认颜色预设` restores the rubric above in one click, and `新增文字` → `默认字号（pt）` sets the font size the `🅣 新增文字` tool writes into the PDF with (range 8–48, saved automatically).
 
 ### 3.10 WebDAV cloud sync
 
@@ -556,6 +589,7 @@ For arXiv papers, the plugin reads from the LaTeX source instead of the PDF text
 What changes:
 - Equations come out as exact LaTeX, not garble from broken PDF text.
 - Numbered references work — "Eq. (3)", "Figure 2", "Table 1" all map cleanly.
+- Material comes from the source too: the pictures, tables, and formulas in the `@` list are taken from the source, and their page is resolved from the rendered Figure / Table numbers. None of it has a clickable position in the PDF, so 素材 opens the list instead, and a click on the page only pops a hint — see [§3.17](#317-material-list-and-picking-on-the-pdf).
 
 If the paper has no arXiv source available (no arXiv ID, source withheld, download failure), the plugin silently falls back to the PDF flow.
 
@@ -603,10 +637,8 @@ WEB footer controls are intentionally small:
 - **Service menu** — switches ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, and saved custom sites. Its final **Manage third-party web pages…** action opens URL management and restores the previous selection. A legacy custom `kimi.com` entry is migrated to the built-in Kimi service to avoid duplicate entries.
 - **Account** — opens the current service for login and controls whether its dedicated browser stays hidden in the background during chat.
 - **Send** — Enter and the arrow follow the same path and perform a live account check immediately before submission.
-- **使用须知** — the small grey chip right of `原文` in the input row. It lists what differs between API and WEB mode, and how to send pictures, tables, and formulas in each.
+- **使用须知** — the small grey chip right of `原文` in the input row. It lists what differs between API and WEB mode, and how to send pictures, tables, and formulas in each; it is shown in both API and WEB mode. At the bottom it also records the 素材 shortcut (default `Ctrl+Shift+M`).
 - There are no Zotero-side fast/deep-thinking/search toggles. Change those on the website itself when the account window is visible.
-
-Type `@` in the composer to open the paper's material list: pictures, tables, and formulas. The chips at the top switch between **本页 / 全部 / 图片 / 表格 / 公式**. When the PDF has been parsed by MinerU (including the PDF opened next to a LaTeX paper), material on the page you are reading is listed first and marked 本页; for LaTeX papers the page is resolved from the rendered “Figure N / Table N” text. Picking a picture sends it as an image with the message; picking a table or formula inserts a short marker (`[表 #1]`, `[公式 #2]`) that expands to the full LaTeX source only when the message is sent. A marker can be removed with its × and the numbering re-flows.
 
 ### 3.16 Empty-chat signatures
 
@@ -625,7 +657,27 @@ The defaults are:
 1. `Why am I reading this paper? Keep the question in sight.`
 2. `Answers can be borrowed, but the thinking must be your own.`
 
----
+### 3.17 Material list and picking on the PDF
+
+Material comes from the LaTeX source or a MinerU parse; the list opens with `@`, and picking is armed by 素材 or `Ctrl+Shift+M`. Whether the PDF itself is clickable depends on that source (see [§3.13](#313-arxiv-latex-source-mode)).
+
+Type `@` in the composer to open the paper's material list: pictures, tables, and formulas. The chips at the top switch between **本页 / 全部 / 图片 / 表格 / 公式**; that row stays pinned to the top of the list while the list scrolls, and the scope in effect is highlighted. When the PDF has been parsed by MinerU (including the PDF opened next to a LaTeX paper), the list shows only the material on the page you are reading and marks it 本页 (click 全部 in the chip row to widen it to the whole paper); a page holding nothing shows 本页 0 with the note 「这一页没有素材」; the page comes from the PDF you are reading, and when the foreground tab is not a reader but the paper's reader is still open, that reader's page is used instead; for LaTeX papers the page is resolved from the rendered “Figure N / Table N” text. That lookup reads the text the reader prints per page, so a list opened before the reader has that text says 还没读到 PDF 页码 instead of claiming the page is empty, and such a result is never cached: reopening the list later resolves the pages. When the parse cache has no picture files (papers parsed by an earlier version), the crops are fetched once more from MinerU's stored result, so those papers offer pictures too; if that fails (no MinerU Token, or the stored result has expired) the list keeps tables and formulas only. Picking a picture sends it as an image with the message; picking a table or formula inserts a short marker (`[表 #1]`, `[公式 #2]`) that expands to the full LaTeX source only when the message is sent. Tables parsed by MinerU are sent as LaTeX tables (`tabular`) instead of page crops; only when MinerU provides no table content does the fallback send the picture. A marker can be removed with its × and the numbering re-flows; deleting the `[Image #1]` / `[表 #1]` text from the composer removes the matching picture or material as well, just as its × does. Clicking a chip's `[公式 #1]` / `[表 #1]` label expands a rendered preview (typeset formula, small table grid) so you can verify the material before sending. **Hovering a row shows where the material sits in the PDF; while material picking is active (the 素材 chip is lit or the `@` list is open), moving the pointer over a picture, table, or formula on the left PDF highlights that material's bounding box so you can see what is clickable. Picking one leaves a green dashed box on the page marking the reference the current round uses; the box is cleared automatically as soon as you start the next round (typing in the composer, clicking 素材, or picking a new material).**
+
+**The 素材 chip** — left of the composer. Clicking it lights up and arms picking on the left PDF: click a formula, picture, or table there to attach it, and click the chip again (or pick something) to leave the mode; the material list always opens with `@`. Picking the same kind again **adds** another one (two pictures or two formulas can be quoted side by side), each with its own marker and dashed box, and pasted or screenshotted pictures stack the same way. When the paper's material comes from the LaTeX source (it has no position in the PDF), the chip opens the list instead of arming click-to-pick. The default `Ctrl+Shift+M` shortcut does exactly what a click does; rebind it in the 使用须知 dialog (a combination must include Ctrl / Alt / Meta). Closing the list from the chip — or with Esc — also deletes the half-typed `@`, so no dead trigger is left in the composer to reopen it.
+
+**While picking is active on the left PDF** — when the material list is open or the 素材 chip is lit, the page becomes a pick surface: clicking a picture, table, or formula attaches it, while a click on empty space simply picks nothing. The text on those pages is locked for the duration: the pointer turns into a crosshair and no text selection can be dragged out (the plugin disables text selection inside the reader document and refuses `selectstart`), so prose cannot be grabbed into a quote by accident. Should a selection appear anyway, it is never recorded on the right and never travels with the message, and a selection made before picking started is left untouched. On a LaTeX-sourced paper, where no material has a position in the PDF, a click pops a short hint at the pointer pointing back to the list. Close the list (Esc, or delete the `@`) or click the 素材 chip again to give the pages back to ordinary reading.
+
+### 3.18 Queues, parallel chats, and usage
+
+Settings → Zotero AI Sidebar → Display settings → Message UI:
+
+- **回复进行中允许排队新消息 (allow queuing new messages while a reply is running)** — submit while the AI is answering and the messages run in submission order once the current reply ends; the PDF selection is the one captured when you queued. Off by default.
+- **同时回答的对话数 (parallel conversations)** — 2 by default, 1–8. Different chats may answer at the same time; messages inside one chat always stay sequential.
+- **删除对话前显示确认 (confirm before deleting a chat)** — on by default. Turn it off and the delete button wipes a non-default chat immediately; `对话 1` can never be deleted.
+- **对话排版 (chat layout)** — `原始排版` (default) keeps full bubble spacing, `专注模式` tightens it.
+- **侧栏显示方式 (sidebar placement)** — `阅读器侧栏` (default, embedded beside the reader when a PDF is open) or `右侧并排` (docked to the right of the main Zotero window).
+
+Each reply footer shows this turn's usage: `Input cache hit` / `Input cache miss` / `Output` / `Cache hit rate`, with `Input raw`, `Token total`, and the counting method on hover. It is **for checking only**, not a billing total; WEB replies add no token stats.
 
 ## Troubleshooting
 
@@ -701,6 +753,10 @@ Expected. The plugin is building a one-time per-paper cache (arXiv source downlo
 
 Reference figures, equations, and tables **by number** ("Figure 2", "Eq. 3", "Table 1"), not by content description. The arXiv tools look up by number/label.
 
+### "The material list says 本页 0, or the page looks wrong"
+
+Check which page the reader is on: the list starts on the current page, and 全部 in the chip row widens it to the whole paper. When the reader has only just opened and its page text is not ready yet, the list says 还没读到 PDF 页码 instead of claiming the page is empty — reopen the list later. On a LaTeX paper the page is resolved from the Figure / Table numbers, and a float that can only be bounded between its neighbours reads 第 N–M 页·推测.
+
 ---
 
 ## Related docs
@@ -733,12 +789,12 @@ Switching back to **API** uses the original API generation flow, prompts, tools,
 WEB reading routes and overviews start an independent website session for each task and upload the original paper again: English LaTeX source first, otherwise PDF. They omit chat history, selections, and chat-context TXT attachments. A section directory may accompany the source as navigation material.
 
 
-### 选择 WEB 浏览器
+### Choosing the WEB browser
 
-底部仍保留“账号”一键打开登录网页。在“账号”右侧点击小箭头，可选择 Google Chrome 或 Microsoft Edge，再点击“应用浏览器选择”。选择本身不会打开登录网页；之后点击“账号”，会使用保存的浏览器直接打开当前 AI 网站。账号弹窗顶部也有“浏览器 · 更换”入口。
+The footer keeps **Account** for opening the login page in one click. Click the small arrow next to it to pick Google Chrome or Microsoft Edge, then click **Apply browser choice**. Choosing alone does not open the login page; after that, **Account** opens the current AI site in the saved browser. The account dialog also offers **Browser · Change** at the top.
 
-已有 Chrome 配置会继续使用原浏览器；首次配置只安装了 Edge 时，会自动选择 Edge。选择适用于全部 WEB 服务，不影响 API。Chrome 与 Edge 分别使用专用登录目录，第一次换浏览器需要登录，切回来会复用之前的目录。运行中的 WEB 任务或排队任务结束后才能切换浏览器。
+An existing Chrome setup keeps using the original browser; if only Edge was installed during first-time setup, Edge is selected automatically. The choice applies to every WEB service and does not affect API mode. Chrome and Edge keep separate dedicated login profiles, so the first switch asks you to sign in and switching back reuses the earlier profile. Browser switching waits until running or queued WEB tasks have finished.
 
-浏览器安装在自定义目录时，在同一菜单的“浏览器程序路径”中填写完整路径，或点击“选择程序文件…”选择可执行文件，再应用。Windows 选择 `chrome.exe` / `msedge.exe`；Linux 选择浏览器启动程序；macOS 选择应用包内 `Contents/MacOS/` 下的可执行文件。留空后应用可恢复自动检测。Chrome 和 Edge 的自定义路径分别保存。
+When a browser is installed in a custom directory, fill in the full path under **Browser program path** in the same menu, or click **Choose program file…**, then apply. On Windows pick `chrome.exe` / `msedge.exe`; on Linux pick the browser launcher; on macOS pick the executable inside the app bundle under `Contents/MacOS/`. Clearing the field restores automatic detection. Chrome and Edge store their custom paths separately.
 
-浏览器菜单会直接显示当前检测到或保存的完整程序路径。选择“＋ 添加其他浏览器…”，填写自定义名称并选择可执行文件，然后点击“保存并使用”；新浏览器会出现在列表中，使用独立的登录目录。自定义浏览器需要支持现有 Chromium 远程调试方式，添加路径本身不代表已验证兼容性。
+The browser menu shows the detected or saved full path directly. Choose **＋ Add another browser…**, enter a custom name, pick the executable, then click **Save and use**; the new browser appears in the list with its own login directory. A custom browser must support the existing Chromium remote-debugging flow — adding a path does not by itself mean the browser is verified compatible.

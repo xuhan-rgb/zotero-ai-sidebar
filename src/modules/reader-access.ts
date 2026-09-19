@@ -66,7 +66,7 @@ export function activeReaderPageIndex(
   win: Window | null | undefined,
   itemID: number | null,
 ): number | null {
-  return readerPageIndex(getActiveReaderForItem(win, itemID));
+  return readerPageIndex(getPaperReaderForItem(win, itemID));
 }
 
 export function readerPageIndex(reader: unknown): number | null {
@@ -77,26 +77,67 @@ export function readerPageIndex(reader: unknown): number | null {
   return null;
 }
 
-// Reader text per page, used to place LaTeX floats (which carry no page
-// numbers of their own) on the page their caption renders on.
-export function activeReaderPageTexts(
+/**
+ * Reader text per page, used to place LaTeX floats (which carry no page numbers
+ * of their own) on the page their caption renders on. The reader keeps `chars`
+ * only for pages it has already rendered or searched (the same on-demand fill
+ * its own search uses), so fill the missing pages first — otherwise a float
+ * sitting on an unvisited page would look page-less.
+ */
+export async function activeReaderAllPageTexts(
   win: Window | null | undefined,
   itemID: number | null,
-): string[] | undefined {
-  return readerPageTexts(getActiveReaderForItem(win, itemID));
+): Promise<string[] | undefined> {
+  return readerAllPageTexts(getPaperReaderForItem(win, itemID));
+}
+
+export async function readerAllPageTexts(
+  reader: unknown,
+): Promise<string[] | undefined> {
+  const view = activeReaderViews(reader as any)[0];
+  if (!view?._pdfPages) return undefined;
+  await ensureReaderPageData(view);
+  return readerPageTexts(reader);
 }
 
 export function readerPageTexts(reader: unknown): string[] | undefined {
   const view = activeReaderViews(reader as any)[0];
   const pages = view?._pdfPages;
   if (!pages) return undefined;
-  const list: unknown[] = Array.isArray(pages)
-    ? pages
-    : Object.keys(pages)
-        .sort((left, right) => Number(left) - Number(right))
-        .map((key) => pages[key]);
-  const texts = list.map((page) => readerCharsText((page as any)?.chars));
+  // Pages are keyed by 0-based index; keep the gaps so an index stays a page.
+  const texts: string[] = [];
+  for (const key of Object.keys(pages)) {
+    const index = Number(key);
+    if (!Number.isInteger(index) || index < 0) continue;
+    texts[index] = readerCharsText(
+      (pages as Record<string, { chars?: unknown }>)[key]?.chars,
+    );
+  }
+  for (let index = 0; index < texts.length; index += 1) {
+    if (typeof texts[index] !== "string") texts[index] = "";
+  }
   return texts.some(Boolean) ? texts : undefined;
+}
+
+/** Caps how many pages one picker open may pull text for. */
+const READER_PAGE_TEXT_MAX_PAGES = 80;
+
+async function ensureReaderPageData(view: any): Promise<void> {
+  const ensure = view?._ensureBasicPageData;
+  if (typeof ensure !== "function") return;
+  const total = Number(
+    view?._iframeWindow?.PDFViewerApplication?.pdfDocument?.numPages,
+  );
+  if (!Number.isFinite(total) || total <= 0) return;
+  const count = Math.min(Math.floor(total), READER_PAGE_TEXT_MAX_PAGES);
+  for (let index = 0; index < count; index += 1) {
+    if (view._pdfPages?.[index]?.chars) continue;
+    try {
+      await ensure.call(view, index);
+    } catch {
+      // A page that will not load simply stays unmarked.
+    }
+  }
 }
 
 function readerPageNumber(view: any): number | null {
@@ -178,6 +219,24 @@ export function getActiveReaderForItem(
   const reader = getActiveReader(win);
   if (!reader) return null;
   return activeReaderConversationItemID(win) === itemID ? reader : null;
+}
+
+// Page lookups only READ from the PDF, so they may fall back to a reader
+// Zotero keeps alive in a background tab: the user can be typing in the sidebar
+// while another tab is selected, and the paper's page must still resolve.
+// Anything that WRITES to the PDF keeps using getActiveReaderForItem, which is
+// deliberately limited to the reader on screen.
+export function getPaperReaderForItem(
+  win: Window | null | undefined,
+  itemID: number | null,
+): any {
+  const active = getActiveReaderForItem(win, itemID);
+  if (active || itemID == null || typeof Zotero === "undefined") return active;
+  return (
+    allZoteroReaders().find(
+      (reader) => readerConversationItemID(reader) === itemID,
+    ) ?? null
+  );
 }
 
 export function getReaderForCurrentSelection(

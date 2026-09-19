@@ -16,6 +16,8 @@ export interface DraftImage {
   size: number;
   /** Set when the picture already exists on disk, so WEB chat can upload it. */
   path?: string;
+  /** The `@` item this came from, for dropping its PDF reference box. */
+  figureId?: string;
 }
 
 export interface DraftImageState extends ComposerDraftState {
@@ -30,6 +32,8 @@ export interface ComposerImageButtonDeps<TState extends DraftImageState> {
 
 export interface ComposerImageRenderDeps<TState extends DraftImageState> {
   renderPanel(mount: HTMLElement, state: any): void;
+  /** The chip's × was clicked: drop its dashed box on the PDF, if any. */
+  unmarkReference?(image: DraftImage): void;
 }
 
 export function renderImageAttachButton<TState extends DraftImageState>(
@@ -153,6 +157,7 @@ export function renderDraftImages<TState extends DraftImageState>(
     const remove = buttonEl(doc, "×");
     remove.title = "移除截图";
     remove.addEventListener("click", () => {
+      deps.unmarkReference?.(image);
       removeDraftImage(state, input, image);
       deps.renderPanel(mount, state);
     });
@@ -162,7 +167,11 @@ export function renderDraftImages<TState extends DraftImageState>(
   return tray;
 }
 
-function removeDraftImage<TState extends DraftImageState>(
+/**
+ * Drops one picture and its marker. The caller clears the PDF mark, because
+ * only it knows the reader and whether the picture came from the picker.
+ */
+export function removeDraftImage<TState extends DraftImageState>(
   state: TState,
   input: HTMLTextAreaElement,
   image: DraftImage,
@@ -173,6 +182,24 @@ function removeDraftImage<TState extends DraftImageState>(
   );
   relabelDraftImages(state, input);
   captureDraftFromInput(input, state);
+}
+
+/**
+ * Drops the pictures whose `[Image #N]` marker the user deleted from the text,
+ * then renumbers what is left. The marker is the only handle a picture has in
+ * the composer, so deleting the text has to mean deleting the attachment.
+ */
+export function dropDraftImagesMissingMarker<TState extends DraftImageState>(
+  state: TState,
+  input: HTMLTextAreaElement,
+): boolean {
+  const kept = state.draftImages.filter((image) =>
+    input.value.includes(image.marker),
+  );
+  if (kept.length === state.draftImages.length) return false;
+  state.draftImages = kept;
+  relabelDraftImages(state, input);
+  return true;
 }
 
 export function pastedImageFiles(event: ClipboardEvent): File[] {
@@ -216,6 +243,7 @@ export interface DraftImageAsset {
   mediaType: string;
   bytes: Uint8Array;
   path?: string;
+  figureId?: string;
 }
 
 /** Adds pictures that already exist on disk (parsed figures, LaTeX sources). */
@@ -239,6 +267,7 @@ export async function addDraftImageAssets<TState extends DraftImageState>(
       dataUrl: imageData.dataUrl,
       size: imageData.size,
       ...(asset.path ? { path: asset.path } : {}),
+      ...(asset.figureId ? { figureId: asset.figureId } : {}),
     };
     state.draftImages.push(image);
     if (input) insertComposerText(input, marker);
@@ -285,14 +314,44 @@ function relabelDraftImages<TState extends DraftImageState>(
   state: TState,
   input: HTMLTextAreaElement,
 ) {
-  let text = input.value;
   state.draftImages.forEach((image, index) => {
     const marker = `[Image #${index + 1}]`;
     if (image.marker === marker) return;
-    text = text.split(image.marker).join(marker);
+    renameComposerMarker(input, image.marker, marker);
     image.marker = marker;
   });
-  input.value = text;
+}
+
+/**
+ * Renames one marker in the composer without moving the caret, so renumbering
+ * while the user types does not yank the cursor to the end of the box.
+ */
+export function renameComposerMarker(
+  input: HTMLTextAreaElement,
+  from: string,
+  to: string,
+): boolean {
+  const text = input.value;
+  if (!from || from === to || !text.includes(from)) return false;
+  const start = input.selectionStart ?? text.length;
+  const end = input.selectionEnd ?? start;
+  const delta = to.length - from.length;
+  const shift = (offset: number) => {
+    let moved = offset;
+    for (
+      let at = text.indexOf(from);
+      at >= 0;
+      at = text.indexOf(from, at + from.length)
+    ) {
+      if (at + from.length <= offset) moved += delta;
+    }
+    return moved;
+  };
+  const movedStart = shift(start);
+  const movedEnd = shift(end);
+  input.value = text.split(from).join(to);
+  input.setSelectionRange(movedStart, movedEnd);
+  return true;
 }
 
 interface PromptImageData {

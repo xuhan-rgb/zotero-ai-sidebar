@@ -1,4 +1,5 @@
 import { loadMineruSettings } from "../settings/mineru";
+import { clearPaperFigureCache } from "../modules/paper-figures";
 import { zoteroPrefs } from "../settings/storage";
 import { parsePdfWithMineru } from "./mineru-client";
 import { buildMineruTranslationDocument, pdfTranslationDocumentId } from "./mineru-document";
@@ -93,6 +94,9 @@ async function runParse(pdf: {
       parsed.contentList,
     );
     await saveMineruCache(pdf.itemKey, stat, parsed, document.sourceHash);
+    // Material lists cached from the LaTeX fallback would now be stale: the
+    // parsed MinerU result carries real boxes the LaTeX path never has.
+    clearPaperFigureCache();
     return publish(pdf.itemKey, { status: "ready" });
   } catch (error) {
     return publish(pdf.itemKey, {

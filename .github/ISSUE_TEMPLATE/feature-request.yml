@@ -1,0 +1,52 @@
+name: 功能建议
+description: 想要的新功能或体验改进
+title: "[Feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先说明**你要解决的问题**，再说你希望的方案——这样更容易判断该不该做、怎么做。
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: 提交前确认
+      options:
+        - label: 我已经搜索过现有 issue 和 README / 使用教程，确认没有相同建议
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: 涉及的功能
+      multiple: true
+      options:
+        - 对话与界面
+        - 论文素材（图片 / 表格 / 公式）
+        - PDF 与阅读工具（高亮 / 笔记 / 总览 / 路线）
+        - 翻译（沉浸 / 全文）
+        - WEB 模式
+        - 同步与配置（WebDAV / 导出导入）
+        - 其他
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 你想解决的问题
+      description: 现在的工作流哪里不顺手？举一个具体场景
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: 期望的方案
+      description: 你希望插件怎么做；如果知道实现思路也可以写
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: 试过的替代方案（可选）
+      description: 现在你用什么办法绕开这个问题？
+    validations:
+      required: false

@@ -154,13 +154,34 @@ export async function ensureMineruCachedAssets(itemKey: string): Promise<void> {
 async function restoreMineruAssets(itemKey: string): Promise<void> {
   const path = appendLocalPath(mineruCacheFolder(itemKey), "meta.json");
   const meta = JSON.parse(await io().readUTF8(path)) as MineruCacheMeta;
-  if (Array.isArray(meta.assets)) return;
+  if (!(await pictureAssetsMissing(itemKey, meta))) return;
   const token = loadMineruSettings(zoteroPrefs()).token;
   if (!token) throw new Error("补齐图片缓存需要配置 MinerU Token");
   if (!meta.batchId) throw new Error("缺少 MinerU 原解析任务，无法补齐图片缓存");
   const result = await downloadMineruResult(meta.batchId, { token });
   meta.assets = await saveMineruAssets(itemKey, result.assets ?? {});
   await io().writeUTF8(path, JSON.stringify(meta, null, 2));
+}
+
+/**
+ * Parses written before the plugin cached pictures list no assets at all, and a
+ * cache whose `assets/` folder was pruned still lists files that are gone. Both
+ * mean the pictures have to be fetched again; a complete cache costs a handful
+ * of `exists` calls.
+ */
+async function pictureAssetsMissing(
+  itemKey: string,
+  meta: MineruCacheMeta,
+): Promise<boolean> {
+  if (!Array.isArray(meta.assets)) return true;
+  const IO = io();
+  if (!IO.exists) return false;
+  const folder = appendLocalPath(mineruCacheFolder(itemKey), "assets");
+  for (const asset of meta.assets) {
+    const safe = mineruImagePath(asset);
+    if (safe && !(await IO.exists(appendLocalPath(folder, safe)))) return true;
+  }
+  return false;
 }
 
 export async function readMineruAsset(itemKey: string, sourcePath: string): Promise<{

@@ -118,6 +118,7 @@ export const DEFAULT_LOCAL_UI_SETTINGS: LocalUiSettings = {
 };
 
 const KEY = "extensions.zotero-ai-sidebar.localUiSettings";
+
 const MIN_CHAT_FONT_SIZE = 11;
 const MAX_CHAT_FONT_SIZE = 22;
 const MIN_READING_FONT_SIZE = 14;
