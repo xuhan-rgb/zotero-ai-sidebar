@@ -102,12 +102,18 @@ export const PROVIDERS = {
       "[class*='ds-assistant-message'] .ds-markdown",
     ],
     reasoning: [".ds-think-content .ds-markdown"],
+    // The attachment strip is a sibling of the inner textarea/upload controls.
+    attachmentRoot: "._77cefa5",
     attachmentPreviews: [
+      ".d5fa3d1b",
+      ".cd314545",
+      ".e70accd6",
       "[class*='file']",
       "[class*='attachment']",
       "[class*='upload']",
     ],
     attachmentUploading: [
+      ".d5fa3d1b .ds-loading",
       "[role='progressbar']",
       "[class*='upload'][class*='loading']",
       "[class*='file'][class*='loading']",

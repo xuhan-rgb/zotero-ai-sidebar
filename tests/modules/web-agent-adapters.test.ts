@@ -20,6 +20,7 @@ import {
   setWebAttachmentsAsBatch,
   setWebAttachmentInputFiles,
   stageWebAttachment,
+  pasteWebAttachment,
   waitForWebAttachmentAcceptance,
 } from "../../web-agent/attachments.mjs";
 
@@ -451,6 +452,70 @@ describe("Web Agent provider adapters", () => {
     expect(page.locator).toHaveBeenCalledWith("input[type='file']");
     expect(setInputFiles).toHaveBeenCalledWith("/tmp/paper.pdf");
   });
+
+  it.each([false, true])("does not repeat a possibly accepted upload after an input error (batch=%s)", async (batch) => {
+    const uploaded: string[] = [];
+    const failure = new Error("upload confirmation timed out");
+    const inputs = [0, 1].map((index) => ({
+      getAttribute: vi.fn(async () => ""),
+      setInputFiles: vi.fn(async () => {
+        uploaded.push("paper.pdf");
+        if (index === 0) throw failure;
+      }),
+    }));
+    const page = {
+      locator: vi.fn(() => ({
+        count: vi.fn(async () => inputs.length),
+        nth: vi.fn((index: number) => inputs[index]),
+      })),
+    };
+    const result = batch
+      ? setWebAttachmentsAsBatch(page, { batchAttachmentInput: ["input[type='file'][multiple]"] }, [{ path: "/tmp/paper.pdf" }])
+      : setWebAttachmentInputFiles(page, "/tmp/paper.pdf");
+    await expect(result).rejects.toThrow(failure);
+    expect(uploaded).toEqual(["paper.pdf"]);
+    expect(inputs[1].setInputFiles).not.toHaveBeenCalled();
+  });
+
+  it.each(["new target", "old target", "other file", "no preview"])(
+    "recovers an input timeout only with a new target preview: %s",
+    async (scenario) => {
+      const previews = scenario === "old target" ? ["paper.pdf"] : [];
+      const failure = Object.assign(new Error("setInputFiles: Timeout 30000ms exceeded"), { name: "TimeoutError" });
+      const setInputFiles = vi.fn(async () => {
+        if (scenario === "new target") previews.push("paper.pdf");
+        if (scenario === "other file") previews.push("other.pdf");
+        throw failure;
+      });
+      const input = { setInputFiles, getAttribute: async () => ".pdf" };
+      let uploadPolls = 0;
+      const page = {
+        locator: (selector: string) => selector === "input[type='file']"
+          ? { count: async () => 1, nth: () => input }
+          : selector === "body"
+            ? { innerText: async () => uploadPolls === 0 ? "paper.pdf\n上传中" : "paper.pdf\nPDF 43.29MB" }
+          : {
+              count: async () => selector === ".busy" ? 0 : previews.length,
+              nth: (index: number) => ({
+                isVisible: async () => true,
+                innerText: async () => previews[index],
+              }),
+            },
+        waitForTimeout: async () => { uploadPolls += 1; },
+      };
+      const operation = pasteWebAttachment(
+        page, {}, { name: "DeepSeek", attachmentPreviews: [".file"], attachmentUploading: [".busy"], previewScopedAttachmentNames: true },
+        { path: "/tmp/paper.pdf", name: "paper.pdf" },
+        { waitForUpload: true, allowClipboardFallback: false },
+      );
+      if (scenario === "new target") {
+        await expect(operation).resolves.toBeUndefined();
+        expect(uploadPolls).toBeGreaterThanOrEqual(3);
+      }
+      else await expect(operation).rejects.toThrow(failure);
+      expect(setInputFiles).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("selects every Kimi material through one multiple-file input call", async () => {
     let menuOpen = false;

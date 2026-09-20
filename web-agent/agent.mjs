@@ -6,6 +6,7 @@ import { unlink } from "node:fs/promises";
 import { writeFile } from "node:fs/promises";
 import { rename } from "node:fs/promises";
 import { renameWebConversation } from "./conversation-title.mjs";
+import { uploadDeepSeekAttachments } from "./deepseek-attachments.mjs";
 import { randomUUID } from "node:crypto";
 import { spawn } from "node:child_process";
 import http from "node:http";
@@ -405,7 +406,10 @@ async function runTask(task) {
     await runWithEarlyPageNotice(task, async () => {
       const allowClipboardFallback =
         !task.hideBrowser || !["DeepSeek", "ChatGPT"].includes(adapter.name);
-      if (adapter.batchAttachmentInput?.length) {
+      if (task.provider === "deepseek") {
+        session.pendingDraftUrl = page.url();
+        await uploadDeepSeekAttachments(page, composer, adapter, attachments, session.slot);
+      } else if (adapter.batchAttachmentInput?.length) {
         const uploadedAsBatch = await setWebAttachmentsAsBatch(
           page,
           adapter,
@@ -450,6 +454,8 @@ async function runTask(task) {
   await restoreComposerPrompt(composer, submissionPrompt);
   await callback(task, "submitting");
   task.submissionAttempted = true;
+  // Once submission starts its result may be uncertain; never reuse that draft.
+  session.pendingDraftUrl = undefined;
   await submitPrompt(page, composer, adapter, previousAnswerCount, task, session);
   task.submissionConfirmed = true;
   if (uploadMaterial) {
@@ -789,7 +795,13 @@ async function webSession(browserContext, task, adapter) {
   // Tasks are serialized per provider. Its page can be reused across papers,
   // while each task gets the URL and upload state from its own paper binding.
   const sessionSlot = task.provider;
-  let page = sessions.get(sessionSlot)?.page;
+  const previousSession = sessions.get(sessionSlot);
+  let page = previousSession?.page;
+  if (task.provider === "deepseek" && previousSession?.slot === bindingSlot &&
+      previousSession.pendingDraftUrl && page && !page.isClosed() &&
+      page.url() === previousSession.pendingDraftUrl) {
+    return previousSession;
+  }
   if (!page || page.isClosed()) {
     page = await browserContext.newPage();
     page.on("close", () => {
@@ -1052,7 +1064,8 @@ async function ensureContext() {
         "专用 WEB 浏览器尚未打开，请先点击账号配置按钮并手动登录",
       );
     }
-    cdpBrowser = await chromium.connectOverCDP(endpoint);
+    // The dedicated browser shares our filesystem; pass attachment paths directly.
+    cdpBrowser = await chromium.connectOverCDP(endpoint, { isLocal: true });
     const connectedContext = cdpBrowser.contexts()[0];
     if (!connectedContext) {
       throw new Error("专用 WEB 浏览器没有可用页面，请重新打开账号配置");

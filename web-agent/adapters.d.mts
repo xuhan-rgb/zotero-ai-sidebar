@@ -14,6 +14,7 @@ export interface ProviderDefinition {
   serialAttachments?: boolean;
   waitForAttachmentAcceptance?: boolean;
   previewScopedAttachmentNames?: boolean;
+  attachmentRoot?: string;
   batchAttachmentTrigger?: string[];
   batchAttachmentInput?: string[];
 }

@@ -245,7 +245,7 @@ describe("WEB send flow", () => {
       'request.method === "POST" && request.url === "/browser/open"',
     );
     expect(agent).toContain('request.url?.startsWith("/browser/status")');
-    expect(agent).toContain("chromium.connectOverCDP(endpoint)");
+    expect(agent).toContain("chromium.connectOverCDP(endpoint, { isLocal: true })");
     expect(
       chromeLaunchArguments({ profileDir: "/profile" }, "visible"),
     ).toContain("--remote-debugging-port=0");

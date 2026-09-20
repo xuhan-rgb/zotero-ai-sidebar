@@ -3817,7 +3817,9 @@ async function sendWebPromptMessage(
   state.chatSelectionQuote = undefined;
   const item = sourceItemID == null ? null : Zotero.Items.get(sourceItemID);
   const title = item ? String(item.getField("title") || "") : "";
-  const material = await resolveWebPaperMaterial(sourceItemID);
+  const material = await resolveWebPaperMaterial(sourceItemID, {
+    alwaysSendPdf: state.localUiSettings.alwaysSendPdf,
+  });
   const arxivToc = await buildArxivTocFrontBlock(sourceItemID);
   let webOutline: Awaited<ReturnType<typeof prepareWebOverview>> | undefined;
   try {
@@ -5581,6 +5583,27 @@ function configureWebAccount(
   );
   optionText.append(optionHint);
   visibilityOption.append(checkbox, optionText);
+  const pdfOption = el(doc, "label", "zai-web-account-option");
+  const pdfCheckbox = doc.createElement("input");
+  pdfCheckbox.type = "checkbox";
+  pdfCheckbox.checked = state.localUiSettings.alwaysSendPdf;
+  const pdfOptionText = el(doc, "span", "", "始终发送原始 PDF");
+  pdfOptionText.append(
+    el(
+      doc,
+      "small",
+      "",
+      "向网页模型发送原始 PDF，不使用解析文本替代。适合对比效果和复现问题；后台解析照常。",
+    ),
+  );
+  pdfOption.append(pdfCheckbox, pdfOptionText);
+  pdfCheckbox.addEventListener("change", () => {
+    state.localUiSettings = normalizeLocalUiSettings({
+      ...state.localUiSettings,
+      alwaysSendPdf: pdfCheckbox.checked,
+    });
+    saveLocalUiSettings(zoteroPrefs(), state.localUiSettings);
+  });
   body.append(
     renderWebBrowserPicker(doc, state, () => {
       configured = false;
@@ -5593,6 +5616,7 @@ function configureWebAccount(
     explanation,
     pageNoticeExplanation,
     visibilityOption,
+    pdfOption,
   );
 
   const foot = el(

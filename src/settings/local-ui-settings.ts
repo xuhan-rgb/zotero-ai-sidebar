@@ -6,6 +6,7 @@ export interface LocalUiSettings {
   chatSendMode: ChatSendMode;
   webPromptProvider: WebPromptProvider;
   hideWebBrowser: boolean;
+  alwaysSendPdf: boolean;
   chatgptWeb: ChatGPTWebSettings;
   deepseekWeb: DeepSeekWebSettings;
   customWebProviders: CustomWebProvider[];
@@ -104,6 +105,7 @@ export const DEFAULT_LOCAL_UI_SETTINGS: LocalUiSettings = {
   chatSendMode: "api",
   webPromptProvider: "chatgpt",
   hideWebBrowser: true,
+  alwaysSendPdf: false,
   chatgptWeb: {
     reasoningEffort: "medium",
   },
@@ -184,6 +186,7 @@ export function normalizeLocalUiSettings(value: unknown): LocalUiSettings {
       typeof input.hideWebBrowser === "boolean"
         ? input.hideWebBrowser
         : DEFAULT_LOCAL_UI_SETTINGS.hideWebBrowser,
+    alwaysSendPdf: input.alwaysSendPdf === true,
     chatgptWeb: normalizeChatGPTWebSettings(input.chatgptWeb),
     deepseekWeb: normalizeDeepSeekWebSettings(input.deepseekWeb),
     customWebProviders,

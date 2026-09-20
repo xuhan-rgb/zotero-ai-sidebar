@@ -17,6 +17,17 @@ function memPrefs(): PrefsStore {
 }
 
 describe("local UI settings storage", () => {
+  it("defaults to automatic paper material and persists the PDF override", () => {
+    const prefs = memPrefs();
+    expect(loadLocalUiSettings(prefs).alwaysSendPdf).toBe(false);
+    expect(normalizeLocalUiSettings({}).alwaysSendPdf).toBe(false);
+    expect(normalizeLocalUiSettings({ alwaysSendPdf: "true" }).alwaysSendPdf).toBe(false);
+    for (const alwaysSendPdf of [true, false]) {
+      saveLocalUiSettings(prefs, { ...DEFAULT_LOCAL_UI_SETTINGS, alwaysSendPdf });
+      expect(loadLocalUiSettings(prefs).alwaysSendPdf).toBe(alwaysSendPdf);
+    }
+  });
+
   it("keeps ChatGLM as a built-in WEB provider", () => {
     expect(
       normalizeLocalUiSettings({

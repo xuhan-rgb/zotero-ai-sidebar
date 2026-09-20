@@ -92,6 +92,87 @@ describe("WEB paper material", () => {
     });
   });
 
+  it("always sends the PDF when requested, even with LaTeX and MinerU caches", async () => {
+    const parent = item(1, {
+      title: "Paper",
+      url: "https://arxiv.org/abs/2501.12345",
+      attachments: [2],
+    });
+    const pdf = item(2, {
+      contentType: "application/pdf",
+      path: "/papers/paper.pdf",
+    });
+    stubRuntime([parent, pdf], {
+      meta: {
+        arxivId: "2501.12345",
+        fetchedAt: "2026-08-17T00:00:00.000Z",
+        mainTexRelPath: "main.tex",
+        status: "ok",
+      },
+      mineru: { size: 123, mtime: 456, markdown: "# Parsed paper" },
+    });
+
+    await expect(
+      resolveWebPaperMaterial(1, { alwaysSendPdf: true }),
+    ).resolves.toEqual({
+      paperUrl: "https://arxiv.org/abs/2501.12345",
+      attachment: {
+        kind: "pdf",
+        path: "/papers/paper.pdf",
+        name: "paper.pdf",
+        mimeType: "application/pdf",
+      },
+    });
+  });
+
+  it("keeps the default priority and uses cached MinerU markdown without LaTeX", async () => {
+    const parent = item(1, {
+      title: "Paper",
+      doi: "10.1000/example",
+      attachments: [2],
+    });
+    const pdf = item(2, {
+      contentType: "application/pdf",
+      path: "/papers/paper.pdf",
+    });
+    stubRuntime([parent, pdf], {
+      mineru: { size: 123, mtime: 456, markdown: "# Parsed paper" },
+    });
+
+    await expect(resolveWebPaperMaterial(1)).resolves.toEqual({
+      paperUrl: "https://doi.org/10.1000/example",
+      attachment: {
+        kind: "markdown",
+        path: "/zotero/zotero-ai-sidebar-mineru/KEY1/full.md",
+        name: "paper.md",
+        mimeType: "text/plain",
+      },
+    });
+    expect((await resolveWebPaperMaterial(1, { alwaysSendPdf: true })).attachment?.kind).toBe("pdf");
+    expect((await resolveWebPaperMaterial(1, { alwaysSendPdf: false })).attachment?.kind).toBe("markdown");
+  });
+
+  it("does not fall back to LaTeX when always-send-PDF is enabled without a PDF", async () => {
+    const parent = item(1, {
+      title: "Paper",
+      url: "https://arxiv.org/abs/2501.12345",
+    });
+    stubRuntime([parent], {
+      meta: {
+        arxivId: "2501.12345",
+        fetchedAt: "2026-08-17T00:00:00.000Z",
+        mainTexRelPath: "main.tex",
+        status: "ok",
+      },
+    });
+
+    await expect(
+      resolveWebPaperMaterial(1, { alwaysSendPdf: true }),
+    ).resolves.toEqual({
+      paperUrl: "https://arxiv.org/abs/2501.12345",
+    });
+  });
+
   it("falls back to the first local PDF and a DOI URL", async () => {
     const parent = item(1, {
       title: "Paper",
@@ -147,7 +228,10 @@ function item(
 
 function stubRuntime(
   items: ReturnType<typeof item>[],
-  options: { meta?: Record<string, unknown> } = {},
+  options: {
+    meta?: Record<string, unknown>;
+    mineru?: { size: number; mtime: number; markdown: string };
+  } = {},
 ) {
   const byID = new Map(items.map((entry) => [entry.id, entry]));
   vi.stubGlobal("Zotero", {
@@ -164,6 +248,22 @@ function stubRuntime(
     exists: vi.fn(async (path: string) =>
       path.endsWith("main.tex") ? !!options.meta : true,
     ),
-    readUTF8: vi.fn(async () => JSON.stringify(options.meta ?? {})),
+    stat: vi.fn(async () => ({
+      size: options.mineru?.size ?? 123,
+      lastModified: options.mineru?.mtime ?? 456,
+    })),
+    readUTF8: vi.fn(async (path: string) => {
+      if (path.includes("zotero-ai-sidebar-mineru")) {
+        if (path.endsWith("meta.json")) {
+          return JSON.stringify({
+            pdfSize: options.mineru?.size,
+            pdfMtime: options.mineru?.mtime,
+          });
+        }
+        if (path.endsWith("full.md")) return options.mineru?.markdown ?? "";
+        return "{}";
+      }
+      return JSON.stringify(options.meta ?? {});
+    }),
   });
 }

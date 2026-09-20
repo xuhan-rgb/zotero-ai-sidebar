@@ -84,10 +84,22 @@ export async function pasteWebAttachment(
     page,
     adapter,
   );
-  const uploadedThroughInput = await setWebAttachmentInputFiles(
+  const previousMatchingCount = await visibleAttachmentPreviewCount(
     page,
-    attachment.path,
+    adapter,
+    attachment.name,
   );
+  let uploadedThroughInput;
+  try {
+    uploadedThroughInput = await setWebAttachmentInputFiles(page, attachment.path);
+  } catch (error) {
+    // The file can reach the page before Playwright's confirmation times out.
+    // Require a new matching preview: an old message or another file is not proof.
+    const accepted = error?.name === "TimeoutError" &&
+      await visibleAttachmentPreviewCount(page, adapter, attachment.name) > previousMatchingCount;
+    if (!accepted) throw error;
+    uploadedThroughInput = true;
+  }
   const uploadedThroughChooser = uploadedThroughInput
     ? false
     : await setWebAttachmentThroughChooser(page, adapter, attachment);
@@ -153,7 +165,7 @@ export async function waitForWebAttachmentAcceptance(
   throw new Error(`${adapter.name} did not accept ${name}`);
 }
 
-export async function setWebAttachmentInputFiles(page, filePath) {
+export async function setWebAttachmentInputFiles(page, filePath, options) {
   const inputs = page.locator("input[type='file']");
   const candidates = [];
   for (let index = 0; index < (await inputs.count()); index += 1) {
@@ -169,10 +181,11 @@ export async function setWebAttachmentInputFiles(page, filePath) {
     (left, right) => right.score - left.score || left.index - right.index,
   );
   for (const { input } of candidates) {
-    try {
-      await input.setInputFiles(filePath);
-      return true;
-    } catch {}
+    // A failed confirmation can occur after the page accepted the file.
+    // Propagate it instead of uploading again through another input/fallback.
+    if (options) await input.setInputFiles(filePath, options);
+    else await input.setInputFiles(filePath);
+    return true;
   }
   return false;
 }
@@ -193,10 +206,9 @@ export async function setWebAttachmentsAsBatch(page, adapter, attachments) {
         .getAttribute("multiple")
         .catch(() => null);
       if (filePaths.length > 1 && multiple === null) continue;
-      try {
-        await input.setInputFiles(filePaths);
-        return true;
-      } catch {}
+      // Do not retry a batch whose files may already be on the page.
+      await input.setInputFiles(filePaths);
+      return true;
     }
     return false;
   };
@@ -346,11 +358,14 @@ async function waitForAttachmentPreview(
   throw new Error(`${adapter.name} did not accept or finish uploading ${name}`);
 }
 
-async function visibleAttachmentPreviewCount(page, adapter) {
+async function visibleAttachmentPreviewCount(page, adapter, name) {
   const previews = page.locator(selectorList(adapter.attachmentPreviews));
   let count = 0;
   for (let index = 0; index < (await previews.count()); index += 1) {
-    if (await previews.nth(index).isVisible()) count += 1;
+    const preview = previews.nth(index);
+    if (!(await preview.isVisible())) continue;
+    if (name && !attachmentPreviewMatchesName(await preview.innerText().catch(() => ""), name)) continue;
+    count += 1;
   }
   return count;
 }

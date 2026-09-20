@@ -98,6 +98,7 @@ interface ZoteroWebItem {
 
 export async function resolveWebPaperMaterial(
   itemID: number | null,
+  options: { alwaysSendPdf?: boolean } = {},
 ): Promise<WebPaperMaterial> {
   if (itemID == null) return { paperUrl: "" };
   const selected = getItem(itemID);
@@ -108,6 +109,10 @@ export async function resolveWebPaperMaterial(
       : selected;
   const arxivId = resolveArxivIdForItemID(itemID);
   const paperUrl = canonicalPaperUrl(root, selected, arxivId);
+
+  if (options.alwaysSendPdf) {
+    return { paperUrl, attachment: await firstPdfAttachment(root, selected) };
+  }
 
   if (arxivId) {
     const meta = await readArxivMeta(arxivId);
