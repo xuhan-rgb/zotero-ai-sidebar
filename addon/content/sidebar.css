@@ -463,6 +463,9 @@
 }
 
 .zai-note-empty-cta button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
   border: 0;
   border-radius: 9px;
   background: linear-gradient(180deg, #c97a4f, #a94e25);

@@ -1,3 +1,4 @@
+import { bindReadingRouteProgress } from "./reading-route-progress";
 import { traceBrowserPicker } from "./browser-picker-debug";
 import { webPaperSessionKey, prepareWebOverview, webOverviewPrompt, parseWebOverview, webReadingRoutePrompt, parseWebReadingRoute, type WebPaperAction } from "./web-paper-actions";
 import { createFullDocumentWebTranslator } from "../translate/full-document-web";
@@ -9918,26 +9919,37 @@ function buildNoteSeg(
     return button;
   };
 
+  const selectSeg = (selected: HTMLButtonElement) => {
+    for (const button of Array.from(wrap.querySelectorAll("button")) as HTMLButtonElement[]) {
+      button.classList.toggle("on", button === selected);
+    }
+  };
+
   const noteBtn = makeSeg("笔记", view === "normal");
   noteBtn.title = "AI 笔记：对话里的「写入笔记」默认保存到这里";
   noteBtn.addEventListener("click", () => {
-    if (view !== "normal") void switchNoteFile(sidebar, "normal", noteBtn);
+    if (noteBtn.classList.contains("on")) return;
+    selectSeg(noteBtn);
+    void switchNoteFile(sidebar, "normal", noteBtn);
   });
 
   const routeBtn = makeSeg("路线", view === "readingRoute");
   routeBtn.title = "阅读路线：AI 标出的精读顺序与重点";
   routeBtn.addEventListener("click", () => {
-    if (view !== "readingRoute") void openRouteView(sidebar);
+    if (routeBtn.classList.contains("on")) return;
+    selectSeg(routeBtn);
+    void openRouteView(sidebar);
   });
 
   const overviewBtn = makeSeg("总览", view === "overview");
   overviewBtn.title = "全文总览：章节目录 + 逻辑结构图 + 可选网络拓扑图";
   overviewBtn.addEventListener("click", () => {
-    if (view !== "overview") void showOverviewWindow(sidebar);
+    if (overviewBtn.classList.contains("on")) return;
+    selectSeg(overviewBtn);
+    void showOverviewWindow(sidebar);
   });
 
   if (panelState?.sending) {
-    routeBtn.disabled = true;
     overviewBtn.disabled = true;
   }
 
@@ -10461,13 +10473,33 @@ function renderEmptyNoteView(
       : view === "normal" ? "还没有 AI 笔记。" : "还没有阅读路线。";
   const cta = buttonEl(doc, view === "normal" ? "新建笔记" : "✨ 生成阅读路线");
   cta.disabled = itemID == null;
-  cta.addEventListener("click", () => {
-    if (view === "normal") void openCurrentItemNote(doc, itemID, cta);
-    else void generateReadingRouteFromNoteSwitcher(sidebar, cta);
-  });
   empty.append(msg, cta);
   body.append(empty);
   sidebar.noteMount.append(parts.head, body);
+  if (view === "readingRoute" && itemID != null) {
+    const progress = bindReadingRouteProgress(empty, msg, cta, () => {
+      const state = states.get(sidebar.mount);
+      if (!state || state.itemID !== itemID) return {};
+      const messages = state.conversations.flatMap((conversation) => conversation.messages);
+      const source = messages.filter((message) => message.role === "user" &&
+        message.task?.kind === "reading_route")
+        .sort((a, b) => b.task!.createdAt - a.task!.createdAt)[0];
+      const answer = source && messages.find((message) => message.role === "assistant" &&
+        message.task?.id === source.task?.id);
+      const task = source?.task ? {
+        ...source.task,
+        webStatus: answer?.task?.webStatus ?? source.task.webStatus,
+        error: answer?.task?.error || source.task.error,
+      } : undefined;
+      return { task };
+    });
+    sidebar.noteEditorCleanup = progress.dispose;
+    cta.addEventListener("click", () => {
+      void progress.run(() => generateReadingRouteFromNoteSwitcher(sidebar, cta));
+    });
+  } else {
+    cta.addEventListener("click", () => void openCurrentItemNote(doc, itemID, cta));
+  }
 }
 
 const OVERVIEW_PROMPT = [
@@ -11231,11 +11263,28 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
         : "还没有全文总览。";
     const cta = buttonEl(doc, "✨ 生成全文总览");
     cta.disabled = itemID == null;
-    cta.addEventListener("click", () => {
-      void generateOverviewIntoPanel(sidebar, cta);
-    });
     empty.append(msg, cta);
     body.append(empty);
+    if (itemID != null) {
+      const progress = bindReadingRouteProgress(empty, msg, cta, () => {
+        const state = states.get(sidebar.mount);
+        if (!state || state.itemID !== itemID) return {};
+        const messages = state.conversations.flatMap((conversation) => conversation.messages);
+        const source = messages.filter((message) => message.role === "user" &&
+          (message.task?.webPaperAction === "overview" || message.task?.title === "生成总览"))
+          .sort((a, b) => b.task!.createdAt - a.task!.createdAt)[0];
+        const answer = source && messages.find((message) => message.role === "assistant" &&
+          message.task?.id === source.task?.id);
+        return { task: source?.task ? {
+          ...source.task,
+          error: answer?.task?.error || source.task.error,
+        } : undefined };
+      }, "全文总览");
+      sidebar.noteEditorCleanup = progress.dispose;
+      cta.addEventListener("click", () => {
+        void progress.run(() => generateOverviewIntoPanel(sidebar, cta));
+      });
+    }
   }
   sidebar.noteMount.append(head, body);
 
