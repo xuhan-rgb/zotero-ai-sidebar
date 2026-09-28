@@ -54,7 +54,7 @@ export interface WebAccountStatus {
 let cachedConfig: WebAgentConfig | null = null;
 let startingAgent: Promise<WebAgentConfig> | undefined;
 let shuttingDown = false;
-export const WEB_AGENT_PROTOCOL_VERSION = 24;
+export const WEB_AGENT_PROTOCOL_VERSION = 26;
 
 export interface WebAgentHealth {
   ok: boolean;
@@ -90,6 +90,8 @@ export async function dispatchWebAgentTask(input: {
   customProvider?: CustomWebProvider;
   attachment?: WebAgentAttachment;
   contextAttachment?: WebAgentAttachment;
+  referenceAttachment?: WebAgentAttachment;
+  referenceAttachments?: WebAgentAttachment[];
   tocAttachment?: WebAgentAttachment;
   /** Images the user picked or pasted for this single message. */
   imageAttachments?: WebAgentAttachment[];
@@ -119,6 +121,8 @@ export async function dispatchWebAgentTask(input: {
     account.guest &&
     (input.attachment ||
       input.contextAttachment ||
+      input.referenceAttachment ||
+      input.referenceAttachments?.length ||
       input.tocAttachment ||
       input.imageAttachments?.length)
   ) {

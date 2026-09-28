@@ -14,7 +14,7 @@ const configPath = "/data/zai-web-agent-config.json";
 const expectedSha = "a".repeat(64);
 const release = {
   sha256: expectedSha,
-  protocolVersion: 24,
+  protocolVersion: 26,
 } as WebAgentRuntimeRelease;
 
 function installation() {
@@ -54,7 +54,7 @@ function installation() {
     probeNodeVersion: async () => "v20.19.6",
     health: async () => ({
       ok: true,
-      protocolVersion: 24,
+      protocolVersion: 26,
       runtimeSha256: saved.runtimeSha256,
     }),
     start: vi.fn(async () => true),
@@ -85,14 +85,14 @@ describe("Web Agent package update checks", () => {
       const archive = zipSync({
         "agent.mjs": new TextEncoder().encode("// bundled runtime"),
         "runtime-manifest.json": new TextEncoder().encode(
-          JSON.stringify({ protocolVersion: 24 }),
+          JSON.stringify({ protocolVersion: 26 }),
         ),
         "node_modules/playwright-core/package.json": new TextEncoder().encode(
           "{}",
         ),
       });
       const expected: WebAgentRuntimeRelease = {
-        protocolVersion: 24,
+        protocolVersion: 26,
         assetName: "zai-web-agent-runtime.zip",
         downloadUrl: "https://example.invalid/current-xpi/runtime.zip",
         releaseUrl: "https://example.invalid/current-xpi",
@@ -155,6 +155,20 @@ describe("Web Agent package update checks", () => {
       expect(host.start).not.toHaveBeenCalled();
     },
   );
+
+  it("detects a changed bundled Agent when the XPI version stays the same", async () => {
+    const { host, files, saved } = installation();
+    files.set(configPath, JSON.stringify(saved));
+    await checkWebAgentAfterXpiUpdate(
+      host,
+      { ...release, sha256: "c".repeat(64) },
+      saved.checkedXpiVersion,
+    );
+    expect(JSON.parse(files.get(configPath)!)).toMatchObject({
+      checkedXpiVersion: saved.checkedXpiVersion,
+      needsRuntimeUpdate: true,
+    });
+  });
 
   it("does not install or start an Agent on XPI startup when WEB has never been installed", async () => {
     const { host, files } = installation();

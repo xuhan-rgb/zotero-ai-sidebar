@@ -5,6 +5,8 @@ import {
 } from "../../src/modules/paper-figures";
 
 const writes: Array<{ path: string; data: string }> = [];
+const saved = new Map<string, string>();
+let sourceReady = true;
 const PDF_PATH = "/data/storage/arxiv.pdf";
 const CACHE_FIGURES = "/data/zotero-ai-sidebar-figures/ARXKEY/figures.json";
 
@@ -17,23 +19,34 @@ vi.mock("../../src/context/arxiv-store", async (importOriginal) => {
     await importOriginal<typeof import("../../src/context/arxiv-store")>();
   return {
     ...actual,
-    readArxivMeta: async () => ({ status: "ok", files: ["main.tex"] }),
+    readArxivMeta: async () =>
+      sourceReady
+        ? {
+            status: "ok",
+            fetchedAt: "2026-09-28T07:24:15Z",
+            files: ["main.tex"],
+          }
+        : null,
     readArxivMainText: async () =>
-      [
-        "\\begin{table}[t]",
-        "\\caption{Latency of the view transformation on nuScenes.}",
-        "\\label{tab:latency}",
-        "\\begin{tabular}{lc}",
-        "Method & Latency \\\\",
-        "\\end{tabular}",
-        "\\end{table}",
-      ].join("\n"),
+      sourceReady
+        ? [
+            "\\begin{table}[t]",
+            "\\caption{Latency of the view transformation on nuScenes.}",
+            "\\label{tab:latency}",
+            "\\begin{tabular}{lc}",
+            "Method & Latency \\\\",
+            "\\end{tabular}",
+            "\\end{table}",
+          ].join("\n")
+        : null,
     readArxivTextFile: async () => null,
   };
 });
 
 beforeEach(() => {
   writes.length = 0;
+  saved.clear();
+  sourceReady = true;
   clearPaperFigureCache();
   Object.defineProperty(globalThis, "Zotero", {
     configurable: true,
@@ -59,7 +72,9 @@ beforeEach(() => {
     value: {
       exists: async () => false,
       stat: async () => ({ size: 100, lastModified: 200 }),
-      readUTF8: async () => {
+      readUTF8: async (path: string) => {
+        const data = saved.get(path);
+        if (data != null) return data;
         throw new Error("no parse cache for this paper");
       },
       read: async () => new Uint8Array(),
@@ -67,6 +82,7 @@ beforeEach(() => {
       makeDirectory: async () => undefined,
       writeUTF8: async (path: string, data: string) => {
         writes.push({ path, data });
+        saved.set(path, data);
       },
     },
   });
@@ -75,8 +91,22 @@ beforeEach(() => {
 const printed = ["Tab. I: Latency of the view transformation on nuScenes."];
 
 describe("LaTeX material without reader text", () => {
-  // The cache is keyed by the PDF alone, so a text-less result would keep every
-  // float page-less for good — 本页 would answer 0 on every page of the paper.
+  it("rebuilds an empty cache when LaTeX source arrives later", async () => {
+    sourceReady = false;
+    expect(
+      await loadPaperFigures(20, { pageTexts: async () => printed }),
+    ).toEqual([]);
+    expect(saved.has(CACHE_FIGURES)).toBe(true);
+
+    sourceReady = true;
+    const figures = await loadPaperFigures(20, {
+      pageTexts: async () => printed,
+    });
+    expect(figures).toHaveLength(1);
+    expect(figures[0]!.label).toBe("表 1");
+  });
+  // A text-less result would keep every float page-less for good — 本页 would
+  // answer 0 on every page of the paper.
   it("neither writes the cache nor keeps the page-less list for the session", async () => {
     const blind = await loadPaperFigures(20, {
       pageTexts: async () => undefined,
@@ -93,8 +123,26 @@ describe("LaTeX material without reader text", () => {
     expect(writes.map((write) => write.path)).toEqual([CACHE_FIGURES]);
   });
 
-  // The version is what discards the page-less entries the old logic wrote: a
-  // cache entry is keyed by the PDF, so it would otherwise never be revisited.
+  it("replaces existing version-3 empty caches without manual deletion", async () => {
+    saved.set(
+      CACHE_FIGURES,
+      JSON.stringify({
+        version: 3,
+        pdfSize: 100,
+        pdfMtime: 200,
+        figures: [],
+      }),
+    );
+
+    const figures = await loadPaperFigures(20, {
+      pageTexts: async () => printed,
+    });
+    expect(figures).toHaveLength(1);
+    expect(writes.map((write) => write.path)).toEqual([CACHE_FIGURES]);
+  });
+
+  // The version discards older page-less and empty entries, while the source
+  // stamp invalidates a current entry when the arXiv source changes.
   it("stamps a resolved entry so the page-less one is replaced", async () => {
     await loadPaperFigures(20, { pageTexts: async () => printed });
     const meta = JSON.parse(writes[0]!.data) as {
@@ -102,7 +150,7 @@ describe("LaTeX material without reader text", () => {
       figures: Array<{ page?: number }>;
     };
 
-    expect(meta.version).toBe(3);
+    expect(meta.version).toBe(4);
     expect(meta.figures[0]!.page).toBe(0);
   });
 });

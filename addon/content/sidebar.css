@@ -2794,6 +2794,10 @@ button:disabled,
   margin: 0 0 7px;
 }
 
+.assistant-process-body .bubble-context-reference-row .bubble-context-chip {
+  margin: 0;
+}
+
 .bubble-thinking {
   margin: 4px 0 10px;
   color: var(--zai-muted);
@@ -3747,15 +3751,34 @@ div.math-fallback {
   color: var(--zai-text);
 }
 
-/* The scope in use is the filled one: an outlined row of peers with a single
-   solid chip reads as "selected", the reverse (what the composer's button rule
-   produced) read as everything pressed at once. */
+/* Filters use a quiet selected state; the content-type tabs use an underline. */
 .figure-menu-filters .figure-chip.figure-chip-active,
 .figure-menu-filters .figure-chip.figure-chip-active:hover {
-  border-color: transparent;
-  background: var(--zai-accent);
-  color: #fff;
+  border-color: #e7c0a8;
+  background: var(--zai-accent-soft);
+  color: var(--zai-accent-strong);
   font-weight: 700;
+}
+
+.figure-menu-filters.paper-reference-tabs {
+  gap: 0;
+  padding: 0 8px;
+  background: #f8f6f2;
+}
+
+.figure-menu-filters.paper-reference-tabs .figure-chip {
+  padding: 9px 11px 7px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 0;
+  background: transparent;
+}
+
+.figure-menu-filters.paper-reference-tabs .figure-chip.figure-chip-active,
+.figure-menu-filters.paper-reference-tabs .figure-chip.figure-chip-active:hover {
+  border-bottom-color: var(--zai-accent);
+  background: transparent;
+  color: var(--zai-accent-strong);
 }
 
 .figure-menu-foot {
@@ -3770,6 +3793,50 @@ div.math-fallback {
 
 .figure-menu-list {
   display: grid;
+}
+
+.paper-reference-scopes {
+  border-top: 1px solid rgba(44, 44, 44, 0.07);
+}
+
+.paper-reference-collection {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--zai-muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.input-row .paper-reference-item {
+  display: grid;
+  gap: 3px;
+  width: 100%;
+  padding: 8px 10px;
+  border: 0;
+  border-bottom: 1px solid rgba(44, 44, 44, 0.07);
+  border-radius: 0;
+  background: transparent;
+  color: var(--zai-text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.input-row .paper-reference-item:hover,
+.input-row .paper-reference-item.is-selected {
+  background: var(--zai-accent-soft);
+}
+
+.paper-reference-title {
+  overflow: hidden;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.paper-reference-detail {
+  color: var(--zai-muted);
+  font-size: 11px;
 }
 
 .input-row .figure-item {

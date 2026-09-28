@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import {
   contextSummaryLine,
+  contextSummaryParts,
+  formatContextMarkdown,
   formatContextLedger,
   formatUserMessageForApi,
   retainedContextStats,
@@ -10,6 +12,72 @@ import { DEFAULT_CONTEXT_POLICY } from '../../src/context/policy';
 import type { Message } from '../../src/providers/types';
 
 describe('formatUserMessageForApi', () => {
+  it('identifies the attached Zotero paper and its read tool', () => {
+    const formatted = formatUserMessageForApi({
+      role: 'user', content: '比较两篇论文',
+      context: { referencedItems: [{ itemID: 42, title: 'Other Paper' }] },
+    });
+    expect(formatted).toContain('itemID: 42; title: Other Paper');
+    expect(formatted).toContain('zotero_read_referenced_paper');
+  });
+  it('sends referenced original text only in the current API turn', () => {
+    const first: Message = {
+      role: 'user', content: '比较两篇论文',
+      context: { referencedItems: [{ itemID: 42, title: 'Other Paper', sentChars: 12, totalChars: 12 }] },
+    };
+    const second: Message = { role: 'user', content: '继续' };
+    const firstTurn = toApiMessages([first], {
+      message: first, referencedPaperText: 'Original evidence from Other Paper.',
+    });
+    expect(firstTurn[0].content).toContain('[Referenced Zotero paper material]');
+    expect(firstTurn[0].content).toContain('Original evidence from Other Paper.');
+    const nextTurn = toApiMessages([first, second], { message: second });
+    expect(nextTurn[0].content).not.toContain('Original evidence from Other Paper.');
+  });
+  it('lists all referenced papers in the API prompt and context summary', () => {
+    const message: Message = {
+      role: 'user', content: '比较三篇论文',
+      context: { referencedItems: [
+        { itemID: 2, title: 'First', sentChars: 20, totalChars: 20 },
+        { itemID: 3, title: 'Second', sentChars: 30, totalChars: 40 },
+      ] },
+    };
+    const formatted = formatUserMessageForApi(message);
+    expect(formatted).toContain('itemID: 2; title: First');
+    expect(formatted).toContain('itemID: 3; title: Second');
+    expect(contextSummaryLine(message)).toContain('引用「First」原文 20/20 字');
+    expect(contextSummaryLine(message)).toContain('引用「Second」原文 30/40 字（已截断）');
+  });
+  it('shows reference coverage alongside a selected-text context card', () => {
+    const message: Message = {
+      role: 'user', content: '比较',
+      context: {
+        selectedText: 'Current paper excerpt.',
+        referencedItems: [{ itemID: 42, title: 'Other Paper', sentChars: 80, totalChars: 100 }],
+      },
+    };
+    expect(formatContextMarkdown(message).join('\n')).toContain('引用文章「Other Paper」：原文 80/100 字（已截断）');
+  });
+  it('mentions both the current paper and referenced original text in the process summary', () => {
+    const message: Message = {
+      role: 'user', content: '这两篇有什么区别',
+      context: {
+        fullTextSource: 'arxiv_toc', fullTextChars: 1472,
+        referencedItems: [{
+          itemID: 137, title: 'SAM 2: Segment Anything in Images and Videos',
+          sentChars: 80000, totalChars: 168803,
+        }],
+      },
+    };
+    const summary = contextSummaryLine(message);
+    expect(summary).toContain('arXiv 章节目录 1472 字');
+    expect(summary).toContain('引用「SAM 2');
+    expect(summary).toContain('80000/168803 字（已截断）');
+    expect(contextSummaryParts(message)).toMatchObject({
+      current: '已随本轮发送 arXiv 章节目录 1472 字',
+      reference: expect.stringContaining('引用「SAM 2'),
+    });
+  });
   it('places selected PDF text before the user question', () => {
     const message: Message = {
       role: 'user',

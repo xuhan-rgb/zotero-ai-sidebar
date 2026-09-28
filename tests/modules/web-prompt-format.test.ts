@@ -7,6 +7,40 @@ import {
 } from "../../src/modules/web-prompt-format";
 
 describe("WEB prompt formatting", () => {
+  it("distinguishes a referenced article from the current paper", () => {
+    const prompt = buildWebPrompt({
+      content: "用这篇分析本篇", title: "Current Paper", selectedText: "", history: [],
+      referencedPaperTitle: "Other Paper",
+      referencedPaperAttachmentAvailable: true,
+      referencedPaperAttachmentName: "reference.txt",
+    });
+    expect(prompt).toContain("Current Paper");
+    expect(prompt).toContain("Other Paper");
+    expect(prompt).toContain("reference.txt");
+    expect(prompt).toContain("按最后的用户问题决定");
+  });
+  it("names each referenced paper and its own attachment", () => {
+    const prompt = buildWebPrompt({
+      content: "比较这三篇", title: "Current", selectedText: "", history: [],
+      referencedPapers: [
+        { title: "First", attachmentName: "first.txt", fullTextChars: 20, totalChars: 20 },
+        { title: "Second", attachmentName: "second.txt", fullTextChars: 30, totalChars: 40 },
+      ],
+    });
+    expect(prompt).toContain("First");
+    expect(prompt).toContain("first.txt");
+    expect(prompt).toContain("Second");
+    expect(prompt).toContain("second.txt");
+    expect(prompt).toContain("30/40 字，正文已截断");
+  });
+  it("states when the referenced original text is truncated or unavailable", () => {
+    const common = { content: "比较", title: "Current", selectedText: "", history: [],
+      referencedPaperTitle: "Reference", referencedPaperAttachmentAvailable: true };
+    const truncated = buildWebPrompt({ ...common, referencedPaperFullTextChars: 80, referencedPaperTotalChars: 100 });
+    expect(truncated).toContain("80/100 字，正文已截断");
+    const metadataOnly = buildWebPrompt({ ...common, referencedPaperFullTextChars: 0, referencedPaperTotalChars: 0 });
+    expect(metadataOnly).toContain("不要声称读过其正文");
+  });
   it("requires a first-response download link for file-generation tasks", () => {
     const prompt = buildWebPrompt({
       content: "帮我生成一个 PDF 流程图",

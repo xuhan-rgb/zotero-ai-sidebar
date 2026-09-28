@@ -6,7 +6,7 @@ import {
   withFrontBlock,
 } from "../../src/providers/openai";
 import type { ModelPreset } from "../../src/settings/types";
-import type { StreamChunk } from "../../src/providers/types";
+import type { Message, StreamChunk } from "../../src/providers/types";
 
 const requestLog = vi.hoisted(() => ({
   requests: [] as Array<{
@@ -1188,5 +1188,43 @@ describe("withFrontBlock", () => {
     );
 
     expect(input2.slice(0, input1.length)).toEqual(input1);
+  });
+
+  it("reuses the same referenced-paper front block on a follow-up turn", async () => {
+    const { toApiMessages } = await import("../../src/context/message-format");
+    const { appendReferencedPaperFrontBlock } = await import("../../src/modules/paper-reference");
+    const reference = "REFERENCE BODY";
+    const frontBlock = appendReferencedPaperFrontBlock("CURRENT TOC", reference);
+    const first: Message = {
+      role: "user" as const,
+      content: "compare",
+      context: {
+        referencedItems: [{ itemID: 42, title: "Reference", sentChars: 14, totalChars: 14 }],
+      },
+    };
+    const firstApi = toApiMessages([first], {
+      message: first,
+      referenceInFrontBlock: true,
+    });
+    expect(firstApi[0].content).not.toContain(reference);
+    expect(firstApi[0].content).toContain("原文已附在前置论文块");
+    first.context.promptCacheWireContent = firstApi[0].content as string;
+
+    const answer = { role: "assistant" as const, content: "First answer" };
+    const followup = { role: "user" as const, content: "more insights" };
+    const secondApi = toApiMessages([first, answer, followup], {
+      message: followup,
+      referenceInFrontBlock: true,
+    });
+    const firstWire = withFrontBlock(
+      toOpenAIInput(firstApi) as Array<{ role?: string; content?: unknown }>,
+      frontBlock,
+    );
+    const secondWire = withFrontBlock(
+      toOpenAIInput(secondApi) as Array<{ role?: string; content?: unknown }>,
+      frontBlock,
+    );
+    expect(secondWire.slice(0, firstWire.length)).toEqual(firstWire);
+    expect(JSON.stringify(secondWire).match(/REFERENCE BODY/g)).toHaveLength(1);
   });
 });

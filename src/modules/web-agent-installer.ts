@@ -323,7 +323,12 @@ export async function checkWebAgentAfterXpiUpdate(
     "zai-web-agent-config.json",
   );
   const config = await readConfig(host, path);
-  if (!config || config.checkedXpiVersion === xpiVersion) return;
+  if (
+    !config ||
+    (config.checkedXpiVersion === xpiVersion &&
+      config.needsRuntimeUpdate === (config.runtimeSha256 !== release.sha256))
+  )
+    return;
   await recordPackageMatch(host, path, config, release.sha256, xpiVersion);
 }
 

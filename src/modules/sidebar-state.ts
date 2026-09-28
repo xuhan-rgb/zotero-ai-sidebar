@@ -22,6 +22,7 @@ import type { AskModeController } from "../translate/ask-mode";
 import type { AssistantProgressStage } from "./assistant-progress";
 import type { DraftImage } from "./composer-images";
 import type { DraftMaterial } from "./composer-materials";
+import type { PaperReference } from "./paper-reference";
 import type { PasteBlock } from "./composer-paste";
 import type {
   NoteCaretSnapshot,
@@ -75,6 +76,7 @@ export const ZOTERO_TOOL_MANUAL = [
   "Zotero tool manual:",
   "- The model, not the local UI, decides which Zotero tool to call. The local harness only validates arguments, enforces budgets/permissions, executes tools, and returns visible tool traces.",
   "- Use zotero_get_current_item for title, authors, year, tags, and abstract. Prefer it before whole-paper summaries, contribution analysis, or full-paper annotation planning.",
+  "- When the user attaches another Zotero paper with @, its item ID and title appear on that user turn. Use zotero_read_referenced_paper with that ID to read its metadata, search passages, ranges, or full text as needed. Keep evidence from the current and referenced papers separate; decide from the user's prompt whether to compare them or use the reference to analyze the current paper.",
   "- Context-size selection is part of the model's tool planning: choose metadata, search hits, exact ranges, or the full PDF according to the current question instead of relying on local intent routing.",
   "- The ledger includes prior source identity, ranges, and tool summaries. Use it as structured memory to distinguish the current Zotero item from remote papers named by URLs and to choose the needed context size.",
   "- Use chat_get_previous_context when the ledger says relevant snippets were already attached in this chat and the raw text is needed again. This is a read-only chat-history tool; it does not fetch Zotero, arXiv, or web content.",
@@ -216,6 +218,7 @@ export interface PanelState {
   // Tables and formulas picked with `@`: only their marker sits in the
   // composer until the message is sent.
   draftMaterials: DraftMaterial[];
+  draftPaperReferences: PaperReference[];
   nextMaterialID: number;
   localUiSettings: LocalUiSettings;
   webAccountConfigured?: boolean;

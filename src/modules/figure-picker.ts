@@ -1,6 +1,7 @@
 import { el } from "./dom-utils";
 import { latexMaterialPreview } from "./latex-preview";
 import type { PaperFigure, PaperFigureKind } from "./paper-figures";
+import type { PaperReferenceOption, PaperReferenceScope } from "./paper-reference";
 
 /**
  * What a page click meant while picking: `picked` attached a material, `miss`
@@ -16,6 +17,11 @@ export interface FigurePickerDeps {
   load(): Promise<PaperFigure[]>;
   preview(figure: PaperFigure): Promise<string | null>;
   pick(figure: PaperFigure): void;
+  searchPapers?(query: string, scope: PaperReferenceScope): Promise<{
+    collectionName: string | null;
+    items: PaperReferenceOption[];
+  }>;
+  pickPaper?(paper: PaperReferenceOption): void;
   afterPick?(): void;
   /** 0-based page the PDF reader currently shows, when it is known. */
   currentPage?(): number | null;
@@ -125,6 +131,13 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
   /** Chip-only mode: pick on the PDF while the menu stays hidden. */
   let pdfOnly = false;
   let visible = false;
+  let pickerTab: "materials" | "papers" = "materials";
+  let paperScope: PaperReferenceScope = "collection";
+  let paperMatches: PaperReferenceOption[] = [];
+  let paperCollectionName: string | null = null;
+  let paperCollectionKnown = false;
+  let paperQueryKey = "";
+  let paperRequest = 0;
 
   const setVisible = (next: boolean) => {
     if (next === visible) return;
@@ -142,6 +155,12 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
     menu.style.display = "none";
     menu.replaceChildren();
     matches = [];
+    pickerTab = "materials";
+    paperScope = "collection";
+    paperMatches = [];
+    paperCollectionKnown = false;
+    paperQueryKey = "";
+    paperRequest += 1;
     setVisible(false);
     deps.hoverEnd?.();
   };
@@ -401,6 +420,90 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
     menu.style.display = "";
     setVisible(true);
     startPageWatch();
+    if (figures?.length === 0 && !target?.query && deps.searchPapers && !filterPinned) {
+      pickerTab = "papers";
+    }
+    if (deps.searchPapers && !pdfOnly) {
+      const tabs = el(doc, "div", "figure-menu-filters paper-reference-tabs");
+      for (const [tab, label] of [["materials", "本篇素材"], ["papers", "Zotero 文章"]] as const) {
+        const button = doc.createElement("button");
+        button.type = "button";
+        button.className = `figure-chip${pickerTab === tab ? " figure-chip-active" : ""}`;
+        button.textContent = label;
+        button.addEventListener("mousedown", (event) => event.preventDefault());
+        button.addEventListener("click", () => {
+          pickerTab = tab;
+          filterPinned = true;
+          selected = 0;
+          paint();
+        });
+        tabs.append(button);
+      }
+      menu.append(tabs);
+    }
+    if (pickerTab === "papers" && deps.searchPapers) {
+      stopPdfWatch();
+      const scopes = el(doc, "div", "figure-menu-filters paper-reference-scopes");
+      for (const [scope, label] of [["collection", "同目录"], ["library", "全库搜索"]] as const) {
+        const button = doc.createElement("button");
+        button.type = "button";
+        button.className = `figure-chip${paperScope === scope ? " figure-chip-active" : ""}`;
+        button.textContent = label;
+        button.addEventListener("mousedown", (event) => event.preventDefault());
+        button.addEventListener("click", () => {
+          paperScope = scope;
+          selected = 0;
+          paint();
+        });
+        scopes.append(button);
+      }
+      if (paperCollectionName && paperScope === "collection") {
+        scopes.append(el(doc, "span", "paper-reference-collection", paperCollectionName));
+      } else if (paperScope === "collection" && paperCollectionKnown) {
+        scopes.append(el(doc, "span", "paper-reference-collection", "未找到当前目录，显示全库"));
+      }
+      menu.append(scopes);
+      const query = target?.query ?? "";
+      const key = `${paperScope}:${query}`;
+      if (paperQueryKey !== key) {
+        paperQueryKey = key;
+        paperMatches = [];
+        paperCollectionKnown = false;
+        const request = ++paperRequest;
+        void deps.searchPapers(query, paperScope).then(
+          (result) => {
+            if (request !== paperRequest) return;
+            paperMatches = result.items;
+            paperCollectionName = result.collectionName;
+            paperCollectionKnown = true;
+            paint();
+          },
+          () => {
+            if (request !== paperRequest) return;
+            paperMatches = [];
+            paint();
+          },
+        );
+      }
+      const list = el(doc, "div", "figure-menu-list");
+      for (const [index, paper] of paperMatches.entries()) {
+        const row = doc.createElement("button");
+        row.type = "button";
+        row.className = `paper-reference-item${selected === index ? " is-selected" : ""}`;
+        row.addEventListener("mousedown", (event) => event.preventDefault());
+        row.addEventListener("click", () => pickPaper(paper));
+        row.append(
+          el(doc, "strong", "paper-reference-title", paper.title),
+          el(doc, "small", "paper-reference-detail", paper.detail),
+        );
+        list.append(row);
+      }
+      if (!paperMatches.length) {
+        list.append(el(doc, "div", "figure-menu-note", "没有匹配的文章；可切换全库搜索或继续输入标题"));
+      }
+      menu.append(list);
+      return;
+    }
     startPdfWatch();
 
     if (figures === null) {
@@ -490,6 +593,13 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
     deps.afterPick?.();
   };
 
+  const pickPaper = (paper: PaperReferenceOption) => {
+    const target = activeMentionTarget(input);
+    if (target) removeMentionToken(target);
+    hide();
+    deps.pickPaper?.(paper);
+  };
+
   /**
    * `@` is a trigger, not content: what follows it is a query for this list.
    * Closing the list without picking therefore drops the token — leaving it
@@ -558,15 +668,23 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
       event.preventDefault();
       return true;
     }
-    if (matches.length === 0) return false;
+    const activeCount = pickerTab === "papers" ? paperMatches.length : matches.length;
+    if (activeCount === 0) return false;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       const delta = event.key === "ArrowDown" ? 1 : -1;
-      selected = (selected + delta + matches.length) % matches.length;
+      selected = (selected + delta + activeCount) % activeCount;
       paint();
       event.preventDefault();
       return true;
     }
     if (event.key === "Enter" || event.key === "Tab") {
+      if (pickerTab === "papers") {
+        const paper = paperMatches[selected];
+        if (!paper) return false;
+        pickPaper(paper);
+        event.preventDefault();
+        return true;
+      }
       const figure = matches[selected];
       if (!figure) return false;
       pick(figure);
@@ -668,7 +786,7 @@ export function activeMentionTarget(
   if (at < 0) return null;
   if (at > 0 && !/\s/.test(before[at - 1])) return null;
   const query = before.slice(at + 1);
-  if (/[\s@]/.test(query)) return null;
+  if (/[\s@[\]]/.test(query)) return null;
   return { start: at, end: start, query };
 }
 

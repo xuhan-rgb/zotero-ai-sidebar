@@ -14,7 +14,7 @@ describe("Web Agent runtime archive", () => {
     try {
       const options = {
         projectRoot: path.resolve("."),
-        protocolVersion: 24,
+        protocolVersion: 26,
         repository: "xuhan-rgb/zotero-ai-sidebar",
       };
       vi.setSystemTime(new Date("2025-01-01T00:00:00Z"));
@@ -37,7 +37,7 @@ describe("Web Agent runtime archive", () => {
   it("packages the agent, its pinned browser driver, and a matching manifest", async () => {
     const archive = await buildWebAgentRuntimeArchive({
       projectRoot: path.resolve("."),
-      protocolVersion: 24,
+      protocolVersion: 26,
     });
     const files = unzipSync(archive);
 
@@ -48,7 +48,7 @@ describe("Web Agent runtime archive", () => {
     );
     expect(
       JSON.parse(new TextDecoder().decode(files["runtime-manifest.json"])),
-    ).toEqual({ protocolVersion: 24 });
+    ).toEqual({ protocolVersion: 26 });
     expect(
       JSON.parse(new TextDecoder().decode(files["package.json"])),
     ).not.toHaveProperty("version");
@@ -58,7 +58,7 @@ describe("Web Agent runtime archive", () => {
     const release = await buildWebAgentRuntimeRelease({
       projectRoot: path.resolve("."),
       releaseVersion: addonVersion,
-      protocolVersion: 24,
+      protocolVersion: 26,
       repository: "xuhan-rgb/zotero-ai-sidebar",
     });
 

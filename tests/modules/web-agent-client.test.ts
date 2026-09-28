@@ -40,7 +40,7 @@ describe("Web Agent protocol health", () => {
           url.endsWith("/health")
             ? {
                 ok: true,
-                protocolVersion: 24,
+                protocolVersion: 26,
                 service: "zotero-ai-sidebar-web-agent",
                 instanceId: "fixture",
               }
@@ -67,6 +67,8 @@ describe("Web Agent protocol health", () => {
     ["zai", undefined, false],
     ["zai", "attachment", true],
     ["zai", "contextAttachment", true],
+    ["zai", "referenceAttachment", true],
+    ["zai", "referenceAttachments", true],
     ["zai", "tocAttachment", true],
     ["kimi", "attachment", false],
   ] as const)(
@@ -97,7 +99,7 @@ describe("Web Agent protocol health", () => {
             url.endsWith("/health")
               ? {
                   ok: true,
-                  protocolVersion: 24,
+                  protocolVersion: 26,
                   service: "zotero-ai-sidebar-web-agent",
                   instanceId: "fixture",
                 }
@@ -120,7 +122,12 @@ describe("Web Agent protocol health", () => {
         hideBrowser: true,
         ...(field
           ? {
-              [field]: {
+              [field]: field === "referenceAttachments" ? [{
+                kind: "text",
+                path: "/tmp/context.txt",
+                name: "context.txt",
+                mimeType: "text/plain",
+              }] : {
                 kind: "text",
                 path: "/tmp/context.txt",
                 name: "context.txt",
@@ -134,6 +141,64 @@ describe("Web Agent protocol health", () => {
       expect(requests.some((url) => url.endsWith("/tasks"))).toBe(!blocked);
     },
   );
+
+  it("dispatches a dedicated referenced-paper attachment beside chat history", async () => {
+    vi.stubGlobal("Zotero", { DataDirectory: { dir: "/data" } });
+    vi.stubGlobal("IOUtils", {
+      readUTF8: async () =>
+        JSON.stringify({
+          instanceId: "fixture",
+          token: "token",
+          nodePath: "/node",
+          chromePath: "/chrome",
+          agentScript: "/agent.mjs",
+          profileDir: "/profile",
+          port: 23120,
+          callbackUrl: "http://127.0.0.1:23119/callback",
+          needsRuntimeUpdate: false,
+        }),
+    });
+    let submitted: Record<string, unknown> | undefined;
+    vi.stubGlobal("fetch", async (url: string, options?: RequestInit) => {
+      if (url.endsWith("/tasks")) submitted = JSON.parse(String(options?.body));
+      return {
+        ok: true,
+        json: async () =>
+          url.endsWith("/health")
+            ? {
+                ok: true,
+                protocolVersion: 26,
+                service: "zotero-ai-sidebar-web-agent",
+                instanceId: "fixture",
+              }
+            : { ok: true, configured: true, guest: false },
+      };
+    });
+    await dispatchWebAgentTask({
+      id: "reference",
+      provider: "deepseek",
+      prompt: "compare",
+      continuationPrompt: "compare",
+      sessionKey: "paper",
+      paperUrl: "",
+      hideBrowser: true,
+      contextAttachment: {
+        kind: "text",
+        path: "/history.txt",
+        name: "history.txt",
+        mimeType: "text/plain",
+      },
+      referenceAttachments: [
+        { kind: "text", path: "/reference-1.txt", name: "参考论文-SAMURAI.txt", mimeType: "text/plain" },
+        { kind: "text", path: "/reference-2.txt", name: "参考论文-Another.txt", mimeType: "text/plain" },
+      ],
+    });
+    expect(submitted?.contextAttachment).toMatchObject({ name: "history.txt" });
+    expect(submitted?.referenceAttachments).toMatchObject([
+      { name: "参考论文-SAMURAI.txt" },
+      { name: "参考论文-Another.txt" },
+    ]);
+  });
 
   it("explains website verification and does not dispatch an unready account", async () => {
     vi.stubGlobal("Zotero", { DataDirectory: { dir: "/data" } });
@@ -161,7 +226,7 @@ describe("Web Agent protocol health", () => {
           url.endsWith("/health")
             ? {
                 ok: true,
-                protocolVersion: 24,
+                protocolVersion: 26,
                 service: "zotero-ai-sidebar-web-agent",
                 instanceId: "fixture",
               }
@@ -210,7 +275,7 @@ describe("Web Agent protocol health", () => {
         json: async () => ({
           ok: true,
           version: "0.1.0",
-          protocolVersion: 24,
+          protocolVersion: 26,
           runtimeVersion: "0.8.6",
           configured: true,
         }),
@@ -239,7 +304,7 @@ describe("Web Agent protocol health", () => {
           json: async () => ({
             ok: true,
             version: "0.1.0",
-            protocolVersion: 24,
+            protocolVersion: 26,
             runtimeVersion: null,
           }),
         };
@@ -268,7 +333,7 @@ describe("Web Agent protocol health", () => {
             ? { ok: true }
             : {
                 ok: true,
-                protocolVersion: 24,
+                protocolVersion: 26,
                 service: "zotero-ai-sidebar-web-agent",
                 instanceId:
                   service === "ours" ? config.instanceId : "another-instance",
@@ -322,7 +387,7 @@ describe("Web Agent protocol health", () => {
             address.pathname === "/health"
               ? {
                   ok: true,
-                  protocolVersion: 24,
+                  protocolVersion: 26,
                   service: "zotero-ai-sidebar-web-agent",
                   instanceId: savedConfig.instanceId,
                 }
@@ -385,7 +450,7 @@ describe("Web Agent protocol health", () => {
   });
 
   it("distinguishes the current agent from a stale running process", () => {
-    expect(webAgentProtocolStatus({ ok: true, protocolVersion: 24 })).toBe(
+    expect(webAgentProtocolStatus({ ok: true, protocolVersion: 26 })).toBe(
       "current",
     );
     expect(webAgentProtocolStatus({ ok: true, protocolVersion: 23 })).toBe(
@@ -420,7 +485,7 @@ describe("Web Agent protocol health", () => {
         ok: true,
         json: async () => ({
           ok: true,
-          protocolVersion: 24,
+          protocolVersion: 26,
           runtimeVersion: "0.8.6",
           version: "0.1.0",
         }),

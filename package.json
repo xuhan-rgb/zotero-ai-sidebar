@@ -1,7 +1,7 @@
 {
   "name": "zotero-ai-sidebar",
   "type": "module",
-  "version": "0.8.13",
+  "version": "0.8.14",
   "description": "AI research sidebar for Zotero with API and local browser-backed web chat modes.",
   "config": {
     "addonName": "Zotero AI Sidebar",
@@ -30,7 +30,7 @@
     "lint:fix": "prettier --write . && eslint . --fix",
     "release": "zotero-plugin release",
     "pretest": "npm run prepare:web-agent",
-    "test": "vitest run",
+    "test": "vitest run --maxWorkers=2",
     "test:zotero": "zotero-plugin test",
     "test:watch": "vitest",
     "update-deps": "npm update --save",

@@ -2,6 +2,12 @@
 
 Release notes for earlier versions. The newest release is described in [README.md](README.md); [中文](CHANGELOG.zh-CN.md).
 
+## v0.8.14
+
+- **Multiple referenced papers in one question**: use `@` to pick several Zotero papers, then compare them or use them to analyze the current paper. API sends each paper's available original text with a reading tool; WEB uploads each as a separate text attachment.
+- **Complete reference text**: the plugin no longer truncates the readable original text of `@`-referenced papers in API or WEB mode. Model context and website upload limits may still apply.
+- **Clearer reference display**: multiple references appear on separate lines in the conversation and context status without changing the question text.
+
 ## v0.8.11
 
 - **Quick prompts live in a data-directory file**: built-in and custom prompts are stored as `zotero-ai-sidebar-quick-prompts.json` next to your PDFs (usually `Zotero/` in your home folder), not as a large blob in `prefs.js`. The first launch after upgrade migrates any existing preference value and clears it only after the file write succeeds. Import/export and WebDAV `state.json` still include the prompt library.

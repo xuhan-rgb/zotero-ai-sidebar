@@ -190,7 +190,7 @@ describe("Web Agent installation", () => {
         path === config.nodePath ? "v22.23.1" : null,
       health: async () => ({
         ok: true,
-        protocolVersion: 24,
+        protocolVersion: 26,
         runtimeVersion: "0.8.4",
       }),
     } as WebAgentInstallerHost;
@@ -235,7 +235,7 @@ describe("Web Agent installation", () => {
         path === config.nodePath ? "v22.23.1" : null,
       health: async () => ({
         ok: true,
-        protocolVersion: 24,
+        protocolVersion: 26,
         runtimeSha256: "f".repeat(64),
       }),
     } as WebAgentInstallerHost;
@@ -285,7 +285,7 @@ describe("Web Agent installation", () => {
         started
           ? {
               ok: true,
-              protocolVersion: 24,
+              protocolVersion: 26,
               runtimeVersion: "0.8.4",
             }
           : null,
@@ -319,7 +319,7 @@ describe("Web Agent installation", () => {
       "agent.mjs": new TextEncoder().encode("// bundled agent"),
       "runtime-manifest.json": new TextEncoder().encode(
         JSON.stringify({
-          protocolVersion: 24,
+          protocolVersion: 26,
         }),
       ),
       "node_modules/playwright-core/package.json": new TextEncoder().encode(
@@ -327,7 +327,7 @@ describe("Web Agent installation", () => {
       ),
     });
     const release = {
-      protocolVersion: 24,
+      protocolVersion: 26,
       assetName: "zai-web-agent-runtime.zip",
       downloadUrl: `https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/download/v${addonVersion}/zai-web-agent-runtime.zip`,
       releaseUrl: `https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/tag/v${addonVersion}`,
@@ -353,7 +353,7 @@ describe("Web Agent installation", () => {
         started && config.port === expectedPort
           ? {
               ok: true,
-              protocolVersion: 24,
+              protocolVersion: 26,
               runtimeSha256: release.sha256,
             }
           : null,
@@ -431,7 +431,7 @@ describe("Web Agent installation", () => {
       "agent.mjs": new TextEncoder().encode("// downloaded agent"),
       "runtime-manifest.json": new TextEncoder().encode(
         JSON.stringify({
-          protocolVersion: 24,
+          protocolVersion: 26,
         }),
       ),
       "node_modules/playwright-core/package.json": new TextEncoder().encode(
@@ -439,7 +439,7 @@ describe("Web Agent installation", () => {
       ),
     });
     const release = {
-      protocolVersion: 24,
+      protocolVersion: 26,
       assetName: "zai-web-agent-runtime.zip",
       downloadUrl: "https://example.invalid/zai-web-agent-runtime.zip",
       releaseUrl: "https://example.invalid/releases/tag/test",
@@ -473,7 +473,7 @@ describe("Web Agent installation", () => {
         started
           ? {
               ok: true,
-              protocolVersion: 24,
+              protocolVersion: 26,
               runtimeSha256: release.sha256,
             }
           : null,
@@ -526,7 +526,7 @@ describe("Web Agent installation", () => {
       "agent.mjs": new TextEncoder().encode("// broken upgrade"),
       "runtime-manifest.json": new TextEncoder().encode(
         JSON.stringify({
-          protocolVersion: 24,
+          protocolVersion: 26,
         }),
       ),
       "node_modules/playwright-core/package.json": new TextEncoder().encode(
@@ -534,7 +534,7 @@ describe("Web Agent installation", () => {
       ),
     });
     const release = {
-      protocolVersion: 24,
+      protocolVersion: 26,
       assetName: "zai-web-agent-runtime.zip",
       downloadUrl: "https://example.invalid/zai-web-agent-runtime.zip",
       releaseUrl: "https://example.invalid/releases/tag/test",
@@ -570,7 +570,7 @@ describe("Web Agent installation", () => {
         config.agentScript === previousConfig.agentScript
           ? {
               ok: true,
-              protocolVersion: 24,
+              protocolVersion: 26,
               runtimeVersion: "0.8.4",
             }
           : null,

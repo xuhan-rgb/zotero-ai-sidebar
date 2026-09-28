@@ -1,6 +1,8 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
+  createWebContextAttachment,
+  createWebReferenceAttachment,
   createWebTocAttachment,
   resolveWebPaperMaterial,
   webArxivTocDirectory,
@@ -8,6 +10,31 @@ import {
 
 describe("WEB paper material", () => {
   afterEach(() => vi.unstubAllGlobals());
+
+  it("keeps chat history and referenced-paper text in separate attachments", async () => {
+    const writeUTF8 = vi.fn(async () => undefined);
+    vi.stubGlobal("Zotero", {
+      DataDirectory: { dir: "/zotero" },
+      Utilities: { randomString: () => "TOKEN" },
+    });
+    vi.stubGlobal("IOUtils", {
+      makeDirectory: vi.fn(async () => undefined), writeUTF8,
+    });
+    expect(await createWebContextAttachment([])).toBeUndefined();
+    const history = await createWebContextAttachment([
+      { role: "user", content: "Earlier question" },
+    ]);
+    const reference = await createWebReferenceAttachment(
+      "Other Paper",
+      "引用文章：Other Paper\nEvidence.",
+    );
+    expect(history?.kind).toBe("text");
+    expect(reference?.name).toMatch(/^参考论文-Other Paper-/);
+    expect(writeUTF8.mock.calls[0]?.[1]).toContain("Earlier question");
+    expect(writeUTF8.mock.calls[0]?.[1]).not.toContain("Evidence.");
+    expect(writeUTF8.mock.calls[1]?.[1]).toBe("引用文章：Other Paper\nEvidence.");
+    expect(writeUTF8.mock.calls[1]?.[1]).not.toContain("Earlier question");
+  });
 
   it("sends WEB only the arXiv section directory without API tool instructions", () => {
     const apiToc = [

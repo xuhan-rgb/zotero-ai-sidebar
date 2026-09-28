@@ -29,6 +29,7 @@ This document targets **end users** and is split in two halves:
   - [2.11 Read an arXiv paper in full-document translation](#211-read-an-arxiv-paper-in-full-document-translation)
   - [2.12 Use a built-in website through WEB mode](#212-use-a-built-in-website-through-web-mode)
   - [2.13 Pick the paper's material (pictures / tables / formulas)](#213-pick-the-papers-material-pictures--tables--formulas)
+  - [2.14 Compare or analyze multiple papers](#214-compare-or-analyze-multiple-papers)
 - [3. Reference Manual](#3-reference-manual)
   - [3.1 Model presets](#31-model-presets)
   - [3.2 Sidebar UI map](#32-sidebar-ui-map)
@@ -359,6 +360,12 @@ You do not need screenshots for the paper's figures, tables, and formulas: type 
 - A page that can only be bounded between its neighbours is written `第 N–M 页·推测`; before the reader's page text is ready the list explains why, and reopening it later resolves the pages.
 - Where the material comes from, how API and WEB differ, and where to rebind the 素材 shortcut are all in the **使用须知** chip right of `原文`.
 - While picking is active the left page's text is locked, so prose cannot be grabbed into a quote by accident. Full rules: [§3.17](#317-material-list-and-picking-on-the-pdf).
+
+### 2.14 Compare or analyze multiple papers
+
+Open the paper you are reading, type `@` in the composer, and switch the picker from **本篇素材** to **Zotero 文章**. **同目录** lists papers from the current paper's collection; **全库搜索** searches the current Zotero library by title or author. Pick each reference you need, then write the question, for example `@[Paper A] @[Paper B] Compare these papers with the current paper` or `@[Paper A] Use this paper to analyze the current paper's method`. You can include several references in one question. Deleting an `@[title]` marker removes that reference from the request.
+
+The wording of your question determines whether the model compares papers or uses them to analyze the current one. In **API** mode, each referenced paper's metadata and complete readable original text accompany the question separately from the current paper; the model can also use the referenced-paper reading tool. In **WEB** mode, each reference is uploaded as its own TXT attachment, separate from the current paper and conversation history. If a reference has no readable full text, only its metadata and any available abstract are sent. The plugin does not impose a character cap on readable referenced-paper text in either mode; the chosen model or website may still limit its context or uploaded files.
 
 ## 3. Reference Manual
 

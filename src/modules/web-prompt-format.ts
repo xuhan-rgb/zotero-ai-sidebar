@@ -15,6 +15,17 @@ export interface WebPromptFormatInput {
   attachmentAlreadyAvailable?: boolean;
   historyAttachmentAvailable?: boolean;
   historyAttachmentName?: string;
+  referencedPaperTitle?: string;
+  referencedPaperAttachmentAvailable?: boolean;
+  referencedPaperAttachmentName?: string;
+  referencedPaperFullTextChars?: number;
+  referencedPaperTotalChars?: number;
+  referencedPapers?: Array<{
+    title: string;
+    attachmentName?: string;
+    fullTextChars?: number;
+    totalChars?: number;
+  }>;
   tocAttachmentAvailable?: boolean;
   tocAttachmentName?: string;
   /** Labels of the images uploaded with this single message. */
@@ -35,6 +46,29 @@ export function buildWebPrompt(input: WebPromptFormatInput): string {
   }
   if (input.paperUrl?.trim()) {
     blocks.push(section("论文链接", input.paperUrl.trim()));
+  }
+  const references = input.referencedPapers ?? (input.referencedPaperTitle?.trim()
+    ? [{
+        title: input.referencedPaperTitle,
+        attachmentName: input.referencedPaperAttachmentAvailable
+          ? input.referencedPaperAttachmentName || "Zotero 引用.txt"
+          : undefined,
+        fullTextChars: input.referencedPaperFullTextChars,
+        totalChars: input.referencedPaperTotalChars,
+      }]
+    : []);
+  if (references.length) {
+    blocks.push(section("@ 引用文章", [
+      ...references.map((reference, index) => [
+        `${index + 1}. 标题：${reference.title.trim()}`,
+        reference.attachmentName
+          ? reference.fullTextChars
+            ? `引用文章的题录与原文在附件 ${reference.attachmentName} 中，请读取。已提供 ${reference.fullTextChars}/${reference.totalChars ?? reference.fullTextChars} 字${reference.fullTextChars < (reference.totalChars ?? 0) ? "，正文已截断" : ""}。`
+            : `引用文章仅有题录或摘要，已放入附件 ${reference.attachmentName}；不要声称读过其正文。`
+          : "引用文章材料未成功附加；不要声称已读取其正文。",
+      ].join("\n")),
+      "按最后的用户问题决定是比较这些文章，还是用引用文章分析当前论文。回答时区分每篇文章的结论和证据。",
+    ].join("\n")));
   }
   if (input.attachmentKind) {
     const material = {
@@ -138,7 +172,9 @@ export function buildWebPrompt(input: WebPromptFormatInput): string {
     (input.attachmentAlreadyAvailable
       ? reusedMaterialBoundary
       : freshMaterialBoundary)[input.attachmentKind || ""] ||
-    "你只能看到本 Prompt 中提供的论文信息和选区；不要声称读取了未提供的 PDF 内容。";
+    (references.some((reference) => reference.attachmentName)
+      ? "当前论文只能依据本 Prompt 中提供的信息和选区；引用文章可依据本轮 TXT 附件。不要声称读取了未提供的 PDF 内容。"
+      : "你只能看到本 Prompt 中提供的论文信息和选区；不要声称读取了未提供的 PDF 内容。");
   if (requestsFileArtifact(input.content)) {
     const isDeepSeek = input.webProvider === "deepseek";
     blocks.push(

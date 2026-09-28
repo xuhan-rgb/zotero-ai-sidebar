@@ -41,8 +41,30 @@ export async function createWebContextAttachment(
         `${message.role === "user" ? "用户" : "助手"}：${message.content.trim()}`,
     )
     .join("\n\n");
-  const body = `## 前序 Zotero 对话\n${historyBody}`;
-  await io.writeUTF8(path, body);
+  await io.writeUTF8(path, `## 前序 Zotero 对话\n${historyBody}`);
+  return { kind: "text", path, name, mimeType: "text/plain" };
+}
+
+export async function createWebReferenceAttachment(
+  title: string,
+  description: string,
+): Promise<WebAgentAttachment | undefined> {
+  if (!description.trim()) return undefined;
+  const root = (Zotero as any).DataDirectory?.dir;
+  const io = (globalThis as any).IOUtils;
+  if (!root || !io?.writeUTF8 || !io?.makeDirectory) return undefined;
+  const token =
+    (Zotero as any).Utilities?.randomString?.(10) || String(Date.now());
+  const safeTitle = title
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, "_")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, 48) || "未命名";
+  const dir = appendLocalPath(root, "zai-web-context");
+  const name = `参考论文-${safeTitle}-${Date.now()}-${token}.txt`;
+  const path = appendLocalPath(dir, name);
+  await io.makeDirectory(dir, { createAncestors: true });
+  await io.writeUTF8(path, description.trim());
   return { kind: "text", path, name, mimeType: "text/plain" };
 }
 

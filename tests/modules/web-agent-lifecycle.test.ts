@@ -127,7 +127,7 @@ describe("Web Agent lifecycle", () => {
     const release = await buildWebAgentRuntimeRelease({
       projectRoot: path.resolve("."),
       releaseVersion: addonVersion,
-      protocolVersion: 24,
+      protocolVersion: 26,
       repository: "xuhan-rgb/zotero-ai-sidebar",
     });
     for (const [name, value] of Object.entries(unzipSync(release.archive))) {
@@ -164,7 +164,7 @@ describe("Web Agent lifecycle", () => {
     const health = await waitForHealth(port, token);
     expect(health).toMatchObject({
       ok: true,
-      protocolVersion: 24,
+      protocolVersion: 26,
       runtimeSha256: release.sha256,
     });
 

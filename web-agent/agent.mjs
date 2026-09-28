@@ -52,7 +52,7 @@ if (!configPath) throw new Error("Web Agent config path is required");
 const config = JSON.parse(await readFile(configPath, "utf8"));
 config.instanceId = process.argv[3] || randomUUID();
 config.cdpPort = 0;
-const PROTOCOL_VERSION = 24;
+const PROTOCOL_VERSION = 26;
 const queues = new Map();
 const active = new Map();
 const activeTasks = new Map();
@@ -300,6 +300,8 @@ async function runTask(task) {
           task.continuationPrompt,
           task.attachment?.name,
           task.contextAttachment?.name,
+          task.referenceAttachment?.name,
+          ...(task.referenceAttachments ?? []).map((attachment) => attachment.name),
           task.tocAttachment?.name,
         ].filter(Boolean),
       }
@@ -310,7 +312,7 @@ async function runTask(task) {
   let loginReported = false;
   let verificationShown = false;
   const requiresLogin = adapter.host === "chat.z.ai" && !!(
-    task.attachment || task.contextAttachment || task.tocAttachment
+    task.attachment || task.contextAttachment || task.referenceAttachment || task.referenceAttachments?.length || task.tocAttachment
   );
   const loginDeadline = Date.now() + 30 * 60_000;
   while (Date.now() < loginDeadline) {
@@ -394,6 +396,8 @@ async function runTask(task) {
   const sourceAttachments = [
     ...(uploadMaterial && task.attachment ? [task.attachment] : []),
     ...(task.contextAttachment ? [task.contextAttachment] : []),
+    ...(task.referenceAttachment ? [task.referenceAttachment] : []),
+    ...(task.referenceAttachments ?? []),
     ...(task.tocAttachment ? [task.tocAttachment] : []),
     // Images belong to the message itself, so they upload on every task.
     ...(task.imageAttachments ?? []),
@@ -2715,6 +2719,18 @@ async function validateTask(value) {
   const contextAttachment = await validateWebAttachment(
     value.contextAttachment,
   );
+  const referenceAttachment = await validateWebAttachment(
+    value.referenceAttachment,
+  );
+  const referenceAttachments = Array.isArray(value.referenceAttachments)
+    ? (
+        await Promise.all(value.referenceAttachments.map((item) =>
+          validateWebAttachment(item).catch((error) => {
+            throw new Error(`invalid reference attachment: ${error.message}`);
+          }),
+        ))
+      ).filter(Boolean)
+    : [];
   const tocAttachment = await validateWebAttachment(value.tocAttachment);
   const imageAttachments = Array.isArray(value.imageAttachments)
     ? (
@@ -2741,6 +2757,8 @@ async function validateTask(value) {
     chatgptOptions,
     attachment,
     contextAttachment,
+    referenceAttachment,
+    referenceAttachments,
     tocAttachment,
     imageAttachments,
   };

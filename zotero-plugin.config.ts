@@ -10,7 +10,7 @@ const repository = pkg.repository.url
 const webAgentRuntime = await buildWebAgentRuntimeRelease({
   projectRoot: process.cwd(),
   releaseVersion: pkg.version,
-  protocolVersion: 24,
+  protocolVersion: 26,
   repository,
 });
 
@@ -46,7 +46,7 @@ export default defineConfig({
         entryPoints: ["src/index.ts"],
         define: {
           __env__: `"${process.env.NODE_ENV}"`,
-          __webAgentRuntimeProtocolVersion__: "24",
+          __webAgentRuntimeProtocolVersion__: "26",
           __webAgentRuntimeAssetName__: JSON.stringify(
             webAgentRuntime.assetName,
           ),

@@ -26,7 +26,7 @@ import { htmlTableToLatex } from "./html-table-latex";
 // Disk cache: the parsed material list and rasterised thumbnails survive
 // across Zotero restarts, so a paper is parsed and matched once per PDF
 // version, not once per session. Entries are validated against the PDF's
-// size/mtime, the same contract MinerU's cache uses.
+// size/mtime and the arXiv source state when present.
 // ---------------------------------------------------------------------------
 
 const FIGURE_CACHE_DIR = "zotero-ai-sidebar-figures";
@@ -51,23 +51,24 @@ interface FigureCacheMeta {
   version: number;
   pdfSize: number;
   pdfMtime: number;
+  sourceStamp: string;
   savedAt: string;
   figures: PaperFigure[];
 }
 
 /**
- * Bumped whenever parsing or page matching changes. The cache is keyed by the
- * PDF alone, so without this an upgrade would keep serving entries written by
- * the old logic. Entries written before the field existed are rejected too.
+ * Bumped whenever parsing or page matching changes. The cache is keyed by
+ * the PDF and source state, so without this an upgrade would keep serving
+ * entries written by the old logic.
  */
-// 3: LaTeX material without reader text is no longer cached, so entries written
-// by version 2 with every page unknown must be dropped and re-resolved.
-const FIGURE_CACHE_VERSION = 3;
+// 4: An empty list written before arXiv source arrived must be rebuilt.
+const FIGURE_CACHE_VERSION = 4;
 
 async function readCachedPaperFigures(
   itemKey: string,
   pdfSize: number,
   pdfMtime: number,
+  sourceStamp: string,
 ): Promise<PaperFigure[] | null> {
   try {
     const readUTF8 = zoteroIO().readUTF8;
@@ -78,6 +79,7 @@ async function readCachedPaperFigures(
     const meta = JSON.parse(raw) as FigureCacheMeta;
     if (meta.version !== FIGURE_CACHE_VERSION) return null;
     if (meta.pdfSize !== pdfSize || meta.pdfMtime !== pdfMtime) return null;
+    if (meta.sourceStamp !== sourceStamp) return null;
     if (!Array.isArray(meta.figures)) return null;
     return meta.figures;
   } catch {
@@ -89,6 +91,7 @@ async function writeCachedPaperFigures(
   itemKey: string,
   pdfSize: number,
   pdfMtime: number,
+  sourceStamp: string,
   figures: PaperFigure[],
 ): Promise<void> {
   try {
@@ -102,6 +105,7 @@ async function writeCachedPaperFigures(
       version: FIGURE_CACHE_VERSION,
       pdfSize,
       pdfMtime,
+      sourceStamp,
       savedAt: new Date().toISOString(),
       figures,
     };
@@ -226,7 +230,17 @@ interface ZoteroFigureItem {
  * call with the reader open can still fill them in. Failures are dropped, not
  * cached, so the next open retries.
  */
-const paperFigureListCache = new Map<number, Promise<PaperFigure[]>>();
+const paperFigureListCache = new Map<
+  number,
+  { sourceStamp: string; figures: Promise<PaperFigure[]> }
+>();
+
+async function figureSourceStamp(itemID: number): Promise<string> {
+  const arxivId = resolveArxivIdForItemID(itemID);
+  if (!arxivId) return "";
+  const meta = await readArxivMeta(arxivId);
+  return `${arxivId}:${meta?.status ?? "missing"}:${meta?.fetchedAt ?? ""}`;
+}
 
 /** Drops cached material lists (all papers, or one); the next load re-parses. */
 export function clearPaperFigureCache(itemID?: number): void {
@@ -258,19 +272,27 @@ export async function loadPaperFigures(
   context: PaperFigureContext = {},
 ): Promise<PaperFigure[]> {
   if (itemID == null) return [];
+  const sourceStamp = await figureSourceStamp(itemID);
   const cached = paperFigureListCache.get(itemID);
-  if (cached) return cached;
-  const pending = loadPaperFiguresFresh(itemID, context);
+  if (cached?.sourceStamp === sourceStamp) return cached.figures;
+  const pending = loadPaperFiguresFresh(itemID, context, sourceStamp);
   const figures = pending.then((load) => load.figures);
   if (context.pageTexts) {
-    paperFigureListCache.set(itemID, figures);
+    paperFigureListCache.set(itemID, { sourceStamp, figures });
     // A load that never saw the reader text may not be reused: the pages it
     // could not resolve would stay unknown for the rest of the session.
     void pending.then(
       (load) => {
-        if (!load.cacheable) paperFigureListCache.delete(itemID);
+        if (
+          !load.cacheable &&
+          paperFigureListCache.get(itemID)?.figures === figures
+        )
+          paperFigureListCache.delete(itemID);
       },
-      () => paperFigureListCache.delete(itemID),
+      () => {
+        if (paperFigureListCache.get(itemID)?.figures === figures)
+          paperFigureListCache.delete(itemID);
+      },
     );
   }
   return figures;
@@ -285,6 +307,7 @@ interface PaperFigureLoad {
 async function loadPaperFiguresFresh(
   itemID: number,
   context: PaperFigureContext,
+  sourceStamp: string,
 ): Promise<PaperFigureLoad> {
   const identity = await figureCacheIdentity(itemID);
   let stat: { size: number; mtime: number } | null = null;
@@ -299,6 +322,7 @@ async function loadPaperFiguresFresh(
         identity.itemKey,
         stat.size,
         stat.mtime,
+        sourceStamp,
       );
       if (disk) return { figures: disk, cacheable: true };
     }
@@ -306,13 +330,19 @@ async function loadPaperFiguresFresh(
   const mineru = await mineruFigures(itemID);
   // A parsed float carries its own page. A LaTeX float does not: its page comes
   // from the text the reader prints, so a session without that text must not be
-  // written — the cache is keyed by the PDF alone and would freeze every float
-  // as page-less, which is what the page filter then reports as 本页 0.
+  // written — otherwise it would freeze every float as page-less, which is
+  // what the page filter then reports as 本页 0.
   const pageTexts = mineru.length ? undefined : await resolvePageTexts(context);
   const figures = mineru.length ? mineru : await latexFigures(itemID, pageTexts);
   const cacheable = mineru.length > 0 || !!pageTexts?.length;
   if (cacheable && identity && stat) {
-    await writeCachedPaperFigures(identity.itemKey, stat.size, stat.mtime, figures);
+    await writeCachedPaperFigures(
+      identity.itemKey,
+      stat.size,
+      stat.mtime,
+      sourceStamp,
+      figures,
+    );
   }
   return { figures, cacheable };
 }

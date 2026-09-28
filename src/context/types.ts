@@ -75,6 +75,12 @@ export interface ItemAnnotation {
 }
 
 export interface MessageContext {
+  referencedItems?: Array<{
+    itemID: number;
+    title: string;
+    sentChars?: number;
+    totalChars?: number;
+  }>;
   sourceKind?: ContextSourceKind;
   sourceID?: string;
   sourceTitle?: string;

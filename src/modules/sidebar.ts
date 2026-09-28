@@ -17,7 +17,8 @@ import {
 } from "../context/agent-tools";
 import { parseAnnotationSuggestion } from "../context/annotation-draft";
 import {
-  contextSummaryLine,
+  contextSummaryParts,
+  referenceContextSummaryLine,
   formatContextLedger,
   formatUserMessageForApi,
   retainedContextStats,
@@ -169,6 +170,14 @@ import {
   removeDraftMaterial,
 } from "./composer-materials";
 import {
+  appendReferencedPaperFrontBlock,
+  listPaperReferences,
+  paperReferenceMarker,
+  preparePaperReference,
+  referencedPaper,
+  resolvePaperReferences,
+} from "./paper-reference";
+import {
   assistantProgressFor,
   renderAssistantProgress,
   type AssistantProgress,
@@ -293,6 +302,7 @@ import {
 } from "./web-agent-installer";
 import {
   createWebContextAttachment,
+  createWebReferenceAttachment,
   createWebImageAttachments,
   createWebTocAttachment,
   resolveWebPaperMaterial,
@@ -813,6 +823,7 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
       draftImages: [],
       nextPasteID: 1,
       draftMaterials: [],
+      draftPaperReferences: [],
       nextMaterialID: 1,
       localUiSettings: loadLocalUiSettings(zoteroPrefs()),
       paperPinned: itemID != null,
@@ -3290,6 +3301,19 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
           );
           void attachPaperFigure(mount, state, input, figure);
         },
+        searchPapers: (query, scope) => listPaperReferences(state.itemID, scope, query),
+        pickPaper: (paper) => {
+          const marker = paperReferenceMarker(paper.title);
+          const start = input.selectionStart ?? input.value.length;
+          const end = input.selectionEnd ?? start;
+          input.setRangeText(marker, start, end, "end");
+          state.draftPaperReferences = [
+            ...state.draftPaperReferences.filter((reference) => reference.marker !== marker),
+            { itemID: paper.itemID, title: paper.title, marker },
+          ];
+          captureDraftFromInput(input, state);
+          renderPanel(mount, state);
+        },
         hover: previewFigureHover,
         hoverEnd: clearFigureHover,
         watchPdf: watchFigurePdfPick,
@@ -3726,6 +3750,20 @@ async function sendWebPromptMessage(
     state.webPromptBusy = false;
     state.webPromptBusyTaskID = undefined;
   };
+  let paperReferences: Awaited<ReturnType<typeof resolvePaperReferences>>;
+  try {
+    paperReferences = await resolvePaperReferences(
+      content,
+      state.draftPaperReferences,
+      sourceItemID,
+      state.messages,
+    );
+  } catch (error) {
+    releaseWebPromptLock();
+    state.webAccountNotice = error instanceof Error ? error.message : String(error);
+    renderPanel(mount, state);
+    return;
+  }
   const customProvider = customWebProviderFor(state, provider);
   if (provider.startsWith("custom:") && !customProvider) {
     releaseWebPromptLock();
@@ -3821,6 +3859,18 @@ async function sendWebPromptMessage(
   const material = await resolveWebPaperMaterial(sourceItemID, {
     alwaysSendPdf: state.localUiSettings.alwaysSendPdf,
   });
+  let referencePrepared: Awaited<ReturnType<typeof preparePaperReference>>[] = [];
+  if (paperReferences.length) {
+    try {
+      referencePrepared = await Promise.all(paperReferences.map((reference) =>
+        preparePaperReference(zoteroContextSource, reference),
+      ));
+    } catch (error) {
+      releaseWebPromptLock();
+      renderPanel(mount, state);
+      throw error;
+    }
+  }
   const arxivToc = await buildArxivTocFrontBlock(sourceItemID);
   let webOutline: Awaited<ReturnType<typeof prepareWebOverview>> | undefined;
   try {
@@ -3840,12 +3890,20 @@ async function sendWebPromptMessage(
       ? undefined
       : await createWebContextAttachment(webHistory);
   const tocAttachment = await createWebTocAttachment(arxivToc);
+  const referenceAttachments = await Promise.all(paperReferences.map((reference, index) =>
+    createWebReferenceAttachment(reference.title, referencePrepared[index].description),
+  ));
   if (
-    provider === "zai" && account.guest && (material.attachment || tocAttachment)
+    provider === "zai" && account.guest && (material.attachment || tocAttachment || referenceAttachments.length)
   ) {
     state.chatSelectionQuote = chatQuote;
     configureForWebTask(true);
     return;
+  }
+  if (referenceAttachments.some((attachment) => !attachment)) {
+    releaseWebPromptLock();
+    renderPanel(mount, state);
+    throw new Error("无法创建引用文章附件，请稍后重试。");
   }
   const annotationColorGuide =
     loadToolSettings(zoteroPrefs()).annotationColorGuide;
@@ -3873,6 +3931,12 @@ async function sendWebPromptMessage(
     attachmentKind: webPaperMaterialKind(material.attachment),
     historyAttachmentAvailable: !!contextAttachment,
     historyAttachmentName: contextAttachment?.name,
+    referencedPapers: paperReferences.map((reference, index) => ({
+      title: reference.title,
+      attachmentName: referenceAttachments[index]?.name,
+      fullTextChars: referencePrepared[index].sentChars,
+      totalChars: referencePrepared[index].totalChars,
+    })),
     tocAttachmentAvailable: !!tocAttachment,
     tocAttachmentName: tocAttachment?.name,
     webProvider: provider,
@@ -3892,6 +3956,12 @@ async function sendWebPromptMessage(
     attachmentAlreadyAvailable: !!material.attachment,
     historyAttachmentAvailable: !!contextAttachment,
     historyAttachmentName: contextAttachment?.name,
+    referencedPapers: paperReferences.map((reference, index) => ({
+      title: reference.title,
+      attachmentName: referenceAttachments[index]?.name,
+      fullTextChars: referencePrepared[index].sentChars,
+      totalChars: referencePrepared[index].totalChars,
+    })),
     tocAttachmentAvailable: !!tocAttachment,
     tocAttachmentName: tocAttachment?.name,
     webProvider: provider,
@@ -3919,11 +3989,16 @@ async function sendWebPromptMessage(
       ...(options.paperAction ? { webPaperAction: options.paperAction } : {}),
       webStatus: "queued",
     },
-    ...(selectedText
+    ...(selectedText || paperReferences.length
       ? {
           context: {
-            selectedText,
-            explainSelection: options.explainSelection,
+            ...(selectedText ? { selectedText, explainSelection: options.explainSelection } : {}),
+            ...(paperReferences.length ? { referencedItems: paperReferences.map((reference, index) => ({
+              itemID: reference.itemID,
+              title: reference.title,
+              sentChars: referencePrepared[index].sentChars,
+              totalChars: referencePrepared[index].totalChars,
+            })) } : {}),
             ...(chatQuote
               ? {
                   selectedTextOrigin: "chat" as const,
@@ -4247,6 +4322,7 @@ async function sendWebPromptMessage(
   state.skipNextDraftCapture = true;
   state.draftImages = [];
   state.draftMaterials = [];
+  state.draftPaperReferences = [];
   state.pasteBlocks = [];
   state.scrollToBottom = true;
   await persistPanelConversations(state);
@@ -4267,6 +4343,7 @@ async function sendWebPromptMessage(
       customProvider,
       attachment: material.attachment,
       contextAttachment,
+      referenceAttachments: referenceAttachments.filter((attachment): attachment is NonNullable<typeof attachment> => !!attachment),
       tocAttachment,
     });
   } catch (error) {
@@ -5055,6 +5132,11 @@ function dropComposerAttachmentsMissingMarker(
   );
   const images = dropDraftImagesMissingMarker(state, input);
   const materials = dropDraftMaterialsMissingMarker(state, input);
+  const retainedPaperReferences = state.draftPaperReferences.filter((reference) =>
+    referencedPaper(input.value, reference),
+  );
+  const paperDropped = retainedPaperReferences.length !== state.draftPaperReferences.length;
+  if (paperDropped) state.draftPaperReferences = retainedPaperReferences;
   const dropped = [...figureIdsBefore].filter(
     (id) =>
       ![...state.draftImages, ...state.draftMaterials].some(
@@ -5068,7 +5150,7 @@ function dropComposerAttachmentsMissingMarker(
     );
     for (const id of dropped) clearFigureReferenceMark(reader, id);
   }
-  return images || materials;
+  return images || materials || paperDropped;
 }
 
 /**
@@ -6426,6 +6508,12 @@ async function sendMessage(
   if ((!baseContent && images.length === 0) || !preset) return;
   await ensureHistoryLoaded(mount, state);
   if (states.get(mount) !== state) return;
+  const paperReferences = await resolvePaperReferences(
+    baseContent,
+    state.draftPaperReferences,
+    state.itemID,
+    state.messages,
+  );
   if (!preset.apiKey || !preset.model) {
     openAddonPreferences(mount.ownerDocument!);
     return;
@@ -6527,6 +6615,9 @@ async function sendMessage(
   userMessage.context = {
     ...userMessage.context,
     conversationHistoryMode: chatSelectionQuote ? "none" : state.historyMode,
+    ...(paperReferences.length
+      ? { referencedItems: paperReferences.map((reference) => ({ itemID: reference.itemID, title: reference.title })) }
+      : {}),
   };
   const shouldQueue =
     conversationIsSending(state, state.activeConversationID) ||
@@ -6542,6 +6633,7 @@ async function sendMessage(
   state.pasteBlocks = [];
   state.draftImages = [];
   state.draftMaterials = [];
+  state.draftPaperReferences = [];
   state.chatSelectionQuote = undefined;
   state.chatSelectionPreviewOpen = false;
   resetTurnFullTextMode(state);
@@ -7592,6 +7684,30 @@ async function streamAssistant(
         rangeEnd: userMessage.context?.rangeEnd ?? pinnedFullText.length,
       };
     }
+    let referencedPaperText: string | undefined;
+    const attachedPapers = userMessage.context?.referencedItems ?? [];
+    if (attachedPapers.length) {
+      setPreparationStage("正在读取引用文章原文");
+      const prepared = await abortable(
+        Promise.all(attachedPapers.map((paper) =>
+          preparePaperReference(zoteroContextSource, paper),
+        )),
+        controller.signal,
+      );
+      referencedPaperText = prepared.map((paper) => paper.description).join("\n\n");
+      userMessage.context = {
+        ...userMessage.context,
+        referencedItems: attachedPapers.map((paper, index) => ({
+          ...paper,
+          sentChars: prepared[index].sentChars,
+          totalChars: prepared[index].totalChars,
+        })),
+      };
+    }
+    const promptFrontBlock = appendReferencedPaperFrontBlock(
+      pinnedFullText,
+      referencedPaperText,
+    );
     setPreparationStage("正在准备 Zotero 工具和模型请求");
     // Build a fresh tool session per turn. WHY per-turn (not cached):
     // - Reader's PDF.js text layer can change between turns (user opens a
@@ -7602,6 +7718,7 @@ async function streamAssistant(
     toolSession = createZoteroAgentToolSession({
       source: zoteroContextSource,
       itemID: state.itemID,
+      referencedItems: userMessage.context?.referencedItems,
       policy: contextPolicy,
       previousMessages: effectiveHistory,
       selectionAnnotation: () => getStoredSelectionAnnotation(state.itemID),
@@ -7680,7 +7797,7 @@ async function streamAssistant(
         preset,
         promptCacheKey,
         systemPrompt: baseContext.systemPrompt,
-        pinnedFullText,
+        pinnedFullText: promptFrontBlock,
         tools: toolsForTurn,
       }),
     };
@@ -7695,19 +7812,22 @@ async function streamAssistant(
       [...effectiveHistory, userMessage],
       {
         message: userMessage,
+        referenceInFrontBlock: !!referencedPaperText,
       },
       contextPolicy,
     );
     const currentApiMessage = messagesForApi[messagesForApi.length - 1];
-    if (pinnedFullText && typeof currentApiMessage?.content === "string") {
+    if (promptFrontBlock && typeof currentApiMessage?.content === "string") {
+      // Replaying the exact user turn preserves the prefix after the front block.
+      const replayContent = currentApiMessage.content;
       userMessage.context = {
         ...userMessage.context,
-        promptCacheWireContent: currentApiMessage.content,
+        promptCacheWireContent: replayContent,
         promptCacheDebug: userMessage.context?.promptCacheDebug
           ? {
               ...userMessage.context.promptCacheDebug,
-              replayContentHash: shortHash(currentApiMessage.content),
-              replayContentChars: currentApiMessage.content.length,
+              replayContentHash: shortHash(replayContent),
+              replayContentChars: replayContent.length,
             }
           : undefined,
       };
@@ -7725,7 +7845,7 @@ async function streamAssistant(
         toolSettings: loadToolSettings(zoteroPrefs()),
         promptCacheKey,
         relayRoutingItemKey,
-        ...(pinnedFullText ? { pinnedFullText } : {}),
+        ...(promptFrontBlock ? { pinnedFullText: promptFrontBlock } : {}),
       },
     )) {
       if (chunk.type === "text_delta") {
@@ -9307,6 +9427,20 @@ function isAvatarImageSource(value: string): boolean {
   return /^(data:image\/|https?:\/\/|file:\/\/|chrome:\/\/)/i.test(value);
 }
 
+function formatUserPaperReferencesForDisplay(content: string): string {
+  const markers: string[] = [];
+  let remaining = content;
+  while (true) {
+    const match = remaining.match(/^\s*(@\[[^\]\r\n]+\])/);
+    if (!match) break;
+    markers.push(match[1]);
+    remaining = remaining.slice(match[0].length);
+  }
+  return markers.length > 1
+    ? [...markers, remaining.trimStart()].filter(Boolean).join("\n\n")
+    : content;
+}
+
 function bubble(
   doc: Document,
   mount: HTMLElement,
@@ -9451,7 +9585,12 @@ function bubble(
     root.append(el(doc, "div", "bubble-answer-label", "回答"));
   }
   const body = el(doc, "div", "bubble-body");
-  renderMarkdownInto(body, message.content || (progress ? " " : ""));
+  renderMarkdownInto(
+    body,
+    message.role === "user" && (message.context?.referencedItems?.length ?? 0) > 1
+      ? formatUserPaperReferencesForDisplay(message.content)
+      : message.content || (progress ? " " : ""),
+  );
   scheduleAssistantPdfQuoteLinks(body, mount, state, message, index);
   installWebGeneratedFileLinks(body, state);
   const placedCharts =
@@ -13258,9 +13397,9 @@ function renderAssistantProcess(
 ) {
   if (!sourceUser?.context) return;
 
-  const summary = contextSummaryLine(sourceUser);
+  const summary = contextSummaryParts(sourceUser);
   const tools = sourceUser.context.toolCalls;
-  if (!summary && !tools?.length) return;
+  if (!summary.current && !summary.reference && !tools?.length) return;
   const webContext = isWebPromptUserMessage(sourceUser);
 
   const details = el(doc, "details", "assistant-process") as HTMLDetailsElement;
@@ -13271,14 +13410,16 @@ function renderAssistantProcess(
       doc,
       "summary",
       "",
-      summary ? `${contextLabel} · ${summary}` : contextLabel,
+      summary.reference
+        ? `${contextLabel} · ${summary.current ? "当前论文 + " : ""}引用文章`
+        : summary.current ? `${contextLabel} · ${summary.current}` : contextLabel,
     ),
   );
 
   const body = el(doc, "div", "assistant-process-body");
-  if (summary) {
+  if (summary.current) {
     const contextRow = el(doc, "div", "bubble-context-row");
-    const chip = el(doc, "div", "bubble-context-chip", summary);
+    const chip = el(doc, "div", "bubble-context-chip", summary.current);
     const locator = sourceUser.task?.pdfSelection;
     if (locator) {
       const jumpOriginal = () => {
@@ -13322,6 +13463,16 @@ function renderAssistantProcess(
           sourceUser.context.selectedText,
         ),
       );
+    }
+  }
+  if (summary.reference) {
+    for (const reference of sourceUser.context.referencedItems ?? []) {
+      if (reference.sentChars === undefined) continue;
+      const row = el(doc, "div", "bubble-context-row bubble-context-reference-row");
+      const chip = el(doc, "div", "bubble-context-chip", referenceContextSummaryLine(reference));
+      chip.title = reference.title;
+      row.append(chip);
+      body.append(row);
     }
   }
   renderToolTrace(doc, body, tools);

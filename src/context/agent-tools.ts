@@ -55,6 +55,7 @@ import type { MessageContext } from "./types";
 export interface ToolFactoryOptions {
   source: ContextSource;
   itemID: number | null;
+  referencedItems?: Array<{ itemID: number; title: string }>;
   policy?: ContextPolicy;
   selectionAnnotation?: () => SelectionAnnotationDraft | null;
   // Configured PDF annotation color preset text from user prefs. When
@@ -156,6 +157,7 @@ export function createZoteroAgentToolSession(
         };
       },
     },
+    ...(options.referencedItems?.length ? [createReferencedPaperTool(options, policy)] : []),
     {
       name: "zotero_get_annotations",
       description:
@@ -1006,6 +1008,79 @@ function createTextAnnotationNearSelectionTool(
           selectedText: draft.text,
         },
       };
+    },
+  };
+}
+
+function createReferencedPaperTool(
+  options: ToolFactoryOptions,
+  policy: ContextPolicy,
+): AgentTool {
+  return {
+    name: "zotero_read_referenced_paper",
+    description:
+      "Read a Zotero paper explicitly attached with @ to this user turn. Use itemID from the attached-paper list in the user message. action=metadata reads title/abstract; action=search retrieves bounded passages using query; action=range expands a prior result using start/end; action=full reads bounded full text when needed for whole-paper comparison. Do not substitute the current paper for the referenced paper. The user prompt determines whether to compare or use the referenced paper to analyze the current one.",
+    parameters: objectSchema(
+      {
+        itemID: numberSchema("Item ID of a paper explicitly attached with @."),
+        action: stringSchema("One of metadata, search, range, full."),
+        query: stringSchema("Search query when action is search."),
+        start: numberSchema("Start character offset when action is range."),
+        end: numberSchema("End character offset when action is range."),
+      },
+      ["itemID", "action"],
+    ),
+    execute: async (args) => {
+      const parsed = objectArgs(args);
+      const itemID = numberArg(parsed, "itemID");
+      const action = stringArg(parsed, "action");
+      const reference = options.referencedItems?.find((item) => item.itemID === itemID);
+      if (!reference) return errorResult("This Zotero item was not attached with @ in this turn.");
+      const metadata = await options.source.getItem(reference.itemID);
+      if (!metadata) return errorResult("The referenced Zotero item is unavailable.");
+      const sourceContext = zoteroSourceFromMetadata(reference.itemID, metadata);
+      if (action === "metadata") {
+        return {
+          output: `[Referenced Zotero paper: ${metadata.title}]\n${formatMetadata(metadata)}`,
+          summary: `读取引用文章题录：${metadata.title}`,
+          context: { planMode: "metadata_only", ...sourceContext },
+        };
+      }
+      const fullText = await options.source.getFullText(reference.itemID);
+      if (!fullText) return errorResult(`No readable full text for referenced paper: ${metadata.title}`);
+      if (action === "search") {
+        const query = stringArg(parsed, "query");
+        if (!query) return errorResult("search requires query.");
+        const passages = searchPdfPassages(fullText, query, policy.searchCandidateCount, policy);
+        return {
+          output: passages.length
+            ? `[Referenced paper: ${metadata.title}]\n${formatRetrievedPassages(passages)}`
+            : `No passages matched in referenced paper: ${metadata.title}`,
+          summary: `检索引用文章：${metadata.title}，${passages.length} 段`,
+          context: { planMode: "search_pdf", ...sourceContext, query, retrievedPassages: passages },
+        };
+      }
+      if (action === "range") {
+        const start = numberArg(parsed, "start");
+        const end = numberArg(parsed, "end");
+        if (start == null || end == null) return errorResult("range requires start and end.");
+        const range = extractPdfRange(fullText, start, end, policy);
+        if (!range) return errorResult("The requested range is invalid or empty.");
+        return {
+          output: `[Referenced paper: ${metadata.title}, range ${range.start}-${range.end}]\n${range.text}`,
+          summary: `读取引用文章范围：${metadata.title}`,
+          context: { planMode: "pdf_range", ...sourceContext, rangeStart: range.start, rangeEnd: range.end, retrievedPassages: [range] },
+        };
+      }
+      if (action === "full") {
+        const text = truncateByTokenBudget(fullText, policy.fullPdfTokenBudget);
+        return {
+          output: `[Referenced paper full text: ${metadata.title}]\n${text}`,
+          summary: `读取引用文章全文：${metadata.title} ${text.length}/${fullText.length} 字`,
+          context: { planMode: "full_pdf", ...sourceContext, fullTextChars: text.length, fullTextTotalChars: fullText.length, fullTextTruncated: text.length < fullText.length },
+        };
+      }
+      return errorResult("action must be metadata, search, range, or full.");
     },
   };
 }

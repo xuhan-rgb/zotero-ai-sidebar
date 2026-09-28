@@ -55,6 +55,19 @@ beforeEach(() => {
 });
 
 describe("createZoteroAgentTools", () => {
+  it("reads only the paper attached in the current turn", async () => {
+    const tools = createZoteroAgentTools({
+      source: {
+        getItem: async (id) => ({ title: `Paper ${id}`, authors: [], tags: [] }),
+        getFullText: async (id) => `Evidence from paper ${id}.`,
+      },
+      itemID: 1,
+      referencedItems: [{ itemID: 42, title: "Paper 42" }],
+    });
+    const tool = tools.find((candidate) => candidate.name === "zotero_read_referenced_paper")!;
+    expect((await tool.execute({ itemID: 41, action: "full" })).output).toContain("not attached");
+    expect((await tool.execute({ itemID: 42, action: "full" })).output).toContain("Evidence from paper 42.");
+  });
   it("creates a permission-aware Zotero annotation from the current selection", async () => {
     const tools = createZoteroAgentTools({
       source,

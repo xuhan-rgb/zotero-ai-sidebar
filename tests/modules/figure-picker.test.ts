@@ -22,6 +22,34 @@ describe("figure picker", () => {
     expect(activeMentionTarget(textareaWith("@"))?.query).toBe("");
     expect(activeMentionTarget(textareaWith("mail@example.com"))).toBeNull();
     expect(activeMentionTarget(textareaWith("@two words"))).toBeNull();
+    expect(activeMentionTarget(textareaWith("@[Other Paper]"))).toBeNull();
+  });
+
+  it("shows same-collection papers, searches the library, and inserts the selected reference", async () => {
+    const input = textareaWith("比较 @");
+    const searchPapers = vi.fn(async (_query: string, scope: string) => ({
+      collectionName: "工程类",
+      items: [{ itemID: scope === "collection" ? 2 : 3, title: scope === "collection" ? "同目录论文" : "全库论文", detail: "作者 · 2024 · 有 PDF" }],
+    }));
+    const pickPaper = vi.fn((paper: { title: string }) => {
+      input.setRangeText(`@[${paper.title}]`, input.selectionStart, input.selectionEnd, "end");
+    });
+    const picker = createFigurePicker({
+      doc: document, input, load: async () => [], preview: async () => null,
+      pick: () => {}, searchPapers, pickPaper,
+    });
+    picker.refresh();
+    await settle();
+    await settle();
+    expect(picker.menu.textContent).toContain("同目录论文");
+    expect(picker.menu.textContent).toContain("工程类");
+    Array.from(picker.menu.querySelectorAll<HTMLElement>(".figure-chip"))
+      .find((chip) => chip.textContent === "全库搜索")!.click();
+    await settle();
+    expect(picker.menu.textContent).toContain("全库论文");
+    picker.menu.querySelector<HTMLElement>(".paper-reference-item")!.click();
+    expect(pickPaper).toHaveBeenCalledWith(expect.objectContaining({ itemID: 3 }));
+    expect(input.value).toBe("比较 @[全库论文]");
   });
 
   it("lists parsed figures and replaces the token with an image marker", async () => {

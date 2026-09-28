@@ -16,6 +16,7 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 - **See the whole paper at a glance** — generate a *全文总览* map: a phase-grouped section skeleton (motivation / method / validation) with one-line gists, innovation / result markers, and a structural flowchart. Click a section to jump to that spot in the PDF; your reading position is remembered per paper and synced across machines.
 - **arXiv papers come through clean** — equations and figures are pulled from the LaTeX source instead of broken PDF text. *"Explain Eq. (3)"* and *"walk me through Figure 2"* actually work.
 - **Ask with the paper's own material** — type `@` to list the paper's pictures, tables, and formulas, starting with the page you are reading (本页 / 全部 / 图片 / 表格 / 公式). Click 素材 (default `Ctrl+Shift+M`) to pick them straight on the PDF instead. A picked picture is sent as an image; a table or formula stays a short `[表 #1]` marker in the composer and expands to its LaTeX source on send.
+- **Bring other Zotero papers into one question** — use `@` to select several articles, then ask to compare them or use them to analyze the current paper. The prompt decides the task; you do not need to choose a separate comparison mode.
 - **Immersive PDF translation** — turn on immersive mode, click a sentence to get a translation card in place; walk the paper with `Enter` / `Shift+Enter`, `/` jumps the cursor into the ask box, and `Esc` closes the card while keeping the sentence on the reading highlight.
 - **Write back into Zotero** — append answers to the paper's note, or ask the model to add color-coded highlights to the PDF (gated by per-preset permission).
 - **Bring your own model** — Anthropic, OpenAI, or any OpenAI-compatible endpoint; all configured locally in Zotero preferences.
@@ -98,6 +99,8 @@ ChatGLM and Z.ai preserve their browser sessions in a minimized window when hidd
 
 In WEB mode, paper material is attached automatically for paper-reading tasks. The composer’s **Network** and **Original** switches are API-only and therefore disabled; the website's own search state and the WEB attachment pipeline remain authoritative.
 
+For `@`-referenced Zotero papers, WEB mode uploads a separate text attachment for each reference, alongside the current paper material and any prior-chat attachment. The prompt names each file and distinguishes it from the current paper. The plugin does not truncate the readable text of referenced papers in either API or WEB mode; the model or website may still impose its own context or upload limits. Z.ai requires login for attachments.
+
 ## Features
 
 ### Chat & UI
@@ -136,6 +139,7 @@ In WEB mode, paper material is attached automatically for paper-reading tasks. T
 ### Paper material
 
 - **`@` material list**: typing `@` opens the paper's pictures, tables, and formulas, with a pinned 本页 / 全部 / 图片 / 表格 / 公式 scope row; hovering a row shows where that material sits in the PDF. A picture is sent as an image, while a table or formula becomes a short `[表 #1]` / `[公式 #2]` marker that expands to the full LaTeX source only when you send — so the composer never fills up with table code. Tables parsed by MinerU travel as LaTeX (`tabular`) instead of a page crop.
+- **`@` reference papers**: switch the `@` picker to Zotero articles; it lists papers from the current paper's collection first and can search the whole library. Select more than one in the same question, for example `@[Paper A] @[Paper B] Compare these with the current paper`. Removing a marker removes that reference. In API mode, each referenced paper's metadata and available original text are supplied separately from the current paper, and the model can read more through the referenced-paper tool. If a paper has no readable full text, its metadata and any available abstract are used. Multiple references appear on separate lines in the chat and context display; the original question text is preserved.
 - **Pick on the PDF**: click 素材 (or press the default `Ctrl+Shift+M`) to arm click-to-pick on the left page — click a picture, table, or formula to attach it, pick the same kind again to stack, and a green dashed box marks the references the current round uses. While picking, the page text is locked (crosshair cursor, no text selection), so prose cannot be grabbed into a quote by accident; a selection made before picking started is left untouched.
 - **Honest pages, honest sources**: page numbers come from the page text the reader prints, and 第 N–M 页·推测 marks material that can only be bounded between its neighbours; when that page text is not ready yet the list says so, and the result is never cached. On a LaTeX-only paper nothing can be clicked on the PDF — a click points you back to the list.
 - **The 使用须知 chip**: the low-contrast chip right of `原文` covers where the material comes from (LaTeX source / MinerU parse / neither yet), how it is sent in API vs WEB mode, and where to rebind the 素材 shortcut.
