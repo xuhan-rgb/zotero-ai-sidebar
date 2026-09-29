@@ -142,6 +142,8 @@ export interface WindowSidebarState {
 }
 
 export interface ReaderLayoutPrefs {
+  aiWidth?: number;
+  dockedAiWidth?: number;
   noteWidth?: number;
   updatedAt?: number;
 }

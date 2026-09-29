@@ -25,6 +25,8 @@ let itemSelected: ReturnType<typeof vi.fn>;
 const host = window as any;
 
 beforeEach(async () => {
+  host.happyDOM.settings.disableCSSFileLoading = true;
+  host.happyDOM.settings.handleDisabledFileLoadingAsSuccess = true;
   vi.useFakeTimers();
   document.body.innerHTML = '<div><div id="zotero-context-pane"></div></div>';
   (document as any).createXULElement = (tag: string) =>
@@ -467,5 +469,88 @@ describe("sidebar follows the active paper", () => {
     await vi.advanceTimersByTimeAsync(120);
     expectPaper(102, "Answer for paper B");
     expect(itemSelected).not.toHaveBeenCalled();
+  });
+});
+
+
+describe("chat column width memory", () => {
+  it("restores the embedded width after dragging and remounting without changing note width", async () => {
+    const prefs = (globalThis as any).Zotero.Prefs;
+    const key = "extensions.zotero-ai-sidebar.readerLayout";
+    prefs.set(key, JSON.stringify({ noteWidth: 530 }));
+    const sidebar = windowSidebars.get(window)!;
+    sidebar.splitter.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true }));
+    sidebar.column.setAttribute("width", "645");
+    window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    expect(JSON.parse(prefs.get(key))).toMatchObject({ aiWidth: 645, noteWidth: 530 });
+    unregisterSidebar();
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(windowSidebars.get(window)!.column.getAttribute("width")).toBe("645");
+  });
+
+  it("remembers docked drag width separately from embedded width", async () => {
+    unregisterSidebar();
+    const prefs = (globalThis as any).Zotero.Prefs;
+    const key = "extensions.zotero-ai-sidebar.readerLayout";
+    prefs.set(key, JSON.stringify({ aiWidth: 410, noteWidth: 530 }));
+    const { saveLocalUiSettings, DEFAULT_LOCAL_UI_SETTINGS } = await import("../../src/settings/local-ui-settings");
+    saveLocalUiSettings(prefs, { ...DEFAULT_LOCAL_UI_SETTINGS, sidebarDisplayMode: "docked" });
+    vi.spyOn(window, "innerWidth", "get").mockReturnValue(1600);
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    const sidebar = windowSidebars.get(window)!;
+    sidebar.splitter.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: 980, bubbles: true }));
+    window.dispatchEvent(new MouseEvent("mouseup", { bubbles: true }));
+    expect(JSON.parse(prefs.get(key))).toMatchObject({ aiWidth: 410, dockedAiWidth: 620, noteWidth: 530 });
+    unregisterSidebar();
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(windowSidebars.get(window)!.column.getAttribute("width")).toBe("620");
+  });
+});
+
+
+describe("width persistence boundaries", () => {
+  it("does not replace the saved width when the column is collapsed", () => {
+    const key = "extensions.zotero-ai-sidebar.readerLayout";
+    const prefs = (globalThis as any).Zotero.Prefs;
+    prefs.set(key, JSON.stringify({ aiWidth: 645 }));
+    const sidebar = windowSidebars.get(window)!;
+    sidebar.splitter.dispatchEvent(new MouseEvent("mousedown", { button: 0 }));
+    sidebar.column.setAttribute("collapsed", "true");
+    sidebar.column.setAttribute("width", "0");
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    expect(JSON.parse(prefs.get(key)).aiWidth).toBe(645);
+  });
+
+  it("flushes an unfinished drag before removing the sidebar", async () => {
+    const sidebar = windowSidebars.get(window)!;
+    sidebar.splitter.dispatchEvent(new MouseEvent("mousedown", { button: 0 }));
+    sidebar.column.setAttribute("width", "590");
+    unregisterSidebar();
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(windowSidebars.get(window)!.column.getAttribute("width")).toBe("590");
+  });
+
+  it("keeps the preferred docked width when the window temporarily becomes narrow", async () => {
+    unregisterSidebar();
+    const prefs = (globalThis as any).Zotero.Prefs;
+    const key = "extensions.zotero-ai-sidebar.readerLayout";
+    prefs.set(key, JSON.stringify({ dockedAiWidth: 700 }));
+    const { saveLocalUiSettings, DEFAULT_LOCAL_UI_SETTINGS } = await import("../../src/settings/local-ui-settings");
+    saveLocalUiSettings(prefs, { ...DEFAULT_LOCAL_UI_SETTINGS, sidebarDisplayMode: "docked" });
+    const width = vi.spyOn(window, "innerWidth", "get").mockReturnValue(1100);
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(Number(windowSidebars.get(window)!.column.getAttribute("width"))).toBeLessThan(700);
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    expect(JSON.parse(prefs.get(key)).dockedAiWidth).toBe(700);
+    width.mockReturnValue(1600);
+    window.dispatchEvent(new Event("resize"));
+    await vi.advanceTimersByTimeAsync(200);
+    expect(windowSidebars.get(window)!.column.getAttribute("width")).toBe("700");
   });
 });

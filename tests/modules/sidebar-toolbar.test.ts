@@ -548,3 +548,34 @@ describe("composer reasoning entry", () => {
     expect(apiControls).toContain('renderComposerReasoningSelect(');
   });
 });
+
+
+describe("wrapping composer footer", () => {
+  it("uses the account name in narrow composers while retaining full native options", () => {
+    const switcher = sidebarSource.slice(
+      sidebarSource.indexOf("function renderPresetSwitcher("),
+      sidebarSource.indexOf("function renderWebSearchSwitcher("),
+    );
+    expect(switcher).toContain('wrap.dataset.accountLabel = activePreset?.label ?? ""');
+    expect(switcher).toContain("option.textContent = presetSelectLabel(preset)");
+    expect(switcher).toContain("presetSelectLabel(activePreset)");
+    expect(sidebarCSS).toMatch(/container:\s*composer-width \/ inline-size/);
+    expect(sidebarCSS).toMatch(/@container composer-width \(max-width: 600px\)/);
+    expect(sidebarCSS).toContain("content: attr(data-account-label)");
+    expect(sidebarCSS).toMatch(/\.composer-preset-select option\s*\{[^}]*color:\s*var\(--zai-text\)/s);
+  });
+  it("allows API controls to wrap when space is limited", () => {
+    const style = document.createElement("style");
+    style.textContent = sidebarCSS;
+    const row = document.createElement("div");
+    row.className = "composer-footer-actions composer-footer-actions-api";
+    row.innerHTML = '<div class="composer-preset-switcher"></div><div class="model-switcher"><span class="model-switcher-label">long-model-name</span></div>';
+    document.head.append(style);
+    document.body.append(row);
+    try {
+      expect(getComputedStyle(row).flexWrap).toBe("wrap");
+    } finally {
+      row.remove(); style.remove();
+    }
+  });
+});

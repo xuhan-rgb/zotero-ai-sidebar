@@ -317,6 +317,7 @@
         <li><span class="k">＋ / × / ⧉ / ⌫</span><span class="d">依次为新建对话、删除当前对话、复制当前对话 Markdown、清空当前对话。</span></li>
         <li><span class="k">快捷任务 / 队列</span><span class="d">一键总结、提取全文重点或解释 PDF 选区；“队列”显示等待、运行、未读或失败的任务。</span></li>
         <li><span class="k">输入区</span><span class="d">输入自然语言问题；左下“＋”添加截图或图片。“联网 / 原文”在 WEB 模式由网页附件流程接管，因此会置灰。</span></li>
+        <li><span class="k">宽度与底栏</span><span class="d">拖动分隔线后自动记住对话栏宽度；阅读器侧栏与右侧并排分别保存。输入区变窄（≤600px）时，账号名优先隐藏 (openai) / (anthropic)，拉宽恢复；悬停或展开列表可看全名。空间不足时底栏仍可换行。</span></li>
         <li><span class="k">API / WEB</span><span class="d">模式、模型或网页服务、账号入口都移到了底栏；最右侧文字显示当前服务是否已就绪。</span></li>
       </ul>
     </div>
@@ -325,7 +326,7 @@
   <!-- ============ 2. 配置模型 ============ -->
   <section id="config">
     <h2><span class="n">2</span>配置模型（设置页）</h2>
-    <p class="lead">点工具栏「设置」打开完整选项页，新增一个<b>模型预设</b>。支持 OpenAI 兼容 / Anthropic 等多种 Provider，可加多个预设在顶栏下拉切换。下图为还原界面（值已做脱敏处理）。</p>
+    <p class="lead">点工具栏「设置」打开完整选项页，新增一个<b>模型预设</b>。支持 OpenAI 兼容 / Anthropic 等多种 Provider，可加多个预设在底栏下拉切换。下图为还原界面（值已做脱敏处理）。</p>
 
     <div class="grid2">
       <div class="win">
@@ -359,6 +360,7 @@
               </div>
             </div>
             <div class="frow"><span class="lbl">Max tokens</span><span class="field">32768 ⌃⌄</span></div>
+            <div class="frow"><span class="lbl">推理强度（按模型）</span><span class="field sel">gpt-5.4：Medium <span>▾</span></span></div>
             <div class="frow"><span class="lbl">Reasoning Summary</span><span class="field sel">Concise — 简短显示思考摘要 <span>▾</span></span></div>
             <div class="frow"><span class="lbl">标志位</span>
               <div class="flags"><span class="flag amber">第三方/Relay</span><span class="flag mint">relay cache 自动</span><span class="flag mint">reasoning 透传</span></div>
@@ -374,6 +376,7 @@
         <li><span class="k">Base URL</span><span class="d">你的 API / 中转端点。<b>属于隐私，别公开分享</b>——本页用占位符代替。</span></li>
         <li><span class="k">Models</span><span class="d">左边是已启用的模型标签；右边点预设或「+ 添加 / 自定义」加模型。</span></li>
         <li><span class="k">Max tokens</span><span class="d">新预设默认 32768，已有预设保留原值；需符合所用模型的输出上限。</span></li>
+        <li><span class="k">推理强度（按模型）</span><span class="d">在配置详情为每个模型选档位并保存；也可点 API 底栏模型旁的 <b>Medium / High</b> 快速修改，自动保存到本地。每个账号下的每个模型分别记忆。支持 Medium 的模型默认均衡档，已适配 DeepSeek 默认 High；已有设置保留，未知模型使用服务商默认。</span></li>
         <li><span class="k">Reasoning / Vendor</span><span class="d">OpenAI 侧是思考摘要详略；Anthropic 侧是 Vendor（Claude 官方/反代、DeepSeek 格式等）。</span></li>
         <li><span class="k">标志位</span><span class="d">第三方/Relay 端点默认带 prompt_cache_key + session_id；非 OpenAI 兼容预设不发 OpenAI 缓存参数。</span></li>
       </ul>

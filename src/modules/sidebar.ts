@@ -6120,15 +6120,19 @@ function renderPresetSwitcher(
   }
   const select = doc.createElement("select");
   select.className = "composer-preset-select";
-  select.title = "切换账号配置";
+  const activePreset = selectedChatPreset(state) ?? selectedPreset(state);
+  wrap.dataset.accountLabel = activePreset?.label ?? "";
+  select.title = activePreset
+    ? `切换账号配置：${presetSelectLabel(activePreset)}`
+    : "切换账号配置";
+  select.setAttribute("aria-label", "切换账号配置");
   for (const preset of presets) {
     const option = doc.createElement("option");
     option.value = preset.id;
     option.textContent = presetSelectLabel(preset);
     select.append(option);
   }
-  select.value =
-    selectedChatPreset(state)?.id ?? selectedPreset(state)?.id ?? "";
+  select.value = activePreset?.id ?? "";
   select.addEventListener("change", () => {
     state.selectedId = select.value;
     saveSelectedPresetID(zoteroPrefs(), select.value);
@@ -13977,7 +13981,7 @@ function enterDockedSidebarLayout(
       measuredElementWidth(sidebar.column) ?? DEFAULT_AI_COLUMN_WIDTH,
     noteColumnWidth:
       measuredElementWidth(sidebar.noteColumn) ?? DEFAULT_NOTE_COLUMN_WIDTH,
-    dockedColumnWidth: 480,
+    dockedColumnWidth: loadReaderLayoutPrefs().dockedAiWidth ?? 480,
     dockedNoteColumnWidth:
       loadReaderLayoutPrefs().noteWidth ?? DEFAULT_NOTE_COLUMN_WIDTH,
     columnPersistence: sidebar.column.getAttribute("zotero-persist"),
@@ -14051,9 +14055,9 @@ export function registerSidebarForWindow(win: Window) {
   // gracefully from a React tree crash inside its custom-element column.
   // CLAUDE.md: "avoid reintroducing React UI in the Zotero pane unless
   // crash behavior has been revalidated."
-  // `zotero-persist=width` lets Zotero remember the user's column width
-  // across restarts. The wheel-stopPropagation prevents scroll events from
-  // bleeding through to the items pane underneath.
+  // Restore explicitly: dynamically inserted columns cannot rely on the
+  // host's startup persistence pass. Stop wheel events from bleeding through
+  // to the items pane underneath.
   const splitter = doc.createXULElement("splitter");
   splitter.id = SPLITTER_ID;
   splitter.setAttribute("resizebefore", "closest");
@@ -14087,7 +14091,10 @@ export function registerSidebarForWindow(win: Window) {
   const column = doc.createXULElement("vbox");
   column.id = COLUMN_ID;
   column.setAttribute("class", "zai-column");
-  column.setAttribute("width", String(DEFAULT_AI_COLUMN_WIDTH));
+  column.setAttribute(
+    "width",
+    String(loadReaderLayoutPrefs().aiWidth ?? DEFAULT_AI_COLUMN_WIDTH),
+  );
   column.setAttribute("minwidth", String(MIN_AI_COLUMN_WIDTH));
   column.setAttribute("maxwidth", String(MAX_AI_COLUMN_WIDTH));
   column.setAttribute("zotero-persist", "width");
@@ -14177,7 +14184,25 @@ function installReaderLayoutMemory(
   win: Window,
   state: WindowSidebarState,
 ): void {
-  const remember = () => rememberLastNoteWidth(state);
+  let aiDragging = false;
+  let aiSaveTimer: number | undefined;
+  const rememberAi = () => {
+    aiDragging = false;
+    if (aiSaveTimer != null) win.clearTimeout(aiSaveTimer);
+    aiSaveTimer = undefined;
+    rememberLastAiWidth(state);
+  };
+  const remember = () => {
+    rememberLastNoteWidth(state);
+    if (aiDragging || aiSaveTimer != null) rememberAi();
+  };
+  const startAiDrag = (event: Event) => {
+    if ((event as MouseEvent).button === 0) aiDragging = true;
+  };
+  const scheduleAiRemember = () => {
+    if (aiSaveTimer != null) win.clearTimeout(aiSaveTimer);
+    aiSaveTimer = win.setTimeout(rememberAi, 0);
+  };
   const syncTranslation = () => syncFullTranslationHostLayout(state);
   const scheduleRemember = () => {
     if (state.layoutSaveTimer != null) win.clearTimeout(state.layoutSaveTimer);
@@ -14200,10 +14225,15 @@ function installReaderLayoutMemory(
   }
   state.noteSplitter.addEventListener("command", scheduleRemember);
   state.noteSplitter.addEventListener("mouseup", remember);
+  state.splitter.addEventListener("mousedown", startAiDrag, true);
+  state.splitter.addEventListener("command", scheduleAiRemember);
   win.addEventListener("mouseup", remember, true);
   win.addEventListener("resize", syncTranslation);
   state.layoutCleanup = () => {
+    remember();
     resizeObserver?.disconnect();
+    state.splitter.removeEventListener("mousedown", startAiDrag, true);
+    state.splitter.removeEventListener("command", scheduleAiRemember);
     state.noteSplitter.removeEventListener("command", scheduleRemember);
     state.noteSplitter.removeEventListener("mouseup", remember);
     win.removeEventListener("mouseup", remember, true);
@@ -14245,6 +14275,15 @@ function rememberLastNoteWidth(state: WindowSidebarState): void {
   saveReaderLayoutPrefs({ noteWidth });
 }
 
+function rememberLastAiWidth(state: WindowSidebarState): void {
+  if (isColumnCollapsed(state)) return;
+  const docked = dockedSidebarLayouts.get(state);
+  // Keep the user's requested docked width, not a temporary window-size clamp.
+  const width = docked?.dockedColumnWidth ?? measuredElementWidth(state.column);
+  if (width == null) return;
+  saveReaderLayoutPrefs(docked ? { dockedAiWidth: width } : { aiWidth: width });
+}
+
 function measuredElementWidth(
   element: Element | null | undefined,
 ): number | undefined {
@@ -14283,7 +14322,9 @@ function loadReaderLayoutPrefs(): ReaderLayoutPrefs {
 }
 
 function saveReaderLayoutPrefs(partial: ReaderLayoutPrefs): void {
+  const previous = loadReaderLayoutPrefs();
   const next = normalizeReaderLayoutPrefs({
+    ...previous,
     ...partial,
     updatedAt: Date.now(),
   });
@@ -14304,6 +14345,16 @@ function normalizeReaderLayoutPrefs(value: unknown): ReaderLayoutPrefs {
   const input =
     value && typeof value === "object" ? (value as ReaderLayoutPrefs) : {};
   return {
+    ...(typeof input.aiWidth === "number" && Number.isFinite(input.aiWidth)
+      ? {
+          aiWidth: clampWidth(input.aiWidth, MIN_AI_COLUMN_WIDTH, MAX_AI_COLUMN_WIDTH),
+        }
+      : {}),
+    ...(typeof input.dockedAiWidth === "number" && Number.isFinite(input.dockedAiWidth)
+      ? {
+          dockedAiWidth: clampWidth(input.dockedAiWidth, MIN_AI_COLUMN_WIDTH, MAX_AI_COLUMN_WIDTH),
+        }
+      : {}),
     ...(typeof input.noteWidth === "number"
       ? {
           noteWidth: clampWidth(
@@ -15346,6 +15397,9 @@ export function unregisterSidebarForWindow(win: Window) {
   const state = windowSidebars.get(win);
   if (!state) return;
 
+  // Flush an unfinished drag before the docked layout is dismantled.
+  state.layoutCleanup?.();
+  state.layoutCleanup = undefined;
   leaveDockedSidebarLayout(state, false);
   closeQuickAsk(state);
   state.fullTranslationAbort?.abort();
@@ -15375,8 +15429,6 @@ export function unregisterSidebarForWindow(win: Window) {
   state.selectionMenuCleanup = undefined;
   state.promptShortcutCleanup?.();
   state.promptShortcutCleanup = undefined;
-  state.layoutCleanup?.();
-  state.layoutCleanup = undefined;
   state.initialRefreshCleanup?.();
   state.initialRefreshCleanup = undefined;
   state.noteColumn.remove();

@@ -53,6 +53,9 @@ Open the AI Sidebar settings in Zotero and configure at least one model preset:
 - Base URL: official endpoint or an OpenAI-compatible endpoint
 - Model: any model ID supported by that endpoint
 - Max tokens / tool iterations: local safety and output controls
+- Per-model reasoning effort: configure each model in the preset details, or click `Medium` / `High` in the API composer footer. Choices are saved locally per account preset and model, and restored when you switch back. Unconfigured models use a balanced level where supported; existing choices are preserved. Available levels depend on the model; unrecognized models use the service default. See the [reasoning setup guide](docs/USAGE.md#reasoning-effort-per-model).
+
+The chat pane remembers its manually adjusted width separately for the reader sidebar and side-by-side layout. In a narrow composer, the account caption hides `(openai)` / `(anthropic)` first; hover or open the dropdown to see the full name. Footer controls can still wrap when needed.
 
 Configure PDF translation in the **Immersive reading** section:
 

@@ -382,7 +382,7 @@ Each preset is a complete `provider + endpoint + model + parameters` set. Save a
 | Model | ✓ | Model id, e.g. `claude-opus-4-7`, `gpt-5` |
 | Max output tokens | | Defaults to 32768 for new presets; existing values are preserved. The endpoint/model must support the chosen limit |
 | Max tool iterations | | A **safety fuse** — the maximum tool-loop steps per turn. **Not a task-routing knob.** Setting it too low makes the model abandon PDF reads partway through |
-| Reasoning / Thinking | | Enable reasoning effort (OpenAI) or extended thinking (Anthropic); the model must support it |
+| Reasoning effort per model | | Save a separate level for each model; available levels depend on the model and can also be changed in the API footer |
 | Agent permission mode | | Governs write tools: blocked / approval-required / YOLO |
 
 **Test connection** issues a minimal request to validate endpoint + key.
@@ -391,7 +391,27 @@ Each preset maintains its own model list — same base URL, different model ids,
 
 **Cache test** — the row below the preset list in the account & model card — runs a fixed test passage against a chosen preset and reports the request's cache hit / miss input, output, and hit rate, so you can confirm whether the endpoint really uses prompt caching; the passage is tiny and is only a self-check, not your real usage.
 
+#### Reasoning effort per model
+
+1. Open **Settings**, edit an account preset, and choose a level for each model under **推理强度（按模型）** (per-model reasoning effort), then save the configuration.
+2. During a conversation, choose **API → account → model** in the footer, then click the level beside the model, such as `Medium` or `High`. The compact control shows only the level; its tooltip identifies reasoning effort. Changes here are saved automatically to local Zotero preferences.
+3. Each model within each account preset keeps its own choice. For example, model A can use `Medium` and model B `High`; switching back restores the saved level. The same model in another account preset remains independent.
+
+The table describes the plugin's current selection rules. The selected model's dropdown is the reference for its available levels:
+
+| Case | Default and display behavior |
+|---|---|
+| Recognized GPT / Claude models supporting `medium` | Unconfigured models default to `Medium`, rather than a universal `XHigh` |
+| Supported DeepSeek V4 / Flash / Pro models | Off, `Low`, `High`, and `Max`; there is no `Medium` option, so the default maps to `High` |
+| Existing saved effort | Retained; a model-specific choice takes precedence once set |
+| Unrecognized model or custom alias | Disabled service-default option; no effort parameter is sent |
+| WEB mode | Uses the website's own settings, independently of the API effort control |
+
+Effort and **Reasoning Summary** are separate: effort selects a reasoning level, while Summary controls the returned reasoning summary. Some older Claude models map levels to token budgets, which are shown in settings. Third-party endpoints may support different parameters; check the model ID and endpoint capabilities if a request rejects the setting.
+
 ### 3.2 Sidebar UI map
+
+**Remembered width and responsive footer**: drag the chat-pane divider and release it to save the width for the next opening. The reader sidebar and side-by-side layout remember separate widths; temporarily narrowing the window or collapsing the pane does not overwrite them. At composer widths of 600px or less, the account caption shows just the name, such as `deepseek1` instead of `deepseek1 (openai)`. Widen it to restore the full caption, or hover/open the dropdown to inspect the protocol. Footer controls can still wrap when space is insufficient.
 
 Top to bottom:
 

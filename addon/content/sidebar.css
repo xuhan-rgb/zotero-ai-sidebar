@@ -634,6 +634,7 @@
 }
 
 .composer-preset-switcher {
+  position: relative;
   display: inline-flex;
   flex: 0 1 150px;
   min-width: 96px;
@@ -648,6 +649,35 @@
   color: var(--zai-text);
   padding: 4px 7px;
   font: inherit;
+}
+
+/* Keep the native dropdown's full labels; compact only its closed caption. */
+@container composer-width (max-width: 600px) {
+  .composer-preset-switcher {
+    flex-basis: 100px;
+    min-width: 72px;
+  }
+
+  .composer-preset-select {
+    color: transparent;
+  }
+
+  .composer-preset-select option {
+    color: var(--zai-text);
+    background: var(--zai-panel-strong);
+  }
+
+  .composer-preset-switcher::after {
+    content: attr(data-account-label);
+    position: absolute;
+    inset: 0 22px 0 8px;
+    align-content: center;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    pointer-events: none;
+    color: var(--zai-text);
+  }
 }
 
 .composer-send-mode {
@@ -3218,6 +3248,7 @@ div.math-fallback {
 }
 
 .composer {
+  container: composer-width / inline-size;
   padding: 10px;
   border-top: 2px solid rgba(113, 96, 216, 0.68);
   background: linear-gradient(
