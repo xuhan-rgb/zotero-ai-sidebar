@@ -18,7 +18,7 @@ const requestLog = vi.hoisted(() => ({
     parallel_tool_calls?: boolean;
     headers?: Record<string, string>;
   }>,
-  chatRequests: [] as Array<{ model?: string }>,
+  chatRequests: [] as Array<Record<string, unknown>>,
   // When > 0, FakeOpenAI throws an APIError(500) on the next N calls and
   // then succeeds. Lets tests exercise the relay-routing retry loop without
   // depending on a live relay.
@@ -214,7 +214,7 @@ vi.mock("openai", async (importOriginal) => {
     chat = {
       completions: {
         create: async (params: { model?: string }) => {
-          requestLog.chatRequests.push({ model: params.model });
+          requestLog.chatRequests.push({ ...params });
           return (async function* () {
             yield {
               choices: [{ delta: { content: "Chat" }, finish_reason: null }],
@@ -290,7 +290,7 @@ describe("OpenAIProvider", () => {
       { type: "usage", input: 7, output: 2, cacheRead: 0 },
     ]);
     expect(requestLog.requests[0].reasoning).toEqual({
-      effort: "xhigh",
+      effort: "medium",
       summary: "concise",
     });
     expect(requestLog.requests[0].prompt_cache_key).toBe("zai:openai");
@@ -324,7 +324,7 @@ describe("OpenAIProvider", () => {
       // Drain the Responses stream.
     }
 
-    expect(requestLog.chatRequests).toEqual([{ model: "deepseek-v4-pro" }]);
+    expect(requestLog.chatRequests).toMatchObject([{ model: "deepseek-v4-pro" }]);
     expect(requestLog.requests).toHaveLength(1);
   });
 
@@ -343,7 +343,7 @@ describe("OpenAIProvider", () => {
     }
 
     expect(requestLog.requests[0].reasoning).toEqual({
-      effort: "xhigh",
+      effort: "medium",
       summary: "concise",
     });
     expect(requestLog.requests[0].prompt_cache_key).toBe("zai:openai");
@@ -1226,5 +1226,58 @@ describe("withFrontBlock", () => {
     );
     expect(secondWire.slice(0, firstWire.length)).toEqual(firstWire);
     expect(JSON.stringify(secondWire).match(/REFERENCE BODY/g)).toHaveLength(1);
+  });
+});
+
+
+describe("per-model reasoning request parameters", () => {
+  it("sends the selected model's medium setting instead of the legacy xhigh", async () => {
+    requestLog.requests = [];
+    const configured: ModelPreset = {
+      ...preset,
+      extras: { reasoningEffort: "xhigh", reasoningEffortByModel: { [preset.model]: "medium" } },
+    };
+    for await (const _ of new OpenAIProvider().stream(
+      [{ role: "user", content: "hi" }], "", configured, new AbortController().signal,
+    )) { /* drain mocked stream */ }
+    expect(requestLog.requests[0].reasoning).toMatchObject({ effort: "medium" });
+  });
+});
+
+
+describe("model-specific reasoning on the wire", () => {
+  it.each([
+    ["gpt-5.6-sol", "max", "max"],
+    ["gpt-5.3-codex", "xhigh", "xhigh"],
+    ["gpt-5.4", "none", "none"],
+    ["gpt-5", "xhigh", "high"],
+    ["unknown-model", "high", undefined],
+  ] as const)("%s forwards %s on both OpenAI transports", async (model, selected, expected) => {
+    for (const chat of [false, true]) {
+      requestLog.requests = [];
+      requestLog.chatRequests = [];
+      const configured: ModelPreset = { ...preset, model, extras: {
+        openaiUseChatCompletions: chat,
+        reasoningEffortByModel: { [model]: selected },
+      } };
+      for await (const _ of new OpenAIProvider().stream(
+        [{ role: "user", content: "hi" }], "", configured, new AbortController().signal,
+      )) { /* drain mocked stream */ }
+      if (chat) expect(requestLog.chatRequests[0].reasoning_effort).toBe(expected);
+      else if (expected) expect(requestLog.requests[0].reasoning).toMatchObject({ effort: expected });
+      else expect(requestLog.requests[0]).not.toHaveProperty("reasoning");
+    }
+  });
+
+  it.each(["low", "max", "none"] as const)("DeepSeek sends native %s and its thinking switch", async (effort) => {
+    requestLog.chatRequests = [];
+    const model = "deepseek-v4-pro";
+    for await (const _ of new OpenAIProvider().stream(
+      [{ role: "user", content: "hi" }], "", {
+        ...preset, model, extras: { openaiUseChatCompletions: true, reasoningEffortByModel: { [model]: effort } },
+      }, new AbortController().signal,
+    )) { /* drain mocked stream */ }
+    expect(requestLog.chatRequests[0].thinking).toEqual({ type: effort === "none" ? "disabled" : "enabled" });
+    expect(requestLog.chatRequests[0].reasoning_effort).toBe(effort === "none" ? undefined : effort);
   });
 });

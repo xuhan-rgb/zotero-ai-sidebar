@@ -514,11 +514,11 @@ describe("AI dialog toolbar", () => {
     expect(inputSource).not.toContain("send.disabled = !canSubmit || !webAccountReady");
   });
 
-  it("keeps model and YOLO controls inline without a reasoning selector", () => {
+  it("keeps model, reasoning, and YOLO controls directly accessible", () => {
     expect(composerFooterSource).not.toContain('"composer-model-menu"');
     expect(composerFooterSource).not.toContain('"模型设置"');
     expect(composerFooterSource).toMatch(
-      /renderModelSwitcher\(doc, mount, state\),\s*renderYoloToggle\(doc, mount, state\)/s,
+      /renderModelSwitcher\(doc, mount, state\),\s*renderComposerReasoningSelect\(.*renderYoloToggle\(doc, mount, state\)/s,
     );
     expect(composerFooterSource).not.toContain("renderReasoningSwitcher");
     expect(sidebarSource).not.toContain('className = "reasoning-switcher-trigger"');
@@ -535,5 +535,16 @@ describe("AI dialog toolbar", () => {
     );
     expect(sidebarSource).not.toContain("Ln ${cursor.line}, Col ${cursor.column}");
     expect(sidebarSource).not.toContain("function cursorPosition(");
+  });
+});
+
+
+describe("composer reasoning entry", () => {
+  it("mounts a reasoning selector alongside the API model selector", () => {
+    const apiControls = composerFooterSource.slice(
+      composerFooterSource.indexOf('chatSendMode === "api"'),
+      composerFooterSource.indexOf('} else {'),
+    );
+    expect(apiControls).toContain('renderComposerReasoningSelect(');
   });
 });

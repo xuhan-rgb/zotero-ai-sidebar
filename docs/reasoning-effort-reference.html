@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>模型推理强度配置对照表 · Zotero AI Sidebar</title>
+  <style>
+    :root { color-scheme: light; font-family: system-ui, -apple-system, "Segoe UI", "Microsoft YaHei", sans-serif; color: #233047; background: #f4f6fa; }
+    body { margin: 0; line-height: 1.7; }
+    main { max-width: 1320px; margin: auto; padding: 44px 28px 64px; }
+    h1 { font-size: clamp(26px, 4vw, 36px); line-height: 1.3; margin: 8px 0 16px; }
+    h2 { font-size: 22px; margin: 36px 0 14px; }
+    p { margin: 10px 0; }
+    .eyebrow, .meta { color: #596a83; font-size: 14px; }
+    .eyebrow { font-weight: 700; letter-spacing: .08em; }
+    .note { background: #eaf0fc; border-left: 4px solid #4169b2; padding: 16px 20px; margin: 24px 0; border-radius: 4px; }
+    .table-wrap { overflow-x: auto; background: white; border: 1px solid #dce3ee; border-radius: 10px; }
+    table { width: 100%; border-collapse: collapse; font-size: 14px; min-width: 820px; }
+    caption { text-align: left; padding: 15px 18px; font-weight: 600; color: #44556d; background: #f9fbfe; }
+    th, td { padding: 14px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid #e3e8f0; }
+    th { background: #edf2f9; color: #30435f; font-weight: 650; }
+    tbody tr:last-child td { border-bottom: 0; }
+    tbody tr:nth-child(even) { background: #fafbfd; }
+    a { color: #245fb0; text-underline-offset: 3px; }
+    code { font-family: ui-monospace, SFMono-Regular, Consolas, monospace; font-size: .93em; background: #edf1f7; padding: 2px 5px; border-radius: 4px; overflow-wrap: anywhere; }
+    .levels { display: flex; flex-wrap: wrap; gap: 5px; min-width: 180px; }
+    .levels code { white-space: nowrap; }
+    .footer { margin-top: 32px; padding-top: 18px; border-top: 1px solid #dce3ee; color: #596a83; font-size: 13px; }
+    @media (max-width: 600px) { main { padding: 24px 14px 40px; } th, td { padding: 12px; } }
+    @media print { :root { background: white; } main { max-width: none; padding: 0; } .table-wrap { overflow: visible; border-radius: 0; } table { min-width: 0; font-size: 10px; } th, td { padding: 7px; } .levels { min-width: 0; } tr { break-inside: avoid; } h2 { break-after: avoid; } a { color: inherit; } }
+  </style>
+</head>
+<body>
+<main>
+  <header>
+    <div class="eyebrow">ZOTERO AI SIDEBAR · 配置参考</div>
+    <h1>模型推理强度配置对照表</h1>
+    <p>按具体模型提供有效档位，并按实际接口发送参数。不同模型的同名档位不代表相同的计算量、延迟或效果。</p>
+    <p class="meta">资料核对日期：2026-09-29 · 范围：项目当前列出的 GPT、Claude、DeepSeek 模型 · 本文保留调研结论与适配前差异，当前实现状态见下方说明</p>
+  </header>
+
+  <div class="note"><strong>配置原则：</strong>不要统一固定成 Low / Medium / High / XHigh，也不要统一默认最高档。“使用服务商默认值”通常意味着省略参数，“关闭思考”需要模型支持明确的关闭方式，两者必须分开。</div>
+
+  <div class="note"><strong>适配状态（2026-09-29）：</strong>已在配置详情加入按模型独立保存的推理强度选择，并共用模型能力规则生成选项与请求参数；主聊天底栏和 Quick Ask 使用同一规则；底栏直接显示当前档位，修改后立即保存到本地。未保存过选择时使用均衡默认值：GPT / Claude 为 Medium，DeepSeek 为 High。未知模型不发送推理参数，已保存的选择优先。下方第 03 表保留适配前问题作为变更依据；第 04 表中的默认值建议不是对既有配置的强制重置。<a href="../src/settings/reasoning.ts">查看当前能力规则</a>。</div>
+
+  <section aria-labelledby="models">
+    <h2 id="models">01 · 模型与支持档位</h2>
+    <div class="table-wrap">
+      <table>
+        <caption>官方能力与插件配置含义；第三方中转需另行核对服务商实现</caption>
+        <thead><tr><th scope="col">模型</th><th scope="col">原生推理强度</th><th scope="col">默认值 / 使用建议</th><th scope="col">配置注意事项</th><th scope="col">官方来源</th></tr></thead>
+        <tbody>
+          <tr><td><strong>GPT-5.6</strong><br>Sol / Terra / Luna</td><td><div class="levels"><code>none</code><code>low</code><code>medium</code><code>high</code><code>xhigh</code><code>max</code></div></td><td>官方建议以 medium 作为平衡起点，延迟敏感任务可从 low 开始。</td><td>当前插件通用类型缺少 max，需要补充真实档位。</td><td><a href="https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.6">GPT-5.6 指南</a></td></tr>
+          <tr><td><strong>GPT-5.5</strong></td><td><div class="levels"><code>none</code><code>low</code><code>medium</code><code>high</code><code>xhigh</code></div></td><td>官方默认 medium。</td><td>不应沿用插件统一 xhigh 默认值来代表官方默认。</td><td><a href="https://developers.openai.com/api/docs/models/gpt-5.5">模型说明</a></td></tr>
+          <tr><td><strong>GPT-5.4 / GPT-5.4 Mini / GPT-5.2</strong></td><td><div class="levels"><code>none</code><code>low</code><code>medium</code><code>high</code><code>xhigh</code></div></td><td>官方默认 none；论文问答可从 medium 试起，这是应用侧建议。</td><td>插件默认 xhigh 是项目自身策略，不是这些模型的官方默认值。</td><td><a href="https://developers.openai.com/api/docs/models/gpt-5.4">GPT-5.4</a><br><a href="https://developers.openai.com/api/docs/models/gpt-5.4-mini">GPT-5.4 Mini</a><br><a href="https://developers.openai.com/api/docs/models/gpt-5.2">GPT-5.2</a></td></tr>
+          <tr><td><strong>GPT-5.3 Codex</strong></td><td><div class="levels"><code>low</code><code>medium</code><code>high</code><code>xhigh</code></div></td><td>按任务选择；不要自动沿用其他 GPT 型号的关闭选项。</td><td>不提供 none。</td><td><a href="https://developers.openai.com/api/docs/models/gpt-5.3-codex">模型说明</a></td></tr>
+          <tr><td><strong>Claude Opus 4.7</strong></td><td><div class="levels"><code>low</code><code>medium</code><code>high</code><code>xhigh</code><code>max</code></div></td><td>API 默认 high；官方对编程和代理任务建议从 xhigh 开始，成本敏感任务可评估 medium。</td><td>xhigh 和 max 是不同档位，需要分别保存和发送。</td><td><a href="https://platform.claude.com/docs/en/build-with-claude/effort">Claude effort</a></td></tr>
+          <tr><td><strong>Claude Opus 4.6 / Sonnet 4.6</strong></td><td><div class="levels"><code>low</code><code>medium</code><code>high</code><code>max</code></div></td><td>API 默认 high；官方对 Sonnet 4.6 多数应用推荐 medium 起步。</td><td>没有 xhigh；最高档直接显示 Max。思考开关与 effort 分开处理。</td><td><a href="https://platform.claude.com/docs/en/build-with-claude/effort">Claude effort</a></td></tr>
+          <tr><td><strong>Claude Haiku 4.5</strong></td><td>思考开关 + <code>budget_tokens</code><br>不使用上述原生 effort 档位</td><td>按任务设置思考 token 预算。</td><td>若显示低 / 中 / 高，需注明这是插件自定义的预算档位，不是官方原生枚举。</td><td><a href="https://platform.claude.com/docs/en/build-with-claude/extended-thinking">Extended thinking</a></td></tr>
+          <tr><td><strong>DeepSeek V4 Pro / Flash</strong></td><td><div class="levels"><code>low</code><code>high</code><code>max</code></div><p>另有关闭思考</p></td><td>默认 high；官方建议简单任务 low、日常 Agent 任务 high、复杂任务 max。</td><td>正式版增加 low。当前映射：medium / xhigh → high；没有独立 medium 档。</td><td><a href="https://api-docs.deepseek.com/news/news260813/">V4 正式版更新</a><br><a href="https://api-docs.deepseek.com/guides/thinking_mode/">思考模式与映射</a></td></tr>
+          <tr><td><strong>未知第三方模型 / 中转别名</strong></td><td>以服务商文档和能力声明为准</td><td>建议默认不额外发送强度参数；允许根据文档配置。</td><td>兼容 OpenAI 协议不等于支持所有 OpenAI 推理档位。</td><td>需逐服务商核实</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section aria-labelledby="wire">
+    <h2 id="wire">02 · 界面选择如何转换成请求参数</h2>
+    <div class="table-wrap"><table>
+      <caption>请求体片段示例；可用值仍需按上表中的模型能力约束</caption>
+      <thead><tr><th scope="col">接口 / 模型</th><th scope="col">示例参数</th><th scope="col">说明与来源</th></tr></thead>
+      <tbody>
+        <tr><td>OpenAI Responses</td><td><code>{"reasoning":{"effort":"medium"}}</code></td><td>使用嵌套字段。<a href="https://developers.openai.com/api/docs/guides/reasoning">官方文档</a></td></tr>
+        <tr><td>OpenAI Chat Completions</td><td><code>{"reasoning_effort":"medium"}</code></td><td>使用顶层字段；不应仅因协议不同就统一降低强度。<a href="https://developers.openai.com/api/docs/guides/reasoning">官方文档</a></td></tr>
+        <tr><td>Claude 自适应思考模型</td><td><code>{"thinking":{"type":"adaptive"},"output_config":{"effort":"medium"}}</code></td><td>思考模式与 effort 配合使用。<a href="https://platform.claude.com/docs/en/build-with-claude/extended-thinking">官方文档</a></td></tr>
+        <tr><td>Claude Haiku 4.5</td><td><code>{"thinking":{"type":"enabled","budget_tokens":2048}}</code></td><td>2048 是预算示例，不能称为官方 medium 档。<a href="https://platform.claude.com/docs/en/build-with-claude/extended-thinking">官方文档</a></td></tr>
+        <tr><td>DeepSeek OpenAI 格式</td><td><code>{"thinking":{"type":"enabled"},"reasoning_effort":"high"}</code></td><td>思考开关与强度分别传递。<a href="https://api-docs.deepseek.com/guides/thinking_mode/">官方文档</a></td></tr>
+        <tr><td>DeepSeek Anthropic 格式</td><td><code>{"thinking":{"type":"enabled"},"output_config":{"effort":"high"}}</code></td><td>使用真实生效档位 low / high / max。<a href="https://api-docs.deepseek.com/guides/thinking_mode/">官方文档</a></td></tr>
+        <tr><td>DeepSeek Responses 格式</td><td><code>{"reasoning":{"effort":"high"}}</code></td><td>支持 none / low / high / max；none 关闭思考。<a href="https://api-docs.deepseek.com/api/create-response/">官方文档</a></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="gaps">
+    <h2 id="gaps">03 · 适配前实现与目标配置的差异</h2>
+    <div class="table-wrap"><table>
+      <caption>适配前源码核对记录；对应功能已完成本地适配，尚未调用真实模型接口实测</caption>
+      <thead><tr><th scope="col">项目</th><th scope="col">适配前行为</th><th scope="col">建议处理</th><th scope="col">代码位置</th></tr></thead>
+      <tbody>
+        <tr><td>主聊天配置入口</td><td>主聊天底部的推理选择器已移除；配置详情仅有 Reasoning Summary。Quick Ask 和翻译仍有强度选项。</td><td>在模型配置详情补充强度入口，明确与“推理摘要”的区别。</td><td><a href="../src/hooks.ts">src/hooks.ts</a><br><a href="../src/modules/sidebar.ts">src/modules/sidebar.ts</a></td></tr>
+        <tr><td>通用枚举与默认值</td><td>类型包含 none / minimal / low / medium / high / xhigh，缺少 max；可见通用选项只有 low 至 xhigh；默认常量为 xhigh。</td><td>补充 max，按模型筛选；区分服务商默认、关闭、具体强度。</td><td><a href="../src/settings/types.ts">src/settings/types.ts</a></td></tr>
+        <tr><td>Claude 自适应模型</td><td>Opus 4.6 / Sonnet 4.6 会把内部 xhigh 转成 max；Opus 4.7 的 xhigh 保持原值。</td><td>用真实原生值保存；4.6 显示 Max，4.7 同时提供 XHigh 和 Max。</td><td><a href="../src/providers/anthropic.ts">src/providers/anthropic.ts</a></td></tr>
+        <tr><td>旧版 Claude 预算</td><td>low / medium / high / xhigh 映射为 1024 / 2048 / 4096 / 8192 思考 token。</td><td>标注“预算档位”及对应 token 数，避免与原生 effort 混淆。</td><td><a href="../src/providers/anthropic.ts">src/providers/anthropic.ts</a></td></tr>
+        <tr><td>DeepSeek</td><td>Anthropic 路径只展示 High / Max；low 和 medium 合并为 high；内部 xhigh 转成 max。</td><td>按当前官方能力补充 Low；直接保存 max。历史 xhigh 需按原实现语义迁移，避免改变用户原来的最高档选择。</td><td><a href="../src/modules/preset-utils.ts">src/modules/preset-utils.ts</a><br><a href="../src/providers/anthropic.ts">src/providers/anthropic.ts</a></td></tr>
+        <tr><td>OpenAI Chat Completions</td><td>当前统一把 xhigh 改写成 high，可能导致选择值与发送值不同。</td><td>按模型和服务商能力处理，不统一降档。</td><td><a href="../src/providers/openai.ts">src/providers/openai.ts</a></td></tr>
+        <tr><td>同配置切换多个模型</td><td>reasoningEffort 存储在配置 extras 中，是配置级字段。</td><td>建议按模型记住强度；切换模型时校验有效档位，避免将不支持的值传给下一个模型。</td><td><a href="../src/settings/types.ts">src/settings/types.ts</a></td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <section aria-labelledby="recommendations">
+    <h2 id="recommendations">04 · 默认策略与界面建议</h2>
+    <div class="table-wrap"><table>
+      <caption>产品配置建议；未在本项目进行质量、延迟或费用对比实验</caption>
+      <thead><tr><th scope="col">场景 / 控件</th><th scope="col">建议</th><th scope="col">依据与边界</th></tr></thead>
+      <tbody>
+        <tr><td>GPT 论文问答</td><td>medium 作为起点；复杂推导、多论文综合再评估 high。xhigh / max 留给有明确收益的任务。</td><td><a href="https://developers.openai.com/api/docs/guides/latest-model?model=gpt-5.4">官方指南</a>建议研究型工作从 medium 或更高档评估；不表示最高档总是更好。</td></tr>
+        <tr><td>Claude 默认策略</td><td>Sonnet 4.6 多数应用从 medium 开始；Opus 4.7 能力敏感任务用 high，编程和代理任务评估 xhigh。</td><td><a href="https://platform.claude.com/docs/en/build-with-claude/effort">官方建议</a>因模型而异，不统一降成同一个默认值。</td></tr>
+        <tr><td>DeepSeek 默认策略</td><td>简单任务 low；日常 Agent 任务 high；复杂任务 max。</td><td><a href="https://api-docs.deepseek.com/news/news260813/">官方正式版建议</a>；旧文档中的两档配置不再代表当前完整能力。</td></tr>
+        <tr><td>配置详情布局</td><td>选定模型后显示该模型的有效强度；服务商默认单独列出；支持时再提供关闭选项。</td><td>基于各模型支持集合不同的产品建议；服务商默认不等于关闭。</td></tr>
+        <tr><td>配置保存与迁移</td><td>建议按模型保存；同步、导出和导入保留选择；保留已有合法设置，不静默全部重置为新默认值。</td><td>项目配置设计建议；实施时需验证持久化及旧数据兼容性。</td></tr>
+        <tr><td>Reasoning Summary</td><td>保留为独立选项，中文标注“推理摘要”。</td><td>控制摘要呈现，不应替代“推理强度”入口。</td></tr>
+      </tbody>
+    </table></div>
+  </section>
+
+  <p class="footer">核对方式：本地源码、Git 历史及官方公开文档。未调用付费模型接口，未执行实时 UI 或截图验证。文档和服务商能力可能更新，实施时应重新核对目标模型与 endpoint。此 HTML 可离线打开；官方来源链接需要联网。</p>
+</main>
+</body>
+</html>

@@ -550,3 +550,20 @@ describe('sync snapshot round trip', () => {
     ).toBe('展开模块');
   });
 });
+
+
+describe('reasoning selections in sync exports', () => {
+  it('preserves separate model efforts through JSON export, parse and import', async () => {
+    const source = memPrefs();
+    const choices = { 'gpt-5.6-sol': 'max' as const, 'gpt-5.4': 'medium' as const };
+    savePresets(source, [{
+      id: 'effort-sync', provider: 'openai', label: 'models', apiKey: 'test', baseUrl: '',
+      model: 'gpt-5.6-sol', models: Object.keys(choices), maxTokens: 32768,
+      extras: { reasoningEffort: 'high', reasoningEffortByModel: choices },
+    }]);
+    const snapshot = await buildSyncSnapshot(source);
+    const target = memPrefs();
+    await applySyncSnapshot(target, parseSyncSnapshot(JSON.stringify(snapshot)));
+    expect(loadPresets(target)[0].extras?.reasoningEffortByModel).toEqual(choices);
+  });
+});

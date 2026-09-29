@@ -350,3 +350,23 @@ describe('toAnthropicSystem', () => {
     ]);
   });
 });
+
+
+describe('per-model Anthropic effort', () => {
+  it.each([
+    ['claude-opus-4-7', 'claude', 'max'],
+    ['claude-sonnet-4-6', 'claude', 'medium'],
+    ['deepseek-v4-pro', 'deepseek', 'low'],
+    ['deepseek-v4-pro', 'deepseek', 'max'],
+  ] as const)('%s emits the stored %s vendor effort %s', (model, vendor, effort) => {
+    expect(buildAnthropicThinking({ ...preset, model, extras: {
+      vendor, reasoningEffort: 'high', reasoningEffortByModel: { [model]: effort },
+    } })).toMatchObject({ output_config: { effort } });
+  });
+
+  it('unknown Claude IDs use the service default instead of guessing a budget', () => {
+    expect(buildAnthropicThinking({ ...preset, model: 'custom-claude', extras: {
+      vendor: 'claude', reasoningEffort: 'high',
+    } })).toBeNull();
+  });
+});

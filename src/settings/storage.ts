@@ -1,3 +1,4 @@
+import { isReasoningEffort } from './reasoning';
 import {
   DEFAULT_BASE_URLS,
   DEFAULT_MODELS,
@@ -8,7 +9,6 @@ import {
   type ModelPreset,
   type ModelSuggestionGroup,
   type ProviderKind,
-  type ReasoningEffort,
   type ReasoningSummary,
 } from './types';
 
@@ -149,16 +149,21 @@ function normalizeExtras(
   baseUrl: string,
   model: string,
 ): ModelPreset['extras'] {
+  const rawChoices = extras?.reasoningEffortByModel;
+  if (rawChoices !== undefined) {
+    const choices = rawChoices && typeof rawChoices === 'object' && !Array.isArray(rawChoices)
+      ? Object.entries(rawChoices).filter(([, value]) => isReasoningEffort(value)) : [];
+    extras = { ...extras, reasoningEffortByModel: Object.fromEntries(choices) };
+  }
   if (provider === 'anthropic') {
     const vendor = isAnthropicVendor(extras?.vendor)
       ? extras.vendor
       : detectAnthropicVendor(baseUrl, model);
-    // Chat thinking level. Anthropic recommends `high` as the default
-    // adaptive effort; we use the same default for older enabled-mode
-    // models too. Compat vendor ignores this field entirely.
+    // Keep saved choices; models without a choice start at balanced effort.
+    // Model capability resolution maps medium to high for DeepSeek.
     const reasoningEffort = isReasoningEffort(extras?.reasoningEffort)
       ? extras.reasoningEffort
-      : 'high';
+      : DEFAULT_REASONING_EFFORT;
     return { ...extras, vendor, reasoningEffort };
   }
   const rawEffort = extras?.reasoningEffort;
@@ -208,17 +213,6 @@ export function detectAnthropicVendor(
 
 function isAnthropicVendor(value: unknown): value is AnthropicVendor {
   return value === 'claude' || value === 'deepseek' || value === 'compat';
-}
-
-function isReasoningEffort(value: unknown): value is ReasoningEffort {
-  return (
-    value === 'none' ||
-    value === 'minimal' ||
-    value === 'low' ||
-    value === 'medium' ||
-    value === 'high' ||
-    value === 'xhigh'
-  );
 }
 
 function isReasoningSummary(value: unknown): value is ReasoningSummary {

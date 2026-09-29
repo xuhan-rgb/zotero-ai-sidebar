@@ -69,6 +69,7 @@ export function buildTranslatePreset(req: TranslateRequest): ModelPreset {
       extras: {
         ...req.preset.extras,
         reasoningEffort: THINKING_TO_EFFORT[req.thinking],
+        reasoningEffortByModel: undefined,
         reasoningSummary: "none",
       },
     };

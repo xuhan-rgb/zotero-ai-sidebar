@@ -1,5 +1,5 @@
 export type ProviderKind = 'anthropic' | 'openai';
-export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh';
+export type ReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max';
 export type ReasoningSummary = 'auto' | 'concise' | 'detailed' | 'none';
 export type AgentPermissionMode = 'default' | 'yolo';
 // Vendor distinguishes who actually answers an Anthropic-protocol request.
@@ -39,6 +39,7 @@ export interface ModelPreset {
   maxTokens: number;
   extras?: {
     reasoningEffort?: ReasoningEffort;
+    reasoningEffortByModel?: Record<string, ReasoningEffort>;
     reasoningSummary?: ReasoningSummary;
     agentPermissionMode?: AgentPermissionMode;
     omitMaxOutputTokens?: boolean;
@@ -89,8 +90,8 @@ export const DEFAULT_MODELS: Record<ProviderKind, string> = {
 // =================================================================
 //  MODEL CATALOG — single source of truth
 // =================================================================
-// Suggestion chips, thinking-dialect dispatch, and effort-level capping all
-// read from this map. Adding a model or changing its capabilities is a
+// Suggestion chips and Claude thinking-dialect dispatch read from this map.
+// Supported effort ranges are resolved in settings/reasoning.ts. Adding a model or changing its capabilities is a
 // one-place edit. Layout is intentionally vertical so additions are
 // low-friction and diffs stay readable.
 //
@@ -106,7 +107,7 @@ export const DEFAULT_MODELS: Record<ProviderKind, string> = {
 //                    heuristic in findClaudeDescriptor decides).
 //   acceptsXhigh     Anthropic adaptive only. True iff the model accepts
 //                    `effort: "xhigh"` per Anthropic's effort matrix
-//                    (Opus 4.7 only as of writing). Other adaptive models
+//                    (Opus 4.7 / 4.8). Other catalogued adaptive models
 //                    reject xhigh and translator promotes it to `max`.
 export interface ModelDescriptor {
   id: string;
@@ -162,24 +163,27 @@ export type ModelSuggestionKey = keyof typeof MODEL_SUGGESTIONS;
 export function findClaudeDescriptor(model: string): ModelDescriptor {
   const exact = MODEL_CATALOG.claude.find((m) => m.id === model);
   if (exact) return exact;
-  if (/(opus-4-7|opus-4-6|sonnet-4-6|mythos)/i.test(model)) {
+  if (/(opus-4-8|opus-4-7|opus-4-6|sonnet-4-6|mythos)/i.test(model)) {
     return {
       id: model,
       thinkingDialect: 'adaptive',
-      acceptsXhigh: /opus-4-7/i.test(model),
+      acceptsXhigh: /opus-4-[78]/i.test(model),
     };
   }
   return { id: model, thinkingDialect: 'enabled' };
 }
 
-export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'xhigh';
+export const DEFAULT_REASONING_EFFORT: ReasoningEffort = 'medium';
 export const DEFAULT_REASONING_SUMMARY: ReasoningSummary = 'concise';
 
 export const REASONING_EFFORT_OPTIONS: Array<[ReasoningEffort, string]> = [
+  ['none', '关闭思考'],
+  ['minimal', 'Minimal - 最少推理'],
   ['low', 'Low - 快速，较少推理'],
   ['medium', 'Medium - 默认平衡'],
   ['high', 'High - 更强推理'],
-  ['xhigh', 'Extra high - 最强推理'],
+  ['xhigh', 'Extra high - 超高推理'],
+  ['max', 'Max - 最高推理'],
 ];
 
 export const REASONING_SUMMARY_OPTIONS: Array<[ReasoningSummary, string]> = [
@@ -205,9 +209,7 @@ export function newPreset(provider: ProviderKind): ModelPreset {
           reasoningEffort: DEFAULT_REASONING_EFFORT,
           reasoningSummary: DEFAULT_REASONING_SUMMARY,
         }
-      // Anthropic default: 'high' is Anthropic's recommended adaptive
-      // effort and a sensible default for older enabled-mode budgets.
-      : { reasoningEffort: 'high' },
+      : { reasoningEffort: DEFAULT_REASONING_EFFORT },
   };
 }
 

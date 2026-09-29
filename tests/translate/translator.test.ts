@@ -165,3 +165,15 @@ describe("translation retry guard", () => {
     expect(cleanTranslationOutput("Translation: 你好")).toBe("你好");
   });
 });
+
+
+describe("translation effort isolation", () => {
+  it("keeps translation choice independent from the saved chat effort", () => {
+    const out = buildTranslatePreset({
+      preset: { ...baseOpenAi, extras: { reasoningEffortByModel: { [baseOpenAi.model]: "max" } } },
+      sentence: "hello", thinking: "low", model: baseOpenAi.model, signal: new AbortController().signal,
+    });
+    expect(out.extras?.reasoningEffort).toBe("low");
+    expect(out.extras?.reasoningEffortByModel).toBeUndefined();
+  });
+});

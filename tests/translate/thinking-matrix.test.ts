@@ -190,9 +190,9 @@ describe('DeepSeek request body', () => {
     expect(anthropicRequest).not.toHaveProperty('output_config');
   });
 
-  // DeepSeek only exposes high/max effectively; we pre-collapse client-side.
-  const expectedDeepseekEffort: Record<Exclude<TranslateThinking, 'off'>, 'high' | 'max'> = {
-    low: 'high',
+  // Current DeepSeek supports low/high/max; retain the legacy xhigh alias.
+  const expectedDeepseekEffort: Record<Exclude<TranslateThinking, 'off'>, 'low' | 'high' | 'max'> = {
+    low: 'low',
     medium: 'high',
     high: 'high',
     xhigh: 'max',

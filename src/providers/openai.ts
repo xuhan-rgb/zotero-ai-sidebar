@@ -1,4 +1,8 @@
 import {
+  effectiveReasoningEffort,
+  isDeepSeekReasoningModel,
+} from "../settings/reasoning";
+import {
   isOfficialOpenAIEndpoint,
   supportsExtendedPromptCache,
   stablePromptCacheKey,
@@ -209,7 +213,8 @@ export class OpenAIProvider implements Provider {
             ...responsesReasoningParam(preset),
             stream: true,
             store: false,
-          },
+            // The installed SDK predates the documented max effort value.
+          } as unknown as OpenAI.Responses.ResponseCreateParamsStreaming,
           responsesRequestOptions(preset, options, signal, salt),
         )) as unknown as AsyncIterable<unknown>;
         break;
@@ -1051,15 +1056,18 @@ function reasoningOptions(preset: ModelPreset): {
   // sidebar's collapsible thinking block has something to render.
   const summary = preset.extras?.reasoningSummary ?? "concise";
   return {
-    effort: preset.extras?.reasoningEffort ?? "xhigh",
-    ...(summary === "none" ? {} : { summary }),
+    effort: effectiveReasoningEffort(preset)!,
+    ...(summary === "none" || isDeepSeekReasoningModel(preset) ? {} : { summary }),
   };
 }
 
 function responsesReasoningParam(preset: ModelPreset): {
   reasoning?: ReturnType<typeof reasoningOptions>;
 } {
-  if (!shouldSendResponsesReasoning(preset)) return {};
+  if (
+    !shouldSendResponsesReasoning(preset) ||
+    effectiveReasoningEffort(preset) === undefined
+  ) return {};
   return { reasoning: reasoningOptions(preset) };
 }
 
@@ -1306,10 +1314,14 @@ function chatCompletionToolSpec(tool: AgentTool): Record<string, unknown> {
 function chatCompletionReasoningParam(
   preset: ModelPreset,
 ): Record<string, unknown> {
-  const effort = preset.extras?.reasoningEffort;
-  if (!effort || effort === "none") return {};
-  // Chat Completions uses top-level reasoning_effort (not nested reasoning.effort).
-  return { reasoning_effort: effort === "xhigh" ? "high" : effort };
+  const effort = effectiveReasoningEffort(preset);
+  if (effort === undefined) return {};
+  if (isDeepSeekReasoningModel(preset)) {
+    return effort === "none"
+      ? { thinking: { type: "disabled" } }
+      : { thinking: { type: "enabled" }, reasoning_effort: effort };
+  }
+  return { reasoning_effort: effort };
 }
 
 function chatUsageChunk(usage: ChatCompletionUsage): StreamChunk {

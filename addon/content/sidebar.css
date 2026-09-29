@@ -4168,6 +4168,39 @@ div.math-fallback {
   overflow: hidden;
 }
 
+.composer-footer-actions-api {
+  flex-wrap: wrap;
+}
+
+.composer-reasoning {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  gap: 4px;
+  color: var(--zai-muted);
+  font: 600 12px/18px var(--zai-font);
+}
+
+.composer-reasoning[hidden] {
+  display: none;
+}
+
+.composer-reasoning select {
+  max-width: 130px;
+  padding: 2px 4px;
+  border: 1px solid var(--zai-border);
+  border-radius: 6px;
+  color: var(--zai-accent-strong);
+  background: var(--zai-panel-strong);
+  font: inherit;
+  cursor: pointer;
+}
+
+.composer-reasoning select:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
 .composer-attachment-menu > summary {
   width: 24px;
   min-width: 24px;

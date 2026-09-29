@@ -1,3 +1,5 @@
+import { effectiveReasoningEffort } from "../settings/reasoning";
+import { renderComposerReasoningSelect } from "./composer-reasoning";
 import { bindReadingRouteProgress } from "./reading-route-progress";
 import { traceBrowserPicker } from "./browser-picker-debug";
 import { webPaperSessionKey, prepareWebOverview, webOverviewPrompt, parseWebOverview, webReadingRoutePrompt, parseWebReadingRoute, type WebPaperAction } from "./web-paper-actions";
@@ -5254,9 +5256,19 @@ function renderComposerFooter(
   footer.classList.toggle("composer-footer-status-empty", Boolean(left.hidden));
   const sendMode = renderSendTargetSwitcher(doc, mount, state);
   if (state.localUiSettings.chatSendMode === "api") {
+    actions.classList.add("composer-footer-actions-api");
     actions.append(
       renderPresetSwitcher(doc, mount, state),
       renderModelSwitcher(doc, mount, state),
+      renderComposerReasoningSelect(
+        doc,
+        selectedChatPreset(state) ?? selectedPreset(state),
+        conversationIsSending(state, state.activeConversationID),
+        (preset) => {
+          upsertPreset(state, preset);
+          persist(state);
+        },
+      ),
       renderYoloToggle(doc, mount, state),
     );
   } else {
@@ -7021,8 +7033,12 @@ function renderActiveQuickAsk(
     controller.state.modelSelection = {
       presetId: modelOptions[0].presetId,
       model: modelOptions[0].model,
-      reasoningEffort: quickAskReasoningEffort(selectedPreset),
+      reasoningEffort: quickAskReasoningEffort(selectedPreset
+        ? { ...selectedPreset, model: modelOptions[0].model } : undefined),
     };
+  }
+  if (selectedPreset) {
+    selectedPreset = { ...selectedPreset, model: controller.state.modelSelection.model };
   }
   const reasoningOptions =
     selectedPreset && !isReasoningDisabledForDraft(selectedPreset)
@@ -7054,7 +7070,7 @@ function renderActiveQuickAsk(
         controller.state.modelSelection = {
           presetId,
           model,
-          reasoningEffort: quickAskReasoningEffort(preset),
+          reasoningEffort: quickAskReasoningEffort(preset ? { ...preset, model } : undefined),
         };
         saveQuickAskModelSelection(
           zoteroPrefs(),
@@ -7152,10 +7168,7 @@ function quickAskReasoningEffort(
   preset: ModelPreset | undefined,
 ): ReasoningEffort {
   if (!preset) return DEFAULT_REASONING_EFFORT;
-  return collapseReasoningForPreset(
-    preset,
-    preset.extras?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
-  );
+  return effectiveReasoningEffort(preset) ?? DEFAULT_REASONING_EFFORT;
 }
 
 function closeQuickAsk(sidebar: WindowSidebarState): void {
@@ -7198,7 +7211,7 @@ async function sendQuickAsk(
     presetWithModel && !isReasoningDisabledForDraft(presetWithModel)
       ? withReasoningEffort(
           presetWithModel,
-          collapseReasoningForPreset(presetWithModel, selected.reasoningEffort),
+          collapseReasoningForPreset(presetWithModel, selected.reasoningEffort) ?? selected.reasoningEffort,
         )
       : presetWithModel;
   if (!preset?.apiKey || !preset.model) {

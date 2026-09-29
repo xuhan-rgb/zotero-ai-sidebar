@@ -4,6 +4,10 @@ import {
 } from "./providers/openai-cache-policy";
 import { initLocale } from "./utils/locale";
 import { shutdownWebAgent } from "./modules/web-agent-client";
+import {
+  createReasoningControls,
+  mergeReasoningEffortByModel,
+} from "./modules/reasoning-controls";
 import { checkWebAgentAfterXpiUpdate } from "./modules/web-agent-installer";
 import { createZToolkit } from "./utils/ztoolkit";
 import { zoteroContextSource } from "./context/zotero-source";
@@ -2143,6 +2147,11 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
     preset.model,
     preset.id,
   );
+  const reasoningControls = createReasoningControls(
+    doc,
+    preset,
+    modelList.models(),
+  );
   const maxTokens = input(doc, String(preset.maxTokens || 32768), "number");
   maxTokens.dataset.field = "maxTokens";
   maxTokens.classList.add("zai-number-input");
@@ -2206,6 +2215,21 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
     modelList.setSuggestionKey(nextKey);
   };
 
+  const refreshReasoningControls = () => {
+    reasoningControls.refresh(
+      {
+        ...preset,
+        provider: provider.value === "anthropic" ? "anthropic" : "openai",
+        baseUrl: baseUrl.value,
+        extras: {
+          ...preset.extras,
+          vendor: vendor.value as AnthropicVendor,
+        },
+      },
+      modelList.models(),
+    );
+  };
+
   const syncProvider = () => {
     const isOpenAI = provider.value === "openai";
     reasoningSummary.disabled = !isOpenAI;
@@ -2226,12 +2250,14 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
     if (modelList.models().length === 0 && DEFAULT_MODELS[kind]) {
       modelList.setModels([DEFAULT_MODELS[kind]]);
     }
+    refreshReasoningControls();
     syncProvider();
     updatePresetDirtyState(doc);
   });
   vendor.addEventListener("change", () => {
     if (provider.value !== "anthropic") return;
     syncModelSuggestionKey();
+    refreshReasoningControls();
     updatePresetDirtyState(doc);
   });
   modelGroup.addEventListener("change", () => {
@@ -2239,11 +2265,16 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
     updatePresetDirtyState(doc);
   });
 
-  modelList.onModelsChange(syncModelSuggestionKey);
+  modelList.onModelsChange(() => {
+    syncModelSuggestionKey();
+    refreshReasoningControls();
+  });
   label.addEventListener("input", syncModelSuggestionKey);
   label.addEventListener("change", syncModelSuggestionKey);
   baseUrl.addEventListener("input", syncModelSuggestionKey);
   baseUrl.addEventListener("change", syncModelSuggestionKey);
+  baseUrl.addEventListener("input", refreshReasoningControls);
+  baseUrl.addEventListener("change", refreshReasoningControls);
   syncProvider();
   card.append(
     title,
@@ -2253,6 +2284,7 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
       ["API Key", apiKey],
       ["Base URL", baseUrl],
       ["Models", modelList.element],
+      ["推理强度（按模型）", reasoningControls.element],
       [modelGroupLabel, modelGroup],
       ["Max tokens", maxTokens],
       [vendorLabel, vendor],
@@ -2263,6 +2295,12 @@ function presetRow(doc: Document, preset: ModelPreset): HTMLElement {
   );
   const refreshFlagsFromControls = () =>
     refreshPresetFlags(flagControl, readPresetFromCard(card));
+  for (const eventName of ["input", "change"]) {
+    reasoningControls.element.addEventListener(eventName, () => {
+      refreshFlagsFromControls();
+      updatePresetDirtyState(doc);
+    });
+  }
   for (const control of [
     provider,
     baseUrl,
@@ -2837,6 +2875,26 @@ function readPresetControls(doc: Document): ModelPreset[] {
     const fallbackModel = DEFAULT_MODELS[provider];
     const model = models[0] || fallbackModel;
     const prior = previous.get(card.dataset.id ?? "");
+    const reasoningSelects = Array.from(
+      card.querySelectorAll(".zai-reasoning-controls select[data-model]"),
+    ) as HTMLSelectElement[];
+    const reasoningEffortByModel = Object.fromEntries(
+      reasoningSelects
+        .filter(
+          (control) =>
+            !control.disabled &&
+            control.value &&
+            control.dataset.explicit === "true",
+        )
+        .map((control) => [
+          control.dataset.model!,
+          control.value as ReasoningEffort,
+        ]),
+    );
+    const savedReasoningEffortByModel = mergeReasoningEffortByModel(
+      prior?.extras?.reasoningEffortByModel,
+      reasoningEffortByModel,
+    );
     const extras =
       provider === "openai"
         ? {
@@ -2844,6 +2902,9 @@ function readPresetControls(doc: Document): ModelPreset[] {
             reasoningEffort: reasoningEffortValue(
               prior?.extras?.reasoningEffort,
             ),
+            ...(savedReasoningEffortByModel
+              ? { reasoningEffortByModel: savedReasoningEffortByModel }
+              : {}),
             reasoningSummary: reasoningSummaryValue(
               controlValue(card, "reasoningSummary"),
             ),
@@ -2854,6 +2915,9 @@ function readPresetControls(doc: Document): ModelPreset[] {
           }
         : {
             ...(prior?.extras ?? {}),
+            ...(savedReasoningEffortByModel
+              ? { reasoningEffortByModel: savedReasoningEffortByModel }
+              : {}),
             vendor: vendorValue(
               controlValue(card, "vendor"),
               prior?.extras?.vendor,
@@ -2994,6 +3058,7 @@ function presetConnectivitySignature(preset: ModelPreset): string {
     models: preset.models ?? [preset.model],
     maxTokens: preset.maxTokens,
     reasoningEffort: preset.extras?.reasoningEffort,
+    reasoningEffortByModel: preset.extras?.reasoningEffortByModel,
     reasoningSummary: preset.extras?.reasoningSummary,
     omitMaxOutputTokens: preset.extras?.omitMaxOutputTokens,
   });
@@ -3544,7 +3609,7 @@ function approvalValue(value: string): McpApprovalMode {
 
 function reasoningEffortValue(value: unknown): ReasoningEffort {
   return typeof value === "string" &&
-    ["none", "minimal", "low", "medium", "high", "xhigh"].includes(value)
+    ["none", "minimal", "low", "medium", "high", "xhigh", "max"].includes(value)
     ? (value as ReasoningEffort)
     : DEFAULT_REASONING_EFFORT;
 }

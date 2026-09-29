@@ -1,4 +1,8 @@
 import {
+  effectiveReasoningEffort,
+  isDeepSeekReasoningModel,
+} from "../settings/reasoning";
+import {
   isOfficialOpenAIEndpoint as isOfficialOpenAIEndpointForDebug,
   supportsExtendedPromptCache as supportsExtendedPromptCacheForDebug,
 } from "../providers/openai-cache-policy";
@@ -10,7 +14,6 @@ import {
 
 import type { Message } from "../providers/types";
 import {
-  DEFAULT_REASONING_EFFORT,
   DEFAULT_REASONING_SUMMARY,
   usesOpenAIChatCompletions,
   type ModelPreset,
@@ -103,20 +106,32 @@ function reasoningDebugForPreset(
       shape: null,
     };
   }
+  const effort = effectiveReasoningEffort(preset);
+  if (effort === undefined) {
+    return {
+      sent: false,
+      detail: "model reasoning capability unknown or unsupported; omitted",
+      shape: null,
+    };
+  }
   if (requestPath === "openai.chat_completions") {
-    const effort = preset.extras?.reasoningEffort;
-    if (!effort || effort === "none") {
+    if (isDeepSeekReasoningModel(preset) && effort === "none") {
       return {
         sent: false,
-        detail: "chat completions reasoning_effort omitted",
-        shape: null,
+        detail: "chat completions thinking disabled",
+        shape: { thinking: { type: "disabled" } },
       };
     }
-    const sentEffort = effort === "xhigh" ? "high" : effort;
+    const sentEffort = effort;
     return {
       sent: true,
       detail: `chat completions reasoning_effort=${sentEffort}`,
-      shape: { reasoning_effort: sentEffort },
+      shape: {
+        reasoning_effort: sentEffort,
+        ...(isDeepSeekReasoningModel(preset)
+          ? { thinking: { type: "enabled" } }
+          : {}),
+      },
     };
   }
   if (isOfficialOpenAIEndpointForDebug(preset)) {
@@ -149,8 +164,8 @@ function responsesReasoningShapeForDebug(preset: ModelPreset): {
 } {
   const summary = preset.extras?.reasoningSummary ?? DEFAULT_REASONING_SUMMARY;
   return {
-    effort: preset.extras?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
-    ...(summary === "none" ? {} : { summary }),
+    effort: effectiveReasoningEffort(preset)!,
+    ...(summary === "none" || isDeepSeekReasoningModel(preset) ? {} : { summary }),
   };
 }
 

@@ -1,4 +1,14 @@
 import {
+  effectiveReasoningEffort,
+  isDeepSeekReasoningModel,
+  reasoningEffortOptionsForPreset,
+  withModelReasoningEffort,
+} from "../settings/reasoning";
+export {
+  reasoningEffortOptionsForPreset,
+  collapseReasoningForPreset,
+} from "../settings/reasoning";
+import {
   isOfficialOpenAIEndpoint as isOfficialOpenAIEndpointForPreset,
   supportsExtendedPromptCache as supportsExtendedPromptCacheForPreset,
   stablePromptCacheKey,
@@ -65,63 +75,11 @@ export function withAgentPermissionMode(
   };
 }
 
-// Reasoning effort is editable for any preset that actually consumes it:
-// OpenAI Responses presets always do; Anthropic presets do iff their vendor
-// is Claude or DeepSeek (compat = unknown third-party that never gets a
-// thinking field, so the control is meaningless and stays disabled).
 export function isReasoningDisabledForDraft(draft: ModelPreset): boolean {
-  if (draft.provider === "openai") return false;
-  if (draft.provider === "anthropic") {
-    const vendor = draft.extras?.vendor ?? "compat";
-    return vendor === "compat";
-  }
-  return true;
+  return reasoningEffortOptionsForPreset(draft).length === 0;
 }
 
-// DeepSeek's Anthropic-format endpoint advertises only two effective effort
-// values — high and max (their docs note 3: low/medium → high, xhigh →
-// max). The composer dropdown for DeepSeek presets surfaces just those, so
-// users can't pick a level that silently maps to something else.
-const REASONING_EFFORT_OPTIONS_DEEPSEEK: Array<[ReasoningEffort, string]> = [
-  ["high", "High - 标准思考（DeepSeek 默认）"],
-  // We persist 'xhigh' on the preset; on the wire DeepSeek reads it as
-  // max. Same approach used by the translate panel for consistency.
-  ["xhigh", "Max - 强思考（复杂任务）"],
-];
-
-export function reasoningEffortOptionsForPreset(
-  preset: ModelPreset,
-): Array<[ReasoningEffort, string]> {
-  if (preset.provider === "anthropic" && preset.extras?.vendor === "deepseek") {
-    return REASONING_EFFORT_OPTIONS_DEEPSEEK;
-  }
-  return REASONING_EFFORT_OPTIONS;
-}
-
-// Collapse a persisted effort to one that exists in the preset's visible
-// option list. Currently only DeepSeek collapses — low/medium → high.
-export function collapseReasoningForPreset(
-  preset: ModelPreset,
-  effort: ReasoningEffort,
-): ReasoningEffort {
-  if (preset.provider === "anthropic" && preset.extras?.vendor === "deepseek") {
-    if (effort === "low" || effort === "medium") return "high";
-  }
-  return effort;
-}
-
-export function withReasoningEffort(
-  preset: ModelPreset,
-  effort: ReasoningEffort,
-): ModelPreset {
-  return {
-    ...preset,
-    extras: {
-      ...preset.extras,
-      reasoningEffort: effort,
-    },
-  };
-}
+export const withReasoningEffort = withModelReasoningEffort;
 
 export function reasoningEffortLabel(effort: ReasoningEffort): string {
   return (
@@ -537,11 +495,13 @@ function openAIResponsesReasoningBodyParam(preset: ModelPreset): {
   };
 } {
   if (!shouldSendOpenAIResponsesReasoning(preset)) return {};
+  const effort = effectiveReasoningEffort(preset);
+  if (effort === undefined) return {};
   const summary = preset.extras?.reasoningSummary ?? DEFAULT_REASONING_SUMMARY;
   return {
     reasoning: {
-      effort: preset.extras?.reasoningEffort ?? DEFAULT_REASONING_EFFORT,
-      ...(summary === "none" ? {} : { summary }),
+      effort,
+      ...(summary === "none" || isDeepSeekReasoningModel(preset) ? {} : { summary }),
     },
   };
 }

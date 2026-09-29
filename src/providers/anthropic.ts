@@ -1,3 +1,4 @@
+import { effectiveReasoningEffort, collapseReasoningForPreset } from '../settings/reasoning';
 import Anthropic from '@anthropic-ai/sdk';
 import type {
   AgentTool,
@@ -75,10 +76,8 @@ export class AnthropicProvider implements Provider {
       system: toAnthropicSystem(systemPrompt, options.pinnedFullText),
       messages: toAnthropicMessages(messages),
     };
-    // Thinking config is opt-in: the translator writes `extras.translateThinking`
-    // before calling stream(); the chat path never sets it, so chat behavior is
-    // unchanged. SDK 0.91 doesn't type `output_config`/adaptive thinking yet,
-    // so we cast to a permissive shape and let the SDK forward it as JSON.
+    // Chat reads the selected model's effort; translation supplies its own
+    // transient thinking setting. Forward the resulting provider-specific body.
     const requestBody: Record<string, unknown> = { ...baseRequest };
     const thinkingExtras = buildAnthropicThinking(preset);
     if (thinkingExtras) Object.assign(requestBody, thinkingExtras);
@@ -593,12 +592,11 @@ function errMsg(err: unknown): string {
 //
 //   - DeepSeek (Anthropic-format endpoint):
 //       thinking: { type: "enabled" } + output_config: { effort }
-//     Per DeepSeek docs they accept low/medium/high/xhigh/max and collapse
-//     low|medium → high and xhigh → max internally.
+//     Current native efforts are low/high/max; the legacy stored xhigh
+//     alias still represents max for this adapter.
 //
-// Returning `null` means the chat/connectivity path: send no thinking field
-// and the existing AnthropicProvider behavior holds. The translator opts in
-// by writing `extras.translateThinking`; nothing else writes that field.
+// Returning null omits the thinking configuration. Translation settings
+// take precedence over the saved per-model chat selection.
 export function buildAnthropicThinking(
   preset: ModelPreset,
 ): Record<string, unknown> | null {
@@ -606,8 +604,10 @@ export function buildAnthropicThinking(
   // explicit "off" choice). Chat flow doesn't — instead we read the
   // persisted reasoningEffort the user picked in the composer footer / the
   // preset card. Compat vendor is never given a thinking field regardless.
-  const level: TranslateThinking | null =
-    preset.extras?.translateThinking ?? reasoningEffortToThinking(preset.extras?.reasoningEffort);
+  const hasChatEffort = preset.extras?.reasoningEffort !== undefined
+    || preset.extras?.reasoningEffortByModel?.[preset.model] !== undefined;
+  const level = preset.extras?.translateThinking
+    ?? reasoningEffortToThinking(hasChatEffort ? effectiveReasoningEffort(preset) : undefined);
   if (!level) return null;
   const vendor: AnthropicVendor = preset.extras?.vendor ?? 'compat';
   if (vendor === 'compat') return null;
@@ -621,11 +621,9 @@ export function buildAnthropicThinking(
   if (vendor === 'deepseek') {
     return {
       thinking: { type: 'enabled' },
-      // DeepSeek only exposes 'high' and 'max' effectively (per their
-      // Anthropic-format docs note 3: low/medium → high, xhigh → max).
-      // Pre-collapse so the wire body matches what actually takes effect
-      // — UI also restricts to these two for new selections.
-      output_config: { effort: deepseekEffort(level) },
+      // Preserve old translation xhigh as max, while sending native low
+      // independently for current model configurations.
+      output_config: { effort: level === 'xhigh' ? 'max' : collapseReasoningForPreset(preset, level) ?? 'high' },
     };
   }
   const descriptor = findClaudeDescriptor(preset.model);
@@ -642,11 +640,7 @@ export function buildAnthropicThinking(
 
 // Helpers below only ever run for non-'off' levels — buildAnthropicThinking
 // short-circuits the 'off' case before reaching either of them.
-type ActiveThinking = Exclude<TranslateThinking, 'off'>;
-
-function deepseekEffort(level: ActiveThinking): 'high' | 'max' {
-  return level === 'xhigh' ? 'max' : 'high';
-}
+type ActiveThinking = Exclude<TranslateThinking, 'off'> | 'max';
 
 // Map the preset's reasoningEffort (OpenAI-shaped enum) onto our internal
 // TranslateThinking levels for the chat flow. The 'none' / 'minimal' values
@@ -655,7 +649,7 @@ function deepseekEffort(level: ActiveThinking): 'high' | 'max' {
 // or above is what actually triggers Anthropic thinking on chat.
 function reasoningEffortToThinking(
   effort: ReasoningEffort | undefined,
-): TranslateThinking | null {
+): TranslateThinking | 'max' | null {
   if (!effort) return null;
   if (effort === 'none' || effort === 'minimal') return 'off';
   return effort;
@@ -681,6 +675,7 @@ function claudeBudgetTokens(level: ActiveThinking): number {
     case 'high':
       return 4096;
     case 'xhigh':
+    case 'max':
       return 8192;
   }
 }

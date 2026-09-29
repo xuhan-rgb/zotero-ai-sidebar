@@ -5,7 +5,8 @@ import {
   savePresets,
   type PrefsStore,
 } from '../../src/settings/storage';
-import type { ModelPreset } from '../../src/settings/types';
+import { newPreset, type ModelPreset } from '../../src/settings/types';
+import { effectiveReasoningEffort } from '../../src/settings/reasoning';
 
 function memPrefs(): PrefsStore {
   const m = new Map<string, string>();
@@ -26,8 +27,7 @@ const p1: ModelPreset = {
   model: 'claude-opus-4-7-20251101',
   models: ['claude-opus-4-7-20251101'],
   maxTokens: 8192,
-  // normalizeExtras auto-detects vendor from baseUrl/model and back-fills
-  // reasoningEffort='high' (Anthropic's recommended default) on load.
+  // Explicit saved effort must survive changes to the application's default.
   extras: { vendor: 'claude', reasoningEffort: 'high' },
 };
 
@@ -224,5 +224,52 @@ describe('preset storage', () => {
     };
     savePresets(prefs, [multi]);
     expect(loadPresets(prefs)[0]).toEqual(multi);
+  });
+});
+
+
+describe('per-model effort persistence', () => {
+  it('round trips max and separate model choices without resetting the legacy value', () => {
+    const prefs = memPrefs();
+    const configured: ModelPreset = { ...p1, extras: { ...p1.extras,
+      reasoningEffort: 'high', reasoningEffortByModel: { 'claude-opus-4-7': 'max', 'claude-sonnet-4-6': 'medium' },
+    } };
+    savePresets(prefs, [configured]);
+    expect(loadPresets(prefs)[0].extras).toEqual(configured.extras);
+  });
+  it('drops invalid imported model choices while keeping valid values', () => {
+    const prefs = memPrefs();
+    writePresetsRaw(prefs, [{ ...p1, extras: { ...p1.extras, reasoningEffortByModel: {
+      'claude-opus-4-7': 'max', bad: 'turbo', broken: null,
+    } } }]);
+    expect(loadPresets(prefs)[0].extras?.reasoningEffortByModel).toEqual({ 'claude-opus-4-7': 'max' });
+  });
+});
+
+
+describe('balanced defaults and local persistence', () => {
+  it.each(['openai', 'anthropic'] as const)('new %s configurations persist medium as their initial setting', (provider) => {
+    const prefs = memPrefs();
+    const created = newPreset(provider);
+    created.model = provider === 'openai' ? 'gpt-5.6-sol' : 'claude-opus-4-7';
+    savePresets(prefs, [created]);
+    expect(effectiveReasoningEffort(loadPresets(prefs)[0])).toBe('medium');
+  });
+
+  it('restores independent account and model choices after a new read', () => {
+    const prefs = memPrefs();
+    const model = 'gpt-5.6-sol';
+    savePresets(prefs, [
+      { ...p1, provider: 'openai', id: 'account-a', model, models: [model, 'gpt-5.4'], extras: {
+        reasoningEffortByModel: { [model]: 'max', 'gpt-5.4': 'low' },
+      } },
+      { ...p1, provider: 'openai', id: 'account-b', model, models: [model], extras: {
+        reasoningEffortByModel: { [model]: 'medium' },
+      } },
+    ]);
+    const reloaded = loadPresets(prefs);
+    expect(effectiveReasoningEffort(reloaded[0])).toBe('max');
+    expect(effectiveReasoningEffort({ ...reloaded[0], model: 'gpt-5.4' })).toBe('low');
+    expect(effectiveReasoningEffort(reloaded[1])).toBe('medium');
   });
 });
