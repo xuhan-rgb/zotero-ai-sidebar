@@ -422,7 +422,9 @@ export function attachmentTextStateFromBody(body, name) {
   const lines = String(body).split("\n");
   const related = lines
     .flatMap((line, index) =>
-      line.includes(name) ? lines.slice(index, index + 2) : [],
+      line.includes(name)
+        ? lines.slice(index, index + 2).map((value) => value.split(name).join(""))
+        : [],
     )
     .join("\n");
   if (

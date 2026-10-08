@@ -644,6 +644,19 @@ describe("Web Agent provider adapters", () => {
     expect(waitForTimeout).toHaveBeenCalledTimes(1);
   });
 
+  it.each([
+    "Li 等 - 2026 - QCATS Query Context-Aware Transformer Slicing for Efficient Predictive Query Processing.pdf",
+    "Postprocessing.pdf",
+    "Uploading.pdf",
+    "Unsupported.pdf",
+    "Failed.pdf",
+  ])("does not treat file names as upload status: %s", (name) => {
+    expect(attachmentTextStateFromBody(`${name}\nPDF 12.54MB`, name)).toBe("ready");
+    expect(attachmentTextStateFromBody(`${name} Uploading...`, name)).toBe("uploading");
+    expect(attachmentTextStateFromBody(`${name}\nProcessing`, name)).toBe("uploading");
+    expect(attachmentTextStateFromBody(`${name}\nUpload failed`, name)).toBe("failed");
+  });
+
   it("keeps waiting when Kimi renders the parse status below the file name", () => {
     expect(
       attachmentTextStateFromBody(

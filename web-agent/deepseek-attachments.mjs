@@ -86,7 +86,29 @@ export function readDeepSeekDraft(composer, { name, previews, uploading, rootSel
       !otherCandidates.some((other) => other !== node && node.contains(other)),
   );
   const rootId = id(root, "data-zai-draft-root");
-  const body = previewNodes.map(text).join("\n");
+  // Read status text separately from filename labels. textContent on a card
+  // can concatenate its filename and status without a separating newline.
+  const fileLabels = previewNodes.filter((node) => {
+    const value = labelText(node).trim();
+    const prefix = value.split(/…|\.\.\./)[0].trim();
+    return !node.children.length && !/[\r\n]/.test(value) && (
+      value.toLowerCase() === name.toLowerCase() ||
+      value.toLowerCase() === stem ||
+      /\.[a-z][a-z0-9]{0,9}$/i.test(value) ||
+      (/…|\.\.\./.test(value) && prefix.length < stem.length && matches(node))
+    );
+  });
+  const statusParts = [];
+  const walker = root.ownerDocument.createTreeWalker(root, 4 /* SHOW_TEXT */);
+  while (walker.nextNode()) {
+    const node = walker.currentNode;
+    if (
+      !previewNodes.some((preview) => preview.contains(node)) ||
+      fileLabels.some((label) => label.contains(node))
+    ) continue;
+    statusParts.push(node.textContent.split(name).join("").trim());
+  }
+  const body = statusParts.join("\n");
   const busyNodes = [...root.querySelectorAll(uploading)].filter(visible);
   const busyText =
     body.match(

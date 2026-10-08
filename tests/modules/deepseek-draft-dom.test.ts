@@ -71,6 +71,54 @@ describe("DeepSeek draft DOM inspection", () => {
     expect(state.failed).toBe(false);
   });
 
+  it.each([
+    "Li 等 - 2026 - QCATS Query Context-Aware Transformer Slicing for Efficient Predictive Query Processing.pdf",
+    "Image Postprocessing.pdf",
+    "Uploading.pdf",
+    "unsupported file.pdf",
+  ])("separates attachment names from status text: %s", (name) => {
+    const { root, composer } = createDraft();
+    const card = addCard(root, name);
+    const status = document.createElement("span");
+    status.textContent = "PDF 12.54MB";
+    card.append(status);
+    const inspect = () => readDeepSeekDraft(composer, {
+      name, previews, uploading,
+    });
+
+    expect(inspect()).toMatchObject({ busy: false, failed: false });
+    status.textContent = "Uploading...";
+    expect(inspect()).toMatchObject({ busy: true, failed: false });
+    status.textContent = "上传失败";
+    expect(inspect()).toMatchObject({ failed: true });
+  });
+
+  it.each(["\n", " "])("preserves status in a combined filename/status text node: %j", (separator) => {
+    const name = "Query Processing.pdf";
+    const { root, composer } = createDraft();
+    const card = document.createElement("div");
+    card.className = "file-card";
+    root.append(card);
+    const inspect = () => readDeepSeekDraft(composer, { name, previews, uploading });
+
+    card.textContent = `${name}${separator}PDF 12.54MB`;
+    expect(inspect()).toMatchObject({ busy: false, failed: false });
+    card.textContent = `${name}${separator}Uploading...`;
+    expect(inspect()).toMatchObject({ busy: true, failed: false });
+    card.textContent = `${name}${separator}Upload failed`;
+    expect(inspect()).toMatchObject({ failed: true });
+  });
+
+  it("ignores status keywords in other and truncated attachment names", () => {
+    const { root, composer } = createDraft();
+    addCard(root);
+    addCard(root, "Other Processing.pdf");
+    addCard(root, "Terra-Explorable Processing…");
+    expect(readDeepSeekDraft(composer, {
+      name: "Terra-Explorable Processing Paper.pdf", previews, uploading,
+    })).toMatchObject({ busy: false, failed: false });
+  });
+
   it.each([true, false])("recognizes an image by alt and waits for its upload spinner: %s", (loading) => {
     const imageName = "1789916502423-图-1-teaser.png";
     document.body.innerHTML = `
