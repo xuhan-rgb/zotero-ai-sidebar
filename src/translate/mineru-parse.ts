@@ -10,6 +10,7 @@ import {
   readPdfStat,
   saveMineruCache,
 } from "./mineru-store";
+import { uiText } from "../utils/ui-locale";
 
 export type MineruParseState =
   | { status: "ready" }
@@ -65,12 +66,18 @@ async function runParse(pdf: {
 }): Promise<MineruParseState> {
   const token = loadMineruSettings(zoteroPrefs()).token;
   if (!token) return publish(pdf.itemKey, { status: "no-token" });
-  publish(pdf.itemKey, { status: "parsing", message: "正在检查 PDF 解析缓存…" });
+  publish(pdf.itemKey, {
+    status: "parsing",
+    message: uiText("正在检查 PDF 解析缓存…", "Checking the PDF parse cache…"),
+  });
   try {
     const stat = await readPdfStat(pdf.pdfPath);
     const cached = await loadMineruCache(pdf.itemKey, stat.size, stat.mtime);
     if (cached) return publish(pdf.itemKey, { status: "ready" });
-    publish(pdf.itemKey, { status: "parsing", message: "正在用 MinerU 解析 PDF…" });
+    publish(pdf.itemKey, {
+      status: "parsing",
+      message: uiText("正在用 MinerU 解析 PDF…", "Parsing PDF with MinerU…"),
+    });
     const bytes = await readPdfBytes(pdf.pdfPath);
     const parsed = await parsePdfWithMineru(
       { name: pdf.fileName, bytes, dataId: pdf.itemKey },
@@ -117,14 +124,14 @@ function progressLabel(
   extracted?: number,
   total?: number,
 ): string {
-  if (state === "waiting-file") return "正在上传 PDF…";
-  if (state === "pending") return "MinerU 排队中…";
-  if (state === "converting") return "MinerU 正在转换格式…";
+  if (state === "waiting-file") return uiText("正在上传 PDF…", "Uploading PDF…");
+  if (state === "pending") return uiText("MinerU 排队中…", "MinerU queued…");
+  if (state === "converting") return uiText("MinerU 正在转换格式…", "MinerU is converting the file…");
   if (state === "running") {
     return total
-      ? `MinerU 解析中（${extracted ?? 0}/${total} 页）…`
-      : "MinerU 正在解析 PDF…";
+      ? uiText(`MinerU 解析中（${extracted ?? 0}/${total} 页）…`, `MinerU parsing (${extracted ?? 0}/${total} pages)…`)
+      : uiText("MinerU 正在解析 PDF…", "MinerU is parsing the PDF…");
   }
-  if (state === "done") return "正在读取解析结果…";
-  return "正在用 MinerU 解析 PDF…";
+  if (state === "done") return uiText("正在读取解析结果…", "Reading parse results…");
+  return uiText("正在用 MinerU 解析 PDF…", "Parsing PDF with MinerU…");
 }

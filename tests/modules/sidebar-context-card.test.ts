@@ -35,7 +35,7 @@ describe("paper context card", () => {
     )!;
 
     expect(metadata.firstElementChild).toBe(repository);
-    expect(repository.textContent).toBe("GitHub：owner/repo");
+    expect(repository.textContent).toBe("GitHub: owner/repo");
     expect(repository.href).toBe("https://github.com/owner/repo");
     expect(repository.target).toBe("_blank");
     expect(metadata.textContent).toContain("Item ID: 1494");

@@ -30,8 +30,8 @@ describe("sidebar selected-text menu", () => {
   });
 
   it("offers note insertion and a cited question", () => {
-    expect(sidebarSource).toContain('importBtn.textContent = "加入笔记"');
-    expect(sidebarSource).toContain('askBtn.textContent = "提问"');
+    expect(sidebarSource).toContain('importBtn.textContent = uiText("加入笔记", "Add to note")');
+    expect(sidebarSource).toContain('askBtn.textContent = uiText("提问", "Ask")');
     expect(sidebarSource).toContain("fullReply: sourceMessage.content");
     expect(sidebarSource).toContain("excerpt,");
     expect(sidebarSource).toContain("sourceAssistantOrdinal:");
@@ -89,9 +89,9 @@ describe("sidebar selected-text menu", () => {
   });
 
   it("labels WEB context, reasoning, answer, and citation source separately", () => {
-    expect(sidebarSource).toContain('webContext ? "发送上下文"');
-    expect(sidebarSource).toContain('webProvider === "deepseek" ? "DeepSeek 已思考"');
-    expect(sidebarSource).toContain('"bubble-answer-label", "回答"');
+    expect(sidebarSource).toMatch(/webContext\s*\? uiText\("发送上下文", "Sent context"\)/);
+    expect(sidebarSource).toContain('webProvider === "deepseek" ? uiText("DeepSeek 已思考", "DeepSeek reasoning")');
+    expect(sidebarSource).toContain('"bubble-answer-label", uiText("回答", "Answer")');
     expect(sidebarSource).toContain("sourceAssistantOrdinal");
     expect(sidebarSource).toContain("sourceQuestionPreview");
     expect(sidebarSource).toContain("来源回答“");

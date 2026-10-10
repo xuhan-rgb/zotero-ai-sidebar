@@ -5,8 +5,9 @@
 // lives in the reader document, where the click happened, so it carries its own
 // inline styling: the plugin's stylesheet does not reach that frame.
 
+import { uiText } from "../utils/ui-locale";
+
 const HINT_ID = "zai-material-pick-hint";
-const HINT_TEXT = "素材来自 LaTeX 源，PDF 上没有位置；请在列表里选";
 const HINT_MS = 1800;
 
 export function flashMaterialPickHint(
@@ -19,7 +20,10 @@ export function flashMaterialPickHint(
   if (!body) return;
   const hint = doc.createElement("div");
   hint.id = HINT_ID;
-  hint.textContent = HINT_TEXT;
+  hint.textContent = uiText(
+    "素材来自 LaTeX 源，PDF 上没有位置；请在列表里选",
+    "This material comes from LaTeX and has no position in the PDF. Select it from the list.",
+  );
   hint.setAttribute("role", "status");
   hint.style.position = "fixed";
   hint.style.left = `${Math.round(clientX)}px`;

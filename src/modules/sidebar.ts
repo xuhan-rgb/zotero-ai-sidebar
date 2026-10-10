@@ -1,4 +1,5 @@
 import { effectiveReasoningEffort } from "../settings/reasoning";
+import { uiText, UI_LANGUAGE_PREF, normalizeUiLanguage } from "../utils/ui-locale";
 import { renderComposerReasoningSelect } from "./composer-reasoning";
 import { bindReadingRouteProgress } from "./reading-route-progress";
 import { traceBrowserPicker } from "./browser-picker-debug";
@@ -964,12 +965,12 @@ function renderPanelRecovery(
     ].join(";"),
   );
   box.append(
-    el(doc, "strong", "", "AI 对话正在恢复"),
-    el(doc, "div", "", "Zotero 刚加载时界面还没稳定，插件会自动重试。"),
+    el(doc, "strong", "", uiText("AI 对话正在恢复", "Restoring AI chat")),
+    el(doc, "div", "", uiText("Zotero 刚加载时界面还没稳定，插件会自动重试。", "Zotero is still starting up. The plugin will retry automatically.")),
   );
   const detail = el(doc, "div", "", errorMessage(err));
   detail.style.cssText = "margin-top:8px;color:#8a5a44;font-size:12px;";
-  const retry = buttonEl(doc, "立即重试");
+  const retry = buttonEl(doc, uiText("立即重试", "Retry now"));
   retry.style.cssText = "margin-top:12px;";
   retry.addEventListener("click", () => renderPanel(mount, state));
   box.append(detail, retry);
@@ -1259,18 +1260,18 @@ function renderLayoutMenu(
   const { menu, content } = compactMenu(
     doc,
     "header-layout-menu",
-    "模式",
-    "切换对话排版和侧栏显示方式",
+    uiText("模式", "Layout"),
+    uiText("切换对话排版和侧栏显示方式", "Change chat layout and sidebar display"),
   );
   const layoutField = el(doc, "div", "header-layout-field");
-  layoutField.append(el(doc, "span", "", "对话排版"));
+  layoutField.append(el(doc, "span", "", uiText("对话排版", "Chat layout")));
   layoutField.append(
     renderLayoutChoice(
       doc,
       state.localUiSettings.chatLayout,
       [
-        ["classic", "原始排版"],
-        ["compact", "专注模式"],
+        ["classic", uiText("原始排版", "Classic")],
+        ["compact", uiText("专注模式", "Focus")],
       ],
       (value) => {
         const next = normalizeLocalUiSettings({
@@ -1285,14 +1286,14 @@ function renderLayoutMenu(
   );
 
   const displayField = el(doc, "div", "header-layout-field");
-  displayField.append(el(doc, "span", "", "显示方式"));
+  displayField.append(el(doc, "span", "", uiText("显示方式", "Display")));
   displayField.append(
     renderLayoutChoice(
       doc,
       state.localUiSettings.sidebarDisplayMode,
       [
-        ["embedded", "阅读器侧栏"],
-        ["docked", "右侧并排"],
+        ["embedded", uiText("阅读器侧栏", "Reader sidebar")],
+        ["docked", uiText("右侧并排", "Docked right")],
       ],
       (value) => applySidebarDisplayMode(mount, state, value),
     ),
@@ -1318,8 +1319,8 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   const layoutMenu = renderLayoutMenu(doc, mount, state);
 
   if (toolbarPresets.length === 0) {
-    topRow.append(el(doc, "span", "", "未配置模型"));
-    const button = buttonEl(doc, "添加模型");
+    topRow.append(el(doc, "span", "", uiText("未配置模型", "No model configured")));
+    const button = buttonEl(doc, uiText("添加模型", "Add model"));
     button.addEventListener("click", () => {
       openAddonPreferences(doc);
     });
@@ -1328,17 +1329,17 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     return bar;
   }
 
-  const copyAll = buttonEl(doc, "复制MD");
+  const copyAll = buttonEl(doc, uiText("复制MD", "Copy MD"));
   copyAll.disabled = state.messages.length === 0;
   copyAll.title = copyAll.disabled
-    ? "当前对话还没有可复制的消息"
+    ? uiText("当前对话还没有可复制的消息", "There are no messages to copy")
     : state.copyDebugContext
-      ? "复制当前对话为 Markdown（含工具上下文和 PDF 片段）"
-      : "复制当前对话为 Markdown（只含论文介绍和对话）";
+      ? uiText("复制当前对话为 Markdown（含工具上下文和 PDF 片段）", "Copy this chat as Markdown (including tool context and PDF excerpts)")
+      : uiText("复制当前对话为 Markdown（只含论文介绍和对话）", "Copy this chat as Markdown (paper context and chat only)");
   copyAll.addEventListener("click", () => {
     void copyCurrentConversation(doc, state, copyAll);
   });
-  const clear = buttonEl(doc, "清空");
+  const clear = buttonEl(doc, uiText("清空", "Clear"));
   const visibleMessageCount = state.networkDiagramTarget
     ? (sidebar?.networkDiagramMessages?.length ?? 0)
     : state.messages.length;
@@ -1348,19 +1349,19 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   clear.disabled = visibleConversationBusy || visibleMessageCount === 0;
   clear.title = visibleConversationBusy
     ? state.networkDiagramTarget
-      ? "请先停止网络图分析，再清空网络图对话"
-      : "请先停止当前回答，再清空对话"
+      ? uiText("请先停止网络图分析，再清空网络图对话", "Stop the diagram analysis before clearing its chat")
+      : uiText("请先停止当前回答，再清空对话", "Stop the current response before clearing the chat")
     : visibleMessageCount === 0
-      ? "当前对话还没有可清空的消息"
+      ? uiText("当前对话还没有可清空的消息", "There are no messages to clear")
       : state.networkDiagramTarget
-        ? "只清空网络图对话；保留网络图、版本和仓库关联"
-        : "清空当前对话的全部消息";
+        ? uiText("只清空网络图对话；保留网络图、版本和仓库关联", "Clear only the diagram chat; keep the diagram, versions, and repository link")
+        : uiText("清空当前对话的全部消息", "Clear all messages in this chat");
   clear.addEventListener("click", () => {
     if (state.networkDiagramTarget) {
       if (
         doc.defaultView?.confirm &&
         !doc.defaultView.confirm(
-          "确定清空当前网络图对话吗？网络图、版本记录、代码证据和 GitHub 仓库关联都会保留。",
+          uiText("确定清空当前网络图对话吗？网络图、版本记录、代码证据和 GitHub 仓库关联都会保留。", "Clear this diagram chat? The diagram, version history, code evidence, and GitHub repository link will be kept."),
         )
       ) {
         return;
@@ -1372,7 +1373,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     void persistPanelConversations(state);
     renderPanel(mount, state);
   });
-  const settings = buttonEl(doc, "设置");
+  const settings = buttonEl(doc, uiText("设置", "Settings"));
   settings.addEventListener("click", () => {
     openAddonPreferences(doc);
   });
@@ -1380,14 +1381,14 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   // not among the content-action buttons.
   const collapse = buttonEl(doc, "»");
   collapse.className = "zai-collapse-btn";
-  collapse.title = "隐藏 AI 对话列（收起面板）";
+  collapse.title = uiText("隐藏 AI 对话列（收起面板）", "Hide the AI chat column");
   collapse.addEventListener("click", () => hideCurrentSidebar(mount));
   const noteWindowOpen = isNoteWindowOpenForMount(mount);
-  const openNote = buttonEl(doc, noteWindowOpen ? "关闭笔记" : "打开笔记");
+  const openNote = buttonEl(doc, noteWindowOpen ? uiText("关闭笔记", "Close note") : uiText("打开笔记", "Open note"));
   openNote.className = "open-note-button";
   openNote.title = noteWindowOpen
-    ? "关闭笔记列"
-    : "在当前 Zotero 窗口打开当前条目的子笔记";
+    ? uiText("关闭笔记列", "Close note column")
+    : uiText("在当前 Zotero 窗口打开当前条目的子笔记", "Open the current item's child note in this Zotero window");
   openNote.disabled = !noteWindowOpen && state.itemID == null;
   openNote.addEventListener("click", () => {
     if (isNoteWindowOpenForMount(mount)) {
@@ -1397,29 +1398,29 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     }
   });
   const win = hostWindowForMount(mount)!;
-  const translateBtn = buttonEl(doc, "译");
+  const translateBtn = buttonEl(doc, uiText("译", "Translate"));
   translateBtn.className = "zai-sidebar-translate-button";
-  translateBtn.title = "逐句翻译模式（点击切换开关）";
+  translateBtn.title = uiText("逐句翻译模式（点击切换开关）", "Sentence-by-sentence translation mode (click to toggle)");
   syncTranslateBtnState(win, translateBtn);
   translateBtn.addEventListener("click", () => {
     void toggleTranslateMode(win, translateBtn);
   });
-  const askBtn = buttonEl(doc, "沉浸");
+  const askBtn = buttonEl(doc, uiText("沉浸", "Immersive"));
   askBtn.className = "zai-sidebar-ask-button";
-  askBtn.title = `沉浸式阅读（快捷键：${getImmersiveModeShortcut(zoteroPrefs())}）：单击句子高亮，旁边弹出 [✦ 问 AI] / [译] 选择（点击切换开关）`;
+  askBtn.title = uiText(`沉浸式阅读（快捷键：${getImmersiveModeShortcut(zoteroPrefs())}）：单击句子高亮，旁边弹出 [✦ 问 AI] / [译] 选择（点击切换开关）`, `Immersive reading (shortcut: ${getImmersiveModeShortcut(zoteroPrefs())}): click a sentence to highlight it and choose [✦ Ask AI] / [Translate] (click to toggle)`);
   syncAskBtnState(win, askBtn);
   askBtn.addEventListener("click", () => {
     void toggleAskMode(win, askBtn);
   });
   // Content actions, then 设置 (opens full preferences), the 字号 menu (🎚 icon
   // → font-size popup) and the 调试 (copy-debug context) toggle.
-  settings.title = "打开 AI 对话完整设置";
+  settings.title = uiText("打开 AI 对话完整设置", "Open full AI chat settings");
   if (state.localUiSettings.chatLayout === "compact") {
     const { menu, content: menuContent } = compactMenu(
       doc,
       "header-actions-menu",
       "⋯",
-      "更多对话功能",
+      uiText("更多对话功能", "More chat actions"),
     );
     menuContent.append(
       copyAll,
@@ -1482,15 +1483,15 @@ function renderConversationSwitcher(
   const tabs = el(doc, "div", "conversation-tabs");
   const copyAll = buttonEl(doc, "⧉");
   copyAll.className = "conversation-action conversation-copy";
-  copyAll.setAttribute("aria-label", "复制 Markdown");
+  copyAll.setAttribute("aria-label", uiText("复制 Markdown", "Copy Markdown"));
   copyAll.disabled = state.messages.length === 0;
-  copyAll.title = "复制当前对话为 Markdown";
+  copyAll.title = uiText("复制当前对话为 Markdown", "Copy this chat as Markdown");
   copyAll.addEventListener("click", () => {
     void copyCurrentConversation(doc, state, copyAll);
   });
   const clear = buttonEl(doc, "⌫");
   clear.className = "conversation-action conversation-clear";
-  clear.setAttribute("aria-label", "清空当前对话");
+  clear.setAttribute("aria-label", uiText("清空当前对话", "Clear current chat"));
   const sidebar = findSidebarStateByMount(mount);
   const visibleMessageCount = state.networkDiagramTarget
     ? (sidebar?.networkDiagramMessages?.length ?? 0)
@@ -1499,12 +1500,12 @@ function renderConversationSwitcher(
     ? sidebar?.networkDiagramBusy === true
     : conversationBusy;
   clear.disabled = visibleConversationBusy || visibleMessageCount === 0;
-  clear.title = visibleConversationBusy ? "请先停止当前回答" : "清空当前对话";
+  clear.title = visibleConversationBusy ? uiText("请先停止当前回答", "Stop the current response first") : uiText("清空当前对话", "Clear current chat");
   clear.addEventListener("click", () => {
     if (state.networkDiagramTarget) {
       if (
         doc.defaultView?.confirm &&
-        !doc.defaultView.confirm("确定清空当前网络图对话吗？")
+        !doc.defaultView.confirm(uiText("确定清空当前网络图对话吗？", "Clear this diagram chat?"))
       )
         return;
       if (sidebar) void clearNetworkDiagramConversation(sidebar, state);
@@ -1515,20 +1516,20 @@ function renderConversationSwitcher(
     renderPanel(mount, state);
   });
   if (!state.historyLoaded) {
-    tabs.append(el(doc, "span", "conversation-loading", "正在载入对话…"));
+    tabs.append(el(doc, "span", "conversation-loading", uiText("正在载入对话…", "Loading chats…")));
   } else {
     for (const [index, conversation] of state.conversations.entries()) {
       const tab = buttonEl(doc, String(index + 1));
       tab.className = "conversation-tab";
       tab.title = `${index + 1}. ${conversation.title}`;
-      tab.setAttribute("aria-label", `切换到${conversation.title}`);
+      tab.setAttribute("aria-label", uiText(`切换到${conversation.title}`, `Switch to ${conversation.title}`));
       if (conversation.branchOrigin) {
         const sourceTitle = conversation.branchOrigin.sourceConversationTitle;
         tab.classList.add("has-branch-origin");
-        tab.title += ` · 分支自${sourceTitle}`;
+        tab.title += uiText(` · 分支自${sourceTitle}`, ` · Branched from ${sourceTitle}`);
         tab.setAttribute(
           "aria-label",
-          `切换到${conversation.title}，分支自${sourceTitle}`,
+          uiText(`切换到${conversation.title}，分支自${sourceTitle}`, `Switch to ${conversation.title}, branched from ${sourceTitle}`),
         );
         tab.append(
           el(
@@ -1546,14 +1547,14 @@ function renderConversationSwitcher(
       }
       if (conversationIsSending(state, conversation.id)) {
         tab.classList.add("is-running");
-        tab.title += " · 回答中";
+        tab.title += uiText(" · 回答中", " · Responding");
         tab.append(el(doc, "span", "conversation-tab-running", "●"));
       } else if (
         conversation.id !== state.activeConversationID &&
         conversationHasUnreadAnswer(conversation)
       ) {
         tab.classList.add("has-unread");
-        tab.title += " · 回答完成，尚未查看";
+        tab.title += uiText(" · 回答完成，尚未查看", " · Response complete, unread");
         tab.append(el(doc, "span", "conversation-tab-unread", "●"));
       }
       tab.addEventListener("click", () => {
@@ -1565,23 +1566,23 @@ function renderConversationSwitcher(
 
   const add = buttonEl(doc, "+");
   add.className = "conversation-icon conversation-add";
-  add.title = "新建独立对话（默认不携带历史）";
-  add.setAttribute("aria-label", "新建独立对话");
+  add.title = uiText("新建独立对话（默认不携带历史）", "Create a separate chat (no history by default)");
+  add.setAttribute("aria-label", uiText("新建独立对话", "Create separate chat"));
   add.disabled = !state.historyLoaded;
   add.addEventListener("click", () => addConversation(mount, state));
 
   const historyLabel = el(doc, "label", "conversation-history-control");
   const historySelect = doc.createElement("select");
   const historyOptions: Array<[ConversationHistoryMode, string]> = [
-    ["none", "无"],
-    ["previous", "1轮"],
-    ["all", "全部"],
+    ["none", uiText("无", "None")],
+    ["previous", uiText("1轮", "1 turn")],
+    ["all", uiText("全部", "All")],
   ];
   const historyTooltips: Record<ConversationHistoryMode, string> = {
-    none: "只发送当前问题，不向模型发送此前问答；界面中的消息仍会保留。",
+    none: uiText("只发送当前问题，不向模型发送此前问答；界面中的消息仍会保留。", "Send only the current question; earlier messages stay visible but are not sent to the model."),
     previous:
-      "向模型附带上一轮用户提问和 AI 回答，帮助延续上下文；更早的消息不会发送。",
-    all: "向模型附带当前对话的全部历史消息；界面中的消息不会删除。",
+      uiText("向模型附带上一轮用户提问和 AI 回答，帮助延续上下文；更早的消息不会发送。", "Include the previous user question and AI answer as context; older messages are not sent."),
+    all: uiText("向模型附带当前对话的全部历史消息；界面中的消息不会删除。", "Include all messages in this chat as context; no messages are deleted from the interface."),
   };
   for (const [value, label] of historyOptions) {
     const option = doc.createElement("option");
@@ -1599,7 +1600,7 @@ function renderConversationSwitcher(
     historySelect.setAttribute("tooltiptext", tooltip);
   };
   updateHistoryTooltip();
-  historySelect.setAttribute("aria-label", "发送历史范围");
+  historySelect.setAttribute("aria-label", uiText("发送历史范围", "History to send"));
   historySelect.addEventListener("change", () => {
     state.historyMode = normalizeConversationHistoryMode(historySelect.value);
     updateHistoryTooltip();
@@ -1609,7 +1610,7 @@ function renderConversationSwitcher(
 
   const remove = buttonEl(doc, "×");
   remove.className = "conversation-icon conversation-delete";
-  remove.setAttribute("aria-label", "删除当前对话");
+  remove.setAttribute("aria-label", uiText("删除当前对话", "Delete current chat"));
   const defaultConversationActive = activeConversation(state)?.id === "default";
   remove.disabled =
     conversationBusy ||
@@ -1617,10 +1618,10 @@ function renderConversationSwitcher(
     defaultConversationActive ||
     state.conversations.length <= 1;
   remove.title = defaultConversationActive
-    ? "默认对话不能删除"
+    ? uiText("默认对话不能删除", "The default chat cannot be deleted")
     : state.conversations.length <= 1
-      ? "至少保留一个对话"
-      : "删除当前对话";
+      ? uiText("至少保留一个对话", "At least one chat must remain")
+      : uiText("删除当前对话", "Delete current chat");
   remove.addEventListener("click", () =>
     deleteActiveConversation(mount, state),
   );
@@ -1630,12 +1631,12 @@ function renderConversationSwitcher(
       doc,
       "conversation-actions-menu",
       "⋯",
-      "快捷提示",
+      uiText("快捷提示", "Quick prompts"),
     );
     menuContent.append(quickPrompts);
     const controls = el(doc, "div", "conversation-controls");
     historyLabel.prepend(
-      el(doc, "span", "conversation-history-label", "上下文"),
+      el(doc, "span", "conversation-history-label", uiText("上下文", "Context")),
     );
     controls.append(historyLabel, add, remove, copyAll, clear, menu);
     wrap.append(tabs, controls);
@@ -1648,7 +1649,7 @@ function renderConversationSwitcher(
 }
 
 function branchOriginConversationLabel(title: string): string {
-  return /^对话\s*(\d+)$/.exec(title)?.[1] ?? "源";
+  return /^(?:对话|Chat)\s*(\d+)$/.exec(title)?.[1] ?? uiText("源", "Source");
 }
 
 function conversationHasUnreadAnswer(conversation: ChatConversation): boolean {
@@ -1700,7 +1701,7 @@ async function copyCurrentConversation(
     undefined,
     markdownToClipboardHTML(doc, markdown),
   );
-  flashButton(button, "已复制");
+  flashButton(button, uiText("已复制", "Copied"));
 }
 
 function switchConversation(
@@ -1782,7 +1783,7 @@ function deleteActiveConversation(mount: HTMLElement, state: PanelState): void {
   if (!current || current.id === "default") return;
   if (state.uiSettings.confirmConversationDeletion) {
     const confirmed = mount.ownerDocument?.defaultView?.confirm(
-      `删除“${current.title}”及其中的全部消息？`,
+      uiText(`删除“${current.title}”及其中的全部消息？`, `Delete “${current.title}” and all its messages?`),
     );
     if (!confirmed) return;
   }
@@ -1889,7 +1890,7 @@ function scheduleDraftConversationSave(
 const ZAI_SVG_NS = "http://www.w3.org/2000/svg";
 
 // 字号 collapsed behind a slider (🎚) icon button: clicking opens a small popup
-// with the font-size selector, keeping the toolbar compact.
+// with font-size and interface-language selectors, keeping the toolbar compact.
 function renderFontIconMenu(
   doc: Document,
   mount: HTMLElement,
@@ -1898,11 +1899,11 @@ function renderFontIconMenu(
   const wrap = el(doc, "span", "zai-icon-menu");
   const btn = buttonEl(doc, "");
   btn.className = "zai-icon-btn";
-  btn.title = "字号";
+  btn.title = uiText("字号", "Font size");
   btn.append(sliderIcon(doc));
   const panel = el(doc, "div", "zai-icon-menu-panel");
   panel.style.display = "none";
-  panel.append(renderChatFontSizeControl(doc, mount, state));
+  panel.append(renderChatFontSizeControl(doc, mount, state), renderChatLanguageControl(doc));
   wrap.append(btn, panel);
   let isOpen = false;
   btn.addEventListener("click", (e) => {
@@ -1962,15 +1963,15 @@ function renderChatFontSizeControl(
   state: PanelState,
 ): HTMLElement {
   const wrap = el(doc, "label", "chat-font-size-control");
-  wrap.title = "仅保存在本机，不参与 WebDAV 云同步";
-  wrap.append(doc.createTextNode("字号"));
+  wrap.title = uiText("仅保存在本机，不参与 WebDAV 云同步", "Stored locally; not synced via WebDAV");
+  wrap.append(doc.createTextNode(uiText("字号", "Font size")));
   const select = doc.createElement("select");
   for (const size of [11, 12, 13, 14, 15, 16, 18, 20, 22]) {
     const option = doc.createElement("option");
     option.value = String(size);
     option.textContent =
       size === DEFAULT_LOCAL_UI_SETTINGS.chatFontSizePx
-        ? `${size}px 默认`
+        ? uiText(`${size}px 默认`, `${size}px default`)
         : `${size}px`;
     select.append(option);
   }
@@ -1983,6 +1984,26 @@ function renderChatFontSizeControl(
     state.localUiSettings = next;
     saveLocalUiSettings(zoteroPrefs(), next);
     renderPanel(mount, state);
+  });
+  wrap.append(select);
+  return wrap;
+}
+
+function renderChatLanguageControl(doc: Document): HTMLElement {
+  const wrap = el(doc, "label", "chat-language-control");
+  wrap.append(doc.createTextNode(uiText("语言", "Language")));
+  const select = doc.createElement("select");
+  select.setAttribute("aria-label", uiText("界面语言", "Interface language"));
+  for (const [value, label] of [["auto", "Auto"], ["zh-CN", "中文"], ["en-US", "English"]]) {
+    const option = doc.createElement("option");
+    option.value = value;
+    option.textContent = label;
+    select.append(option);
+  }
+  select.value = normalizeUiLanguage(zoteroPrefs().get(UI_LANGUAGE_PREF));
+  select.addEventListener("change", () => {
+    zoteroPrefs().set(UI_LANGUAGE_PREF, normalizeUiLanguage(select.value));
+    refreshSidebarPreferences();
   });
   wrap.append(select);
   return wrap;
@@ -2002,13 +2023,13 @@ function renderCopyDebugToggle(
     renderPanelPreservingOpenMenus(mount, state);
   });
   label.append(
-    el(doc, "span", "yolo-toggle-text", "调试"),
+    el(doc, "span", "yolo-toggle-text", uiText("调试", "Debug")),
     input,
     el(doc, "span", "yolo-toggle-track"),
   );
   label.title = state.copyDebugContext
-    ? "调试复制：包含工具上下文、PDF 片段和思考过程；关闭后只复制论文介绍和对话"
-    : "纯净复制：只复制论文介绍和对话；开启后包含工具上下文、PDF 片段和思考过程";
+    ? uiText("调试复制：包含工具上下文、PDF 片段和思考过程；关闭后只复制论文介绍和对话", "Debug copy includes tool context, PDF excerpts, and reasoning; turn off to copy only paper context and chat")
+    : uiText("纯净复制：只复制论文介绍和对话；开启后包含工具上下文、PDF 片段和思考过程", "Clean copy includes only paper context and chat; turn on to include tool context, PDF excerpts, and reasoning");
   return label;
 }
 
@@ -2115,8 +2136,8 @@ export function renderContextCard(
   const item = safeGetItem(itemID);
   const title =
     item && typeof item.getField === "function"
-      ? item.getField("title") || "未选择条目"
-      : "未选择条目";
+      ? item.getField("title") || uiText("未选择条目", "No item selected")
+      : uiText("未选择条目", "No item selected");
   const card = el(doc, "div", "ctx-card");
   const metaRow = el(doc, "div", "ctx-meta");
   const canonicalRepositoryURL = (() => {
@@ -2125,7 +2146,7 @@ export function renderContextCard(
       const { owner, repo } = parsePublicGitHubRepositoryURL(repositoryURL);
       return {
         url: `https://github.com/${owner}/${repo}`,
-        label: `GitHub：${owner}/${repo}`,
+        label: uiText(`GitHub：${owner}/${repo}`, `GitHub: ${owner}/${repo}`),
       };
     } catch {
       return undefined;
@@ -2226,13 +2247,13 @@ function renderQuickPrompts(
     fullTextHighlight?: boolean;
   }> = [
     {
-      label: "总结论文",
+    label: uiText("总结论文", "Summarize paper"),
       prompt: promptSettings.builtIns.summary,
       disabled: false,
       ignoreSelection: true,
     },
     {
-      label: "🔖 全文重点",
+    label: uiText("🔖 全文重点", "🔖 Key points from full text"),
       prompt: promptSettings.builtIns.fullTextHighlight,
       disabled: !!fullTextHighlightDisabled,
       disabledTitle: fullTextHighlightDisabled,
@@ -2240,10 +2261,10 @@ function renderQuickPrompts(
       fullTextHighlight: true,
     },
     {
-      label: "解释选区",
+    label: uiText("解释选区", "Explain selection"),
       prompt: promptSettings.builtIns.explainSelection,
       disabled: !selectedText,
-      disabledTitle: "请先在 PDF 中选中需要注释的句子",
+      disabledTitle: uiText("请先在 PDF 中选中需要注释的句子", "Select a sentence in the PDF first"),
       explainSelection: true,
     },
   ];
@@ -2298,8 +2319,8 @@ function renderQuickPrompts(
         state.activeConversationID,
       );
       button.title = custom.shortcut
-        ? `自定义提示词按钮；PDF 中按 ${custom.shortcut.toUpperCase()} 触发`
-        : "自定义提示词按钮";
+        ? uiText(`自定义提示词按钮；PDF 中按 ${custom.shortcut.toUpperCase()} 触发`, `Custom prompt button; press ${custom.shortcut.toUpperCase()} in the PDF to trigger`)
+        : uiText("自定义提示词按钮", "Custom prompt button");
       button.addEventListener("click", () => {
         if (state.localUiSettings.chatSendMode === "web") {
           void sendWebPromptMessage(
@@ -2360,9 +2381,9 @@ function renderTaskQueueTrigger(
   ]
     .filter(Boolean)
     .join(" ");
-  button.title = tasks.length ? "查看任务队列和未读回答" : "暂无任务结果";
+  button.title = tasks.length ? uiText("查看任务队列和未读回答", "View task queue and unread responses") : uiText("暂无任务结果", "No task results");
   button.append(
-    doc.createTextNode(unread ? "未读 " : queued ? "排队 " : "队列 "),
+    doc.createTextNode(unread ? uiText("未读 ", "Unread ") : queued ? uiText("排队 ", "Queued ") : uiText("队列 ", "Queue ")),
     el(
       doc,
       "span",
@@ -2396,14 +2417,14 @@ function renderTaskQueue(
   const queued = tasks.filter((task) => task.status === "queued").length;
   const head = el(doc, "div", "task-queue-head");
   const summary = queued
-    ? `${unread} 未读 / ${queued} 排队 / ${tasks.length} 总计`
-    : `${unread} 未读 / ${tasks.length} 总计`;
+    ? uiText(`${unread} 未读 / ${queued} 排队 / ${tasks.length} 总计`, `${unread} unread / ${queued} queued / ${tasks.length} total`)
+    : uiText(`${unread} 未读 / ${tasks.length} 总计`, `${unread} unread / ${tasks.length} total`);
   head.append(
-    el(doc, "strong", "", "任务队列"),
+    el(doc, "strong", "", uiText("任务队列", "Task queue")),
     el(doc, "span", "task-queue-summary", summary),
   );
   const actions = el(doc, "div", "task-queue-actions");
-  const markRead = buttonEl(doc, "全部已读");
+  const markRead = buttonEl(doc, uiText("全部已读", "Mark all read"));
   markRead.disabled = unread === 0;
   markRead.addEventListener("click", () => {
     markAllChatTasksRead(state);
@@ -2415,32 +2436,32 @@ function renderTaskQueue(
   // task that's still waiting its turn. Useful when the user submitted
   // several misfires while AI was busy and now wants to drain the
   // backlog without aborting the current reply.
-  const cancelQueued = buttonEl(doc, "取消待办");
+  const cancelQueued = buttonEl(doc, uiText("取消待办", "Cancel queued"));
   cancelQueued.className = "cancel-queued-tasks";
   cancelQueued.disabled = queued === 0;
   cancelQueued.title = cancelQueued.disabled
-    ? "没有正在排队等待执行的任务"
-    : "把还没轮到的任务标为已取消，不影响当前正在回答的那一条";
+    ? uiText("没有正在排队等待执行的任务", "There are no queued tasks waiting to run")
+    : uiText("把还没轮到的任务标为已取消，不影响当前正在回答的那一条", "Cancel tasks that have not started; the current response will continue");
   cancelQueued.addEventListener("click", () => {
     cancelQueuedChatTasks(state);
     void persistPanelConversations(state);
     renderPanel(mount, state);
   });
-  const clear = buttonEl(doc, "清空队列");
+  const clear = buttonEl(doc, uiText("清空队列", "Clear queue"));
   clear.className = "clear-task-queue";
   clear.disabled =
     unread > 0 || running > 0 || queued > 0 || tasks.length === 0;
   clear.title = clear.disabled
-    ? "全部已读且没有回答中/排队中任务时才可清空"
-    : "直接清空队列记录，不删除聊天内容";
+    ? uiText("全部已读且没有回答中/排队中任务时才可清空", "Clear is available when all tasks are read and none are running or queued")
+    : uiText("直接清空队列记录，不删除聊天内容", "Clear the queue records without deleting chat messages");
   clear.addEventListener("click", () => {
     clearChatTaskQueue(state);
     void persistPanelConversations(state);
     renderPanel(mount, state);
   });
-  const close = buttonEl(doc, "关闭");
+  const close = buttonEl(doc, uiText("关闭", "Close"));
   close.className = "close-task-queue";
-  close.title = "关闭任务队列窗口";
+  close.title = uiText("关闭任务队列窗口", "Close task queue");
   close.addEventListener("click", () => {
     state.queueOpen = false;
     renderPanel(mount, state);
@@ -2451,7 +2472,7 @@ function renderTaskQueue(
 
   const list = el(doc, "div", "task-list");
   if (tasks.length === 0) {
-    list.append(el(doc, "div", "task-empty", "暂无任务结果"));
+    list.append(el(doc, "div", "task-empty", uiText("暂无任务结果", "No task results")));
   } else {
     for (const task of tasks) {
       list.append(renderTaskRow(doc, mount, state, task));
@@ -2487,7 +2508,7 @@ function renderTaskRow(
 
   const actions = el(doc, "div", "task-row-actions");
   if (view.status === "running" || view.status === "queued") {
-    const cancel = buttonEl(doc, "取消");
+    const cancel = buttonEl(doc, uiText("取消", "Cancel"));
     cancel.className = "task-cancel";
     cancel.disabled =
       conversationRuntime(state, state.activeConversationID)
@@ -2495,14 +2516,14 @@ function renderTaskRow(
     cancel.addEventListener("click", () => cancelChatTask(mount, state, view));
     actions.append(cancel);
   } else if (view.status === "cancelled") {
-    const remove = buttonEl(doc, "移除");
+    const remove = buttonEl(doc, uiText("移除", "Remove"));
     remove.addEventListener("click", () => {
       hideChatTask(state, view);
       renderPanel(mount, state);
     });
     actions.append(remove);
   } else {
-    const label = view.status === "read" ? "再看" : "查看";
+    const label = view.status === "read" ? uiText("再看", "Review") : uiText("查看", "View");
     const button = buttonEl(doc, label);
     button.addEventListener("click", () => viewChatTask(mount, state, view));
     actions.append(button);
@@ -2551,28 +2572,28 @@ function findNextAssistantIndex(
 }
 
 function taskStatusLabel(view: ChatTaskView): string {
-  if (view.status === "queued") return "排队中";
-  if (view.status === "running") return "回答中";
-  if (view.status === "cancelled") return "已取消";
-  if (view.status === "failed") return "失败";
-  if (view.status === "read") return "已读";
+  if (view.status === "queued") return uiText("排队中", "Queued");
+  if (view.status === "running") return uiText("回答中", "Responding");
+  if (view.status === "cancelled") return uiText("已取消", "Cancelled");
+  if (view.status === "failed") return uiText("失败", "Failed");
+  if (view.status === "read") return uiText("已读", "Read");
   return relativeTaskTime(view.task.completedAt ?? view.task.createdAt);
 }
 
 function relativeTaskTime(time: number): string {
   const seconds = Math.max(0, Math.floor((Date.now() - time) / 1000));
-  if (seconds < 60) return "刚刚";
+  if (seconds < 60) return uiText("刚刚", "Just now");
   const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes} 分钟`;
+  if (minutes < 60) return uiText(`${minutes} 分钟`, `${minutes} min`);
   const hours = Math.floor(minutes / 60);
-  return `${hours} 小时`;
+  return uiText(`${hours} 小时`, `${hours} hr`);
 }
 
 function taskLocatorLabel(task: ChatTaskMeta): string {
   const locator = task.pdfSelection;
   if (!locator) return "";
   const label = locator.pageLabel ?? String((locator.pageIndex ?? 0) + 1);
-  return `📍 PDF 第 ${label} 页 · 原选区`;
+  return uiText(`📍 PDF 第 ${label} 页 · 原选区`, `📍 PDF page ${label} · Original selection`);
 }
 
 function markAllChatTasksRead(state: PanelState) {
@@ -2876,14 +2897,14 @@ function fullTextHighlightDisabledReason(
   if (webMode) {
     return getActiveReaderForItem(win, state.itemID)
       ? ""
-      : "请先在 Reader 中打开此 PDF，以便本地定位标注原文";
+      : uiText("请先在 Reader 中打开此 PDF，以便本地定位标注原文", "Open this PDF in the Reader first so annotations can be located locally");
   }
-  if (!preset) return "请先配置并选择一个 OpenAI 模型";
-  if (preset.provider !== "openai") return "全文重点 v1 仅支持 OpenAI 工具循环";
+  if (!preset) return uiText("请先配置并选择一个 OpenAI 模型", "Configure and select an OpenAI model first");
+  if (preset.provider !== "openai") return uiText("全文重点 v1 仅支持 OpenAI 工具循环", "Full-text highlights v1 requires the OpenAI tool loop");
   if (state.agentPermissionMode !== "yolo")
-    return "批量写注释需要先开启 YOLO 模式";
+    return uiText("批量写注释需要先开启 YOLO 模式", "Enable YOLO mode before writing annotations in bulk");
   if (!getActiveReaderForItem(win, state.itemID))
-    return "请先在 Reader 中打开此 PDF";
+    return uiText("请先在 Reader 中打开此 PDF", "Open this PDF in the Reader first");
   return "";
 }
 
@@ -2933,7 +2954,7 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
           doc,
           "div",
           "bubble-body",
-          "这是独立的网络图对话。可直接描述要展开、简化或校正的节点。",
+          uiText("这是独立的网络图对话。可直接描述要展开、简化或校正的节点。", "This is a separate diagram chat. Describe which nodes to expand, simplify, or correct."),
         ),
       );
       messages.append(hint);
@@ -2951,7 +2972,7 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
         doc,
         "div",
         "bubble-body",
-        "已就绪。配置模型预设后，可以直接询问当前 Zotero 条目或 PDF 内容。",
+        uiText("已就绪。配置模型预设后，可以直接询问当前 Zotero 条目或 PDF 内容。", "Ready. Configure a model preset, then ask about the current Zotero item or PDF."),
       ),
     );
     messages.append(hint);
@@ -3037,7 +3058,9 @@ function renderNetworkDiagramMessage(
       doc,
       "div",
       "bubble-role",
-      message.role === "user" ? "YOU · 网络图指令" : "AI · 网络图结果",
+      message.role === "user"
+        ? uiText("YOU · 网络图指令", "YOU · Diagram instruction")
+        : uiText("AI · 网络图结果", "AI · Diagram result"),
     ),
     el(doc, "div", "bubble-body", message.content),
   );
@@ -3052,7 +3075,7 @@ function renderNetworkDiagramTargetChip(
   if (!state.networkDiagramTarget) return null;
   const sidebar = findSidebarStateByMount(mount);
   const chip = el(doc, "div", "network-diagram-target-chip");
-  chip.append(el(doc, "span", "network-diagram-target-label", "📐 网络图"));
+  chip.append(el(doc, "span", "network-diagram-target-label", uiText("📐 网络图", "📐 Diagram")));
 
   const repositoryURL = sidebar?.networkDiagramDraftRepositoryURL?.trim();
   if (repositoryURL) {
@@ -3063,16 +3086,16 @@ function renderNetworkDiagramTargetChip(
     repository.rel = "noreferrer";
     repository.textContent = repositoryURL.replace(
       /^https:\/\/github\.com\//i,
-      "GitHub：",
+      uiText("GitHub：", "GitHub: "),
     );
     repository.title = repositoryURL;
     chip.append(repository);
   }
 
-  const generate = buttonEl(doc, "生成网络图");
+  const generate = buttonEl(doc, uiText("生成网络图", "Generate diagram"));
   generate.className = "network-diagram-official-prompt";
   generate.disabled = sidebar?.networkDiagramBusy === true;
-  generate.title = "填入官方网络图生成提示词，确认后再发送";
+  generate.title = uiText("填入官方网络图生成提示词，确认后再发送", "Fill in the official diagram prompt; review it before sending");
   generate.addEventListener("click", () => {
     state.draftText = networkDiagramOfficialPrompt(sidebar);
     state.draftSelectionStart = state.draftText.length;
@@ -3088,15 +3111,15 @@ function renderNetworkDiagramTargetChip(
       doc,
       "span",
       "network-diagram-selected-node",
-      `当前节点：${sidebar.networkDiagramSelectedNode.label}`,
+      uiText(`当前节点：${sidebar.networkDiagramSelectedNode.label}`, `Selected node: ${sidebar.networkDiagramSelectedNode.label}`),
     );
-    selected.title = "后续指令会自动携带此节点的 shape、说明和代码依据";
+    selected.title = uiText("后续指令会自动携带此节点的 shape、说明和代码依据", "Follow-up instructions automatically include this node's shape, description, and code evidence");
     chip.append(selected);
   }
 
   const close = buttonEl(doc, "×");
   close.className = "network-diagram-target-close";
-  close.title = "退出网络图对话，恢复普通对话草稿";
+  close.title = uiText("退出网络图对话，恢复普通对话草稿", "Exit diagram chat and restore the regular chat draft");
   close.addEventListener("click", () => {
     deactivateNetworkDiagramTarget(mount, state);
   });
@@ -3143,19 +3166,19 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
       : (!conversationSending || queueAllowed) && !webPromptBusy);
   input.placeholder = state.networkDiagramTarget
     ? networkDiagramBusy
-      ? "网络图分析中…可在上方任务卡停止"
-      : "输入网络图优化要求…（Enter 发送，Shift+Enter 换行）"
+      ? uiText("网络图分析中…可在上方任务卡停止", "Analyzing diagram… stop it from the task card above")
+      : uiText("输入网络图优化要求…（Enter 发送，Shift+Enter 换行）", "Describe how to refine the diagram… (Enter to send, Shift+Enter for a new line)")
     : webPromptTarget
     ? webPromptBusy
-      ? `${webProviderName(state, state.localUiSettings.webPromptProvider)} 正在处理上一条请求…`
-      : `发送到 ${webProviderName(state, state.localUiSettings.webPromptProvider)}…（Enter 发送）`
+      ? uiText(`${webProviderName(state, state.localUiSettings.webPromptProvider)} 正在处理上一条请求…`, `${webProviderName(state, state.localUiSettings.webPromptProvider)} is processing the previous request…`)
+      : uiText(`发送到 ${webProviderName(state, state.localUiSettings.webPromptProvider)}…（Enter 发送）`, `Send to ${webProviderName(state, state.localUiSettings.webPromptProvider)}… (Enter to send)`)
     : preset
       ? conversationSending
         ? queueAllowed
-          ? "AI 回答中…当前回复结束后将按顺序执行队列里的消息"
-          : "AI 回答中…等待结束后再发送（设置可开启发送中排队）"
-        : "问点什么... (Enter 发送，Shift+Enter 换行)"
-      : "先添加一个模型预设。";
+          ? uiText("AI 回答中…当前回复结束后将按顺序执行队列里的消息", "AI is responding… queued messages will run in order when it finishes")
+          : uiText("AI 回答中…等待结束后再发送（设置可开启发送中排队）", "AI is responding… wait until it finishes to send (enable queuing while sending in Settings)")
+        : uiText("问点什么... (Enter 发送，Shift+Enter 换行)", "Ask something... (Enter to send, Shift+Enter for a new line)")
+      : uiText("先添加一个模型预设。", "Add a model preset first.");
   input.disabled =
     (state.networkDiagramTarget ? !preset : !webPromptTarget && !preset) ||
     (state.networkDiagramTarget === true && networkDiagramBusy);
@@ -3502,14 +3525,14 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   const composerSwitchers = el(doc, "div", "composer-switchers");
   if (!state.networkDiagramTarget) {
     if (figurePicker) {
-      const materialChip = buttonEl(doc, "素材");
+      const materialChip = buttonEl(doc, uiText("素材", "Materials"));
       materialChip.type = "button";
       materialChip.className = "composer-material-chip";
       if (figurePicker.isOpen()) {
         materialChip.classList.add("is-active");
       }
       materialChip.title =
-        "点亮后在左侧 PDF 直接点击公式/图片/表格（仅版面解析过的论文可用，LaTeX 源论文自动改为打开列表）；素材列表仍可用 @ 打开";
+        uiText("点亮后在左侧 PDF 直接点击公式/图片/表格（仅版面解析过的论文可用，LaTeX 源论文自动改为打开列表）；素材列表仍可用 @ 打开", "When active, click a formula, image, or table in the PDF on the left (for layout-parsed papers only; LaTeX sources open the list instead). Use @ to open the materials list.");
       materialChip.addEventListener("click", () => {
         clearStaleReferenceMarks(
           getActiveReaderForItem(doc.defaultView, state.itemID),
@@ -3564,23 +3587,23 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   );
   if (!state.networkDiagramTarget) {
     const { menu: attachmentMenu, content: attachmentMenuContent } =
-      compactMenu(doc, "composer-attachment-menu", "＋", "添加截图或图片");
+      compactMenu(doc, "composer-attachment-menu", "＋", uiText("添加截图或图片", "Attach screenshot or image"));
     attachmentMenuContent.append(screenshotAttach, imageAttach);
     row.append(attachmentMenu);
   }
-  const send = buttonEl(doc, conversationSending ? "↑ 排队" : "↑");
+  const send = buttonEl(doc, conversationSending ? uiText("↑ 排队", "↑ Queue") : "↑");
   send.className = conversationSending ? "send-btn send-queue-btn" : "send-btn";
   send.disabled = !canSubmit;
   send.title = webPromptTarget
-    ? "发送到 Web Prompt Hub；未登录时会提示配置网页账号"
+    ? uiText("发送到 Web Prompt Hub；未登录时会提示配置网页账号", "Send to Web Prompt Hub; you'll be prompted to configure a web account if needed")
     : preset
       ? !preset.apiKey || !preset.model
-      ? "请先填写 API Key 和 Model ID"
+      ? uiText("请先填写 API Key 和 Model ID", "Enter the API key and model ID first")
       : conversationSending
-        ? "加入队列：当前回复结束后按顺序执行"
-        : "发送"
-      : "发送";
-  send.setAttribute("aria-label", conversationSending ? "加入队列" : "发送");
+        ? uiText("加入队列：当前回复结束后按顺序执行", "Queue this message to run after the current response")
+        : uiText("发送", "Send")
+      : uiText("发送", "Send");
+  send.setAttribute("aria-label", conversationSending ? uiText("加入队列", "Queue message") : uiText("发送", "Send"));
   send.addEventListener(
     "click",
     () =>
@@ -3592,7 +3615,7 @@ function renderInput(doc: Document, mount: HTMLElement, state: PanelState) {
   );
   row.append(send);
   if (conversationSending || webPromptStopping) {
-    const stop = buttonEl(doc, "停止");
+    const stop = buttonEl(doc, uiText("停止", "Stop"));
     stop.className = "stop-btn";
     stop.addEventListener("click", () => {
       if (webPromptStopping) {
@@ -3683,7 +3706,8 @@ async function cancelPendingWebPromptTask(
   if (!taskID) return;
   const now = Date.now();
   const provider = webPromptProviderForUserMessage(userMessage);
-  const statusMessage = `${provider ? webProviderName(state, provider) : "WEB"} 网页任务已取消，可以重新发送。`;
+  const name = provider ? webProviderName(state, provider) : "WEB";
+  const statusMessage = uiText(`${name} 网页任务已取消，可以重新发送。`, `The ${name} web task was cancelled. You can send it again.`);
   for (const message of state.messages) {
     if (message.task?.id !== taskID) continue;
     const partialAnswer =
@@ -3711,7 +3735,8 @@ async function cancelPendingWebPromptTask(
   try {
     await cancelWebAgentTask(taskID);
   } catch (error) {
-    state.webAccountNotice = `WEB 任务已在 Zotero 中释放；Web Agent 取消失败：${error instanceof Error ? error.message : String(error)}`;
+    const message = error instanceof Error ? error.message : String(error);
+    state.webAccountNotice = uiText(`WEB 任务已在 Zotero 中释放；Web Agent 取消失败：${message}`, `The WEB task was released in Zotero, but Web Agent could not cancel it: ${message}`);
     renderPanel(mount, state);
   }
 }
@@ -3770,7 +3795,7 @@ async function sendWebPromptMessage(
   if (provider.startsWith("custom:") && !customProvider) {
     releaseWebPromptLock();
     state.webAccountConfigured = false;
-    state.webAccountNotice = "自定义网页配置不存在，请重新配置网页提供商";
+    state.webAccountNotice = uiText("自定义网页配置不存在，请重新配置网页提供商", "Custom website configuration was not found. Configure the website provider again.");
     renderPanel(mount, state);
     return;
   }
@@ -3789,12 +3814,12 @@ async function sendWebPromptMessage(
     releaseWebPromptLock();
     state.webAccountConfigured = false;
     state.webAccountNotice = requiresLogin
-      ? "Z.ai 游客可进行文字聊天，本次上传论文附件需要登录"
+      ? uiText("Z.ai 游客可进行文字聊天，本次上传论文附件需要登录", "Z.ai guest mode supports text chat; sign in to upload paper attachments")
       : account.verificationRequired
-        ? `${webProviderName(state, provider)} 网站要求访问验证，请在专用 Chrome 中手动完成验证`
+        ? uiText(`${webProviderName(state, provider)} 网站要求访问验证，请在专用 Chrome 中手动完成验证`, `${webProviderName(state, provider)} requires verification. Complete it manually in the dedicated Chrome browser.`)
         : provider.startsWith("custom:")
-          ? `未检测到 ${webProviderName(state, provider)} 的可用输入框，请先打开该网址并完成登录`
-          : `尚未配置 ${webProviderName(state, provider)} 网页账号，请先点击账号配置按钮并手动登录`;
+          ? uiText(`未检测到 ${webProviderName(state, provider)} 的可用输入框，请先打开该网址并完成登录`, `No usable input field was found on ${webProviderName(state, provider)}. Open the website and sign in first.`)
+          : uiText(`尚未配置 ${webProviderName(state, provider)} 网页账号，请先点击账号配置按钮并手动登录`, `${webProviderName(state, provider)} is not configured. Click account settings and sign in first.`);
     renderPanel(mount, state);
     const doc = mount.ownerDocument;
     if (doc) {
@@ -3876,7 +3901,7 @@ async function sendWebPromptMessage(
   const arxivToc = await buildArxivTocFrontBlock(sourceItemID);
   let webOutline: Awaited<ReturnType<typeof prepareWebOverview>> | undefined;
   try {
-    if (options.paperAction && !material.attachment) throw new Error("未找到可发送的论文全文，请先为条目添加 PDF。");
+    if (options.paperAction && !material.attachment) throw new Error(uiText("未找到可发送的论文全文，请先为条目添加 PDF。", "No full paper is available to send; add a PDF to the item first."));
     if (options.paperAction === "overview") {
       webOutline = await prepareWebOverview({ source: zoteroContextSource, itemID: sourceItemID });
       webOutline.title = title;
@@ -3905,7 +3930,7 @@ async function sendWebPromptMessage(
   if (referenceAttachments.some((attachment) => !attachment)) {
     releaseWebPromptLock();
     renderPanel(mount, state);
-    throw new Error("无法创建引用文章附件，请稍后重试。");
+    throw new Error(uiText("无法创建引用文章附件，请稍后重试。", "The referenced-paper attachment could not be created; try again later."));
   }
   const annotationColorGuide =
     loadToolSettings(zoteroPrefs()).annotationColorGuide;
@@ -4018,7 +4043,7 @@ async function sendWebPromptMessage(
   };
   const assistantMessage: Message = {
     role: "assistant",
-    content: `正在准备 ${webProviderName(state, provider)} 网页自动回答。`,
+    content: uiText(`正在准备 ${webProviderName(state, provider)} 网页自动回答。`, `Preparing an automated web response from ${webProviderName(state, provider)}.`),
     task: {
       id: "pending-web-task",
       kind: options.paperAction === "readingRoute" ? "reading_route" : options.annotationBatch
@@ -4026,7 +4051,7 @@ async function sendWebPromptMessage(
         : options.explainSelection
           ? "selection"
           : "general",
-      title: "等待网页回答",
+      title: uiText("等待网页回答", "Waiting for web response"),
       promptPreview: contentPreview(content, 90),
       createdAt,
       webProvider: provider,
@@ -4225,9 +4250,9 @@ async function sendWebPromptMessage(
       if (result.pageNotice) {
         target.webPageNotice = true;
         target.content = [
-          "网页未返回正常回答。以下为网页本轮新增内容：",
+          uiText("网页未返回正常回答。以下为网页本轮新增内容：", "The website did not return a normal response. New content from this turn follows:"),
           importedAnswer,
-          "请点击底部“账号”检查登录状态、浏览器显示方式或网页配置后重试。",
+          uiText("请点击底部“账号”检查登录状态、浏览器显示方式或网页配置后重试。", "Click Account below to check sign-in, browser visibility, or website settings, then try again."),
         ].join("\n\n");
       } else if (options.paperAction) {
         target.content = importedAnswer;
@@ -4238,12 +4263,12 @@ async function sendWebPromptMessage(
               await saveReadingRouteAndReplaceChatMessage(mount.ownerDocument!, sourceItemID, target, markdown);
             } else {
               await saveReadingRouteToDedicatedNote(mount.ownerDocument!, sourceItemID, markdown);
-              target.content = "WEB 阅读路线已保存到原论文的「AI 阅读路线」笔记。";
+              target.content = uiText("WEB 阅读路线已保存到原论文的「AI 阅读路线」笔记。", "The WEB reading route was saved to the paper's AI Reading Route note.");
             }
           } else {
             const data = await parseWebOverview(importedAnswer, webOutline!, { source: zoteroContextSource, itemID: sourceItemID });
             const itemKey = resolveItemKeyForCache(sourceItemID);
-            if (!itemKey) throw new Error("原论文已不可用，无法保存总览。");
+            if (!itemKey) throw new Error(uiText("原论文已不可用，无法保存总览。", "The original paper is no longer available; the overview cannot be saved."));
             const workspace = (await loadNetworkDiagramWorkspace(itemKey))?.workspace;
             const revision = currentNetworkDiagramRevision(workspace);
             const nextData = revision ? { ...data, networkTopology: detailedNetworkGraphToMindmap(revision.graph) } : data;
@@ -4251,7 +4276,7 @@ async function sendWebPromptMessage(
             await writeOverviewAttachment(mount.ownerDocument!, sourceItemID, nextData);
             const sb = findSidebarStateByDocument(mount.ownerDocument!);
             if (sb?.overviewActive && states.get(mount) === state && state.itemID === sourceItemID) await showOverviewWindow(sb);
-            target.content = "WEB 全文总览已生成并保存，可在「总览」中查看。";
+            target.content = uiText("WEB 全文总览已生成并保存，可在「总览」中查看。", "The WEB full-text overview was generated and saved. View it under Overview.");
           }
         } catch (error) {
           const message = errorMessage(error);
@@ -4261,7 +4286,7 @@ async function sendWebPromptMessage(
       } else if (options.annotationBatch || hasWebAnnotationProtocol(importedAnswer)) {
         target.content = importedAnswer;
         const parsed = parseWebAnnotationBatch(target.content);
-        target.content = parsed.body || "DeepSeek 已返回 PDF 标注草稿。";
+        target.content = parsed.body || uiText("DeepSeek 已返回 PDF 标注草稿。", "DeepSeek returned a PDF annotation draft.");
         target.webAnnotationBatch = parsed.annotations.length
           ? createPendingWebAnnotationBatch(parsed.annotations)
           : parsed.error
@@ -4269,7 +4294,7 @@ async function sendWebPromptMessage(
             : {
                 createdAt: Date.now(),
                 error:
-                  "WEB 回答未包含可解析的 Zotero 标注协议；正常回答已保留。",
+                  uiText("WEB 回答未包含可解析的 Zotero 标注协议；正常回答已保留。", "The WEB response did not contain a readable Zotero annotation protocol; the response was kept as-is."),
                 entries: [],
               };
       } else {
@@ -4352,7 +4377,7 @@ async function sendWebPromptMessage(
     cancelWebProgress();
     releaseWebPromptLock();
     const message = error instanceof Error ? error.message : String(error);
-    assistantMessage.content = `WEB 自动化启动失败：${message}\n\n[打开手动 Prompt Hub](${task.url})`;
+    assistantMessage.content = uiText(`WEB 自动化启动失败：${message}\n\n[打开手动 Prompt Hub](${task.url})`, `WEB automation could not start: ${message}\n\n[Open manual Prompt Hub](${task.url})`);
     if (assistantMessage.task) assistantMessage.task.error = message;
     if (userMessage.task) {
       userMessage.task.error = message;
@@ -4371,25 +4396,25 @@ function webPromptStatusMessage(
   const name = webProviderDisplayName(provider);
   switch (status) {
     case "queued":
-      return `等待执行 ${name} 网页任务。`;
+      return uiText(`等待执行 ${name} 网页任务。`, `Waiting to run the ${name} web task.`);
     case "starting_browser":
-      return `正在打开 ${name} 专用浏览器。`;
+      return uiText(`正在打开 ${name} 专用浏览器。`, `Opening the dedicated ${name} browser.`);
     case "needs_login":
-      return `等待你在专用浏览器中人工完成 ${name} 登录或网页验证。完成后任务会自动继续。`;
+      return uiText(`等待你在专用浏览器中人工完成 ${name} 登录或网页验证。完成后任务会自动继续。`, `Waiting for you to sign in to ${name} or complete website verification in the dedicated browser. The task will resume automatically.`);
     case "uploading_attachment":
-      return `正在向 ${name} 对话框粘贴论文文件并等待上传。`;
+      return uiText(`正在向 ${name} 对话框粘贴论文文件并等待上传。`, `Pasting the paper file into the ${name} chat and waiting for the upload.`);
     case "submitting":
-      return `正在向 ${name} 网页发送 Prompt。`;
+      return uiText(`正在向 ${name} 网页发送 Prompt。`, `Sending the prompt to the ${name} website.`);
     case "generating":
-      return `${name} 正在生成回答。`;
+      return uiText(`${name} 正在生成回答。`, `${name} is generating a response.`);
     case "processing_answer":
-      return `正在整理 ${name} 回答中的图表、文件并同步到 Zotero。`;
+      return uiText(`正在整理 ${name} 回答中的图表、文件并同步到 Zotero。`, `Processing charts and files in the ${name} response and syncing them to Zotero.`);
     case "completed":
-      return `正在把 ${name} 回答导回 Zotero。`;
+      return uiText(`正在把 ${name} 回答导回 Zotero。`, `Bringing the ${name} response back into Zotero.`);
     case "cancelled":
-      return `${name} 网页任务已取消。`;
+      return uiText(`${name} 网页任务已取消。`, `The ${name} web task was cancelled.`);
     case "failed":
-      return `${name} 网页任务失败：${error || "未知错误"}`;
+      return uiText(`${name} 网页任务失败：${error || "未知错误"}`, `${name} web task failed: ${error || "Unknown error"}`);
   }
 }
 
@@ -4451,23 +4476,23 @@ function configureCustomWebProvider(
   const dialog = el(doc, "section", "zai-custom-web-provider-dialog");
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-label", "第三方网页配置");
+  dialog.setAttribute("aria-label", uiText("第三方网页配置", "Custom website settings"));
 
   const head = el(doc, "header", "zai-custom-web-provider-head");
   const heading = el(doc, "div", "zai-custom-web-provider-heading");
   heading.append(
-    el(doc, "strong", "zai-custom-web-provider-title", "第三方网页配置"),
+    el(doc, "strong", "zai-custom-web-provider-title", uiText("第三方网页配置", "Custom website settings")),
     el(
       doc,
       "span",
       "zai-custom-web-provider-subtitle",
-      "只配置网页 URL；登录和网页内设置在独立浏览器中手工完成",
+      uiText("只配置网页 URL；登录和网页内设置在独立浏览器中手工完成", "Configure the website URL here; sign in and change website settings manually in the separate browser"),
     ),
   );
   const close = buttonEl(doc, "×");
   close.className = "zai-custom-web-provider-close";
   close.type = "button";
-  close.title = "关闭（Esc）";
+  close.title = uiText("关闭（Esc）", "Close (Esc)");
   head.append(heading, close);
 
   const form = doc.createElementNS(XHTML_NS, "form") as HTMLFormElement;
@@ -4495,9 +4520,9 @@ function configureCustomWebProvider(
   const providerSection = el(doc, "section", "zai-custom-web-provider-list");
   const providerListHead = el(doc, "div", "zai-custom-web-provider-list-head");
   providerListHead.append(
-    el(doc, "strong", "zai-custom-web-provider-list-title", "已配置网页"),
+    el(doc, "strong", "zai-custom-web-provider-list-title", uiText("已配置网页", "Configured websites")),
   );
-  const addProvider = buttonEl(doc, "+ 新增网页");
+  const addProvider = buttonEl(doc, uiText("+ 新增网页", "+ Add website"));
   addProvider.type = "button";
   addProvider.className = "zai-custom-web-provider-add";
   providerListHead.append(addProvider);
@@ -4505,7 +4530,7 @@ function configureCustomWebProvider(
   providerTable.className = "zai-custom-web-provider-table";
   const providerTableHead = doc.createElement("thead");
   const providerHeaderRow = doc.createElement("tr");
-  for (const label of ["网页", "URL", "状态", "操作"]) {
+  for (const label of [uiText("网页", "Website"), "URL", uiText("状态", "Status"), uiText("操作", "Actions")]) {
     const cell = doc.createElement("th");
     cell.textContent = label;
     providerHeaderRow.append(cell);
@@ -4524,11 +4549,11 @@ function configureCustomWebProvider(
     doc,
     "strong",
     "zai-custom-web-provider-editor-title",
-    editingProvider ? "编辑网页 URL" : "新增网页 URL",
+    editingProvider ? uiText("编辑网页 URL", "Edit website URL") : uiText("新增网页 URL", "Add website URL"),
   );
   basics.append(
     editorTitle,
-    formField("网页 URL", homeUrl, "必须是 http:// 或 https:// 地址"),
+    formField(uiText("网页 URL", "Website URL"), homeUrl, uiText("必须是 http:// 或 https:// 地址", "Must be an http:// or https:// address")),
   );
   body.append(
     providerSection,
@@ -4537,19 +4562,19 @@ function configureCustomWebProvider(
       doc,
       "p",
       "zai-custom-web-provider-rule-note",
-      "保存后请使用账号按钮打开该网址，手工登录并保持页面打开。",
+      uiText("保存后请使用账号按钮打开该网址，手工登录并保持页面打开。", "After saving, use the account button to open this website, sign in manually, and keep the page open."),
     ),
     notice,
   );
 
   const foot = el(doc, "footer", "zai-custom-web-provider-foot");
-  const cancel = buttonEl(doc, "取消");
+  const cancel = buttonEl(doc, uiText("取消", "Cancel"));
   cancel.type = "button";
-  const remove = buttonEl(doc, "删除当前配置");
+  const remove = buttonEl(doc, uiText("删除当前配置", "Delete current configuration"));
   remove.type = "button";
   remove.className = "zai-custom-web-provider-danger";
   remove.hidden = !editingProvider;
-  const save = buttonEl(doc, editingProvider ? "保存修改" : "保存配置");
+  const save = buttonEl(doc, editingProvider ? uiText("保存修改", "Save changes") : uiText("保存配置", "Save configuration"));
   save.type = "submit";
   save.className = "zai-custom-web-provider-primary";
   foot.append(cancel, remove, save);
@@ -4573,7 +4598,7 @@ function configureCustomWebProvider(
       const cell = doc.createElement("td");
       cell.colSpan = 4;
       cell.className = "zai-custom-web-provider-empty";
-      cell.textContent = "暂无第三方网页配置";
+      cell.textContent = uiText("暂无第三方网页配置", "No custom websites configured");
       row.append(cell);
       providerTableBody.append(row);
       return;
@@ -4594,15 +4619,15 @@ function configureCustomWebProvider(
       statusCell.className = "zai-custom-web-provider-status-cell";
       statusCell.textContent =
         state.localUiSettings.webPromptProvider === `custom:${provider.id}`
-          ? "当前"
-          : "可用";
+          ? uiText("当前", "Current")
+          : uiText("可用", "Available");
       const actionCell = doc.createElement("td");
       actionCell.className = "zai-custom-web-provider-actions-cell";
-      const edit = buttonEl(doc, "编辑");
+      const edit = buttonEl(doc, uiText("编辑", "Edit"));
       edit.type = "button";
       edit.className = "zai-custom-web-provider-row-button";
       edit.addEventListener("click", () => startEditor(provider));
-      const removeRow = buttonEl(doc, "删除");
+      const removeRow = buttonEl(doc, uiText("删除", "Delete"));
       removeRow.type = "button";
       removeRow.className = "zai-custom-web-provider-row-button is-danger";
       removeRow.addEventListener("click", () => deleteProvider(provider));
@@ -4614,15 +4639,15 @@ function configureCustomWebProvider(
   const startEditor = (provider?: CustomWebProvider) => {
     editingProvider = provider;
     homeUrl.value = provider?.homeUrl || provider?.newConversationUrl || "";
-    editorTitle.textContent = provider ? "编辑网页 URL" : "新增网页 URL";
-    save.textContent = provider ? "保存修改" : "保存配置";
+    editorTitle.textContent = provider ? uiText("编辑网页 URL", "Edit website URL") : uiText("新增网页 URL", "Add website URL");
+    save.textContent = provider ? uiText("保存修改", "Save changes") : uiText("保存配置", "Save configuration");
     remove.hidden = !provider;
     clearError();
     renderProviderTable();
     homeUrl.focus();
   };
   const deleteProvider = (provider: CustomWebProvider) => {
-    if (!view?.confirm?.(`删除 ${provider.name} 的网页配置？`)) return;
+    if (!view?.confirm?.(uiText(`删除 ${provider.name} 的网页配置？`, `Delete the website configuration for ${provider.name}?`))) return;
     const deletingActive =
       state.localUiSettings.webPromptProvider === `custom:${provider.id}`;
     const next = normalizeLocalUiSettings({
@@ -4644,7 +4669,7 @@ function configureCustomWebProvider(
     event.preventDefault();
     clearError();
     const providerHomeUrl = homeUrl.value.trim();
-    if (!providerHomeUrl) return showError("请填写网页 URL");
+    if (!providerHomeUrl) return showError(uiText("请填写网页 URL", "Enter the website URL"));
     let parsedUrl: URL;
     try {
       parsedUrl = new URL(providerHomeUrl);
@@ -4652,7 +4677,7 @@ function configureCustomWebProvider(
         throw new Error("unsupported protocol");
       }
     } catch {
-      return showError("请输入有效的 http:// 或 https:// 网页 URL");
+      return showError(uiText("请输入有效的 http:// 或 https:// 网页 URL", "Enter a valid http:// or https:// website URL"));
     }
     const hostName = parsedUrl.hostname.replace(/^www\./i, "") || "自定义网页";
     const providerName = editingProvider?.name || hostName;
@@ -4689,10 +4714,10 @@ function configureCustomWebProvider(
       webPromptProvider: `custom:${id}`,
     });
     const saved = next.customWebProviders.find((item) => item.id === id);
-    if (!saved) return showError("网页配置无效：请检查 URL");
+    if (!saved) return showError(uiText("网页配置无效：请检查 URL", "Website configuration is invalid. Check the URL."));
     state.localUiSettings = next;
     state.webAccountConfigured = undefined;
-    state.webAccountNotice = `已保存 ${saved.name}，请点击账号图标手动登录`;
+    state.webAccountNotice = uiText(`已保存 ${saved.name}，请点击账号图标手动登录`, `Saved ${saved.name}. Click the account icon to sign in manually.`);
     saveLocalUiSettings(zoteroPrefs(), next);
     closeDialog();
     renderPanelPreservingOpenMenus(mount, state);
@@ -4907,15 +4932,15 @@ function renderSelectionChip(
   body.type = "button";
   body.className = "zai-sel-chip-body";
   body.title = translationSelection
-    ? "点击展开 / 收起，核对本轮会随消息发送的英文原句"
-    : "点击展开 / 收起，核对本轮会随消息发送的 PDF 选区原文";
+    ? uiText("点击展开 / 收起，核对本轮会随消息发送的英文原句", "Expand / collapse to review the English text sent with this message")
+    : uiText("点击展开 / 收起，核对本轮会随消息发送的 PDF 选区原文", "Expand / collapse to review the selected PDF text sent with this message");
   body.append(
     el(doc, "span", "zai-sel-chip-icon", forced ? "📄" : "🎯"),
     el(
       doc,
       "span",
       "zai-sel-chip-label",
-      forced ? "选区+全文" : translationSelection ? "英文原句" : "选区",
+      forced ? uiText("选区+全文", "Selection + full text") : translationSelection ? uiText("英文原句", "English original") : uiText("选区", "Selection"),
     ),
     el(
       doc,
@@ -4923,7 +4948,7 @@ function renderSelectionChip(
       "zai-sel-chip-text",
       selectedText.replace(/\s+/g, " ").trim(),
     ),
-    el(doc, "span", "zai-sel-chip-peek", previewOpen ? "收起" : "点开核对"),
+    el(doc, "span", "zai-sel-chip-peek", previewOpen ? uiText("收起", "Collapse") : uiText("点开核对", "Expand to review")),
   );
   body.addEventListener("click", () => {
     state.turnContextSelectionPreviewOpen = !previewOpen;
@@ -4934,11 +4959,11 @@ function renderSelectionChip(
   const fullText = doc.createElement("button");
   fullText.type = "button";
   fullText.className = "zai-sel-chip-action";
-  fullText.textContent = forced ? "取消原文" : "+本轮原文";
+  fullText.textContent = forced ? uiText("取消原文", "Remove full text") : uiText("+本轮原文", "+Full text this turn");
   fullText.disabled = conversationIsSending(state, state.activeConversationID);
   fullText.title = forced
-    ? "取消本轮全文，恢复只发送选区和附近上下文"
-    : "仅本轮额外带入论文全文；发送后自动恢复";
+    ? uiText("取消本轮全文，恢复只发送选区和附近上下文", "Remove full text for this turn and send only the selection and nearby context")
+    : uiText("仅本轮额外带入论文全文；发送后自动恢复", "Include the full paper for this turn only; the setting resets after sending");
   fullText.addEventListener("click", () => {
     if (forced) {
       resetTurnFullTextMode(state);
@@ -4956,8 +4981,8 @@ function renderSelectionChip(
   remove.textContent = "✕";
   remove.disabled = conversationIsSending(state, state.activeConversationID);
   remove.title = translationSelection
-    ? "移除选区：本轮不发送，并同时取消翻译页里的选中"
-    : "移除选区：本轮不发送，并同时取消 PDF 里的选中";
+    ? uiText("移除选区：本轮不发送，并同时取消翻译页里的选中", "Remove selection from this turn and clear it from the translation view")
+    : uiText("移除选区：本轮不发送，并同时取消 PDF 里的选中", "Remove selection from this turn and clear it from the PDF");
   remove.addEventListener("click", () => {
     ignoreSelectedTextForPrompt(mount, state.itemID);
     renderPanel(mount, state);
@@ -4972,7 +4997,7 @@ function renderSelectionChip(
         doc,
         "div",
         "zai-sel-chip-preview-title",
-        translationSelection ? "本轮会发送的英文原句" : "本轮会发送的 PDF 选区",
+        translationSelection ? uiText("本轮会发送的英文原句", "English original sent this turn") : uiText("本轮会发送的 PDF 选区", "PDF selection sent this turn"),
       ),
       el(doc, "div", "zai-sel-chip-preview-body", selectedText),
     );
@@ -4996,18 +5021,18 @@ function renderChatSelectionChip(
   const body = doc.createElement("button");
   body.type = "button";
   body.className = "zai-sel-chip-body";
-  body.title = "点击展开 / 收起，核对本轮会随问题发送的对话引用";
+  body.title = uiText("点击展开 / 收起，核对本轮会随问题发送的对话引用", "Expand / collapse to review the chat quote sent with this question");
   body.append(
     el(doc, "span", "zai-sel-chip-icon", "💬"),
-    el(doc, "span", "zai-sel-chip-label", "对话引用"),
+    el(doc, "span", "zai-sel-chip-label", uiText("对话引用", "Chat quote")),
     el(doc, "span", "zai-sel-chip-text", selectedText.replace(/\s+/g, " ")),
     el(
       doc,
       "span",
       "zai-sel-chip-peek",
       previewOpen
-        ? "收起"
-        : `仅本轮携带此回复全文 ${citation.fullReply.length} 字 · 点开核对`,
+        ? uiText("收起", "Collapse")
+        : uiText(`仅本轮携带此回复全文 ${citation.fullReply.length} 字 · 点开核对`, `Include this full reply (${citation.fullReply.length} characters) this turn only · expand to review`),
     ),
   );
   body.addEventListener("click", () => {
@@ -5020,7 +5045,7 @@ function renderChatSelectionChip(
   remove.className = "zai-sel-chip-remove";
   remove.textContent = "✕";
   remove.disabled = conversationIsSending(state, state.activeConversationID);
-  remove.title = "移除对话引用：本轮不发送这段文字";
+  remove.title = uiText("移除对话引用：本轮不发送这段文字", "Remove chat quote from this turn");
   remove.addEventListener("click", () => {
     state.chatSelectionQuote = undefined;
     state.chatSelectionPreviewOpen = false;
@@ -5036,15 +5061,15 @@ function renderChatSelectionChip(
         doc,
         "div",
         "zai-sel-chip-preview-title",
-        `仅本轮携带此回复全文（${citation.sourceConversationTitle}，不携带其他聊天历史）`,
+        uiText(`仅本轮携带此回复全文（${citation.sourceConversationTitle}，不携带其他聊天历史）`, `Include the full reply from ${citation.sourceConversationTitle} this turn only (no other chat history)`),
       ),
       el(
         doc,
         "div",
         "zai-sel-chip-preview-title",
-        "论文目录按“原文”开关发送，正文由模型按需读取",
+        uiText("论文目录按“原文”开关发送，正文由模型按需读取", "The paper outline follows the Full text switch; the model reads body text as needed"),
       ),
-      el(doc, "div", "zai-sel-chip-preview-title", "本轮重点引用"),
+      el(doc, "div", "zai-sel-chip-preview-title", uiText("本轮重点引用", "Key quote for this turn")),
       el(doc, "div", "zai-sel-chip-preview-body", selectedText),
       el(
         doc,
@@ -5232,12 +5257,12 @@ function renderWebUsageNoticeChip(
   mount: HTMLElement,
   webMode: boolean,
 ): HTMLElement {
-  const chip = buttonEl(doc, "使用须知");
+  const chip = buttonEl(doc, uiText("使用须知", "Usage notes"));
   chip.className = "composer-web-notice-chip";
   chip.title = webMode
-    ? "论文素材来自 LaTeX 源或 MinerU 解析稿；查看素材怎么选、怎么发，以及 API 与 WEB 的差别"
-    : "查看论文材料来源（LaTeX / MinerU）、素材的选法与发法，以及 API 与 WEB 的差别";
-  chip.setAttribute("aria-label", "使用须知");
+    ? uiText("论文素材来自 LaTeX 源或 MinerU 解析稿；查看素材怎么选、怎么发，以及 API 与 WEB 的差别", "Paper materials come from LaTeX sources or MinerU parsing. Learn how to choose and send them, and how API and WEB modes differ.")
+    : uiText("查看论文材料来源（LaTeX / MinerU）、素材的选法与发法，以及 API 与 WEB 的差别", "Learn about paper material sources (LaTeX / MinerU), how to choose and send materials, and how API and WEB modes differ.");
+  chip.setAttribute("aria-label", uiText("使用须知", "Usage notes"));
   chip.addEventListener("click", () => openWebUsageNotice(mount));
   return chip;
 }
@@ -5321,7 +5346,7 @@ function renderWebPromptProviderSwitcher(
 ): HTMLElement {
   const select = doc.createElement("select");
   select.className = "composer-web-provider-select";
-  select.title = "选择网页模型";
+  select.title = uiText("选择网页模型", "Choose web model");
   for (const [value, label] of [
     ["chatgpt", "ChatGPT"],
     ["deepseek", "DeepSeek"],
@@ -5342,7 +5367,7 @@ function renderWebPromptProviderSwitcher(
   }
   const option = doc.createElement("option");
   option.value = "__manage_web_providers__";
-  option.textContent = "＋ 管理第三方网页…";
+  option.textContent = uiText("＋ 管理第三方网页…", "+ Manage custom websites…");
   select.append(option);
   select.value = state.localUiSettings.webPromptProvider;
   select.addEventListener("change", () => {
@@ -5354,9 +5379,7 @@ function renderWebPromptProviderSwitcher(
     }
     if (select.value === "chatgpt" && previousProvider !== "chatgpt") {
       const warning =
-        "ChatGPT 网页模式风险提示\n\n" +
-        "需要在独立浏览器中手动登录。网页自动化可能触发访问频率限制、额外验证或账号风控。\n\n" +
-        "确认了解风险并继续使用 ChatGPT 网页版吗？";
+        uiText("ChatGPT 网页模式风险提示\n\n需要在独立浏览器中手动登录。网页自动化可能触发访问频率限制、额外验证或账号风控。\n\n确认了解风险并继续使用 ChatGPT 网页版吗？", "ChatGPT web mode notice\n\nYou need to sign in manually in a separate browser. Web automation may trigger rate limits, additional verification, or account security checks.\n\nDo you understand and want to continue using ChatGPT web mode?");
       const confirmed = doc.defaultView?.confirm
         ? doc.defaultView.confirm(warning)
         : true;
@@ -5390,46 +5413,46 @@ function renderWebBrowserPicker(
   for (const type of ["mousedown", "mouseup", "click", "input", "change", "focusin", "focusout", "keydown", "toggle"]) {
     details.addEventListener(type, (event: Event) => traceBrowserPicker("picker:event", details, event), true);
   }
-  const summary = el(doc, "summary", "", compact ? "▾" : "浏览器：正在检测…");
-  summary.title = "选择 WEB 浏览器";
-  summary.setAttribute("aria-label", "选择 WEB 浏览器");
+  const summary = el(doc, "summary", "", compact ? "▾" : uiText("浏览器：正在检测…", "Browser: detecting…"));
+  summary.title = uiText("选择 WEB 浏览器", "Choose WEB browser");
+  summary.setAttribute("aria-label", uiText("选择 WEB 浏览器", "Choose WEB browser"));
   const menu = el(doc, "div", "composer-browser-menu");
   const select = doc.createElement("select");
-  select.setAttribute("aria-label", "WEB 浏览器");
+  select.setAttribute("aria-label", uiText("WEB 浏览器", "WEB browser"));
   const nameInput = doc.createElement("input");
   nameInput.type = "text";
-  nameInput.setAttribute("aria-label", "浏览器名称");
-  nameInput.placeholder = "例如：我的浏览器";
-  const nameLabel = el(doc, "label", "", "浏览器名称");
+  nameInput.setAttribute("aria-label", uiText("浏览器名称", "Browser name"));
+  nameInput.placeholder = uiText("例如：我的浏览器", "e.g. My browser");
+  const nameLabel = el(doc, "label", "", uiText("浏览器名称", "Browser name"));
   nameLabel.append(nameInput);
   nameLabel.hidden = true;
   const pathInput = doc.createElement("input");
   pathInput.type = "text";
-  pathInput.setAttribute("aria-label", "浏览器程序路径");
-  pathInput.placeholder = "留空自动检测，或输入可执行文件完整路径";
-  const pathLabel = el(doc, "label", "", "浏览器程序路径");
+  pathInput.setAttribute("aria-label", uiText("浏览器程序路径", "Browser executable path"));
+  pathInput.placeholder = uiText("留空自动检测，或输入可执行文件完整路径", "Leave blank to detect automatically, or enter the full executable path");
+  const pathLabel = el(doc, "label", "", uiText("浏览器程序路径", "Browser executable path"));
   pathLabel.append(pathInput);
-  const browse = buttonEl(doc, "选择程序文件…");
+  const browse = buttonEl(doc, uiText("选择程序文件…", "Choose executable…"));
   browse.type = "button";
   browse.addEventListener("click", () => {
     void pickWebAgentRuntimeFile(doc, "browser").then(path => {
       if (path) pathInput.value = path;
     }).catch(error => { notice.textContent = errorMessage(error); });
   });
-  const detect = buttonEl(doc, "重新检测");
+  const detect = buttonEl(doc, uiText("重新检测", "Detect again"));
   detect.type = "button";
   detect.className = "composer-browser-detect";
   const fileActions = el(doc, "div", "composer-browser-file-actions");
   fileActions.append(browse, detect);
-  const apply = buttonEl(doc, "应用浏览器选择");
+  const apply = buttonEl(doc, uiText("应用浏览器选择", "Apply browser selection"));
   apply.className = "composer-browser-apply";
   apply.type = "button";
   apply.disabled = true;
   select.disabled = true;
-  const note = el(doc, "small", "", "适用于所有 WEB 服务。自定义浏览器须支持 Chromium 远程调试；登录状态分别保存。");
+  const note = el(doc, "small", "", uiText("适用于所有 WEB 服务。自定义浏览器须支持 Chromium 远程调试；登录状态分别保存。", "Applies to all WEB services. Custom browsers must support Chromium remote debugging; sign-in sessions are stored separately."));
   const notice = el(doc, "span", "");
   notice.setAttribute("role", "status");
-  menu.append(el(doc, "strong", "", "WEB 浏览器"), select, nameLabel, pathLabel, fileActions, note, apply, notice);
+  menu.append(el(doc, "strong", "", uiText("WEB 浏览器", "WEB browser")), select, nameLabel, pathLabel, fileActions, note, apply, notice);
   details.append(summary, menu);
   let selected: string = "chrome";
   let changing = false;
@@ -5439,8 +5462,8 @@ function renderWebBrowserPicker(
     detectedPath = undefined;
     detect.hidden = select.value !== "chrome" && select.value !== "edge";
     nameLabel.hidden = select.value !== "__new";
-    apply.textContent = select.value === "__new" ? "保存并使用" : "应用浏览器选择";
-    pathInput.placeholder = select.value === "__new" ? "可执行文件完整路径" : "留空自动检测，或输入可执行文件完整路径";
+    apply.textContent = select.value === "__new" ? uiText("保存并使用", "Save and use") : uiText("应用浏览器选择", "Apply browser selection");
+    pathInput.placeholder = select.value === "__new" ? uiText("可执行文件完整路径", "Full executable path") : uiText("留空自动检测，或输入可执行文件完整路径", "Leave blank to detect automatically, or enter the full executable path");
     pathInput.value = paths[select.value] ?? "";
   };
 
@@ -5449,11 +5472,11 @@ function renderWebBrowserPicker(
     if (changing || state.sending) return;
     changing = true;
     detect.disabled = apply.disabled = select.disabled = browse.disabled = pathInput.disabled = true;
-    notice.textContent = "正在重新检测…";
+    notice.textContent = uiText("正在重新检测…", "Detecting again…");
     void detectWebAgentBrowser(select.value).then(path => {
       pathInput.value = path;
       detectedPath = path;
-      notice.textContent = "已检测到浏览器，点击应用保存。";
+      notice.textContent = uiText("已检测到浏览器，点击应用保存。", "Browser detected. Click Apply to save.");
     }).catch(error => { notice.textContent = errorMessage(error); })
       .finally(() => {
         changing = false;
@@ -5468,18 +5491,18 @@ function renderWebBrowserPicker(
     for (const entry of choices.available) {
       const option = doc.createElement("option");
       option.value = entry.browser;
-      option.textContent = `${entry.name}${entry.path ? "" : "（未安装）"}`;
+      option.textContent = `${entry.name}${entry.path ? "" : uiText("（未安装）", " (not installed)")}`;
       select.append(option);
     }
     const addOption = doc.createElement("option");
     addOption.value = "__new";
-    addOption.textContent = "＋ 添加其他浏览器…";
+    addOption.textContent = uiText("＋ 添加其他浏览器…", "+ Add another browser…");
     select.append(addOption);
     select.value = selected;
     showPath();
     const selectedName = choices.available.find(entry => entry.browser === selected)?.name ?? selected;
-    if (!compact) summary.textContent = `浏览器：${selectedName} · 更换`;
-    summary.title = `当前浏览器：${selectedName}，点击更换`;
+    if (!compact) summary.textContent = uiText(`浏览器：${selectedName} · 更换`, `Browser: ${selectedName} · Change`);
+    summary.title = uiText(`当前浏览器：${selectedName}，点击更换`, `Current browser: ${selectedName}. Click to change.`);
     apply.disabled = state.sending || changing;
     select.disabled = state.sending || changing;
   };
@@ -5495,7 +5518,7 @@ function renderWebBrowserPicker(
     pathInput.disabled = true;
     browse.disabled = true;
     detect.disabled = true;
-    notice.textContent = "正在切换浏览器…";
+    notice.textContent = uiText("正在切换浏览器…", "Switching browser…");
     nameInput.disabled = true;
     const operation = select.value === "__new"
       ? addWebAgentBrowser(nameInput.value, pathInput.value)
@@ -5503,9 +5526,9 @@ function renderWebBrowserPicker(
     void operation
       .then(async () => {
         state.webAccountConfigured = false;
-        state.webAccountNotice = "浏览器已切换，请打开账号配置完成登录";
+        state.webAccountNotice = uiText("浏览器已切换，请打开账号配置完成登录", "Browser changed. Open account settings to sign in.");
         await refresh();
-        notice.textContent = "已保存";
+        notice.textContent = uiText("已保存", "Saved");
         traceBrowserPicker("apply-saved:CLOSE", details);
         details.open = false;
         onChanged();
@@ -5527,13 +5550,13 @@ function renderWebAccountButton(
   const customProvider = customWebProviderFor(state, provider);
   const button = buttonEl(doc, "");
   button.className = "composer-web-account-button";
-  button.title = `在 Zotero 配置窗口中管理 ${providerName} 网页账号`;
-  button.setAttribute("aria-label", `配置 ${providerName} 网页账号`);
+  button.title = uiText(`在 Zotero 配置窗口中管理 ${providerName} 网页账号`, `Manage the ${providerName} web account in the Zotero settings window`);
+  button.setAttribute("aria-label", uiText(`配置 ${providerName} 网页账号`, `Configure ${providerName} web account`));
   button.append(
     webAccountIcon(doc),
-    el(doc, "span", "composer-web-account-label", "账号"),
+    el(doc, "span", "composer-web-account-label", uiText("账号", "Account")),
   );
-  button.disabled = state.webAccountNotice?.startsWith("正在打开") === true;
+  button.disabled = state.webAccountNotice?.startsWith(uiText("正在打开", "Opening")) === true;
   button.addEventListener("click", () => {
     configureWebAccount(
       doc,
@@ -5574,7 +5597,7 @@ function configureWebAccount(
   );
   dialog.setAttribute("role", "dialog");
   dialog.setAttribute("aria-modal", "true");
-  dialog.setAttribute("aria-label", `配置 ${providerName} 网页账号`);
+  dialog.setAttribute("aria-label", uiText(`配置 ${providerName} 网页账号`, `Configure ${providerName} web account`));
 
   const head = el(doc, "header", "zai-custom-web-provider-head");
   const heading = el(doc, "div", "zai-custom-web-provider-heading");
@@ -5583,21 +5606,21 @@ function configureWebAccount(
       doc,
       "strong",
       "zai-custom-web-provider-title",
-      `${providerName} 账号配置`,
+      uiText(`${providerName} 账号配置`, `${providerName} account settings`),
     ),
     el(
       doc,
       "span",
       "zai-custom-web-provider-subtitle",
       provider === "zai"
-        ? "登录状态会自动检测，无需关闭浏览器"
-        : "登录网页只在配置期间显示；完成后自动回到后台运行",
+        ? uiText("登录状态会自动检测，无需关闭浏览器", "Sign-in status is detected automatically; you can leave the browser open")
+        : uiText("登录网页只在配置期间显示；完成后自动回到后台运行", "The sign-in page is shown only during setup, then returns to the background"),
     ),
   );
   const close = buttonEl(doc, "×");
   close.className = "zai-custom-web-provider-close";
   close.type = "button";
-  close.title = "完成配置并隐藏网页（Esc）";
+  close.title = uiText("完成配置并隐藏网页（Esc）", "Finish setup and hide the website (Esc)");
   head.append(heading, close);
 
   const form = doc.createElementNS(XHTML_NS, "form") as HTMLFormElement;
@@ -5607,7 +5630,7 @@ function configureWebAccount(
     doc,
     "div",
     "zai-web-account-status",
-    "正在检查 Web Agent…",
+    uiText("正在检查 Web Agent…", "Checking Web Agent…"),
   );
   const dependencyActions = el(
     doc,
@@ -5620,7 +5643,7 @@ function configureWebAccount(
       doc,
       "p",
       "zai-web-account-dependency-note",
-      "系统依赖需要由用户安装，插件不会自动执行安装程序或系统命令。",
+      uiText("系统依赖需要由用户安装，插件不会自动执行安装程序或系统命令。", "System dependencies must be installed by the user. The plugin will not run installers or system commands automatically."),
     ),
   );
   const dependencyList = el(
@@ -5635,13 +5658,13 @@ function configureWebAccount(
     doc,
     "span",
     "",
-    "自动下载失败，可手动下载 ZIP 后选择本地安装。",
+    uiText("自动下载失败，可手动下载 ZIP 后选择本地安装。", "Automatic download failed. Download the ZIP manually, then choose it for local installation."),
   );
-  const openDownloadPage = buttonEl(doc, "打开下载页面");
+  const openDownloadPage = buttonEl(doc, uiText("打开下载页面", "Open download page"));
   openDownloadPage.type = "button";
-  const copyDownloadLink = buttonEl(doc, "复制下载链接");
+  const copyDownloadLink = buttonEl(doc, uiText("复制下载链接", "Copy download link"));
   copyDownloadLink.type = "button";
-  const chooseRuntime = buttonEl(doc, "选择已下载的运行包");
+  const chooseRuntime = buttonEl(doc, uiText("选择已下载的运行包", "Choose downloaded runtime package"));
   chooseRuntime.type = "button";
   downloadActions.append(
     downloadHint,
@@ -5655,26 +5678,26 @@ function configureWebAccount(
     "zai-web-account-explanation",
     provider === "zai"
       ? requiresLogin
-        ? "本次任务需要上传论文附件，请在 Z.ai 网页完成登录；插件会自动检测，无需关闭浏览器。"
-        : "Z.ai 支持游客文字聊天；上传论文附件需要登录。完成登录后插件会自动识别账号，无需关闭浏览器。"
-      : `请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示浏览器。`,
+        ? uiText("本次任务需要上传论文附件，请在 Z.ai 网页完成登录；插件会自动检测，无需关闭浏览器。", "This task needs to upload a paper attachment. Sign in on the Z.ai website; the plugin detects it automatically, and you can leave the browser open.")
+        : uiText("Z.ai 支持游客文字聊天；上传论文附件需要登录。完成登录后插件会自动识别账号，无需关闭浏览器。", "Z.ai supports guest text chat; uploading paper attachments requires sign-in. The plugin detects your account automatically, and you can leave the browser open.")
+      : uiText(`请在临时显示的 ${providerName} 网页中完成登录。你可以选择后续对话是否显示浏览器。`, `Sign in on the temporarily shown ${providerName} website. You can choose whether to show the browser during later chats.`),
   );
   const pageNoticeExplanation = el(
     doc,
     "p",
     "zai-web-account-explanation",
-    "网页未返回正常回答时，插件会将本轮新出现的网页内容原样同步到 Zotero；插件不会判断或改写其含义。",
+    uiText("网页未返回正常回答时，插件会将本轮新出现的网页内容原样同步到 Zotero；插件不会判断或改写其含义。", "If the website does not return a normal answer, the new page content from this turn is copied to Zotero as-is; the plugin does not interpret or rewrite it."),
   );
   const visibilityOption = el(doc, "label", "zai-web-account-option");
   const checkbox = doc.createElement("input");
   checkbox.type = "checkbox";
   checkbox.checked = state.localUiSettings.hideWebBrowser;
-  const optionText = el(doc, "span", "", "对话时在后台隐藏浏览器");
+  const optionText = el(doc, "span", "", uiText("对话时在后台隐藏浏览器", "Hide browser in background during chat"));
   const optionHint = el(
     doc,
     "small",
     "",
-    "默认开启；取消勾选后，生成回答时会显示专用浏览器。",
+    uiText("默认开启；取消勾选后，生成回答时会显示专用浏览器。", "On by default. Uncheck to show the dedicated browser while it generates answers."),
   );
   optionText.append(optionHint);
   visibilityOption.append(checkbox, optionText);
@@ -5682,13 +5705,13 @@ function configureWebAccount(
   const pdfCheckbox = doc.createElement("input");
   pdfCheckbox.type = "checkbox";
   pdfCheckbox.checked = state.localUiSettings.alwaysSendPdf;
-  const pdfOptionText = el(doc, "span", "", "始终发送原始 PDF");
+  const pdfOptionText = el(doc, "span", "", uiText("始终发送原始 PDF", "Always send original PDF"));
   pdfOptionText.append(
     el(
       doc,
       "small",
       "",
-      "向网页模型发送原始 PDF，不使用解析文本替代。适合对比效果和复现问题；后台解析照常。",
+      uiText("向网页模型发送原始 PDF，不使用解析文本替代。适合对比效果和复现问题；后台解析照常。", "Send the original PDF to the web model instead of parsed text. Useful for comparing results and reproducing issues; background parsing still runs."),
     ),
   );
   pdfOption.append(pdfCheckbox, pdfOptionText);
@@ -5719,12 +5742,12 @@ function configureWebAccount(
     "footer",
     "zai-custom-web-provider-foot zai-web-account-foot",
   );
-  const repair = buttonEl(doc, "检查环境");
+  const repair = buttonEl(doc, uiText("检查环境", "Check environment"));
   repair.type = "button";
-  const reopen = buttonEl(doc, "重新显示登录网页");
+  const reopen = buttonEl(doc, uiText("重新显示登录网页", "Show sign-in page again"));
   reopen.type = "button";
   reopen.disabled = true;
-  const done = buttonEl(doc, "完成并隐藏");
+  const done = buttonEl(doc, uiText("完成并隐藏", "Done and hide"));
   done.type = "submit";
   done.className = "zai-custom-web-provider-primary";
   foot.append(repair, reopen, done);
@@ -5764,41 +5787,41 @@ function configureWebAccount(
       let action: HTMLButtonElement;
       if (missing === "Node.js 20+") {
         copy.append(
-          el(doc, "strong", "", "Node.js 20+ 未找到"),
-          el(doc, "small", "", "推荐安装 Node.js 24 LTS 后重新检查。"),
+          el(doc, "strong", "", uiText("Node.js 20+ 未找到", "Node.js 20+ not found")),
+          el(doc, "small", "", uiText("推荐安装 Node.js 24 LTS 后重新检查。", "Install Node.js 24 LTS, then check again.")),
         );
-        action = buttonEl(doc, "打开 Node.js 下载页");
+        action = buttonEl(doc, uiText("打开 Node.js 下载页", "Open Node.js downloads"));
         action.addEventListener("click", () => {
           (Zotero as any).launchURL(nodeDownloadUrl);
         });
       } else if (missing === "Google Chrome" || missing === "Microsoft Edge") {
         copy.append(
-          el(doc, "strong", "", `${missing} 未找到`),
-          el(doc, "small", "", "请安装到系统默认位置或加入 PATH。"),
+          el(doc, "strong", "", uiText(`${missing} 未找到`, `${missing} not found`)),
+          el(doc, "small", "", uiText("请安装到系统默认位置或加入 PATH。", "Install it in the system default location or add it to PATH.")),
         );
-        action = buttonEl(doc, `打开 ${missing} 下载页`);
+        action = buttonEl(doc, uiText(`打开 ${missing} 下载页`, `Open ${missing} downloads`));
         action.addEventListener("click", () => {
           (Zotero as any).launchURL(missing === "Microsoft Edge" ? "https://www.microsoft.com/edge/download" : chromeDownloadUrl);
         });
       } else if (missing === "xclip") {
         copy.append(
-          el(doc, "strong", "", "Linux 剪贴板依赖 xclip 未找到"),
-          el(doc, "small", "", "请按所用 Linux 发行版安装后重新检查。"),
+          el(doc, "strong", "", uiText("Linux 剪贴板依赖 xclip 未找到", "Linux clipboard dependency xclip not found")),
+          el(doc, "small", "", uiText("请按所用 Linux 发行版安装后重新检查。", "Install it for your Linux distribution, then check again.")),
         );
-        action = buttonEl(doc, "复制 xclip 安装说明");
+        action = buttonEl(doc, uiText("复制 xclip 安装说明", "Copy xclip installation instructions"));
         action.addEventListener("click", () => {
           void copyToClipboard(
             doc,
             xclipInstallGuide,
             "web-agent-xclip-install-guide",
-          ).then(() => flashButton(action, "已复制"));
+          ).then(() => flashButton(action, uiText("已复制", "Copied")));
         });
       } else {
         copy.append(
-          el(doc, "strong", "", `${missing} 程序未找到`),
-          el(doc, "small", "", "请在浏览器配置中重新选择程序文件。"),
+          el(doc, "strong", "", uiText(`${missing} 程序未找到`, `${missing} executable not found`)),
+          el(doc, "small", "", uiText("请在浏览器配置中重新选择程序文件。", "Choose the executable again in browser settings.")),
         );
-        action = buttonEl(doc, "修改浏览器路径");
+        action = buttonEl(doc, uiText("修改浏览器路径", "Change browser path"));
         action.addEventListener("click", () => {
           const picker = body.querySelector<HTMLDetailsElement>(".composer-browser-picker");
           if (picker) picker.open = true;
@@ -5821,7 +5844,7 @@ function configureWebAccount(
   };
 
   const updateDoneLabel = () => {
-    done.textContent = checkbox.checked ? "完成并隐藏" : "完成并保持显示";
+    done.textContent = checkbox.checked ? uiText("完成并隐藏", "Done and hide") : uiText("完成并保持显示", "Done and keep visible");
   };
   checkbox.addEventListener("change", () => {
     state.localUiSettings = normalizeLocalUiSettings({
@@ -5869,15 +5892,15 @@ function configureWebAccount(
         ? result.error
         : guest && (result.configured || requiresLogin)
           ? requiresLogin
-            ? "Z.ai 游客模式：本次上传论文附件需要登录，请在网页完成登录…"
-            : "Z.ai 游客模式可用，可以直接文字聊天；上传论文附件需要登录"
+            ? uiText("Z.ai 游客模式：本次上传论文附件需要登录，请在网页完成登录…", "Z.ai guest mode: sign in on the website to upload a paper attachment…")
+            : uiText("Z.ai 游客模式可用，可以直接文字聊天；上传论文附件需要登录", "Z.ai guest mode is ready for text chat; sign in to upload paper attachments")
           : configured
-            ? `${providerName} 已登录，可以完成并隐藏网页`
+            ? uiText(`${providerName} 已登录，可以完成并隐藏网页`, `${providerName} is signed in. You can finish and hide the website`)
             : result.verificationRequired
-              ? `${providerName} 网站要求访问验证，请在专用浏览器 中手动完成验证…`
+              ? uiText(`${providerName} 网站要求访问验证，请在专用浏览器 中手动完成验证…`, `${providerName} requires verification. Complete it manually in the dedicated browser…`)
               : result.browserOpen
-                ? `等待在 ${providerName} 网页中完成登录…`
-                : `${providerName} 登录网页尚未打开`;
+                ? uiText(`等待在 ${providerName} 网页中完成登录…`, `Waiting for sign-in on ${providerName}…`)
+                : uiText(`${providerName} 登录网页尚未打开`, `${providerName} sign-in page is not open`);
   };
   const refreshStatus = async () => {
     try {
@@ -5898,7 +5921,7 @@ function configureWebAccount(
     if (opening || closed || !webAgentReady) return;
     reopen.disabled = true;
     status.classList.remove("is-error");
-    status.textContent = `正在打开 ${providerName} 登录网页…`;
+    status.textContent = uiText(`正在打开 ${providerName} 登录网页…`, `Opening ${providerName} sign-in page…`);
     opening = openWebAccount(provider, customProvider)
       .then(showResult)
       .catch((error) => {
@@ -5925,12 +5948,12 @@ function configureWebAccount(
     reopen.disabled = !webAgentReady;
     repair.textContent =
       report.state === "blocked"
-        ? "重新检查环境"
+        ? uiText("重新检查环境", "Check environment again")
         : webAgentReady
-          ? "重新检查 Web Agent"
+          ? uiText("重新检查 Web Agent", "Check Web Agent again")
           : report.configPresent
-            ? "修复 Web Agent"
-            : "安装 Web Agent";
+            ? uiText("修复 Web Agent", "Repair Web Agent")
+            : uiText("安装 Web Agent", "Install Web Agent");
   };
   const checkAndRepair = async (
     repairIfNeeded: boolean,
@@ -5946,10 +5969,10 @@ function configureWebAccount(
     hideDownloadActions();
     status.classList.remove("is-ready", "is-error");
     status.textContent = localRuntimePath
-      ? "正在校验并安装本地 Web Agent 运行包…"
+      ? uiText("正在校验并安装本地 Web Agent 运行包…", "Verifying and installing local Web Agent runtime…")
       : repairIfNeeded
-        ? "正在检查并修复 Web Agent…"
-        : "正在检查 Web Agent…";
+        ? uiText("正在检查并修复 Web Agent…", "Checking and repairing Web Agent…")
+        : uiText("正在检查 Web Agent…", "Checking Web Agent…");
     try {
       let report = await inspectWebAgentInstallation();
       usableBeforeRepair = report.state === "ready";
@@ -5985,7 +6008,7 @@ function configureWebAccount(
     reopen.disabled = true;
     repair.disabled = true;
     done.disabled = true;
-    done.textContent = checkbox.checked ? "正在隐藏…" : "正在保存…";
+    done.textContent = checkbox.checked ? uiText("正在隐藏…", "Hiding…") : uiText("正在保存…", "Saving…");
     await opening?.catch(() => undefined);
     try {
       if (checkbox.checked && webAgentReady) {
@@ -5997,19 +6020,19 @@ function configureWebAccount(
           !(requiresLogin && guest);
         state.webAccountConfigured = configured;
         state.webAccountNotice = result.verificationRequired
-          ? `${providerName} 网站要求访问验证，专用浏览器 已保持显示，请手动完成验证`
+          ? uiText(`${providerName} 网站要求访问验证，专用浏览器 已保持显示，请手动完成验证`, `${providerName} requires verification. The dedicated browser is still visible; complete verification manually.`)
           : guest
-            ? "Z.ai 游客模式可用；上传论文附件需要登录"
+            ? uiText("Z.ai 游客模式可用；上传论文附件需要登录", "Z.ai guest mode is ready; sign in to upload paper attachments")
             : configured
-              ? `${providerName} 已就绪`
-              : `${providerName} 登录网页已隐藏，尚未检测到登录`;
+              ? uiText(`${providerName} 已就绪`, `${providerName} is ready`)
+              : uiText(`${providerName} 登录网页已隐藏，尚未检测到登录`, `${providerName} sign-in page was hidden before sign-in was detected`);
       } else if (webAgentReady) {
         state.webAccountNotice = guest
-          ? "Z.ai 游客模式可用；上传论文附件需要登录"
+          ? uiText("Z.ai 游客模式可用；上传论文附件需要登录", "Z.ai guest mode is ready; sign in to upload paper attachments")
           : configured
-            ? `${providerName} 已就绪`
-            : `${providerName} 登录网页保持显示，尚未检测到登录`;
-      } else state.webAccountNotice = status.textContent || "Web Agent 尚未就绪";
+            ? uiText(`${providerName} 已就绪`, `${providerName} is ready`)
+            : uiText(`${providerName} 登录网页保持显示，尚未检测到登录`, `${providerName} sign-in page is still visible, but sign-in has not been detected`);
+      } else state.webAccountNotice = status.textContent || uiText("Web Agent 尚未就绪", "Web Agent is not ready");
     } catch (error) {
       state.webAccountNotice =
         error instanceof Error ? error.message : String(error);
@@ -6035,7 +6058,7 @@ function configureWebAccount(
       doc,
       runtimeDownloadUrl,
       "web-agent-runtime-download-link",
-    ).then(() => flashButton(copyDownloadLink, "已复制"));
+    ).then(() => flashButton(copyDownloadLink, uiText("已复制", "Copied")));
   });
   chooseRuntime.addEventListener("click", () => {
     void pickWebAgentRuntimeFile(doc).then((path) => {
@@ -6061,7 +6084,7 @@ async function pickWebAgentRuntimeFile(
   kind: "runtime" | "browser" = "runtime",
 ): Promise<string | null> {
   const win = doc.defaultView;
-  if (!win?.browsingContext) throw new Error("当前窗口不支持文件选择器");
+  if (!win?.browsingContext) throw new Error(uiText("当前窗口不支持文件选择器", "The current window does not support a file picker"));
   const nsFilePicker = Components.interfaces.nsIFilePicker;
   const filePickerClass = (
     Components.classes as unknown as Record<
@@ -6072,7 +6095,7 @@ async function pickWebAgentRuntimeFile(
   const picker = filePickerClass.createInstance(nsFilePicker);
   picker.init(
     win.browsingContext,
-    kind === "browser" ? "选择浏览器可执行文件" : "选择 Web Agent 运行包",
+    kind === "browser" ? uiText("选择浏览器可执行文件", "Select browser executable") : uiText("选择 Web Agent 运行包", "Select Web Agent runtime archive"),
     nsFilePicker.modeOpen,
   );
   if (kind === "runtime") picker.appendFilter("Web Agent ZIP", "*.zip");
@@ -6123,9 +6146,9 @@ function renderPresetSwitcher(
   const activePreset = selectedChatPreset(state) ?? selectedPreset(state);
   wrap.dataset.accountLabel = activePreset?.label ?? "";
   select.title = activePreset
-    ? `切换账号配置：${presetSelectLabel(activePreset)}`
-    : "切换账号配置";
-  select.setAttribute("aria-label", "切换账号配置");
+    ? uiText(`切换账号配置：${presetSelectLabel(activePreset)}`, `Switch account configuration: ${presetSelectLabel(activePreset)}`)
+    : uiText("切换账号配置", "Switch account configuration");
+  select.setAttribute("aria-label", uiText("切换账号配置", "Switch account configuration"));
   for (const preset of presets) {
     const option = doc.createElement("option");
     option.value = preset.id;
@@ -6161,12 +6184,12 @@ function renderWebSearchSwitcher(
   const trigger = doc.createElement("button");
   trigger.type = "button";
   trigger.className = "web-search-trigger";
-  trigger.textContent = enabled ? "🌐\u00a0联网" : "联网";
+  trigger.textContent = enabled ? uiText("🌐\u00a0联网", "🌐\u00a0Web search") : uiText("联网", "Web search");
   trigger.title = webMode
-    ? "WEB 模式使用网页自身的联网能力；此开关仅用于 API 模式"
+    ? uiText("WEB 模式使用网页自身的联网能力；此开关仅用于 API 模式", "WEB mode uses the website's own search; this switch applies only to API mode")
     : enabledForPreset
       ? webSearchToggleTitle(mode)
-      : "联网工具目前仅对 OpenAI Responses 兼容配置生效";
+      : uiText("联网工具目前仅对 OpenAI Responses 兼容配置生效", "The web search tool currently works only with OpenAI Responses-compatible configurations");
   trigger.disabled =
     webMode ||
     !enabledForPreset ||
@@ -6188,11 +6211,11 @@ function renderWebSearchSwitcher(
 function webSearchToggleTitle(mode: WebSearchMode): string {
   switch (mode) {
     case "cached":
-      return "联网已开启：Cached；点击可关闭";
+      return uiText("联网已开启：Cached；点击可关闭", "Web search is on: cached. Click to turn off");
     case "live":
-      return "联网已开启：Live；点击可关闭";
+      return uiText("联网已开启：Live；点击可关闭", "Web search is on: live. Click to turn off");
     default:
-      return "联网已关闭；点击可开启";
+      return uiText("联网已关闭；点击可开启", "Web search is off. Click to turn on");
   }
 }
 
@@ -6212,14 +6235,14 @@ function renderPaperPinSwitcher(
   trigger.type = "button";
   trigger.className = "web-search-trigger";
   const hasItem = state.itemID != null;
-  trigger.textContent = on ? "📄\u00a0原文" : "＋\u00a0原文";
+  trigger.textContent = on ? uiText("📄\u00a0原文", "📄\u00a0Full text") : uiText("＋\u00a0原文", "+\u00a0Full text");
   trigger.title = webMode
-    ? "WEB 模式由网页附件流程提供论文材料；此开关仅用于 API 模式"
+    ? uiText("WEB 模式由网页附件流程提供论文材料；此开关仅用于 API 模式", "WEB mode provides paper materials through website attachments; this switch applies only to API mode")
     : !hasItem
-      ? "请先在 Zotero 中选择一篇有 PDF 的论文"
+      ? uiText("请先在 Zotero 中选择一篇有 PDF 的论文", "Select a paper with a PDF in Zotero first")
       : on
-        ? "原文固定已开启：PDF 条目每轮固定全文；arXiv 源条目默认固定章节目录，模型按需读取章节或升级全文。点击关闭。"
-        : "点击开启：把论文原文上下文固定在每轮对话最前面；arXiv 源默认先固定章节目录以便缓存复用。";
+        ? uiText("原文固定已开启：PDF 条目每轮固定全文；arXiv 源条目默认固定章节目录，模型按需读取章节或升级全文。点击关闭。", "Full text is pinned: PDFs are included in every turn; arXiv sources pin the section outline by default, and the model can read sections or fetch the full text as needed. Click to turn off.")
+        : uiText("点击开启：把论文原文上下文固定在每轮对话最前面；arXiv 源默认先固定章节目录以便缓存复用。", "Click to pin paper text at the start of every turn. arXiv sources pin the section outline first for cache reuse.");
   trigger.disabled =
     webMode ||
     !hasItem ||
@@ -6250,7 +6273,7 @@ async function togglePaperPinFromComposer(
 async function paperPinDisableWarning(itemID: number): Promise<string> {
   const arxiv = await itemHasCachedArxivSource(itemID);
   if (arxiv) {
-    return [
+    return uiText([
       "关闭 arXiv 论文「原文」？",
       "",
       "关闭后，每轮对话不会默认固定发送 arXiv LaTeX 章节目录。",
@@ -6259,9 +6282,18 @@ async function paperPinDisableWarning(itemID: number): Promise<string> {
       "影响：更省输入 token，但做全文总结、章节覆盖或公式/图表定位时，模型可能少读部分章节，需要额外工具调用。",
       "",
       "确定关闭吗？",
-    ].join("\n");
+    ].join("\n"), [
+      "Turn off Full text for this arXiv paper?",
+      "",
+      "Each turn will stop including the arXiv LaTeX section outline by default.",
+      "The model can still use arxiv_get_section / arxiv_get_equation / arxiv_get_figure / arxiv_get_table as needed to read sections, equations, figures, and tables.",
+      "",
+      "Effect: this saves input tokens, but the model may read fewer sections for full-paper summaries, section coverage, or equation/figure/table lookup, requiring extra tool calls.",
+      "",
+      "Turn it off?",
+    ].join("\n"));
   }
-  return [
+  return uiText([
     "关闭普通 PDF「原文」？",
     "",
     "关闭后，每轮对话不会默认固定发送 PDF 全文。",
@@ -6270,7 +6302,16 @@ async function paperPinDisableWarning(itemID: number): Promise<string> {
     "影响：更省输入 token，但总结论文、提取全文重点或要求逐字原文依据时，回答可能缺少上下文，需要模型再按需读取。",
     "",
     "确定关闭吗？",
-  ].join("\n");
+  ].join("\n"), [
+    "Turn off Full text for this PDF?",
+    "",
+    "The full PDF will no longer be included in each turn by default.",
+    "The model can still call zotero_get_full_pdf to read the full text when needed.",
+    "",
+    "Effect: this saves input tokens, but answers may lack context for paper summaries, full-text highlights, or requests for exact quotations. The model may need to read the PDF as needed.",
+    "",
+    "Turn it off?",
+  ].join("\n"));
 }
 
 async function itemHasCachedArxivSource(itemID: number): Promise<boolean> {
@@ -6302,7 +6343,7 @@ function renderModelSwitcher(
     preset.model && models.includes(preset.model) ? preset.model : models[0];
   if (models.length === 1) {
     wrap.classList.add("model-switcher-static");
-    wrap.title = `当前模型：${active}`;
+    wrap.title = uiText(`当前模型：${active}`, `Current model: ${active}`);
     wrap.append(el(doc, "span", "model-switcher-label", active));
     return wrap;
   }
@@ -6311,7 +6352,7 @@ function renderModelSwitcher(
   trigger.type = "button";
   trigger.className = "model-switcher-trigger";
   trigger.textContent = active;
-  trigger.title = "切换当前预设的模型";
+  trigger.title = uiText("切换当前预设的模型", "Switch the model for the current preset");
   trigger.disabled = conversationIsSending(state, state.activeConversationID);
   trigger.setAttribute("aria-haspopup", "menu");
   trigger.setAttribute("aria-expanded", "false");
@@ -6399,8 +6440,8 @@ function renderYoloToggle(
   );
   label.title =
     state.agentPermissionMode === "yolo"
-      ? "YOLO：本地工具无需审批直接执行"
-      : "Default：需要审批的本地工具会被拦截";
+      ? uiText("YOLO：本地工具无需审批直接执行", "YOLO: local tools run without approval")
+      : uiText("Default：需要审批的本地工具会被拦截", "Default: local tools that require approval are blocked");
   return label;
 }
 
@@ -6450,7 +6491,7 @@ function composeInputStatus(
   }
   if (selected > 0) {
     parts.push({
-      text: `${selected} selected`,
+      text: uiText(`${selected} 个选中`, `${selected} selected`),
       className: "composer-status-badge",
     });
   }
@@ -6460,13 +6501,13 @@ function composeInputStatus(
       0,
     );
     parts.push({
-      text: `Pasted ${state.pasteBlocks.length} (+${lines} lines)`,
+      text: uiText(`已粘贴 ${state.pasteBlocks.length} 块（+${lines} 行）`, `Pasted ${state.pasteBlocks.length} (+${lines} lines)`),
       className: "composer-status-badge",
     });
   }
   if (state.draftImages.length > 0) {
     parts.push({
-      text: `Images ${state.draftImages.length}`,
+      text: uiText(`图片 ${state.draftImages.length}`, `Images ${state.draftImages.length}`),
       className: "composer-status-badge composer-status-badge-image",
     });
   }
@@ -7223,7 +7264,7 @@ async function sendQuickAsk(
       ...controller.state,
       question,
       status: "error",
-      error: "请先配置可用的 AI 模型。",
+      error: uiText("请先配置可用的 AI 模型。", "Configure an available AI model first."),
     };
     renderActiveQuickAsk(sidebar, controller);
     openAddonPreferences(controller.root.ownerDocument!);
@@ -7236,7 +7277,7 @@ async function sendQuickAsk(
     answer: "",
     thinking: "",
     status: "sending",
-    statusText: "正在准备当前论文上下文……",
+    statusText: uiText("正在准备当前论文上下文……", "Preparing context for this paper…"),
     error: "",
     usage: undefined,
   };
@@ -7282,7 +7323,7 @@ async function sendQuickAsk(
     const systemPrompt = `${baseContext.systemPrompt}\n\nQuick Ask mode: this is a temporary in-memory conversation. Use the preceding Quick Ask turns to answer follow-up questions. No saved research conversation history is available. Use read-only tools when the current paper is needed; do not claim to remember chats outside this Quick Ask window.`;
     const promptCacheKey = `${buildPromptCacheKey(preset, controller.itemID)}:quick-ask`;
 
-    controller.state.statusText = "正在等待模型回答……";
+    controller.state.statusText = uiText("正在等待模型回答……", "Waiting for the model…");
     renderActiveQuickAsk(sidebar, controller);
     for await (const chunk of getProvider(preset).stream(
       messagesForApi,
@@ -7302,17 +7343,17 @@ async function sendQuickAsk(
       if (chunk.type === "text_delta") {
         assistantMessage.content += chunk.text;
         controller.state.answer = assistantMessage.content;
-        controller.state.statusText = "正在生成回答……";
+        controller.state.statusText = uiText("正在生成回答……", "Generating response…");
       } else if (chunk.type === "thinking_delta") {
         assistantMessage.thinking = `${assistantMessage.thinking ?? ""}${chunk.text}`;
         controller.state.thinking = assistantMessage.thinking;
-        controller.state.statusText = "正在思考……";
+        controller.state.statusText = uiText("正在思考……", "Thinking…");
       } else if (chunk.type === "tool_call") {
         recordToolCall(userMessage, chunk);
         controller.state.statusText =
           chunk.status === "started"
-            ? `正在使用 ${chunk.name}……`
-            : `已完成 ${chunk.name}`;
+            ? uiText(`正在使用 ${chunk.name}……`, `Using ${chunk.name}…`)
+            : uiText(`已完成 ${chunk.name}`, `Finished ${chunk.name}`);
       } else if (chunk.type === "tool_images") {
         assistantMessage.images = [
           ...(assistantMessage.images ?? []),
@@ -7338,7 +7379,7 @@ async function sendQuickAsk(
     if (quickAskControllers.get(sidebar) === controller) {
       controller.state.error =
         isAbortError(err) || abort.signal.aborted
-          ? "已停止本次临时回答。"
+          ? uiText("已停止本次临时回答。", "This temporary response was stopped.")
           : errorMessage(err);
     }
   } finally {
@@ -7350,7 +7391,7 @@ async function sendQuickAsk(
         controller.state.statusText = "";
       } else {
         if (!controller.state.answer.trim()) {
-          controller.state.answer = "本次请求没有返回可显示的回答。";
+          controller.state.answer = uiText("本次请求没有返回可显示的回答。", "This request returned no displayable response.");
           assistantMessage.content = controller.state.answer;
         }
         controller.state.messages.push(userMessage, assistantMessage);
@@ -7358,7 +7399,7 @@ async function sendQuickAsk(
         controller.state.answer = "";
         controller.state.thinking = "";
         controller.state.status = "answered";
-        controller.state.statusText = `临时会话 ${controller.state.messages.length / 2} 轮 · 关闭后销毁`;
+        controller.state.statusText = uiText(`临时会话 ${controller.state.messages.length / 2} 轮 · 关闭后销毁`, `Temporary chat · ${controller.state.messages.length / 2} turns · deleted when closed`);
       }
       renderActiveQuickAsk(sidebar, controller);
     }
@@ -7379,7 +7420,7 @@ async function copyQuickAskAnswer(
     markdownToClipboardHTML(doc, answer),
   );
   if (quickAskControllers.get(sidebar) !== controller) return;
-  controller.state.statusText = "已复制；关闭后仍不会保存本次对话";
+  controller.state.statusText = uiText("已复制；关闭后仍不会保存本次对话", "Copied; this chat still won't be saved when closed");
   renderActiveQuickAsk(sidebar, controller);
 }
 
@@ -7403,13 +7444,13 @@ async function transferQuickAskToResearch(
     state.itemID !== controller.itemID ||
     !latestQuickAskAnswer(controller.state)
   ) {
-    controller.state.error = "当前论文已经切换，请复制回答后再关闭。";
+    controller.state.error = uiText("当前论文已经切换，请复制回答后再关闭。", "The selected paper changed. Copy the response before closing.");
     controller.state.status = "error";
     renderActiveQuickAsk(sidebar, controller);
     return;
   }
   if (conversationIsSending(state, state.activeConversationID)) {
-    controller.state.error = "研究对话正在回答，请结束后再转入。";
+    controller.state.error = uiText("研究对话正在回答，请结束后再转入。", "The research chat is still responding. Wait for it to finish before transferring.");
     controller.state.status = "error";
     renderActiveQuickAsk(sidebar, controller);
     return;
@@ -9361,7 +9402,7 @@ function ensureThinkingBody(
   details.className = "bubble-thinking";
   details.open = true;
   const summary = doc.createElement("summary");
-  summary.textContent = "思考过程";
+  summary.textContent = uiText("思考过程", "Reasoning");
   const body = doc.createElement("div");
   body.className = "bubble-thinking-body";
   details.append(summary, body);
@@ -9492,7 +9533,7 @@ function bubble(
   head.append(renderBubbleIdentity(doc, message.role, state.uiSettings));
 
   const actions = el(doc, "div", "bubble-actions");
-  const copy = buttonEl(doc, "复制");
+  const copy = buttonEl(doc, uiText("复制", "Copy"));
   copy.addEventListener("click", () => {
     const markdown = messageToClipboard(message, state.copyDebugContext);
     void copyToClipboard(
@@ -9501,12 +9542,12 @@ function bubble(
       undefined,
       markdownToClipboardHTML(doc, markdown),
     );
-    flashButton(copy, "已复制");
+    flashButton(copy, uiText("已复制", "Copied"));
   });
   actions.append(copy);
 
-  const branch = buttonEl(doc, "分支");
-  branch.title = "复制从对话开头到此消息的完整上下文，创建独立对话";
+  const branch = buttonEl(doc, uiText("分支", "Branch"));
+  branch.title = uiText("复制从对话开头到此消息的完整上下文，创建独立对话", "Copy the full context from the start of the chat through this message into a separate chat");
   branch.disabled =
     conversationIsSending(state, state.activeConversationID) ||
     !state.historyLoaded;
@@ -9516,10 +9557,10 @@ function bubble(
   actions.append(branch);
 
   if (message.role === "assistant" && message.content.trim()) {
-    const saveNote = buttonEl(doc, "写入笔记");
+    const saveNote = buttonEl(doc, uiText("写入笔记", "Write to note"));
     saveNote.title = betterNotesInsertAvailable()
-      ? "用 Better Notes 写入当前条目的子笔记"
-      : "写入当前条目的 Zotero 子笔记";
+      ? uiText("用 Better Notes 写入当前条目的子笔记", "Write to this item's child note with Better Notes")
+      : uiText("写入当前条目的 Zotero 子笔记", "Write to this item's Zotero child note");
     saveNote.disabled =
       state.itemID == null ||
       (conversationIsSending(state, state.activeConversationID) &&
@@ -9546,7 +9587,7 @@ function bubble(
     message.role === "assistant" &&
     index === findLastAssistantIndex(state.messages)
   ) {
-    const retry = buttonEl(doc, "重试");
+    const retry = buttonEl(doc, uiText("重试", "Retry"));
     retry.disabled = conversationIsSending(state, state.activeConversationID);
     retry.addEventListener(
       "click",
@@ -9555,7 +9596,7 @@ function bubble(
     actions.append(retry);
   }
 
-  const del = buttonEl(doc, "删除");
+  const del = buttonEl(doc, uiText("删除", "Delete"));
   del.disabled = conversationIsSending(state, state.activeConversationID);
   del.addEventListener("click", () => {
     state.messages = state.messages.filter((_, i) => i !== index);
@@ -9590,7 +9631,7 @@ function bubble(
         doc,
         "summary",
         "",
-        webProvider === "deepseek" ? "DeepSeek 已思考" : "思考过程",
+        webProvider === "deepseek" ? uiText("DeepSeek 已思考", "DeepSeek reasoning") : uiText("思考过程", "Reasoning"),
       ),
     );
     const thinkingBody = el(doc, "div", "bubble-thinking-body");
@@ -9599,7 +9640,7 @@ function bubble(
     root.append(details);
   }
   if (webProvider && message.task?.completedAt) {
-    root.append(el(doc, "div", "bubble-answer-label", "回答"));
+    root.append(el(doc, "div", "bubble-answer-label", uiText("回答", "Answer")));
   }
   const body = el(doc, "div", "bubble-body");
   renderMarkdownInto(
@@ -9679,25 +9720,25 @@ function renderUserPdfSelectionContext(
     "bubble-source-selection-label",
     message.context?.selectedTextOrigin === "chat"
       ? [
-           "对话引用",
+           uiText("对话引用", "Chat quote"),
           message.context.quotedChatReply?.sourceConversationTitle,
           webChatCitation
             ? chatCitationLocation(state, message, selectedText)
             : message.context.quotedChatReply?.fullReply
-              ? `完整回复 ${message.context.quotedChatReply.fullReply.length} 字`
+              ? uiText(`完整回复 ${message.context.quotedChatReply.fullReply.length} 字`, `Full reply · ${message.context.quotedChatReply.fullReply.length} characters`)
               : "",
         ]
           .filter(Boolean)
           .join(" · ")
       : locator
-        ? `PDF 选区${pdfSelectionPageLabel(locator)}`
-        : "原文选区",
+        ? uiText(`PDF 选区${pdfSelectionPageLabel(locator)}`, `PDF selection${pdfSelectionPageLabel(locator)}`)
+        : uiText("原文选区", "Source selection"),
   );
   head.append(label);
   if (locator) {
-    const jump = buttonEl(doc, "查看原选区");
+    const jump = buttonEl(doc, uiText("查看原选区", "View original selection"));
     jump.className = "bubble-source-selection-jump";
-    jump.title = "回到 PDF 原选区，并重新选中这段文字";
+    jump.title = uiText("回到 PDF 原选区，并重新选中这段文字", "Return to the original PDF selection and select this text again");
     jump.addEventListener("click", () => {
       jump.blur();
       void jumpToPdfSelection(mount, state, locator);
@@ -9726,18 +9767,18 @@ function chatCitationLocation(
   const question =
     message.context?.quotedChatReply?.sourceQuestionPreview ||
     sourceQuestionPreviewFromHistory(state, message, fullReply);
-  const reply = question
-    ? `来源回答“${question}”`
+   const reply = question
+     ? uiText(`来源回答“${question}”`, `Reply to “${question}”`)
     : ordinal
-      ? `来源回答第 ${ordinal} 条`
-      : "来源回答";
+       ? uiText(`来源回答第 ${ordinal} 条`, `Reply ${ordinal}`)
+       : uiText("来源回答", "Source reply");
   const excerpt = contentPreview(selectedText, 30);
   const paragraph = chatCitationParagraph(fullReply, selectedText);
   const start = fullReply.indexOf(selectedText);
-  const excerptLabel = excerpt ? ` · 引用“${excerpt}”` : "";
+   const excerptLabel = excerpt ? uiText(` · 引用“${excerpt}”`, ` · Quote “${excerpt}”`) : "";
   return start >= 0
-    ? `${reply}${excerptLabel}${paragraph ? ` · ${paragraph}` : ""} · 第 ${start + 1}-${start + selectedText.length} 字`
-    : `${reply}${excerptLabel}${paragraph ? ` · ${paragraph}` : ""} · 引用 ${selectedText.length} 字`;
+     ? `${reply}${excerptLabel}${paragraph ? ` · ${paragraph}` : ""}${uiText(` · 第 ${start + 1}-${start + selectedText.length} 字`, ` · Characters ${start + 1}-${start + selectedText.length}`)}`
+     : `${reply}${excerptLabel}${paragraph ? ` · ${paragraph}` : ""}${uiText(` · 引用 ${selectedText.length} 字`, ` · ${selectedText.length} characters quoted`)}`;
 }
 
 function sourceQuestionPreviewFromHistory(
@@ -9777,7 +9818,7 @@ function chatCitationParagraph(
       normalizedExcerpt.includes(normalizedParagraph)
     );
   });
-  return index >= 0 ? `第 ${index + 1} 段` : "";
+   return index >= 0 ? uiText(`第 ${index + 1} 段`, `Paragraph ${index + 1}`) : "";
 }
 
 function normalizeChatCitationText(value: string): string {
@@ -10081,24 +10122,24 @@ function buildNoteSeg(
     }
   };
 
-  const noteBtn = makeSeg("笔记", view === "normal");
-  noteBtn.title = "AI 笔记：对话里的「写入笔记」默认保存到这里";
+  const noteBtn = makeSeg(uiText("笔记", "Notes"), view === "normal");
+  noteBtn.title = uiText("AI 笔记：对话里的「写入笔记」默认保存到这里", "AI notes: messages written with “Write to note” are saved here by default");
   noteBtn.addEventListener("click", () => {
     if (noteBtn.classList.contains("on")) return;
     selectSeg(noteBtn);
     void switchNoteFile(sidebar, "normal", noteBtn);
   });
 
-  const routeBtn = makeSeg("路线", view === "readingRoute");
-  routeBtn.title = "阅读路线：AI 标出的精读顺序与重点";
+  const routeBtn = makeSeg(uiText("路线", "Reading route"), view === "readingRoute");
+  routeBtn.title = uiText("阅读路线：AI 标出的精读顺序与重点", "Reading route: AI-selected reading order and key points");
   routeBtn.addEventListener("click", () => {
     if (routeBtn.classList.contains("on")) return;
     selectSeg(routeBtn);
     void openRouteView(sidebar);
   });
 
-  const overviewBtn = makeSeg("总览", view === "overview");
-  overviewBtn.title = "全文总览：章节目录 + 逻辑结构图 + 可选网络拓扑图";
+  const overviewBtn = makeSeg(uiText("总览", "Overview"), view === "overview");
+  overviewBtn.title = uiText("全文总览：章节目录 + 逻辑结构图 + 可选网络拓扑图", "Full-text overview: section outline + logic diagram + optional network topology");
   overviewBtn.addEventListener("click", () => {
     if (overviewBtn.classList.contains("on")) return;
     selectSeg(overviewBtn);
@@ -10122,7 +10163,7 @@ function buildNoteMenu(doc: Document, items: HTMLButtonElement[]): HTMLElement {
 
   const trigger = buttonEl(doc, "⋯");
   trigger.className = "zai-note-icobtn";
-  trigger.title = "更多";
+  trigger.title = uiText("更多", "More");
 
   const pop = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   pop.className = "zai-note-menu-pop";
@@ -10172,8 +10213,8 @@ function buildSummaryMenuItem(
   doc: Document,
   sidebar: WindowSidebarState,
 ): HTMLButtonElement {
-  const item = buttonEl(doc, "✎ 对话总结");
-  item.title = "用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记";
+  const item = buttonEl(doc, uiText("✎ 对话总结", "✎ Summarize chat"));
+  item.title = uiText("用 AI 总结本篇沉浸阅读的所有就地问答，写入 AI 笔记", "Use AI to summarize this paper's immersive-reading Q&A and write it to the AI note");
   item.dataset.zaiKeepOpen = "1";
   item.addEventListener("click", () => {
     void summarizeReadingFromNoteSwitcher(sidebar, item);
@@ -10185,8 +10226,8 @@ function buildTabPdfExportMenuItem(
   doc: Document,
   sidebar: WindowSidebarState,
 ): HTMLButtonElement {
-  const item = buttonEl(doc, "▣ 转为 PDF");
-  item.title = "将当前笔记、路线或总览页面转换为 PDF";
+  const item = buttonEl(doc, uiText("▣ 转为 PDF", "▣ Export as PDF"));
+  item.title = uiText("将当前笔记、路线或总览页面转换为 PDF", "Convert the current note, route, or overview page to PDF");
   item.addEventListener("click", () => {
     void openCurrentNotePanelPdfExport(sidebar);
   });
@@ -10988,7 +11029,7 @@ async function runNetworkDiagramRequest(
   const itemKey = resolveItemKeyForCache(panelState?.itemID ?? null);
   if (!panelState || !preset || !itemKey) {
     sidebar.networkDiagramError =
-      "请先选择论文，并配置一个可用的 AI 模型预设。";
+      uiText("请先选择论文，并配置一个可用的 AI 模型预设。", "Select a paper and configure an available AI model preset first.");
     refreshNetworkDiagramTaskCard(sidebar);
     if (sidebar.overviewActive) await showOverviewWindow(sidebar);
     return;
@@ -11000,7 +11041,7 @@ async function runNetworkDiagramRequest(
     loadNetworkDiagramWorkspace(itemKey),
   ]);
   if (!storedOverview?.data) {
-    sidebar.networkDiagramError = "请先生成全文总览，再分析代码网络图。";
+    sidebar.networkDiagramError = uiText("请先生成全文总览，再分析代码网络图。", "Generate a full-text overview before analyzing the code diagram.");
     refreshNetworkDiagramTaskCard(sidebar);
     if (sidebar.overviewActive) await showOverviewWindow(sidebar);
     return;
@@ -11013,7 +11054,7 @@ async function runNetworkDiagramRequest(
   let targetURL =
     mode === "refine" ? (currentRepository?.url ?? "") : repositoryURL.trim();
   if (mode === "refine" && (!currentRepository || !currentRevision)) {
-    sidebar.networkDiagramError = "当前还没有可优化的 GitHub 网络图。";
+    sidebar.networkDiagramError = uiText("当前还没有可优化的 GitHub 网络图。", "No GitHub diagram is available to refine yet.");
     refreshNetworkDiagramTaskCard(sidebar);
     if (sidebar.overviewActive) await showOverviewWindow(sidebar);
     return;
@@ -11277,8 +11318,8 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
 
   const overviewExtra: HTMLButtonElement[] = [];
   if (stored?.data) {
-    const openBtn = buttonEl(doc, "🌐 在浏览器打开总览");
-    openBtn.title = "把总览导出为自包含 HTML 并在浏览器打开";
+    const openBtn = buttonEl(doc, uiText("🌐 在浏览器打开总览", "🌐 Open overview in browser"));
+    openBtn.title = uiText("把总览导出为自包含 HTML 并在浏览器打开", "Export the overview as a standalone HTML file and open it in the browser");
     openBtn.addEventListener(
       "click",
       () => void openOverviewInBrowser(sidebar),
@@ -11290,11 +11331,11 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
     editable: false,
     action: stored?.data
       ? {
-          label: "↻ 更新总览",
+          label: uiText("↻ 更新总览", "↻ Update overview"),
           title:
             itemID == null
-              ? "请先选择一篇带 PDF 的文献"
-              : "调用工具重新生成全文总览",
+              ? uiText("请先选择一篇带 PDF 的文献", "Select a paper with a PDF first")
+              : uiText("调用工具重新生成全文总览", "Regenerate the full-text overview using tools"),
           disabled: itemID == null,
           onClick: (button) => void generateOverviewIntoPanel(sidebar, button),
         }
@@ -11356,7 +11397,7 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
                       repositoryURL.trim() !== currentURL &&
                       doc.defaultView?.confirm &&
                       !doc.defaultView.confirm(
-                        "要更换 GitHub 仓库吗？当前网络图版本仍会保留，可通过版本记录查看。",
+                        uiText("要更换 GitHub 仓库吗？当前网络图版本仍会保留，可通过版本记录查看。", "Change the GitHub repository? The current diagram version will remain available in the version history."),
                       )
                     ) {
                       return;
@@ -11415,9 +11456,9 @@ async function showOverviewWindow(sidebar: WindowSidebarState): Promise<void> {
     const msg = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
     msg.textContent =
       itemID == null
-        ? "请先选择一篇带 PDF 的文献，再生成全文总览。"
-        : "还没有全文总览。";
-    const cta = buttonEl(doc, "✨ 生成全文总览");
+        ? uiText("请先选择一篇带 PDF 的文献，再生成全文总览。", "Select a paper with a PDF before generating an overview.")
+        : uiText("还没有全文总览。", "No full-text overview yet.");
+    const cta = buttonEl(doc, uiText("✨ 生成全文总览", "✨ Generate overview"));
     cta.disabled = itemID == null;
     empty.append(msg, cta);
     body.append(empty);
@@ -11500,7 +11541,7 @@ async function showFullTranslation(sidebar: WindowSidebarState): Promise<void> {
   try {
     let session = null as Awaited<ReturnType<typeof loadFullTranslationSession>>;
     if (arxivId) {
-      renderFullTranslationNotice(sidebar, "正在读取 LaTeX 全文…");
+      renderFullTranslationNotice(sidebar, uiText("正在读取 LaTeX 全文…", "Reading the full LaTeX text…"));
       session = await loadFullTranslationSession(arxivId);
     }
     if (!session) {
@@ -11529,19 +11570,19 @@ async function loadMineruTranslationForItem(
   _request: symbol,
 ): Promise<Awaited<ReturnType<typeof loadFullTranslationSession>>> {
   if (itemID == null) {
-    renderFullTranslationNotice(sidebar, "请先选择一篇带 PDF 的文献。", true);
+    renderFullTranslationNotice(sidebar, uiText("请先选择一篇带 PDF 的文献。", "Select a paper with a PDF first."), true);
     return null;
   }
   const pdf = await resolveItemPdfForMineru(itemID);
   if (!pdf) {
     renderFullTranslationNotice(
       sidebar,
-      "当前条目没有可用的 PDF 附件。",
+      uiText("当前条目没有可用的 PDF 附件。", "This item has no available PDF attachment."),
       true,
     );
     return null;
   }
-  renderFullTranslationNotice(sidebar, "正在打开已解析的 PDF…");
+  renderFullTranslationNotice(sidebar, uiText("正在打开已解析的 PDF…", "Opening the parsed PDF…"));
   return loadMineruFullTranslationSession({
     itemKey: pdf.itemKey,
     pdfPath: pdf.path,
@@ -11688,7 +11729,7 @@ function renderFullTranslationPanel(sidebar: WindowSidebarState): void {
       preview = createPdfSourcePreview(doc, async () => {
         const pdf = itemID == null ? null : await resolveItemPdfForMineru(itemID);
         if (!pdf || pdfTranslationDocumentId(pdf.itemKey) !== documentId) {
-          throw new Error("找不到当前论文的原始 PDF 附件");
+          throw new Error(uiText("找不到当前论文的原始 PDF 附件", "The original PDF attachment for this paper could not be found"));
         }
         return pdf.path;
       });
@@ -11916,7 +11957,7 @@ function renderFullTranslationNotice(
   const notice = doc.createElementNS(XHTML_NS, "div") as HTMLElement;
   notice.className = `zai-ft-notice${error ? " is-error" : ""}`;
   notice.textContent = message;
-  const exit = buttonEl(doc, "返回 PDF");
+  const exit = buttonEl(doc, uiText("返回 PDF", "Back to PDF"));
   exit.className = "zai-ft-exit";
   exit.addEventListener("click", () => closeFullTranslation(sidebar));
   body.append(notice, exit);
@@ -11927,7 +11968,7 @@ function fullTranslationTranslator(sidebar: WindowSidebarState, signal: AbortSig
   const state = states.get(sidebar.mount);
   if (state?.localUiSettings.chatSendMode === "web") {
     const session = fullTranslationSessions.get(sidebar);
-    if (!session) throw new Error("全文翻译尚未加载");
+    if (!session) throw new Error(uiText("全文翻译尚未加载", "Full translation has not loaded"));
     return createFullDocumentWebTranslator({
       settings: state.localUiSettings,
       customProvider: customWebProviderFor(state, state.localUiSettings.webPromptProvider),
@@ -12054,13 +12095,13 @@ async function generateOverviewIntoPanel(
 ): Promise<void> {
   const state = states.get(sidebar.mount);
   if (!state) {
-    button.textContent = "生成失败";
-    button.title = "无法找到当前 AI 对话状态";
+    button.textContent = uiText("生成失败", "Generation failed");
+    button.title = uiText("无法找到当前 AI 对话状态", "Could not find the current AI chat state");
     return;
   }
-  const originalText = button.textContent || "生成总览";
+  const originalText = button.textContent || uiText("生成总览", "Generate overview");
   const originalTitle = button.title;
-  button.textContent = "生成中...";
+  button.textContent = uiText("生成中...", "Generating…");
   button.disabled = true;
   try {
     if (state.localUiSettings.chatSendMode === "web") {
@@ -12079,7 +12120,7 @@ async function generateOverviewIntoPanel(
     button.title = originalTitle;
     button.disabled = false;
   } catch (err) {
-    button.textContent = "生成失败";
+    button.textContent = uiText("生成失败", "Generation failed");
     button.title = err instanceof Error ? err.message : String(err);
     sidebar.noteMount.ownerDocument!.defaultView?.setTimeout(() => {
       button.textContent = originalText;
@@ -12139,9 +12180,9 @@ function initializeZoteroNoteEditor(
 ) {
   const doc = sidebar.noteMount.ownerDocument!;
   const win = doc.defaultView;
-  status.textContent = "Zotero 自动保存";
+  status.textContent = uiText("Zotero 自动保存", "Zotero autosave");
   saveButton.disabled = false;
-  saveButton.title = "手动触发 Zotero 官方笔记编辑器保存";
+  saveButton.title = uiText("手动触发 Zotero 官方笔记编辑器保存", "Manually trigger a save in Zotero's official note editor");
 
   editor.notitle = true;
   editor.mode = "edit";
@@ -12332,12 +12373,12 @@ function saveZoteroNoteEditor(
   saveButton: HTMLButtonElement,
 ) {
   try {
-    status.textContent = "保存中...";
+    status.textContent = uiText("保存中...", "Saving…");
     editor.saveSync?.();
-    status.textContent = "已保存";
+    status.textContent = uiText("已保存", "Saved");
     saveButton.disabled = false;
   } catch (err) {
-    status.textContent = "保存失败";
+    status.textContent = uiText("保存失败", "Save failed");
     status.title = err instanceof Error ? err.message : String(err);
   }
 }
@@ -12671,10 +12712,10 @@ function updateOpenNoteButton(state: WindowSidebarState) {
   ) as HTMLButtonElement | null;
   if (!button) return;
   const opened = isNoteColumnVisible(state);
-  button.textContent = opened ? "关闭笔记" : "打开笔记";
+  button.textContent = opened ? uiText("关闭笔记", "Close note") : uiText("打开笔记", "Open note");
   button.title = opened
-    ? "关闭笔记列"
-    : "在当前 Zotero 窗口打开当前条目的子笔记";
+    ? uiText("关闭笔记列", "Close note column")
+    : uiText("在当前 Zotero 窗口打开当前条目的子笔记", "Open the current item's child note in this Zotero window");
   button.disabled = false;
 }
 
@@ -12836,9 +12877,9 @@ async function writeAssistantMessageToNote(
   pdfSelection: PdfSelectionLocator | null = null,
 ) {
   const chatScroll = lockMessagesScroll(mount);
-  const originalText = button.textContent || "写入笔记";
+  const originalText = button.textContent || uiText("写入笔记", "Write to note");
   const originalTitle = button.title;
-  button.textContent = "写入中...";
+  button.textContent = uiText("写入中...", "Writing…");
   button.disabled = true;
 
   try {
@@ -12855,18 +12896,18 @@ async function writeAssistantMessageToNote(
       pdfSelection,
     );
     button.textContent = result.usedBetterNotes
-      ? "已写入 BN"
+      ? uiText("已写入 BN", "Written with BN")
       : result.created
-        ? "已新建笔记"
-        : "已写入";
-    button.title = `目标笔记 #${result.noteID}`;
+        ? uiText("已新建笔记", "Note created")
+        : uiText("已写入", "Written");
+    button.title = uiText(`目标笔记 #${result.noteID}`, `Target note #${result.noteID}`);
     lockMessagesScroll(mount, chatScroll);
     refreshVisibleNoteWindow(doc, result.noteID, noteScroll);
     scheduleMessagesScrollRestore(mount, chatScroll);
   } catch (err) {
     lockMessagesScroll(mount, chatScroll);
     scheduleMessagesScrollRestore(mount, chatScroll);
-    button.textContent = "写入失败";
+    button.textContent = uiText("写入失败", "Write failed");
     button.title = err instanceof Error ? err.message : String(err);
   } finally {
     doc.defaultView?.setTimeout(() => {
@@ -12883,7 +12924,7 @@ async function appendAssistantContentToItemNote(
   content: string,
   pdfSelection: PdfSelectionLocator | null = null,
 ): Promise<{ noteID: number; created: boolean; usedBetterNotes: boolean }> {
-  if (itemID == null) throw new Error("未选择 Zotero 条目");
+  if (itemID == null) throw new Error(uiText("未选择 Zotero 条目", "No Zotero item is selected"));
   const target = await resolveTargetNote(itemID);
   const html = await assistantContentToNoteHTML(
     doc,
@@ -12910,11 +12951,11 @@ function renderAnnotationSuggestion(
   const box = el(doc, "div", "annotation-suggestion");
   const head = el(doc, "div", "annotation-suggestion-head");
   head.append(el(doc, "span", "annotation-suggestion-icon", "📌"));
-  head.append(el(doc, "span", "annotation-suggestion-title", "建议注释"));
+  head.append(el(doc, "span", "annotation-suggestion-title", uiText("建议注释", "Suggested annotation")));
   if (draft.color) {
     const color = el(doc, "span", "annotation-suggestion-color", draft.color);
     color.style.setProperty("--annotation-color", draft.color);
-    color.title = "保存时使用该 PDF 注释颜色";
+    color.title = uiText("保存时使用该 PDF 注释颜色", "Use this PDF annotation color when saving");
     head.append(color);
   }
   const preview = previewSelection(draft.snapshot.text);
@@ -12955,14 +12996,14 @@ function renderWebAnnotationBatch(
   const unresolved = batch.entries.length - located.length;
   const head = el(doc, "div", "web-annotation-batch-head");
   head.append(
-    el(doc, "strong", "", `📌 PDF 标注草稿 · ${batch.entries.length}`),
+    el(doc, "strong", "", uiText(`📌 PDF 标注草稿 · ${batch.entries.length}`, `📌 PDF annotation draft · ${batch.entries.length}`)),
     el(
       doc,
       "span",
       "web-annotation-batch-summary",
       saved.length
-        ? `已保存 ${saved.length} · 已定位 ${located.length}`
-        : `已定位 ${located.length}${unresolved ? ` · 待检查 ${unresolved}` : ""}`,
+        ? uiText(`已保存 ${saved.length} · 已定位 ${located.length}`, `Saved ${saved.length} · Located ${located.length}`)
+        : uiText(`已定位 ${located.length}${unresolved ? ` · 待检查 ${unresolved}` : ""}`, `Located ${located.length}${unresolved ? ` · ${unresolved} to review` : ""}`),
     ),
   );
   box.append(head);
@@ -12988,8 +13029,8 @@ function renderWebAnnotationBatch(
     main.className = "web-annotation-batch-entry";
     main.disabled = !entry.snapshot;
     main.title = entry.snapshot
-      ? "在 PDF 中查看这条原文"
-      : "这条原文尚未在当前 PDF 中可靠定位";
+      ? uiText("在 PDF 中查看这条原文", "View this source text in the PDF")
+      : uiText("这条原文尚未在当前 PDF 中可靠定位", "This source text has not been reliably located in the current PDF");
     const label = el(
       doc,
       "span",
@@ -13001,14 +13042,14 @@ function renderWebAnnotationBatch(
       "small",
       "web-annotation-batch-entry-meta",
       entry.segments?.length && entry.state.kind === "failed"
-        ? `已保存 ${entry.segments.filter((segment) => segment.state.kind === "saved").length}/${entry.segments.length} · 保存失败`
+        ? uiText(`已保存 ${entry.segments.filter((segment) => segment.state.kind === "saved").length}/${entry.segments.length} · 保存失败`, `Saved ${entry.segments.filter((segment) => segment.state.kind === "saved").length}/${entry.segments.length} · Save failed`)
         : entry.snapshot
         ? `第 ${entry.pageLabel || "?"} 页 · ${
             entry.segments?.length
-              ? "跨页精确匹配"
+            ? uiText("跨页精确匹配", "Exact match across pages")
               : entry.confidence === 1
-                ? "精确匹配"
-                : `相似度 ${Math.round((entry.confidence ?? 0) * 100)}%`
+              ? uiText("精确匹配", "Exact match")
+                : uiText(`相似度 ${Math.round((entry.confidence ?? 0) * 100)}%`, `${Math.round((entry.confidence ?? 0) * 100)}% similarity`)
           }`
         : webAnnotationLocateLabel(entry.locateState),
     );
@@ -13033,7 +13074,7 @@ function renderWebAnnotationBatch(
   box.append(list);
 
   const actions = el(doc, "div", "web-annotation-batch-actions");
-  const preview = buttonEl(doc, "在 PDF 中预览");
+  const preview = buttonEl(doc, uiText("在 PDF 中预览", "Preview in PDF"));
   const firstLocated = located.find((entry) => !!entry.snapshot);
   preview.disabled = !firstLocated?.snapshot;
   preview.addEventListener("click", () => {
@@ -13044,7 +13085,7 @@ function renderWebAnnotationBatch(
       pdfSelectionFromAnnotationSnapshot(firstLocated.snapshot),
     );
   });
-  const retry = buttonEl(doc, "重新定位");
+  const retry = buttonEl(doc, uiText("重新定位", "Locate again"));
   retry.disabled = batch.entries.every(
     (entry) => entry.locateState === "located" || entry.state.kind === "saved",
   );
@@ -13069,7 +13110,7 @@ function renderWebAnnotationBatch(
   });
   const save = buttonEl(
     doc,
-    saved.length ? "保存剩余已定位条目" : "保存全部已定位条目",
+    saved.length ? uiText("保存剩余已定位条目", "Save remaining located items") : uiText("保存全部已定位条目", "Save all located items"),
   );
   save.className = "web-annotation-batch-save";
   save.disabled = !located.some(
@@ -13089,13 +13130,13 @@ function webAnnotationLocateLabel(
 ): string {
   switch (state) {
     case "pending":
-      return "等待本地定位";
+      return uiText("等待本地定位", "Waiting for local location");
     case "not_found":
-      return "未在 PDF 中可靠找到";
+      return uiText("未在 PDF 中可靠找到", "Not reliably found in the PDF");
     case "failed":
-      return "定位失败";
+      return uiText("定位失败", "Location failed");
     case "located":
-      return "已定位";
+      return uiText("已定位", "Located");
   }
 }
 
@@ -13209,7 +13250,9 @@ function renderAnnotationSuggestionActions(
         : null;
   if (failedState) {
     const failedMode =
-      draft.state.kind === "failed" ? "高亮+评论保存失败" : "新增文字保存失败";
+      draft.state.kind === "failed"
+        ? uiText("高亮+评论保存失败", "Highlight + Comment save failed")
+        : uiText("新增文字保存失败", "Add Text save failed");
     const err = el(
       doc,
       "div",
@@ -13223,13 +13266,13 @@ function renderAnnotationSuggestionActions(
 
 function friendlyAnnotationError(raw: string): string {
   if (/Permission denied to pass object to privileged code/i.test(raw)) {
-    return "插件与 Zotero 主窗口之间的对象权限边界没穿过去——重试一次通常就行；持续失败请反馈日志。";
+    return uiText("插件与 Zotero 主窗口之间的对象权限边界没穿过去——重试一次通常就行；持续失败请反馈日志。", "The object permission boundary between the plugin and Zotero was not crossed. Retrying usually works; report the log if it keeps failing.");
   }
   if (/attachment is no longer available/i.test(raw)) {
-    return "原 PDF 附件已被删除或移走，无法定位选区。";
+    return uiText("原 PDF 附件已被删除或移走，无法定位选区。", "The original PDF attachment was deleted or moved, so the selection cannot be located.");
   }
   if (/position data|usable rect data/i.test(raw)) {
-    return "选区缺少有效的 PDF 坐标信息，请重新选取一段文字后再试。";
+    return uiText("选区缺少有效的 PDF 坐标信息，请重新选取一段文字后再试。", "The selection has no valid PDF coordinates. Select the text again and retry.");
   }
   return raw;
 }
@@ -13249,29 +13292,29 @@ function applyAnnotationButtonState(
   // to mention "T 工具".
   switch (state.kind) {
     case "idle":
-      button.textContent = mode === "text" ? "🅣 新增文字" : "💾 高亮+评论";
+      button.textContent = mode === "text" ? uiText("🅣 新增文字", "🅣 Add Text") : uiText("💾 高亮+评论", "💾 Highlight + Comment");
       button.disabled = false;
       button.title =
         mode === "text"
-          ? "Zotero Reader 的「新增文字 / Add Text」(T 工具)：在选区下方放一段可见文字"
-          : "Zotero Reader 的「高亮文本 / Highlight Text」并附上评论";
+          ? uiText("Zotero Reader 的「新增文字 / Add Text」(T 工具)：在选区下方放一段可见文字", "Zotero Reader “Add Text” (T tool): place visible text below the selection")
+          : uiText("Zotero Reader 的「高亮文本 / Highlight Text」并附上评论", "Zotero Reader “Highlight Text” with a comment");
       return;
     case "saving":
-      button.textContent = "保存中…";
+      button.textContent = uiText("保存中…", "Saving…");
       button.disabled = true;
       button.title = "";
       return;
     case "saved":
-      button.textContent = "✓ 已保存";
+      button.textContent = uiText("✓ 已保存", "✓ Saved");
       button.disabled = true;
       button.title =
         state.annotationID > 0
           ? `Zotero annotation #${state.annotationID}`
-          : "已写入 Zotero（条目 ID 暂未回填）";
+          : uiText("已写入 Zotero（条目 ID 暂未回填）", "Written to Zotero (item ID not available yet)");
       return;
     case "failed":
       button.textContent =
-        mode === "text" ? "↻ 重试新增文字" : "↻ 重试高亮+评论";
+        mode === "text" ? uiText("↻ 重试新增文字", "↻ Retry Add Text") : uiText("↻ 重试高亮+评论", "↻ Retry Highlight + Comment");
       button.disabled = false;
       button.title = state.error;
       return;
@@ -13421,14 +13464,16 @@ function renderAssistantProcess(
 
   const details = el(doc, "details", "assistant-process") as HTMLDetailsElement;
   details.open = !webContext;
-  const contextLabel = webContext ? "发送上下文" : "思考与上下文";
+  const contextLabel = webContext
+    ? uiText("发送上下文", "Sent context")
+    : uiText("思考与上下文", "Reasoning and context");
   details.append(
     el(
       doc,
       "summary",
       "",
       summary.reference
-        ? `${contextLabel} · ${summary.current ? "当前论文 + " : ""}引用文章`
+        ? `${contextLabel} · ${summary.current ? uiText("当前论文 + ", "Current paper + ") : ""}${uiText("引用文章", "Referenced papers")}`
         : summary.current ? `${contextLabel} · ${summary.current}` : contextLabel,
     ),
   );
@@ -13445,7 +13490,7 @@ function renderAssistantProcess(
       chip.classList.add("bubble-context-chip-clickable");
       chip.setAttribute("role", "button");
       chip.setAttribute("tabindex", "0");
-      chip.title = "回到 PDF 原选区，并重新选中这句话";
+      chip.title = uiText("回到 PDF 原选区，并重新选中这句话", "Return to the original PDF selection and select this sentence again");
       chip.addEventListener("click", jumpOriginal);
       chip.addEventListener("keydown", (event: KeyboardEvent) => {
         if (event.key !== "Enter" && event.key !== " ") return;
@@ -13453,9 +13498,9 @@ function renderAssistantProcess(
         jumpOriginal();
       });
 
-      const jump = buttonEl(doc, "查看原选区");
+      const jump = buttonEl(doc, uiText("查看原选区", "View original selection"));
       jump.className = "bubble-context-jump";
-      jump.title = "回到 PDF 原选区，并重新选中这句话";
+      jump.title = uiText("回到 PDF 原选区，并重新选中这句话", "Return to the original PDF selection and select this sentence again");
       jump.addEventListener("click", () => {
         jump.blur();
         jumpOriginal();
@@ -15006,7 +15051,7 @@ function installWebGeneratedFileLinks(
     const sourcePath = webGeneratedFilePath(link.href);
     if (!sourcePath) continue;
     link.classList.add("zai-web-generated-file");
-    link.setAttribute("title", "点击打开文件；右键保存到当前论文目录");
+    link.setAttribute("title", uiText("点击打开文件；右键保存到当前论文目录", "Click to open the file; right-click to save it to the current paper's folder"));
     link.addEventListener("click", (event: MouseEvent) => {
       if (event.button !== 0) return;
       event.preventDefault();
@@ -15025,7 +15070,7 @@ async function openWebGeneratedFile(
   link: HTMLAnchorElement,
 ): Promise<void> {
   if (!(await IOUtils.exists(sourcePath))) {
-    link.title = "生成文件已不存在，请重新生成";
+    link.title = uiText("生成文件已不存在，请重新生成", "Generated file no longer exists. Generate it again.");
     return;
   }
   Zotero.launchFile(sourcePath);
@@ -15049,28 +15094,28 @@ function openWebGeneratedFileContextMenu(
   save.type = "button";
   save.className = "zai-selection-menu-item";
   save.setAttribute("role", "menuitem");
-  save.textContent = "保存到当前论文目录";
+  save.textContent = uiText("保存到当前论文目录", "Save to current paper folder");
   const itemID = state.itemID;
   save.disabled = itemID == null;
-  if (itemID == null) save.title = "请先选择一篇论文";
+  if (itemID == null) save.title = uiText("请先选择一篇论文", "Select a paper first");
   save.addEventListener("click", () => {
     if (itemID == null) return;
     save.disabled = true;
-    save.textContent = "保存中…";
+    save.textContent = uiText("保存中…", "Saving…");
     void saveWebGeneratedFileToCurrentItem(
       sourcePath,
       itemID,
       link.textContent || "",
     )
       .then((attachmentID) => {
-        save.textContent = "已保存";
+        save.textContent = uiText("已保存", "Saved");
         save.title = attachmentID
-          ? `已添加为附件 #${attachmentID}`
-          : "已添加为附件";
-        link.title = "已保存到当前论文的 Zotero 附件";
+          ? uiText(`已添加为附件 #${attachmentID}`, `Added as attachment #${attachmentID}`)
+          : uiText("已添加为附件", "Added as attachment");
+        link.title = uiText("已保存到当前论文的 Zotero 附件", "Saved as an attachment to the current paper in Zotero");
       })
       .catch((error) => {
-        save.textContent = "保存失败";
+        save.textContent = uiText("保存失败", "Save failed");
         save.title = errorMessage(error);
         save.disabled = false;
       });
@@ -15137,7 +15182,7 @@ function installSidebarSelectionMenu(
     ) as HTMLButtonElement;
     copyBtn.type = "button";
     copyBtn.className = "zai-selection-menu-item";
-    copyBtn.textContent = "复制";
+    copyBtn.textContent = uiText("复制", "Copy");
     copyBtn.addEventListener("click", () => {
       debugZai("context-menu-copy: click", textDebugInfo(text));
       void copyToClipboard(
@@ -15155,7 +15200,7 @@ function installSidebarSelectionMenu(
     ) as HTMLButtonElement;
     importBtn.type = "button";
     importBtn.className = "zai-selection-menu-item";
-    importBtn.textContent = "加入笔记";
+    importBtn.textContent = uiText("加入笔记", "Add to note");
     importBtn.addEventListener("click", () => {
       debugZai("context-menu-import: click", textDebugInfo(text));
       void importSelectionToNote(doc, sidebar, text);
@@ -15170,7 +15215,7 @@ function installSidebarSelectionMenu(
       ) as HTMLButtonElement;
       askBtn.type = "button";
       askBtn.className = "zai-selection-menu-item";
-      askBtn.textContent = "提问";
+      askBtn.textContent = uiText("提问", "Ask");
       askBtn.addEventListener("click", () => {
         const state = states.get(sidebar.mount);
         if (!state) return;
@@ -15553,7 +15598,7 @@ function installToggleButton(win: Window, state: WindowSidebarState) {
   button.id = TOGGLE_BUTTON_ID;
   button.setAttribute("class", "zotero-tb-button zai-toggle-button");
   button.setAttribute("label", "AI");
-  button.setAttribute("tooltiptext", "显示/隐藏 AI 对话");
+  button.setAttribute("tooltiptext", uiText("显示/隐藏 AI 对话", "Show/hide AI chat"));
   const icon = `chrome://${addon.data.config.addonRef}/content/icons/ai-chat.svg`;
   button.setAttribute("image", icon);
   button.setAttribute("style", `list-style-image: url("${icon}");`);
@@ -15577,7 +15622,7 @@ function installFloatingToggle(win: Window, state: WindowSidebarState) {
   button.id = FLOATING_TOGGLE_ID;
   button.className = "zai-floating-toggle";
   button.type = "button";
-  button.title = "打开/隐藏 AI 对话";
+  button.title = uiText("打开/隐藏 AI 对话", "Show/hide AI chat");
 
   const icon = doc.createElementNS(XHTML_NS, "img") as HTMLImageElement;
   icon.src = `chrome://${addon.data.config.addonRef}/content/icons/ai-chat.svg`;
@@ -15664,7 +15709,7 @@ function updateToggleButton(state: WindowSidebarState) {
   const collapsed = isColumnCollapsed(state);
   for (const button of [state.toggleButton, state.floatingButton]) {
     if (!button) continue;
-    const tooltip = collapsed ? "打开 AI 对话" : "隐藏 AI 对话";
+  const tooltip = collapsed ? uiText("打开 AI 对话", "Show AI chat") : uiText("隐藏 AI 对话", "Hide AI chat");
     button.setAttribute("tooltiptext", tooltip);
     button.setAttribute("title", tooltip);
     button.setAttribute("aria-pressed", collapsed ? "false" : "true");
@@ -15761,7 +15806,7 @@ async function toggleTranslateMode(
   const ctrl = await getOrCreateTranslateController(win);
   if (!ctrl) {
     syncTranslateButtons(win);
-    flashButton(btn as HTMLButtonElement, "无PDF");
+    flashButton(btn as HTMLButtonElement, uiText("无PDF", "No PDF"));
     return;
   }
   if (ctrl.isEnabled()) {
@@ -15777,7 +15822,7 @@ async function toggleTranslateMode(
     } catch (err) {
       debugZai("translate.enable.failed", { error: errorMessage(err) });
       syncTranslateButtons(win);
-      flashButton(btn as HTMLButtonElement, "失败");
+      flashButton(btn as HTMLButtonElement, uiText("失败", "Failed"));
     }
   }
 }
@@ -15849,7 +15894,7 @@ function setTranslateButtonLabel(btn: HTMLElement, enabled: boolean): void {
   ) {
     return;
   }
-  btn.textContent = enabled ? "译✓" : "译";
+  btn.textContent = enabled ? uiText("译✓", "Translate✓") : uiText("译", "Translate");
 }
 
 // Immersive reading ("沉浸") mode. Mirrors the translate control flow but kept
@@ -15860,7 +15905,7 @@ async function toggleAskMode(win: Window, btn?: HTMLElement): Promise<void> {
   const ctrl = await getOrCreateAskController(win);
   if (!ctrl) {
     syncAskButtons(win);
-    if (btn) flashButton(btn as HTMLButtonElement, "无PDF");
+    if (btn) flashButton(btn as HTMLButtonElement, uiText("无PDF", "No PDF"));
     return;
   }
   if (ctrl.isEnabled()) {
@@ -15880,7 +15925,7 @@ async function toggleAskMode(win: Window, btn?: HTMLElement): Promise<void> {
     } catch (err) {
       debugZai("ask.enable.failed", { error: errorMessage(err) });
       syncAskButtons(win);
-      if (btn) flashButton(btn as HTMLButtonElement, "失败");
+      if (btn) flashButton(btn as HTMLButtonElement, uiText("失败", "Failed"));
     }
   }
 }
@@ -15941,7 +15986,7 @@ function syncAskButtons(win: Window): void {
 
 function setAskButtonLabel(btn: HTMLElement, enabled: boolean): void {
   if (!btn.classList.contains("zai-sidebar-ask-button")) return;
-  btn.textContent = enabled ? "沉浸✓" : "沉浸";
+  btn.textContent = enabled ? uiText("沉浸✓", "Immersive✓") : uiText("沉浸", "Immersive");
 }
 
 async function migrateAskModeOnReaderSwitch(win: Window): Promise<void> {

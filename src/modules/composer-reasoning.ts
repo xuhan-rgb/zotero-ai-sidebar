@@ -4,6 +4,7 @@ import {
   withModelReasoningEffort,
 } from "../settings/reasoning";
 import type { ModelPreset } from "../settings/types";
+import { uiText } from "../utils/ui-locale";
 
 export function renderComposerReasoningSelect(
   doc: Document,
@@ -18,19 +19,19 @@ export function renderComposerReasoningSelect(
     return label;
   }
   const select = doc.createElement("select");
-  select.setAttribute("aria-label", "推理强度");
+  select.setAttribute("aria-label", uiText("推理强度", "Reasoning effort"));
   const options = reasoningEffortOptionsForPreset(preset);
   for (const [value, description] of options) {
     const option = doc.createElement("option");
     option.value = value;
     option.textContent =
-      value === "none" ? "关闭" : description.split(" - ")[0];
+      value === "none" ? uiText("关闭", "Off") : description.split(" - ")[0];
     option.title = description;
     select.append(option);
   }
   if (!options.length) {
     const option = doc.createElement("option");
-    option.textContent = "服务商默认";
+    option.textContent = uiText("服务商默认", "Provider default");
     option.value = "";
     select.append(option);
   }
@@ -38,8 +39,8 @@ export function renderComposerReasoningSelect(
   select.disabled = disabled || !options.length;
   const updateTitle = () => {
     select.title = options.length
-      ? `推理强度：${options.find(([value]) => value === select.value)?.[1] ?? select.value}`
-      : "当前模型未识别推理档位，不发送推理参数";
+      ? `${uiText("推理强度", "Reasoning effort")}: ${options.find(([value]) => value === select.value)?.[1] ?? select.value}`
+      : uiText("当前模型未识别推理档位，不发送推理参数", "The current model's reasoning levels are unknown; no reasoning parameter will be sent");
   };
   updateTitle();
   select.addEventListener("change", () => {

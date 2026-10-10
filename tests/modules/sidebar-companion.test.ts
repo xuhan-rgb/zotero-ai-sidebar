@@ -84,7 +84,7 @@ describe("optional docked sidebar layout", () => {
 
   it("exports the selected note-panel view from the overflow menu", () => {
     expect(sidebarSource).toContain("function buildTabPdfExportMenuItem(");
-    expect(sidebarSource).toContain('buttonEl(doc, "▣ 转为 PDF")');
+    expect(sidebarSource).toContain('buttonEl(doc, uiText("▣ 转为 PDF", "▣ Export as PDF"))');
     expect(sidebarSource).toContain("exportCurrentNotePanelAsPdf(");
     expect(sidebarSource).toContain("saveVisibleNoteBeforeSwitch(sidebar)");
     expect(sidebarSource).toContain("renderPdfExportDialog(");
@@ -140,9 +140,9 @@ describe("optional docked sidebar layout", () => {
     );
     expect(sidebarSource).toContain('"header-layout-choice-trigger"');
     expect(sidebarSource).toContain('"header-layout-choice-options"');
-    expect(sidebarSource).toContain('["compact", "专注模式"]');
-    expect(sidebarSource).toContain('["embedded", "阅读器侧栏"]');
-    expect(sidebarSource).toContain('["docked", "右侧并排"]');
+    expect(sidebarSource).toContain('["compact", uiText("专注模式", "Focus")]');
+    expect(sidebarSource).toContain('["embedded", uiText("阅读器侧栏", "Reader sidebar")]');
+    expect(sidebarSource).toContain('["docked", uiText("右侧并排", "Docked right")]');
     expect(sidebarSource).toContain('control.toggleAttribute("open", opening)');
     expect(sidebarSource).toContain(
       'option.addEventListener("click", () => onSelect(value))',

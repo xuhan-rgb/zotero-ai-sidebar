@@ -1,6 +1,6 @@
 // @vitest-environment-options {"happyDOM":{"settings":{"disableCSSFileLoading":true}}}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { registerSidebar, unregisterSidebar } from "../../src/modules/sidebar";
+import { registerSidebar, unregisterSidebar, refreshSidebarPreferences } from "../../src/modules/sidebar";
 import {
   saveChatMessages,
   loadChatConversations,
@@ -25,6 +25,12 @@ let itemSelected: ReturnType<typeof vi.fn>;
 const host = window as any;
 
 beforeEach(async () => {
+  vi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: ["zh-CN"] }),
+    },
+  });
+  vi.stubGlobal("Ci", { mozIOSPreferences: {} });
   host.happyDOM.settings.disableCSSFileLoading = true;
   host.happyDOM.settings.handleDisabledFileLoadingAsSuccess = true;
   vi.useFakeTimers();
@@ -140,6 +146,62 @@ function expectPaper(id: number, answer?: string) {
 }
 
 describe("sidebar follows the active paper", () => {
+  it("offers language below font size and saves changes without losing the draft", async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+    const language = document.querySelector<HTMLSelectElement>(".chat-language-control select")!;
+    expect(language).not.toBeNull();
+    expect(Array.from(language.options, (option) => option.textContent)).toEqual(["Auto", "中文", "English"]);
+    expect(language.closest(".zai-icon-menu-panel")!.firstElementChild!.classList.contains("chat-font-size-control")).toBe(true);
+    const draft = document.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    draft.value = "保留草稿";
+    draft.dispatchEvent(new Event("input"));
+    for (const value of ["en-US", "zh-CN", "auto"]) {
+      const select = document.querySelector<HTMLSelectElement>(".chat-language-control select")!;
+      select.value = value;
+      select.dispatchEvent(new Event("change"));
+      expect(Zotero.Prefs.get("extensions.zotero-ai-sidebar.interfaceLanguage", true)).toBe(value);
+      expect(document.querySelector<HTMLSelectElement>(".chat-language-control select")!.value).toBe(value);
+      expect(document.querySelector<HTMLTextAreaElement>(".input-row textarea")!.value).toBe("保留草稿");
+      expect(document.getElementById("zai-root")!.textContent).toContain(value === "en-US" ? "Summarize paper" : "总结论文");
+      expect(document.getElementById("zai-root")!.textContent).toContain("Answer for paper A");
+    }
+  });
+
+  it("refreshes explicit interface language while preserving draft and replies", async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+    const input = document.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    input.value = "未发送的中文草稿";
+    input.dispatchEvent(new Event("input"));
+    Zotero.Prefs.set("extensions.zotero-ai-sidebar.interfaceLanguage", "en-US", true);
+    refreshSidebarPreferences();
+    expect(document.querySelector<HTMLTextAreaElement>(".input-row textarea")!.value).toBe("未发送的中文草稿");
+    expect(document.getElementById("zai-root")!.textContent).toContain("Summarize paper");
+    expect(document.getElementById("zai-root")!.textContent).toContain("Answer for paper A");
+    Zotero.Prefs.set("extensions.zotero-ai-sidebar.interfaceLanguage", "zh-CN", true);
+    refreshSidebarPreferences();
+    expect(document.getElementById("zai-root")!.textContent).toContain("总结论文");
+    expect(document.querySelector<HTMLTextAreaElement>(".input-row textarea")!.value).toBe("未发送的中文草稿");
+  });
+
+  it("uses English sidebar controls for an unsupported system language", async () => {
+    unregisterSidebar();
+    vi.stubGlobal("Cc", {
+      "@mozilla.org/intl/ospreferences;1": {
+        getService: () => ({ systemLocales: ["de-DE"] }),
+      },
+    });
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    const root = document.getElementById("zai-root")!;
+    const buttons = Array.from(root.querySelectorAll("button"), (node) => node.textContent);
+    expect(buttons).toContain("Summarize paper");
+    expect(buttons).toContain("Explain selection");
+    expect(buttons).toContain("Usage notes");
+    expect(root.querySelector("textarea")?.placeholder).toContain("Enter");
+    expect(root.querySelector("textarea")?.placeholder).not.toMatch(/[\u3400-\u9fff]/);
+    expect(root.textContent).toContain("Answer for paper A");
+  });
+
   it("realigns docked startup layout when the sidebar stylesheet finishes loading", async () => {
     unregisterSidebar();
     const { saveLocalUiSettings, DEFAULT_LOCAL_UI_SETTINGS } =

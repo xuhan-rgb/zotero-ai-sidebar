@@ -1,0 +1,59 @@
+name: "[English] Usage question"
+description: Questions about setup or usage (not a bug)
+title: "[Question] "
+labels:
+  - question
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        Need Chinese? Use the [Chinese form](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new?template=usage-question.yml).
+
+        Before asking, check the [usage guide](https://github.com/xuhan-rgb/zotero-ai-sidebar/blob/master/docs/USAGE.md#troubleshooting) troubleshooting section and “Usage notes” in the sidebar.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you submit
+      options:
+        - label: I checked the usage guide and related docs but could not find an answer
+          required: true
+        - label: I have not included API keys, passwords, or private note contents
+          required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment (optional)
+      description: Paste the info copied from “Usage notes” at the bottom of the sidebar. This helps identify your versions and operating system.
+      placeholder: "Example: XPI 0.8.22 · Zotero 10.0.3 · Linux 5.15.0-191-generic"
+    validations:
+      required: false
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Chat mode
+      options:
+        - API mode
+        - Web mode
+        - Not configured yet; cannot start a chat
+    validations:
+      required: true
+  - type: textarea
+    id: goal
+    attributes:
+      label: What are you trying to do?
+      description: Describe your goal and where you are stuck.
+    validations:
+      required: true
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you tried? (optional)
+    validations:
+      required: false
+  - type: textarea
+    id: screenshots
+    attributes:
+      label: Screenshots (optional)
+      description: Drag screenshots into this field. Remove API keys and personal information first.
+    validations:
+      required: false

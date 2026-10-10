@@ -1,3 +1,4 @@
+import { beforeEach as localeBeforeEach, afterEach as localeAfterEach, vi as localeVi } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 import { renderComposerReasoningSelect } from "../../src/modules/composer-reasoning";
 import { effectiveReasoningEffort } from "../../src/settings/reasoning";
@@ -106,3 +107,14 @@ describe("composer reasoning selector", () => {
     expect(unknown.textContent).toBe("服务商默认");
   });
 });
+
+// These regression cases exercise the existing Chinese interface.
+localeBeforeEach(() => {
+  localeVi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: ["zh-CN"] }),
+    },
+  });
+  localeVi.stubGlobal("Ci", { mozIOSPreferences: {} });
+});
+localeAfterEach(() => localeVi.unstubAllGlobals());

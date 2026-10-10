@@ -1,11 +1,14 @@
-name: 报告 Bug
+name: "[中文] 报告 Bug"
 description: 插件报错、崩溃或行为不对
 title: "[Bug] "
-labels: ["bug"]
+labels:
+  - bug
 body:
   - type: markdown
     attributes:
-      value: |
+      value: |-
+        需要英文？请使用[英文表单](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new?template=bug-report-en.yml)。
+
         感谢反馈。请尽量填全下面的信息——缺少版本号和复现步骤的问题通常无法定位。
         环境信息不用手打：打开侧边栏右下角的「使用须知」，在最下面点**复制环境信息**，粘到「环境信息」一栏即可。
         **请勿粘贴 API Key、WebDAV 密码或包含个人信息的完整笔记。**
@@ -34,7 +37,7 @@ body:
     attributes:
       label: 环境信息
       description: 在侧边栏「使用须知」底部点「复制环境信息」后粘贴到这里；系统一栏只有 Windows / macOS / Linux 时，请补上具体版本。
-      placeholder: "XPI 0.8.22 · Zotero 10.0.3 · Linux 5.15.0-191-generic"
+      placeholder: 示例：XPI 0.8.22 · Zotero 10.0.3 · Linux 5.15.0-191-generic
     validations:
       required: true
   - type: dropdown
@@ -52,10 +55,11 @@ body:
     attributes:
       label: 复现步骤
       description: 从打开侧边栏开始，一步步写清你点了什么、输入了什么
-      placeholder: |
-        1. 打开某篇 PDF
+      placeholder: "1. 打开某篇 PDF
+
         2. 输入 @ 选择公式
-        3. …
+
+        3. …"
     validations:
       required: true
   - type: textarea

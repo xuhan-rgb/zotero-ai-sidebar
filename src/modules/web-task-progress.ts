@@ -1,7 +1,9 @@
 import type { ChatTaskMeta, WebTaskStatus } from "../providers/types";
 import { el } from "./dom-utils";
+import { uiText } from "../utils/ui-locale";
 
 const PHASE_LABELS = ["启动", "材料", "提交", "生成", "同步"] as const;
+const PHASE_LABELS_EN = ["Starting", "Preparing", "Submitting", "Generating", "Syncing"] as const;
 
 export interface WebTaskProgress {
   index: number;
@@ -20,7 +22,7 @@ export function webTaskProgressFor(
   return {
     index,
     label: webTaskProgressLabel(status, providerName),
-    detail: `${index + 1}/${PHASE_LABELS.length} · ${PHASE_LABELS[index]}阶段`,
+    detail: uiText(`${index + 1}/${PHASE_LABELS.length} · ${PHASE_LABELS[index]}阶段`, `${index + 1}/${PHASE_LABELS.length} · ${PHASE_LABELS_EN[index]}`),
     startedAt: task.createdAt,
   };
 }
@@ -36,7 +38,7 @@ export function renderWebTaskProgress(
   const label = el(doc, "strong", "web-task-progress-label", progress.label);
   const elapsed = el(doc, "span", "web-task-progress-elapsed");
   const updateElapsed = (timestamp: number) => {
-    elapsed.textContent = `已等待 ${formatWebWaitTime(timestamp - progress.startedAt)}`;
+    elapsed.textContent = uiText(`已等待 ${formatWebWaitTime(timestamp - progress.startedAt)}`, `Waiting ${formatWebWaitTime(timestamp - progress.startedAt)}`);
   };
   updateElapsed(now);
   head.append(label, elapsed);
@@ -46,7 +48,7 @@ export function renderWebTaskProgress(
     const segment = el(doc, "span", "web-task-progress-segment");
     segment.classList.toggle("is-complete", index < progress.index);
     segment.classList.toggle("is-active", index === progress.index);
-    segment.title = phase;
+    segment.title = uiText(phase, PHASE_LABELS_EN[index]);
     track.append(segment);
   });
   root.append(
@@ -70,9 +72,9 @@ export function renderWebTaskProgress(
 
 export function formatWebWaitTime(milliseconds: number): string {
   const seconds = Math.max(0, Math.floor(milliseconds / 1_000));
-  if (seconds < 60) return `${seconds}秒`;
+  if (seconds < 60) return uiText(`${seconds}秒`, `${seconds}s`);
   const minutes = Math.floor(seconds / 60);
-  return `${minutes}分${String(seconds % 60).padStart(2, "0")}秒`;
+  return uiText(`${minutes}分${String(seconds % 60).padStart(2, "0")}秒`, `${minutes}:${String(seconds % 60).padStart(2, "0")}`);
 }
 
 function webTaskProgressIndex(status: WebTaskStatus): number {
@@ -96,18 +98,18 @@ function webTaskProgressLabel(
 ): string {
   switch (status) {
     case "starting_browser":
-      return `正在连接 ${providerName} 专用浏览器`;
+      return uiText(`正在连接 ${providerName} 专用浏览器`, `Connecting to the ${providerName} browser`);
     case "needs_login":
-      return `等待完成 ${providerName} 登录或网页验证`;
+      return uiText(`等待完成 ${providerName} 登录或网页验证`, `Waiting for ${providerName} login or website verification`);
     case "uploading_attachment":
-      return "正在上传论文和对话材料";
+      return uiText("正在上传论文和对话材料", "Uploading paper and conversation materials");
     case "submitting":
-      return `正在向 ${providerName} 提交问题`;
+      return uiText(`正在向 ${providerName} 提交问题`, `Submitting the prompt to ${providerName}`);
     case "generating":
-      return `${providerName} 正在思考并生成回答`;
+      return uiText(`${providerName} 正在思考并生成回答`, `${providerName} is thinking and generating a response`);
     case "processing_answer":
-      return "正在整理图表、文件并同步回答";
+      return uiText("正在整理图表、文件并同步回答", "Organizing figures and files, then syncing the response");
     default:
-      return `等待执行 ${providerName} 网页任务`;
+      return uiText(`等待执行 ${providerName} 网页任务`, `Waiting for the ${providerName} web task`);
   }
 }

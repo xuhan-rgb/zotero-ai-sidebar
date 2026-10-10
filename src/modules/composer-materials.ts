@@ -11,6 +11,7 @@ import {
   type PaperFigureKind,
 } from "./paper-figures";
 import { latexMaterialPreview } from "./latex-preview";
+import { uiText } from "../utils/ui-locale";
 
 /**
  * Chips whose rendered preview the user expanded by clicking the label. Kept
@@ -40,6 +41,7 @@ export interface DraftMaterialState extends ComposerDraftState {
 }
 
 const KIND_LABELS: Record<PaperFigureKind, string> = {
+  // Markers are parsed downstream; keep their protocol labels stable.
   figure: "图",
   table: "表",
   equation: "公式",
@@ -89,7 +91,7 @@ export function renderDraftMaterials<TState extends DraftMaterialState>(
   );
   for (const material of state.draftMaterials) {
     const chip = el(doc, "span", "draft-material");
-    chip.title = `发送时展开为 LaTeX：\n${material.latex}`;
+  chip.title = `${uiText("发送时展开为 LaTeX：", "Expanded to LaTeX when sent:")}\n${material.latex}`;
     const label = el(
       doc,
       "span",
@@ -99,7 +101,7 @@ export function renderDraftMaterials<TState extends DraftMaterialState>(
     const previewNode = latexMaterialPreview(doc, material.kind, material.latex);
     if (previewNode) {
       label.classList.add("is-previewable");
-      label.title = "点击预览/收起此素材，并跳转到所在页";
+      label.title = uiText("点击预览/收起此素材，并跳转到所在页", "Click to preview or collapse this material and jump to its page");
       label.addEventListener("click", () => {
         if (!expandedMaterialPreviews.delete(material.id)) {
           expandedMaterialPreviews.add(material.id);
@@ -110,14 +112,14 @@ export function renderDraftMaterials<TState extends DraftMaterialState>(
     } else {
       // KaTeX could not typeset this source: fall back to locating it on the PDF.
       label.classList.add("is-jumpable");
-      label.title = "点击在 PDF 中查看此素材";
+      label.title = uiText("点击在 PDF 中查看此素材", "Click to view this material in the PDF");
       label.addEventListener("click", () => {
         deps.jumpToMaterial?.(material);
       });
     }
     chip.append(label);
     const remove = buttonEl(doc, "×");
-    remove.title = "移除素材";
+    remove.title = uiText("移除素材", "Remove material");
     remove.addEventListener("click", () => {
       deps.unmarkReference?.(material);
       removeDraftMaterial(state, input, material);

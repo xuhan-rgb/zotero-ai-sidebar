@@ -1695,7 +1695,8 @@
   font-size: 11px;
 }
 
-.chat-font-size-control {
+.chat-font-size-control,
+.chat-language-control {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -1705,7 +1706,8 @@
   white-space: nowrap;
 }
 
-.chat-font-size-control select {
+.chat-font-size-control select,
+.chat-language-control select {
   width: auto;
   min-width: 72px;
   border: 1px solid var(--zai-border);
@@ -1714,6 +1716,11 @@
   color: var(--zai-text);
   padding: 3px 6px;
   font: inherit;
+}
+
+.chat-language-control {
+  display: flex;
+  margin-top: 8px;
 }
 
 .quick-prompts {

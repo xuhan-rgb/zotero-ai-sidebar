@@ -8,6 +8,10 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 📖 [Full usage guide](docs/USAGE.md) ([中文](docs/USAGE.zh-CN.md)) — quick start, workflows, reference, and troubleshooting.
 
+Choose Follow system, 中文, or English under Settings → Display settings → Interface language. The default follows the system: Chinese on Chinese systems and English on English or unsupported system languages. If the system language cannot be read, Zotero's interface language is used instead. AI response language is controlled by your prompts; you can edit the built-in prompts in Settings → Quick prompts.
+
+When [opening an issue](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new/choose), choose a **[中文]** or **[English]** form for bug reports, feature requests, or usage questions. Each form also links to the other language at the top.
+
 ## What you can do with it
 
 - **Ask anything about the paper you're reading** — *"summarize this"*, *"what's the core contribution"*, *"compare with X"*. The model fetches the parts of the PDF it needs and shows its work in a tool trace.

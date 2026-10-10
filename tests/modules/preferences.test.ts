@@ -11,6 +11,11 @@ import {
   resolveTestModel,
   setPreferenceSaveBarVisible,
 } from "../../src/modules/preferences";
+import {
+  UI_LANGUAGE_PREF,
+  getUiLocale,
+  normalizeUiLanguage,
+} from "../../src/utils/ui-locale";
 
 const originalEvent = globalThis.Event;
 const preferenceMarkup = readFileSync(
@@ -19,6 +24,7 @@ const preferenceMarkup = readFileSync(
 );
 
 afterEach(() => {
+  vi.unstubAllGlobals();
   Object.defineProperty(globalThis, "Event", {
     configurable: true,
     value: originalEvent,
@@ -67,14 +73,24 @@ describe("resolveTestModel", () => {
 
 describe("formatPreferenceSaveSections", () => {
   it("formats dirty sections in their page order", () => {
+    vi.stubGlobal("Zotero", { locale: "zh-CN" });
     expect(formatPreferenceSaveSections(["sync", "presets", "mcp"])).toBe(
       "账号与模型、MCP Servers、WebDAV 账号",
+    );
+    vi.stubGlobal("Zotero", { locale: "en-US" });
+    expect(formatPreferenceSaveSections(["sync", "presets", "mcp"])).toBe(
+      "Accounts & models, MCP Servers, WebDAV account",
     );
   });
 
   it("deduplicates dirty section labels", () => {
+    vi.stubGlobal("Zotero", { locale: "zh-CN" });
     expect(formatPreferenceSaveSections(["prompts", "prompts"])).toBe(
       "快捷提示词",
+    );
+    vi.stubGlobal("Zotero", { locale: "en-US" });
+    expect(formatPreferenceSaveSections(["prompts", "prompts"])).toBe(
+      "Quick prompts",
     );
   });
 });
@@ -124,6 +140,40 @@ describe("setPreferenceSaveBarVisible", () => {
 });
 
 describe("preference save controls", () => {
+  it("offers an independently persisted interface language setting", () => {
+    expect(preferenceMarkup).toContain('id="zai-ui-language"');
+    expect(preferenceMarkup).toContain('<html:option value="auto"');
+    expect(preferenceMarkup).toContain('<html:option value="zh-CN"');
+    expect(preferenceMarkup).toContain('<html:option value="en-US"');
+    expect(UI_LANGUAGE_PREF).toBe(
+      "extensions.zotero-ai-sidebar.interfaceLanguage",
+    );
+
+    const saved = new Map<string, string>([[UI_LANGUAGE_PREF, "en-US"]]);
+    vi.stubGlobal("Zotero", {
+      Prefs: { get: (key: string, global: boolean) => {
+        expect(global).toBe(true);
+        return saved.get(key);
+      } },
+      locale: "zh-CN",
+    });
+    expect(normalizeUiLanguage(saved.get(UI_LANGUAGE_PREF))).toBe("en-US");
+    expect(getUiLocale()).toBe("en-US");
+
+    saved.set(UI_LANGUAGE_PREF, "zh-CN");
+    expect(getUiLocale()).toBe("zh-CN");
+    saved.set(UI_LANGUAGE_PREF, "auto");
+    expect(getUiLocale()).toBe("zh-CN");
+  });
+
+  it("uses system-locale annotations for static preference copy", () => {
+    expect(preferenceMarkup).toContain(
+      '<html:h2 data-zai-l10n="AI Chat Settings">AI 对话设置</html:h2>',
+    );
+    expect(preferenceMarkup).toContain('data-zai-l10n="Save changes"');
+    expect(preferenceMarkup).not.toMatch(/<html:textarea[^>]*data-zai-l10n=/);
+  });
+
   it("uses one contextual save bar instead of section save buttons", () => {
     expect(preferenceMarkup).toContain('id="zai-save-bar"');
     expect(preferenceMarkup).toContain('id="zai-save-commit"');
@@ -169,14 +219,14 @@ describe("preference save controls", () => {
   it("offers classic embedded defaults with optional compact and docked layouts", () => {
     expect(preferenceMarkup).toContain('id="zai-ui-chat-layout"');
     expect(preferenceMarkup).toContain(
-      '<html:option value="classic">原始排版（默认）</html:option>',
+      '<html:option value="classic" data-zai-l10n="Classic (default)">原始排版（默认）</html:option>',
     );
-    expect(preferenceMarkup).toContain('value="compact">专注模式');
+    expect(preferenceMarkup).toContain('value="compact" data-zai-l10n="Focus mode">专注模式');
     expect(preferenceMarkup).toContain('id="zai-ui-sidebar-display"');
     expect(preferenceMarkup).toContain(
-      '<html:option value="embedded">阅读器侧栏（默认）</html:option>',
+      '<html:option value="embedded" data-zai-l10n="Reader sidebar (default)">阅读器侧栏（默认）</html:option>',
     );
-    expect(preferenceMarkup).toContain('value="docked">右侧并排（同一主窗口）');
+    expect(preferenceMarkup).toContain('value="docked" data-zai-l10n="Side by side on the right (same window)">右侧并排（同一主窗口）');
     expect(preferenceMarkup).not.toContain('value="companion"');
     expect(preferenceMarkup).toContain(
       'id="zai-ui-confirm-conversation-deletion"',
@@ -205,7 +255,7 @@ describe("preference save controls", () => {
   it("groups settings in their editing workflow order", () => {
     const sectionTitles = Array.from(
       preferenceMarkup.matchAll(
-        /<html:div class="zai-page-section-title">([^<]+)<\/html:div>/g,
+        /<html:div class="zai-page-section-title"[^>]*>([^<]+)<\/html:div>/g,
       ),
       (match) => match[1],
     );
@@ -232,8 +282,8 @@ describe("preference save controls", () => {
 
   it("keeps PDF tools in one compact card", () => {
     const pdfTools = preferenceMarkup.slice(
-      preferenceMarkup.indexOf(">PDF 工具</html:div>"),
-      preferenceMarkup.indexOf(">扩展能力</html:div>"),
+      preferenceMarkup.indexOf("PDF 工具</html:div>"),
+      preferenceMarkup.indexOf("扩展能力</html:div>"),
     );
 
     expect(pdfTools).toContain('id="zai-tool-annotation-color-guide"');
@@ -253,10 +303,10 @@ describe("preference save controls", () => {
 
   it("uses secondary headings for nested editors", () => {
     expect(preferenceMarkup).toMatch(
-      /<html:div class="zai-pref-subtitle zai-card-section"\s*>\s*自定义按钮\s*<\/html:div\s*>/,
+      /<html:div class="zai-pref-subtitle zai-card-section"[^>]*>\s*自定义按钮\s*<\/html:div\s*>/,
     );
     expect(preferenceMarkup).toMatch(
-      /<html:div class="zai-pref-subtitle zai-card-section"\s*>\s*MCP Servers\s*<\/html:div\s*>/,
+      /<html:div class="zai-pref-subtitle zai-card-section"[^>]*>\s*MCP Servers\s*<\/html:div\s*>/,
     );
   });
 
@@ -299,7 +349,7 @@ describe("preference save controls", () => {
   });
 
   it("keeps common immersive controls visible and groups shortcut edits", () => {
-    expect(preferenceMarkup).toContain(">沉浸阅读</html:div>");
+    expect(preferenceMarkup).toContain("沉浸阅读</html:div>");
     expect(preferenceMarkup).toContain("默认翻译模型");
     expect(preferenceMarkup).toContain("全文翻译首次使用时从这里继承");
     expect(preferenceMarkup).toContain("MinerU 文档解析");

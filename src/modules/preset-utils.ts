@@ -1,6 +1,7 @@
 import {
   effectiveReasoningEffort,
   isDeepSeekReasoningModel,
+  localizedReasoningEffortLabel,
   reasoningEffortOptionsForPreset,
   withModelReasoningEffort,
 } from "../settings/reasoning";
@@ -21,7 +22,6 @@ import {
   DEFAULT_MODELS,
   DEFAULT_REASONING_EFFORT,
   DEFAULT_REASONING_SUMMARY,
-  REASONING_EFFORT_OPTIONS,
   type AgentPermissionMode,
   type ModelPreset,
   type ProviderKind,
@@ -82,9 +82,7 @@ export function isReasoningDisabledForDraft(draft: ModelPreset): boolean {
 export const withReasoningEffort = withModelReasoningEffort;
 
 export function reasoningEffortLabel(effort: ReasoningEffort): string {
-  return (
-    REASONING_EFFORT_OPTIONS.find(([value]) => value === effort)?.[1] ?? effort
-  );
+  return localizedReasoningEffortLabel(effort);
 }
 
 export function reasoningEffortShortLabel(effort: ReasoningEffort): string {

@@ -1,3 +1,4 @@
+import { uiText } from "../utils/ui-locale";
 import { config } from "../../package.json";
 import type { ModelPreset } from "../settings/types";
 
@@ -12,20 +13,26 @@ export const PREFERENCE_SAVE_SECTIONS = [
 
 export type PreferenceSaveSection = (typeof PREFERENCE_SAVE_SECTIONS)[number];
 
-const PREFERENCE_SAVE_SECTION_LABELS: Record<PreferenceSaveSection, string> = {
-  presets: "账号与模型",
-  prompts: "快捷提示词",
-  mcp: "MCP Servers",
-  sync: "WebDAV 账号",
-};
+function preferenceSaveSectionLabel(section: PreferenceSaveSection): string {
+  switch (section) {
+    case "presets":
+      return uiText("账号与模型", "Accounts & models");
+    case "prompts":
+      return uiText("快捷提示词", "Quick prompts");
+    case "mcp":
+      return "MCP Servers";
+    case "sync":
+      return uiText("WebDAV 账号", "WebDAV account");
+  }
+}
 
 export function formatPreferenceSaveSections(
   sections: Iterable<PreferenceSaveSection>,
 ): string {
   const active = new Set(sections);
   return PREFERENCE_SAVE_SECTIONS.filter((section) => active.has(section))
-    .map((section) => PREFERENCE_SAVE_SECTION_LABELS[section])
-    .join("、");
+    .map(preferenceSaveSectionLabel)
+    .join(uiText("、", ", "));
 }
 
 export function resolveTestModel(models: string[], selected: string): string {
@@ -78,7 +85,7 @@ export async function registerPreferences(): Promise<void> {
   registeredPaneID = await Zotero.PreferencePanes.register({
     pluginID: config.addonID,
     id: `${config.addonRef}-prefs`,
-    label: "AI 对话",
+    label: uiText("AI 对话", "AI Chat"),
     src: `chrome://${config.addonRef}/content/preferences.xhtml`,
     image: `chrome://${config.addonRef}/content/icons/ai-chat.svg`,
   });

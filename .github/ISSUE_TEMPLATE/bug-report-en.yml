@@ -1,0 +1,86 @@
+name: "[English] Report a bug"
+description: Errors, crashes, or unexpected behavior
+title: "[Bug] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        Need Chinese? Use the [Chinese form](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new?template=bug-report.yml).
+
+        Thanks for reporting this. Please fill in as much as you can; without version details and reproduction steps, we usually cannot diagnose the issue.
+        To provide environment details, open “Usage notes” at the bottom right of the sidebar, click **Copy environment info** at the bottom, and paste it into the Environment field.
+        **Do not include API keys, WebDAV passwords, or full notes containing personal information.**
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues and found no duplicate
+          required: true
+        - label: I checked the guide’s troubleshooting section and reproduced this on the latest XPI
+          required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: Chat mode
+      options:
+        - API mode (model preset / API key)
+        - Web mode (ChatGPT / DeepSeek / ChatGLM / Z.ai / Kimi, etc.)
+        - Happens in both modes
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Paste the info copied from “Usage notes” in the sidebar. If the OS is listed only as Windows, macOS, or Linux, include its version.
+      placeholder: "Example: XPI 0.8.22 · Zotero 10.0.3 · Linux 5.15.0-191-generic"
+    validations:
+      required: true
+  - type: dropdown
+    id: reproducible
+    attributes:
+      label: How often can you reproduce it?
+      options:
+        - Every time
+        - Sometimes
+        - Only once
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: Starting with opening the sidebar, list what you clicked and entered, step by step.
+      placeholder: "1. Open a PDF
+
+        2. Type @ and select a formula
+
+        3. …
+
+        "
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual result
+      description: If you see an error, paste its exact text instead of just saying “it failed.”
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or screenshots (optional)
+      description: Include relevant lines from Zotero Help → Debug Output… Screenshots can be dragged here. Remove API keys and personal information first.
+    validations:
+      required: false

@@ -1,3 +1,4 @@
+import { beforeEach as localeBeforeEach, afterEach as localeAfterEach, vi as localeVi } from "vitest";
 // @vitest-environment happy-dom
 
 import { beforeEach, describe, expect, it } from "vitest";
@@ -90,3 +91,14 @@ describe("per-model reasoning controls", () => {
     expect(controls.values()).toEqual({});
   });
 });
+
+// These regression cases exercise the existing Chinese interface.
+localeBeforeEach(() => {
+  localeVi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: ["zh-CN"] }),
+    },
+  });
+  localeVi.stubGlobal("Ci", { mozIOSPreferences: {} });
+});
+localeAfterEach(() => localeVi.unstubAllGlobals());

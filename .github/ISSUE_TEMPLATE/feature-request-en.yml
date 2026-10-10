@@ -1,0 +1,55 @@
+name: "[English] Feature request"
+description: Ideas for features or improvements
+title: "[Feature] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |-
+        Need Chinese? Use the [Chinese form](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new?template=feature-request.yml).
+
+        First describe **the problem you want to solve**, then your proposed solution. This helps us assess whether and how to address it.
+  - type: checkboxes
+    id: preflight
+    attributes:
+      label: Before you submit
+      options:
+        - label: I searched existing issues, the README, and the usage guide for the same suggestion
+          required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      multiple: true
+      options:
+        - Chat and interface
+        - Paper content (images / tables / formulas)
+        - PDF and reading tools (highlights / notes / overview / reading route)
+        - Translation (immersive / full text)
+        - Web mode
+        - Sync and settings (WebDAV / import and export)
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem to solve
+      description: What is awkward in your current workflow? Give a specific example.
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Proposed solution
+      description: Describe what you would like the plugin to do. You can include implementation ideas if you have any.
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives tried (optional)
+      description: How do you work around this today?
+    validations:
+      required: false

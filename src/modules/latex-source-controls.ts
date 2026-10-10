@@ -11,6 +11,7 @@ import {
   resetLatexSourceAvailability,
   type LatexSourceAvailability,
 } from "./latex-source-availability";
+import { uiText } from "../utils/ui-locale";
 
 export function renderLatexSourceControls(
   doc: Document,
@@ -29,9 +30,9 @@ export function renderLatexSourceControls(
     element.textContent = label;
     return element;
   };
-  const retry = button("重试");
-  const configure = button("代理设置");
-  const translate = button("全文翻译");
+  const retry = button(uiText("重试", "Retry"));
+  const configure = button(uiText("代理设置", "Proxy settings"));
+  const translate = button(uiText("全文翻译", "Translate full text"));
   translate.addEventListener("click", onTranslate);
   translate.hidden = true;
   const toolbar = doc.createElement("span");
@@ -43,23 +44,23 @@ export function renderLatexSourceControls(
     const current = ++generation;
     retry.hidden = true;
     translate.hidden = true;
-    badge.textContent = "正在获取 LaTeX…";
-    badge.title = "检查本地缓存；缺少有效缓存时自动下载并处理源码";
+    badge.textContent = uiText("正在获取 LaTeX…", "Getting LaTeX…");
+    badge.title = uiText("检查本地缓存；缺少有效缓存时自动下载并处理源码", "Checking the local cache; downloads and processes the source if no valid cache exists");
     const result = await checkLatexSourceAvailability(arxivId);
     if (current !== generation) return;
     options?.onAvailability?.(result);
     if (result === "available") {
-      badge.textContent = "LaTeX 源";
-      badge.title = "LaTeX 源码已就绪";
+      badge.textContent = uiText("LaTeX 源", "LaTeX source");
+      badge.title = uiText("LaTeX 源码已就绪", "LaTeX source is ready");
       translate.hidden = false;
     } else if (result === "no-source") {
-      badge.textContent = "无 LaTeX 源";
-      badge.title = "当前 arXiv 条目没有 LaTeX 源码；将解析 PDF 后再显示全文翻译";
+      badge.textContent = uiText("无 LaTeX 源", "No LaTeX source");
+      badge.title = uiText("当前 arXiv 条目没有 LaTeX 源码；将解析 PDF 后再显示全文翻译", "This arXiv item has no LaTeX source; parse the PDF to enable full-text translation");
     } else {
-      const reason = arxivSourceError(arxivId) || "无法检查源码，请重试";
+      const reason = arxivSourceError(arxivId) || uiText("无法检查源码，请重试", "Could not check the source; please retry");
       badge.textContent = reason.startsWith("下载超时")
-        ? "LaTeX 下载超时"
-        : "LaTeX 获取失败";
+        ? uiText("LaTeX 下载超时", "LaTeX download timed out")
+        : uiText("LaTeX 获取失败", "Failed to get LaTeX source");
       badge.title = reason;
       retry.hidden = false;
     }
@@ -84,12 +85,12 @@ export function renderLatexSourceControls(
     panel.className = "latex-proxy-settings";
     const description = doc.createElement("span");
     description.textContent =
-      "仅用于 LaTeX 源码下载；本机所有论文共用。系统代理读取操作系统的代理配置。";
+      uiText("仅用于 LaTeX 源码下载；本机所有论文共用。系统代理读取操作系统的代理配置。", "Used only for LaTeX source downloads; shared by all papers on this device. System proxy reads the operating system's proxy settings.");
     const mode = doc.createElement("select");
-    mode.setAttribute("aria-label", "LaTeX 下载连接方式");
+    mode.setAttribute("aria-label", uiText("LaTeX 下载连接方式", "LaTeX download connection"));
     for (const [value, label] of [
-      ["system", "系统代理"],
-      ["direct", "不使用代理"],
+      ["system", uiText("系统代理", "System proxy")],
+      ["direct", uiText("不使用代理", "No proxy")],
     ]) {
       const option = doc.createElement("option");
       option.value = value;
@@ -102,23 +103,23 @@ export function renderLatexSourceControls(
     error.setAttribute("role", "alert");
     const portRow = doc.createElement("label");
     portRow.className = "latex-proxy-port";
-    portRow.append("代理端口（Port）");
+    portRow.append(uiText("代理端口（Port）", "Proxy port"));
     const port = doc.createElement("input");
     port.type = "number";
     port.min = "1";
     port.max = "65535";
-    port.setAttribute("aria-label", "代理端口");
+    port.setAttribute("aria-label", uiText("代理端口", "Proxy port"));
     portRow.append(port);
     let manualPort = settings.portOverride !== undefined;
     let systemPort: number | null = null;
     const portStatus = doc.createElement("span");
-    const restore = button("恢复跟随系统");
+    const restore = button(uiText("恢复跟随系统", "Use system port"));
     const updatePortStatus = () => {
       portStatus.textContent = manualPort
-        ? "自定义端口，仅用于 LaTeX 下载；代理地址仍跟随系统。"
+        ? uiText("自定义端口，仅用于 LaTeX 下载；代理地址仍跟随系统。", "Custom port used only for LaTeX downloads; proxy address still follows the system.")
         : systemPort === null
-          ? "系统未为此下载地址提供代理端口。"
-          : "端口跟随系统，修改后可保存为 LaTeX 下载专用端口。";
+          ? uiText("系统未为此下载地址提供代理端口。", "The system did not provide a proxy port for this download address.")
+          : uiText("端口跟随系统，修改后可保存为 LaTeX 下载专用端口。", "The port follows the system. Change it to save a port used only for LaTeX downloads.");
     };
     const readPort = () => {
       try {
@@ -152,7 +153,7 @@ export function renderLatexSourceControls(
     mode.addEventListener("change", updatePortVisibility);
     readPort();
     updatePortVisibility();
-    const save = button("保存并重试");
+    const save = button(uiText("保存并重试", "Save and retry"));
     save.classList.add("latex-proxy-save");
     save.addEventListener("click", () => {
       try {
@@ -170,7 +171,7 @@ export function renderLatexSourceControls(
           reason instanceof Error ? reason.message : String(reason);
       }
     });
-    const cancel = button("取消");
+    const cancel = button(uiText("取消", "Cancel"));
     cancel.addEventListener("click", () => panel.remove());
     const actions = doc.createElement("span");
     actions.className = "latex-proxy-actions";

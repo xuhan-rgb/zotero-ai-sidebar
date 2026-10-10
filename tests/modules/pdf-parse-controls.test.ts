@@ -1,3 +1,4 @@
+import { beforeEach as localeBeforeEach, afterEach as localeAfterEach, vi as localeVi } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { renderPdfParseControls } from "../../src/modules/pdf-parse-controls";
 import { ensureMineruParse, resetMineruParseCache } from "../../src/translate/mineru-parse";
@@ -89,3 +90,14 @@ describe("PDF parse controls", () => {
     expect(onConfigureToken).toHaveBeenCalledOnce();
   });
 });
+
+// These regression cases exercise the existing Chinese interface.
+localeBeforeEach(() => {
+  localeVi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: ["zh-CN"] }),
+    },
+  });
+  localeVi.stubGlobal("Ci", { mozIOSPreferences: {} });
+});
+localeAfterEach(() => localeVi.unstubAllGlobals());

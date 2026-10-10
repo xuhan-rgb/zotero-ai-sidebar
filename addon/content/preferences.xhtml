@@ -4,7 +4,7 @@
 <groupbox
   onload="(function boot(win, tries) { var inst = Zotero &amp;&amp; Zotero.__addonInstance__; if (inst &amp;&amp; inst.hooks &amp;&amp; inst.hooks.onPrefsEvent) { inst.hooks.onPrefsEvent('load', { window: win }); return; } if (tries > 0) win.setTimeout(function () { boot(win, tries - 1); }, 100); })(window, 50)"
 >
-  <label><html:h2 data-l10n-id="pref-title"></html:h2></label>
+  <label><html:h2 data-zai-l10n="AI Chat Settings">AI 对话设置</html:h2></label>
   <html:div id="zotero-ai-sidebar-tool-settings">
     <html:style>
       #zotero-ai-sidebar-tool-settings { max-width: 860px; }
@@ -389,30 +389,30 @@
 
     <html:div id="zai-save-bar" class="zai-save-bar" hidden="hidden">
       <html:div class="zai-save-summary">
-        <html:span class="zai-save-title">有未保存的更改</html:span>
+        <html:span class="zai-save-title" data-zai-l10n="Unsaved changes">有未保存的更改</html:span>
         <html:span id="zai-save-sections" class="zai-save-sections"></html:span>
       </html:div>
       <html:div class="zai-save-actions">
-        <html:button id="zai-save-discard" type="button">撤销</html:button>
-        <html:button id="zai-save-commit" type="button">保存更改</html:button>
+        <html:button id="zai-save-discard" type="button" data-zai-l10n="Discard">撤销</html:button>
+        <html:button id="zai-save-commit" type="button" data-zai-l10n="Save changes">保存更改</html:button>
       </html:div>
     </html:div>
 
-    <html:div class="zai-page-section-title">常用设置</html:div>
+    <html:div class="zai-page-section-title" data-zai-l10n="General settings">常用设置</html:div>
     <html:div class="zai-pref-card" data-save-section="presets">
-      <html:div class="zai-pref-title">账号与模型</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-title" data-zai-l10n="Accounts &amp; models">账号与模型</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Manage providers, API keys, base URLs, model lists, and reasoning options in Zotero settings. Submit changes using the save bar above.">
         在 Zotero 设置里统一管理 Provider、API Key、Base
         URL、模型列表和推理参数。修改后通过顶部保存栏统一提交。
       </html:p>
       <html:div class="zai-preset-list-head">
-        <html:span class="zai-pref-subtitle">账号列表</html:span>
+        <html:span class="zai-pref-subtitle" data-zai-l10n="Accounts">账号列表</html:span>
         <html:div class="zai-preset-list-actions">
           <html:label class="zai-border-style-control">
-            <html:span>边界</html:span>
+            <html:span data-zai-l10n="Borders">边界</html:span>
             <html:select id="zai-ui-preference-border-style">
-              <html:option value="soft">柔和浅色（默认）</html:option>
-              <html:option value="clear">清晰边界</html:option>
+              <html:option value="soft" data-zai-l10n="Soft (default)">柔和浅色（默认）</html:option>
+              <html:option value="clear" data-zai-l10n="Clear">清晰边界</html:option>
             </html:select>
           </html:label>
           <html:div class="zai-preset-add-actions">
@@ -429,24 +429,24 @@
         id="zai-preset-picker"
         class="zai-preset-picker"
         role="listbox"
-        aria-label="账号列表"
+        aria-label="账号列表" data-zai-l10n-aria-label="Accounts"
       ></html:div>
       <html:div id="zai-preset-list" class="zai-list"></html:div>
       <html:div class="zai-pref-actions">
         <html:span id="zai-preset-status" class="zai-pref-status"></html:span>
       </html:div>
       <html:div class="zai-cache-test-row">
-        <html:span class="zai-cache-test-label">缓存测试</html:span>
+        <html:span class="zai-cache-test-label" data-zai-l10n="Cache test">缓存测试</html:span>
         <html:select
           id="zai-cache-test-preset"
-          aria-label="缓存测试账号"
+          aria-label="缓存测试账号" data-zai-l10n-aria-label="Cache test account"
         ></html:select>
         <html:span
           id="zai-cache-test-target"
           class="zai-cache-test-target"
         ></html:span>
         <html:button id="zai-cache-test-run" type="button"
-          >开始测试</html:button
+           data-zai-l10n="Run test">开始测试</html:button
         >
       </html:div>
       <html:span
@@ -456,7 +456,7 @@
     </html:div>
 
     <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">MinerU 文档解析</html:div>
+      <html:div class="zai-pref-title" data-zai-l10n="MinerU document parsing">MinerU 文档解析</html:div>
       <html:div class="zai-pref-grid">
         <html:label for="zai-mineru-token">MinerU Token</html:label>
         <html:input
@@ -464,76 +464,76 @@
           type="password"
           autocomplete="off"
         />
-        <html:label for="zai-mineru-test">连接</html:label>
+        <html:label for="zai-mineru-test" data-zai-l10n="Connection">连接</html:label>
         <html:span class="zai-pref-actions">
-          <html:button id="zai-mineru-apply" type="button">申请 Token</html:button>
-          <html:button id="zai-mineru-test" type="button">测试连接</html:button>
+          <html:button id="zai-mineru-apply" type="button" data-zai-l10n="Get token">申请 Token</html:button>
+          <html:button id="zai-mineru-test" type="button" data-zai-l10n="Test connection">测试连接</html:button>
           <html:span id="zai-mineru-status" class="zai-pref-status"></html:span>
         </html:span>
       </html:div>
     </html:div>
 
     <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">沉浸阅读</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-title" data-zai-l10n="Immersive reading">沉浸阅读</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Set the account, model, presentation, and reading interactions used for translation. Changes save automatically and take effect immediately.">
         配置翻译使用的账号、模型、呈现方式和阅读交互；修改后自动保存并立即生效。
       </html:p>
       <html:div class="zai-quick-ask-discovery">
         <html:div class="zai-quick-ask-discovery-copy">
           <html:span class="zai-quick-ask-discovery-title"
-            >Quick Ask 临时问答</html:span
+             data-zai-l10n="Quick Ask">Quick Ask 临时问答</html:span
           >
           <html:span class="zai-quick-ask-discovery-desc"
-            >在 Zotero
+             data-zai-l10n="Open quickly from any Zotero page. Choose an account, model, and reasoning level in the window; your last selection is remembered.">在 Zotero
             任意页面快速打开；窗口内可选择账号、模型和思考强度，并自动记住上次选择。</html:span
           >
         </html:div>
         <html:label class="zai-quick-ask-key-field" for="zai-quick-ask-key">
-          快捷键
-          <html:input id="zai-quick-ask-key" type="text" placeholder="Alt+Q" />
+          <html:span data-zai-l10n="Shortcut">快捷键</html:span>
+          <html:input id="zai-quick-ask-key" type="text" placeholder="Alt+Q" data-zai-l10n-placeholder="Alt+Q" />
         </html:label>
       </html:div>
       <html:div class="zai-pref-grid">
         <html:div class="zai-pref-subtitle zai-grid-section"
-          >默认翻译模型</html:div
+           data-zai-l10n="Default translation model">默认翻译模型</html:div
         >
-        <html:p class="zai-translate-model-scope">
+        <html:p class="zai-translate-model-scope" data-zai-l10n="Immersive reading always uses this selection. Full-text translation inherits it the first time, then remembers its own choice.">
           沉浸阅读始终使用这里的选择；全文翻译首次使用时从这里继承，之后在全文翻译窗口中独立记忆。
         </html:p>
-        <html:label for="zai-translate-preset">配置</html:label>
+        <html:label for="zai-translate-preset" data-zai-l10n="Account">配置</html:label>
         <html:select id="zai-translate-preset"></html:select>
-        <html:label for="zai-translate-model">模型</html:label>
+        <html:label for="zai-translate-model" data-zai-l10n="Model">模型</html:label>
         <html:select id="zai-translate-model"></html:select>
-        <html:label for="zai-translate-thinking">思考程度</html:label>
+        <html:label for="zai-translate-thinking" data-zai-l10n="Reasoning level">思考程度</html:label>
         <html:select id="zai-translate-thinking">
-          <html:option value="off">关闭 - 不思考，最快最省 token</html:option>
-          <html:option value="low">Low - 省 token，推荐翻译使用</html:option>
-          <html:option value="medium">Medium - 平衡</html:option>
-          <html:option value="high">High - 更强推理</html:option>
-          <html:option value="xhigh">Extra high - 最强推理</html:option>
+          <html:option value="off" data-zai-l10n="Off - No reasoning; fastest and lowest token use">关闭 - 不思考，最快最省 token</html:option>
+          <html:option value="low" data-zai-l10n="Low - Saves tokens; recommended for translation">Low - 省 token，推荐翻译使用</html:option>
+          <html:option value="medium" data-zai-l10n="Medium - Balanced">Medium - 平衡</html:option>
+          <html:option value="high" data-zai-l10n="High - Deeper reasoning">High - 更强推理</html:option>
+          <html:option value="xhigh" data-zai-l10n="Extra high - Strongest reasoning">Extra high - 最强推理</html:option>
         </html:select>
-        <html:div class="zai-pref-subtitle zai-grid-section">翻译呈现</html:div>
-        <html:label for="zai-translate-position">结果位置</html:label>
+        <html:div class="zai-pref-subtitle zai-grid-section" data-zai-l10n="Translation display">翻译呈现</html:div>
+        <html:label for="zai-translate-position" data-zai-l10n="Result position">结果位置</html:label>
         <html:select id="zai-translate-position">
-          <html:option value="above">句上方</html:option>
-          <html:option value="below">句下方</html:option>
+          <html:option value="above" data-zai-l10n="Above sentence">句上方</html:option>
+          <html:option value="below" data-zai-l10n="Below sentence">句下方</html:option>
         </html:select>
-        <html:label for="zai-translate-size">翻译框大小</html:label>
+        <html:label for="zai-translate-size" data-zai-l10n="Translation card size">翻译框大小</html:label>
         <html:select id="zai-translate-size">
-          <html:option value="compact">紧凑（固定小框）</html:option>
-          <html:option value="adaptive">自适应（尽量展开）</html:option>
+          <html:option value="compact" data-zai-l10n="Compact (fixed small card)">紧凑（固定小框）</html:option>
+          <html:option value="adaptive" data-zai-l10n="Adaptive (expand when possible)">自适应（尽量展开）</html:option>
         </html:select>
       </html:div>
 
-      <html:div class="zai-pref-subtitle zai-card-section">阅读行为</html:div>
+      <html:div class="zai-pref-subtitle zai-card-section" data-zai-l10n="Reading behavior">阅读行为</html:div>
       <html:label class="zai-pref-checkbox-row zai-setting-row">
         <html:input id="zai-immersive-card-mode" type="checkbox" />
         <html:span class="zai-setting-copy">
           <html:span class="zai-pref-checkbox-label"
-            >单击直接打开翻译卡</html:span
+             data-zai-l10n="Single-click opens the translation card">单击直接打开翻译卡</html:span
           >
           <html:span class="zai-setting-desc"
-            >关闭时先显示操作选择条。</html:span
+             data-zai-l10n="When off, show the action chooser first.">关闭时先显示操作选择条。</html:span
           >
         </html:span>
       </html:label>
@@ -541,24 +541,24 @@
         <html:input id="zai-immersive-neighbor-context" type="checkbox" />
         <html:span class="zai-setting-copy">
           <html:span class="zai-pref-checkbox-label"
-            >翻译时结合上下句</html:span
+             data-zai-l10n="Include neighboring sentences">翻译时结合上下句</html:span
           >
           <html:span class="zai-setting-desc"
-            >附带前后各一句作为上下文，默认关闭。</html:span
+             data-zai-l10n="Include one sentence before and after as context. Off by default.">附带前后各一句作为上下文，默认关闭。</html:span
           >
         </html:span>
       </html:label>
       <html:label class="zai-pref-checkbox-row zai-setting-row">
         <html:input id="zai-immersive-term-pairs" type="checkbox" />
         <html:span class="zai-setting-copy">
-          <html:span class="zai-pref-checkbox-label">显示重点词对应</html:span>
+          <html:span class="zai-pref-checkbox-label" data-zai-l10n="Show keyword matches">显示重点词对应</html:span>
           <html:span class="zai-setting-desc"
-            >原文与译文中的对应词可悬停联动，默认关闭。</html:span
+             data-zai-l10n="Hover over matching words in the source and translation to link them. Off by default.">原文与译文中的对应词可悬停联动，默认关闭。</html:span
           >
         </html:span>
       </html:label>
       <html:div class="zai-pref-grid">
-        <html:label for="zai-immersive-keyword-count">每句重点词数</html:label>
+        <html:label for="zai-immersive-keyword-count" data-zai-l10n="Keywords per sentence">每句重点词数</html:label>
         <html:input
           id="zai-immersive-keyword-count"
           class="zai-number-input"
@@ -566,47 +566,47 @@
           min="1"
           max="6"
           step="1"
-          placeholder="默认 3"
+          placeholder="默认 3" data-zai-l10n-placeholder="Default: 3"
         />
       </html:div>
       <html:details class="zai-inline-details">
-        <html:summary>快捷键（6 项）</html:summary>
+        <html:summary data-zai-l10n="Shortcuts (6)">快捷键（6 项）</html:summary>
         <html:div class="zai-pref-grid">
-          <html:label for="zai-immersive-mode-key">开启/关闭沉浸</html:label>
+          <html:label for="zai-immersive-mode-key" data-zai-l10n="Toggle immersive reading">开启/关闭沉浸</html:label>
           <html:input
             id="zai-immersive-mode-key"
             type="text"
-            placeholder="Alt+T 或 Ctrl+Alt+M"
+            placeholder="Alt+T 或 Ctrl+Alt+M" data-zai-l10n-placeholder="Alt+T or Ctrl+Alt+M"
           />
-          <html:label for="zai-immersive-next-key">下一句</html:label>
+          <html:label for="zai-immersive-next-key" data-zai-l10n="Next sentence">下一句</html:label>
           <html:input
             id="zai-immersive-next-key"
             type="text"
-            placeholder="Enter、ArrowDown 或 j"
+            placeholder="Enter、ArrowDown 或 j" data-zai-l10n-placeholder="Enter, ArrowDown, or j"
           />
-          <html:label for="zai-immersive-prev-key">上一句</html:label>
+          <html:label for="zai-immersive-prev-key" data-zai-l10n="Previous sentence">上一句</html:label>
           <html:input
             id="zai-immersive-prev-key"
             type="text"
-            placeholder="Shift+Enter、ArrowUp 或 k"
+            placeholder="Shift+Enter、ArrowUp 或 k" data-zai-l10n-placeholder="Shift+Enter, ArrowUp, or k"
           />
-          <html:label for="zai-immersive-quick-key">翻译选区</html:label>
+          <html:label for="zai-immersive-quick-key" data-zai-l10n="Translate selection">翻译选区</html:label>
           <html:input
             id="zai-immersive-quick-key"
             type="text"
-            placeholder="Space、t 或 Alt+Space"
+            placeholder="Space、t 或 Alt+Space" data-zai-l10n-placeholder="Space, t, or Alt+Space"
           />
-          <html:label for="zai-immersive-focus-ask-key">聚焦追问框</html:label>
+          <html:label for="zai-immersive-focus-ask-key" data-zai-l10n="Focus follow-up field">聚焦追问框</html:label>
           <html:input
             id="zai-immersive-focus-ask-key"
             type="text"
-            placeholder="/、i 或 Tab"
+            placeholder="/、i 或 Tab" data-zai-l10n-placeholder="/, i, or Tab"
           />
-          <html:label for="zai-immersive-toggle-key">收起工具栏</html:label>
+          <html:label for="zai-immersive-toggle-key" data-zai-l10n="Collapse toolbar">收起工具栏</html:label>
           <html:input
             id="zai-immersive-toggle-key"
             type="text"
-            placeholder="h、\ 或 Alt+h"
+            placeholder="h、\ 或 Alt+h" data-zai-l10n-placeholder="h, \ or Alt+h"
           />
         </html:div>
       </html:details>
@@ -617,23 +617,23 @@
         aria-hidden="true"
       >
         <html:select id="zai-translate-context">
-          <html:option value="none">仅本句</html:option>
-          <html:option value="paragraph">本段</html:option>
-          <html:option value="page">整页</html:option>
+          <html:option value="none" data-zai-l10n="This sentence only">仅本句</html:option>
+          <html:option value="paragraph" data-zai-l10n="This paragraph">本段</html:option>
+          <html:option value="page" data-zai-l10n="Entire page">整页</html:option>
         </html:select>
         <html:select id="zai-translate-trigger">
-          <html:option value="single">单击翻译</html:option>
-          <html:option value="double">双击翻译</html:option>
+          <html:option value="single" data-zai-l10n="Single-click to translate">单击翻译</html:option>
+          <html:option value="double" data-zai-l10n="Double-click to translate">双击翻译</html:option>
         </html:select>
         <html:input
           id="zai-translate-next-key"
           type="text"
-          placeholder="例如：Enter 或 Alt+N"
+          placeholder="例如：Enter 或 Alt+N" data-zai-l10n-placeholder="For example: Enter or Alt+N"
         />
         <html:input
           id="zai-translate-prev-key"
           type="text"
-          placeholder="例如：Shift+Enter 或 Alt+P"
+          placeholder="例如：Shift+Enter 或 Alt+P" data-zai-l10n-placeholder="For example: Shift+Enter or Alt+P"
         />
       </html:div>
       <html:div class="zai-pref-actions">
@@ -645,52 +645,60 @@
     </html:div>
 
     <html:div class="zai-pref-card" data-save-section="prompts">
-      <html:div class="zai-pref-title">快捷提示词</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-title" data-zai-l10n="Quick prompts">快捷提示词</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Edit built-in prompts or add custom buttons. Submit changes using the save bar above.">
         编辑内置提示词或新增自定义按钮；修改后通过顶部保存栏统一提交。
       </html:p>
       <html:div id="zai-built-in-prompts"></html:div>
-      <html:div class="zai-pref-subtitle zai-card-section">自定义按钮</html:div>
+      <html:div class="zai-pref-subtitle zai-card-section" data-zai-l10n="Custom buttons">自定义按钮</html:div>
       <html:div id="zai-custom-prompts" class="zai-list"></html:div>
       <html:div class="zai-pref-actions">
         <html:button id="zai-custom-prompt-add" type="button"
-          >+ 新增按钮</html:button
+           data-zai-l10n="+ Add button">+ 新增按钮</html:button
         >
         <html:button
           id="zai-prompt-reset"
           class="zai-action-separated"
           type="button"
-          >恢复全部内置默认</html:button
+           data-zai-l10n="Restore all built-in defaults">恢复全部内置默认</html:button
         >
         <html:span id="zai-prompt-status" class="zai-pref-status"></html:span>
       </html:div>
     </html:div>
 
     <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">显示设置</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-title" data-zai-l10n="Display settings">显示设置</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Set message names, avatars, and action buttons. Avatars can be emoji, short text, or an image URL/data URI. Changes save automatically.">
         配置消息昵称、头像和消息按钮。头像可以填写 emoji、短文本，或图片 URL /
         data:image；修改后自动保存。
       </html:p>
       <html:div class="zai-pref-grid">
-        <html:div class="zai-pref-subtitle zai-grid-section">身份显示</html:div>
-        <html:label for="zai-ui-user-label">我的昵称</html:label>
+        <html:label for="zai-ui-language" data-zai-l10n="Interface language">界面语言</html:label>
+        <html:select id="zai-ui-language">
+          <html:option value="auto" data-zai-l10n="Follow system language">跟随系统语言</html:option>
+          <html:option value="zh-CN" data-zai-l10n="中文">中文</html:option>
+          <html:option value="en-US" data-zai-l10n="English">English</html:option>
+        </html:select>
+      </html:div>
+      <html:div class="zai-pref-grid">
+        <html:div class="zai-pref-subtitle zai-grid-section" data-zai-l10n="Identity">身份显示</html:div>
+        <html:label for="zai-ui-user-label" data-zai-l10n="My name">我的昵称</html:label>
         <html:input id="zai-ui-user-label" type="text" />
-        <html:label for="zai-ui-user-avatar">我的头像</html:label>
+        <html:label for="zai-ui-user-avatar" data-zai-l10n="My avatar">我的头像</html:label>
         <html:input
           id="zai-ui-user-avatar"
           type="text"
-          placeholder="例如：🙂 或 https://.../avatar.png"
+          placeholder="例如：🙂 或 https://.../avatar.png" data-zai-l10n-placeholder="For example: 🙂 or https://.../avatar.png"
         />
-        <html:label for="zai-ui-assistant-label">AI 昵称</html:label>
+        <html:label for="zai-ui-assistant-label" data-zai-l10n="AI name">AI 昵称</html:label>
         <html:input id="zai-ui-assistant-label" type="text" />
-        <html:label for="zai-ui-assistant-avatar">AI 头像</html:label>
+        <html:label for="zai-ui-assistant-avatar" data-zai-l10n="AI avatar">AI 头像</html:label>
         <html:input
           id="zai-ui-assistant-avatar"
           type="text"
-          placeholder="例如：🤖 或 data:image/png;base64,..."
+          placeholder="例如：🤖 或 data:image/png;base64,..." data-zai-l10n-placeholder="For example: 🤖 or data:image/png;base64,..."
         />
-        <html:label>AI 个性签名</html:label>
+        <html:label data-zai-l10n="AI signature">AI 个性签名</html:label>
         <html:div class="zai-signature-setting">
           <html:div class="zai-signature-editor">
             <html:div
@@ -699,7 +707,7 @@
             ></html:div>
             <html:div class="zai-signature-editor-footer">
               <html:button id="zai-ui-signature-add" type="button"
-                >＋ 添加签名</html:button
+                 data-zai-l10n="+ Add signature">＋ 添加签名</html:button
               >
               <html:span
                 id="zai-ui-signature-count"
@@ -707,7 +715,7 @@
               ></html:span>
             </html:div>
           </html:div>
-          <html:p class="zai-signature-help">
+          <html:p class="zai-signature-help" data-zai-l10n="Each signature appears on its own line (up to 80 characters) and can be reordered. Legacy semicolon-separated text is split automatically.">
             每条签名单独显示一行，最多 80 个字符；可调整顺序。旧版分号内容会自动拆分。
           </html:p>
           <html:label
@@ -715,51 +723,51 @@
           >
             <html:input id="zai-ui-signature-enabled" type="checkbox" />
             <html:span class="zai-pref-checkbox-label"
-              >在空对话中显示 AI 个性签名</html:span
+               data-zai-l10n="Show the AI signature in empty conversations">在空对话中显示 AI 个性签名</html:span
             >
           </html:label>
         </html:div>
-        <html:div class="zai-pref-subtitle zai-grid-section">消息界面</html:div>
-        <html:label for="zai-ui-chat-font">聊天字体</html:label>
+        <html:div class="zai-pref-subtitle zai-grid-section" data-zai-l10n="Chat interface">消息界面</html:div>
+        <html:label for="zai-ui-chat-font" data-zai-l10n="Chat font">聊天字体</html:label>
         <html:input
           id="zai-ui-chat-font"
           type="text"
-          placeholder="留空用默认；例如：LXGW WenKai, Noto Serif CJK SC, serif"
+          placeholder="留空用默认；例如：LXGW WenKai, Noto Serif CJK SC, serif" data-zai-l10n-placeholder="Leave blank for default; e.g. LXGW WenKai, Noto Serif CJK SC, serif"
         />
-        <html:label for="zai-ui-chat-layout">对话排版</html:label>
+        <html:label for="zai-ui-chat-layout" data-zai-l10n="Chat layout">对话排版</html:label>
         <html:select id="zai-ui-chat-layout">
-          <html:option value="classic">原始排版（默认）</html:option>
-          <html:option value="compact">专注模式</html:option>
+          <html:option value="classic" data-zai-l10n="Classic (default)">原始排版（默认）</html:option>
+          <html:option value="compact" data-zai-l10n="Focus mode">专注模式</html:option>
         </html:select>
-        <html:label for="zai-ui-sidebar-display">侧栏显示方式</html:label>
+        <html:label for="zai-ui-sidebar-display" data-zai-l10n="Sidebar display">侧栏显示方式</html:label>
         <html:select id="zai-ui-sidebar-display">
-          <html:option value="embedded">阅读器侧栏（默认）</html:option>
-          <html:option value="docked">右侧并排（同一主窗口）</html:option>
+          <html:option value="embedded" data-zai-l10n="Reader sidebar (default)">阅读器侧栏（默认）</html:option>
+          <html:option value="docked" data-zai-l10n="Side by side on the right (same window)">右侧并排（同一主窗口）</html:option>
         </html:select>
-        <html:label for="zai-ui-actions-position">消息按钮位置</html:label>
+        <html:label for="zai-ui-actions-position" data-zai-l10n="Message action position">消息按钮位置</html:label>
         <html:select id="zai-ui-actions-position">
-          <html:option value="top-right">右上角</html:option>
-          <html:option value="bottom-right">右下角</html:option>
+          <html:option value="top-right" data-zai-l10n="Top right">右上角</html:option>
+          <html:option value="bottom-right" data-zai-l10n="Bottom right">右下角</html:option>
         </html:select>
-        <html:label for="zai-ui-actions-layout">消息按钮样式</html:label>
+        <html:label for="zai-ui-actions-layout" data-zai-l10n="Message action style">消息按钮样式</html:label>
         <html:select id="zai-ui-actions-layout">
-          <html:option value="edge">边缘浮层</html:option>
-          <html:option value="inside">气泡里</html:option>
+          <html:option value="edge" data-zai-l10n="Floating at edge">边缘浮层</html:option>
+          <html:option value="inside" data-zai-l10n="Inside message bubble">气泡里</html:option>
         </html:select>
       </html:div>
       <html:label class="zai-pref-checkbox-row">
         <html:input id="zai-ui-composer-queue" type="checkbox" />
         <html:span class="zai-pref-checkbox-label"
-          >回复进行中允许排队新消息</html:span
+           data-zai-l10n="Queue new messages while a reply is in progress">回复进行中允许排队新消息</html:span
         >
       </html:label>
-      <html:p class="zai-pref-help">
+      <html:p class="zai-pref-help" data-zai-l10n="When enabled, submit messages while the AI is replying. They run in order after the current reply; PDF selections are captured when queued.">
         开启后可在 AI 回答时插队新消息，当前回复结束后按提交顺序逐条执行；PDF
         选区以入队时为准。
       </html:p>
       <html:div class="zai-pref-grid">
         <html:label for="zai-ui-max-parallel-conversations"
-          >同时回答的对话数</html:label
+           data-zai-l10n="Maximum simultaneous conversations">同时回答的对话数</html:label
         >
         <html:input
           id="zai-ui-max-parallel-conversations"
@@ -769,7 +777,7 @@
           step="1"
         />
       </html:div>
-      <html:p class="zai-pref-help">
+      <html:p class="zai-pref-help" data-zai-l10n="Default: 2. Separate conversations can run in parallel; messages in one conversation stay in order.">
         默认 2。不同对话可并行回答；同一对话中的消息始终按顺序执行。
       </html:p>
       <html:label class="zai-pref-checkbox-row">
@@ -778,10 +786,10 @@
           type="checkbox"
         />
         <html:span class="zai-pref-checkbox-label"
-          >删除对话前显示确认</html:span
+           data-zai-l10n="Confirm before deleting a conversation">删除对话前显示确认</html:span
         >
       </html:label>
-      <html:p class="zai-pref-help">
+      <html:p class="zai-pref-help" data-zai-l10n="When off, clicking delete removes non-default conversations immediately. The default “Conversation 1” cannot be deleted.">
         关闭后，点击非默认对话的删除按钮会立即删除；默认“对话 1”始终不可删除。
       </html:p>
       <html:div class="zai-pref-actions">
@@ -789,10 +797,10 @@
       </html:div>
     </html:div>
 
-    <html:div class="zai-page-section-title">PDF 工具</html:div>
+    <html:div class="zai-page-section-title" data-zai-l10n="PDF tools">PDF 工具</html:div>
     <html:div class="zai-pref-card">
-      <html:div class="zai-pref-subtitle">注释颜色</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-subtitle" data-zai-l10n="Annotation colors">注释颜色</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Set the colors used for AI-written PDF annotations. Changes save automatically; do not repeat these rules in prompts.">
         设置 AI 写入 PDF
         注释时使用的颜色规则；修改后自动保存，请勿在提示词中重复定义。
       </html:p>
@@ -803,18 +811,18 @@
       ></html:textarea>
       <html:div class="zai-pref-actions zai-actions-end">
         <html:button id="zai-tool-reset-color-guide" type="button"
-          >恢复默认颜色预设</html:button
+           data-zai-l10n="Restore default color presets">恢复默认颜色预设</html:button
         >
         <html:span id="zai-color-status" class="zai-pref-status"></html:span>
       </html:div>
 
-      <html:div class="zai-pref-subtitle zai-card-section">新增文字</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-subtitle zai-card-section" data-zai-l10n="Add text">新增文字</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Set the default font size for “🅣 Add text” (8–48 PDF points). Changes save automatically.">
         设置「🅣 新增文字」的默认字号，范围 8–48 PDF 点；修改后自动保存。
       </html:p>
       <html:div class="zai-pref-grid">
         <html:label for="zai-tool-text-annotation-font-size"
-          >默认字号（pt）</html:label
+           data-zai-l10n="Default font size (pt)">默认字号（pt）</html:label
         >
         <html:input
           id="zai-tool-text-annotation-font-size"
@@ -833,19 +841,19 @@
       </html:div>
     </html:div>
 
-    <html:div class="zai-page-section-title">扩展能力</html:div>
+    <html:div class="zai-page-section-title" data-zai-l10n="Extensions">扩展能力</html:div>
     <html:div class="zai-pref-card" data-save-section="mcp">
-      <html:div class="zai-pref-title">联网与 MCP</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-title" data-zai-l10n="Web and MCP">联网与 MCP</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Web search mode saves automatically. Submit MCP server changes using the save bar above.">
         Web search 模式自动保存；MCP Server 修改后通过顶部保存栏提交。
       </html:p>
       <html:div class="zai-pref-grid">
-        <html:label for="zai-tool-web-search">Web search 模式</html:label>
+        <html:label for="zai-tool-web-search" data-zai-l10n="Web search mode">Web search 模式</html:label>
         <html:select id="zai-tool-web-search">
-          <html:option value="disabled">关闭</html:option>
-          <html:option value="cached">Cached - OpenAI 托管搜索</html:option>
+          <html:option value="disabled" data-zai-l10n="Off">关闭</html:option>
+          <html:option value="cached" data-zai-l10n="Cached - OpenAI hosted search">Cached - OpenAI 托管搜索</html:option>
           <html:option value="live"
-            >Live - OpenAI 托管搜索，高上下文</html:option
+             data-zai-l10n="Live - OpenAI hosted search, larger context">Live - OpenAI 托管搜索，高上下文</html:option
           >
         </html:select>
       </html:div>
@@ -859,15 +867,15 @@
       </html:div>
     </html:div>
 
-    <html:div class="zai-page-section-title">数据管理</html:div>
+    <html:div class="zai-page-section-title" data-zai-l10n="Data management">数据管理</html:div>
     <html:div class="zai-pref-card" data-save-section="sync">
-      <html:div class="zai-pref-title">云同步（WebDAV）</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-title" data-zai-l10n="Cloud sync (WebDAV)">云同步（WebDAV）</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Sync AI Sidebar accounts, prompts, interface settings, and conversation cache across devices.">
         在多台设备间同步 AI Sidebar 的账号、提示词、界面设置和对话缓存。
       </html:p>
       <html:details class="zai-sync-scope">
-        <html:summary class="zai-pref-subtitle">同步内容说明</html:summary>
-        <html:p class="zai-pref-help">
+        <html:summary class="zai-pref-subtitle" data-zai-l10n="What gets synced">同步内容说明</html:summary>
+        <html:p class="zai-pref-help" data-zai-l10n="Web/MCP and translation/reading settings are included. Zotero continues to sync PDF files and metadata. Auto-sync is off by default; when enabled, it runs at startup and every 10 minutes.">
           还包括联网/MCP 和翻译与阅读设置。论文 PDF 和元数据继续使用 Zotero
           自带同步；自动同步默认关闭，开启后会在启动时及每 10 分钟运行。
         </html:p>
@@ -878,31 +886,31 @@
           id="zai-sync-url"
           type="text"
           value="https://dav.jianguoyun.com/dav/"
-          placeholder="例如：https://dav.jianguoyun.com/dav/"
+          placeholder="例如：https://dav.jianguoyun.com/dav/" data-zai-l10n-placeholder="For example: https://dav.jianguoyun.com/dav/"
         />
-        <html:label for="zai-sync-username">用户名</html:label>
+        <html:label for="zai-sync-username" data-zai-l10n="Username">用户名</html:label>
         <html:input
           id="zai-sync-username"
           type="text"
-          placeholder="坚果云：你的注册邮箱"
+          placeholder="坚果云：你的注册邮箱" data-zai-l10n-placeholder="Nutstore: your registered email"
         />
-        <html:label for="zai-sync-password">密码 / 应用密码</html:label>
+        <html:label for="zai-sync-password" data-zai-l10n="Password / app password">密码 / 应用密码</html:label>
         <html:input
           id="zai-sync-password"
           type="password"
-          placeholder="坚果云需在网页端「安全选项」生成应用密码"
+          placeholder="坚果云需在网页端「安全选项」生成应用密码" data-zai-l10n-placeholder="Create an app password under “Security options” on the Nutstore website"
         />
         <html:details class="zai-sync-guide">
-          <html:summary>如何获取坚果云邮箱和应用密码？</html:summary>
+          <html:summary data-zai-l10n="How do I find my Nutstore email and app password?">如何获取坚果云邮箱和应用密码？</html:summary>
           <html:ol>
-            <html:li>登录坚果云网页版，进入“账户信息 → 安全选项”。</html:li>
-            <html:li>用户名填写坚果云注册邮箱。</html:li>
+            <html:li data-zai-l10n="Sign in to Nutstore on the web and open “Account information → Security options”.">登录坚果云网页版，进入“账户信息 → 安全选项”。</html:li>
+            <html:li data-zai-l10n="Enter your Nutstore registration email as the username.">用户名填写坚果云注册邮箱。</html:li>
             <html:li
-              >在“第三方应用管理”中添加应用密码，名称可填写“Zotero AI
+               data-zai-l10n="Add an app password under “Third-party app management”. You can name it “Zotero AI Sidebar”; enter it in the password field above.">在“第三方应用管理”中添加应用密码，名称可填写“Zotero AI
               Sidebar”，生成后填入上方密码框。</html:li
             >
           </html:ol>
-          <html:p class="zai-sync-guide-note">
+          <html:p class="zai-sync-guide-note" data-zai-l10n="Use the newly generated app password, not your Nutstore login password. Delete and regenerate it immediately if it is exposed.">
             请使用新生成的应用密码，不要填写坚果云登录密码。应用密码泄露后应立即删除并重新生成。
           </html:p>
           <html:a
@@ -910,10 +918,10 @@
             href="https://help.jianguoyun.com/?p=2064"
             target="_blank"
             rel="noreferrer"
-            >查看坚果云官方 WebDAV 教程</html:a
+             data-zai-l10n="View Nutstore’s official WebDAV guide">查看坚果云官方 WebDAV 教程</html:a
           >
         </html:details>
-        <html:label for="zai-sync-folder">云端目录</html:label>
+        <html:label for="zai-sync-folder" data-zai-l10n="Remote folder">云端目录</html:label>
         <html:input
           id="zai-sync-folder"
           type="text"
@@ -922,16 +930,16 @@
         />
       </html:div>
       <html:div class="zai-pref-actions">
-        <html:button id="zai-sync-test" type="button">测试连接</html:button>
-        <html:button id="zai-sync-push" type="button">上传到云端</html:button>
-        <html:button id="zai-sync-pull" type="button">从云端下载</html:button>
+        <html:button id="zai-sync-test" type="button" data-zai-l10n="Test connection">测试连接</html:button>
+        <html:button id="zai-sync-push" type="button" data-zai-l10n="Upload to cloud">上传到云端</html:button>
+        <html:button id="zai-sync-pull" type="button" data-zai-l10n="Download from cloud">从云端下载</html:button>
         <html:span id="zai-sync-status" class="zai-pref-status"></html:span>
       </html:div>
       <html:div class="zai-sync-mode">
         <html:div class="zai-sync-mode-text">
-          <html:div class="zai-sync-mode-title">自动同步</html:div>
+          <html:div class="zai-sync-mode-title" data-zai-l10n="Auto-sync">自动同步</html:div>
           <html:div class="zai-sync-mode-desc"
-            >默认关闭。开启后启动时和每 10
+             data-zai-l10n="Off by default. When enabled, downloads and merges at startup and every 10 minutes, then uploads to the cloud.">默认关闭。开启后启动时和每 10
             分钟自动下载合并，再上传到云端。</html:div
           >
         </html:div>
@@ -942,30 +950,30 @@
           aria-pressed="false"
           data-enabled="false"
         >
-          <html:span class="zai-switch-label">关闭</html:span></html:button
+          <html:span class="zai-switch-label" data-zai-l10n="Off">关闭</html:span></html:button
         >
       </html:div>
       <html:p id="zai-sync-meta" class="zai-pref-help"> </html:p>
     </html:div>
 
     <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title">配置备份</html:div>
-      <html:p class="zai-pref-help">
+      <html:div class="zai-pref-title" data-zai-l10n="Configuration backup">配置备份</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Back up or restore accounts, quick prompts, web/MCP, and translation/reading settings. Backups may contain API keys; store them somewhere trusted.">
         备份/恢复账号、快捷提示词、联网/MCP 和翻译与阅读配置。备份文件可能包含
         API Key，请保存在可信位置。
       </html:p>
       <html:div class="zai-pref-actions">
         <html:button id="zai-config-export-file" type="button"
-          >导出配置文件</html:button
+           data-zai-l10n="Export configuration file">导出配置文件</html:button
         >
         <html:button id="zai-config-import-file" type="button"
-          >导入配置文件</html:button
+           data-zai-l10n="Import configuration file">导入配置文件</html:button
         >
         <html:span id="zai-config-status" class="zai-pref-status"></html:span>
       </html:div>
       <html:details class="zai-inline-details">
-        <html:summary class="zai-pref-subtitle">手动备份/恢复</html:summary>
-        <html:p class="zai-pref-help">
+        <html:summary class="zai-pref-subtitle" data-zai-l10n="Manual backup/restore">手动备份/恢复</html:summary>
+        <html:p class="zai-pref-help" data-zai-l10n="Use this to copy, inspect, or paste configuration JSON manually. It may contain API keys; do not share it publicly.">
           用于手动复制、检查或粘贴配置 JSON。内容可能包含 API
           Key，请勿公开分享。
         </html:p>
@@ -976,15 +984,15 @@
         ></html:textarea>
         <html:div class="zai-pref-actions">
           <html:button id="zai-config-generate" type="button"
-            >生成配置 JSON</html:button
+             data-zai-l10n="Generate configuration JSON">生成配置 JSON</html:button
           >
           <html:button id="zai-config-copy" type="button"
-            >复制配置 JSON</html:button
+             data-zai-l10n="Copy configuration JSON">复制配置 JSON</html:button
           >
           <html:button id="zai-config-import-text" type="button"
-            >从文本导入</html:button
+             data-zai-l10n="Import from text">从文本导入</html:button
           >
-          <html:button id="zai-config-clear" type="button">清空</html:button>
+          <html:button id="zai-config-clear" type="button" data-zai-l10n="Clear">清空</html:button>
         </html:div>
       </html:details>
     </html:div>

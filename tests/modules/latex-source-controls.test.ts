@@ -1,3 +1,4 @@
+import { beforeEach as localeBeforeEach, afterEach as localeAfterEach, vi as localeVi } from "vitest";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readSystemProxyPort } from "../../src/context/latex-download";
 import { renderLatexSourceControls } from "../../src/modules/latex-source-controls";
@@ -177,3 +178,14 @@ describe("LaTeX proxy controls", () => {
     expect(loadLatexProxy(zoteroPrefs()).mode).toBe("system");
   });
 });
+
+// These regression cases exercise the existing Chinese interface.
+localeBeforeEach(() => {
+  localeVi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: ["zh-CN"] }),
+    },
+  });
+  localeVi.stubGlobal("Ci", { mozIOSPreferences: {} });
+});
+localeAfterEach(() => localeVi.unstubAllGlobals());

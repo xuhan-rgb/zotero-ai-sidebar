@@ -4,6 +4,7 @@ import {
 } from "./composer-state";
 import { buttonEl, el } from "./dom-utils";
 import { appendLocalPath } from "../utils/local-path";
+import { uiText } from "../utils/ui-locale";
 
 const IMAGE_PROMPT_MAX_DIMENSION = 2048;
 
@@ -51,11 +52,11 @@ export function renderImageAttachButton<TState extends DraftImageState>(
   fileInput.multiple = true;
   fileInput.className = "image-attach-input";
 
-  const button = buttonEl(doc, "图片");
+  const button = buttonEl(doc, uiText("图片", "Images"));
   button.type = "button";
   button.className = "image-attach-btn";
   button.disabled = !deps.selectedChatPreset(state);
-  button.title = "系统截图后可直接 Ctrl+V 粘贴；也可以点击选择图片文件";
+  button.title = uiText("系统截图后可直接 Ctrl+V 粘贴；也可以点击选择图片文件", "Paste a system screenshot with Ctrl+V, or click to select image files");
   button.addEventListener("click", () => {
     fileInput.click();
   });
@@ -83,12 +84,12 @@ export function renderScreenshotAttachButton<TState extends DraftImageState>(
   status: HTMLElement,
   deps: ComposerImageButtonDeps<TState>,
 ): HTMLElement {
-  const button = buttonEl(doc, "截图");
+  const button = buttonEl(doc, uiText("截图", "Screenshot"));
   button.type = "button";
   button.className = "screenshot-attach-btn";
   button.disabled = !deps.selectedChatPreset(state);
   button.title =
-    "选择屏幕/窗口截图；如果系统不支持，请用系统截图后 Ctrl+V 粘贴";
+    uiText("选择屏幕/窗口截图；如果系统不支持，请用系统截图后 Ctrl+V 粘贴", "Capture a screen or window; if unavailable, paste a system screenshot with Ctrl+V");
   button.addEventListener("click", () => {
     void attachScreenshotImage(
       doc,
@@ -113,13 +114,13 @@ async function attachScreenshotImage<TState extends DraftImageState>(
   deps: ComposerImageRenderDeps<TState>,
 ) {
   captureDraftFromInput(input, state);
-  setComposerTransientStatus(status, "请拖拽框选要截图的区域…");
+  setComposerTransientStatus(status, uiText("请拖拽框选要截图的区域…", "Drag to select the screenshot area…"));
   const file = await captureScreenImage(doc);
   if (!file) {
     input.focus();
     setComposerTransientStatus(
       status,
-      "当前环境不能直接截图；请用系统截图复制后 Ctrl+V 粘贴",
+      uiText("当前环境不能直接截图；请用系统截图复制后 Ctrl+V 粘贴", "Screen capture is unavailable; copy a system screenshot and paste it with Ctrl+V"),
     );
     return;
   }
@@ -155,7 +156,7 @@ export function renderDraftImages<TState extends DraftImageState>(
     const label = el(doc, "span", "draft-image-label", image.marker);
     label.title = image.name;
     const remove = buttonEl(doc, "×");
-    remove.title = "移除截图";
+    remove.title = uiText("移除截图", "Remove image");
     remove.addEventListener("click", () => {
       deps.unmarkReference?.(image);
       removeDraftImage(state, input, image);

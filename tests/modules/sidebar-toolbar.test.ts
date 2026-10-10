@@ -147,7 +147,7 @@ describe("AI dialog toolbar", () => {
       "controls.append(historyLabel, add, remove, copyAll, clear, menu)",
     );
     expect(conversationSource).toMatch(
-      /historyLabel\.prepend\(\s*el\(doc, "span", "conversation-history-label", "上下文"\)/,
+      /historyLabel\.prepend\(\s*el\(doc, "span", "conversation-history-label", uiText\("上下文", "Context"\)\)/,
     );
     expect(inputSource).toContain('"composer-attachment-menu"');
     expect(inputSource).toContain(
@@ -244,7 +244,7 @@ describe("AI dialog toolbar", () => {
   });
 
   it("offers a full-context branch action on each message", () => {
-    expect(bubbleSource).toContain('buttonEl(doc, "分支")');
+    expect(bubbleSource).toContain('buttonEl(doc, uiText("分支", "Branch"))');
     expect(bubbleSource).toContain(
       "branchConversationFromMessage(mount, state, index)",
     );
@@ -476,7 +476,7 @@ describe("AI dialog toolbar", () => {
     expect(sidebarSource).toContain("state.localUiSettings.customWebProviders");
     expect(sidebarSource).toContain("customWebProviderFor(state, provider)");
     expect(sidebarSource).toContain('option.value = "__manage_web_providers__"');
-    expect(sidebarSource).toContain('option.textContent = "＋ 管理第三方网页…"');
+    expect(sidebarSource).toContain('option.textContent = uiText("＋ 管理第三方网页…", "+ Manage custom websites…")');
     expect(sidebarSource).toMatch(
       /if \(select\.value === "__manage_web_providers__"\) \{\s*select\.value = previousProvider;\s*configureCustomWebProvider\(doc, mount, state\);\s*return;/s,
     );

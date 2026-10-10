@@ -4,8 +4,7 @@ import {
   reasoningEffortOptionsForPreset,
 } from "../settings/reasoning";
 import type { ModelPreset, ReasoningEffort } from "../settings/types";
-
-const DEFAULT_LABEL = "服务商默认（不发送推理参数）";
+import { uiText } from "../utils/ui-locale";
 
 export interface ReasoningControls {
   element: HTMLElement;
@@ -42,11 +41,17 @@ export function createReasoningControls(
       const options = reasoningEffortOptionsForPreset(modelPreset);
       const select = doc.createElement("select");
       select.dataset.model = model;
-      select.setAttribute("aria-label", `推理强度：${model}`);
+      select.setAttribute(
+        "aria-label",
+        uiText(`推理强度：${model}`, `Reasoning effort: ${model}`),
+      );
       if (options.length === 0) {
         const option = doc.createElement("option");
         option.value = "";
-        option.textContent = DEFAULT_LABEL;
+        option.textContent = uiText(
+          "服务商默认（不发送推理参数）",
+          "Provider default (no reasoning parameter sent)",
+        );
         select.append(option);
         select.disabled = true;
       } else {

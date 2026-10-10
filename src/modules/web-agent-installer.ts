@@ -1,5 +1,6 @@
 import { version as ADDON_VERSION } from "../../package.json";
 import { unzipSync } from "fflate";
+import { uiText } from "../utils/ui-locale";
 import {
   clearWebAgentConfigCache,
   readWebAgentHealth,
@@ -74,7 +75,7 @@ async function readCustomWebBrowsers(host: WebAgentInstallerHost): Promise<Custo
   const text = await readOptionalUTF8(host, nativeJoin(host.platform, host.dataDir, "zai-web-custom-browsers.json"));
   if (!text) return [];
   const entries = JSON.parse(text);
-  if (!Array.isArray(entries)) throw new Error("自定义浏览器配置格式错误");
+  if (!Array.isArray(entries)) throw new Error(uiText("自定义浏览器配置格式错误", "Invalid custom browser configuration"));
   return entries.filter(entry => /^custom-[a-z0-9-]+$/.test(entry.browser)
     && typeof entry.name === "string" && typeof entry.customPath === "string");
 }
@@ -84,8 +85,8 @@ export async function addWebAgentBrowser(
   path: string,
   host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
 ): Promise<void> {
-  if (!name.trim()) throw new Error("请填写浏览器名称");
-  if (!path.trim()) throw new Error("请选择浏览器可执行文件");
+  if (!name.trim()) throw new Error(uiText("请填写浏览器名称", "Enter a browser name"));
+  if (!path.trim()) throw new Error(uiText("请选择浏览器可执行文件", "Select the browser executable"));
   const id = `custom-${host.randomToken().replace(/[^a-z0-9]/gi, "").toLowerCase()}`;
   await selectWebAgentBrowser(id, host, path, name.trim());
 }
@@ -132,9 +133,9 @@ export async function detectWebAgentBrowser(
   host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
 ): Promise<string> {
   if (browser !== "chrome" && browser !== "edge")
-    throw new Error("自定义浏览器请使用“选择程序文件…”指定路径。");
+    throw new Error(uiText("自定义浏览器请使用“选择程序文件…”指定路径。", "For a custom browser, use Select program file… to specify its path."));
   const path = await firstExisting(host, webAgentBrowserCandidates(host, browser));
-  if (!path) throw new Error("未检测到浏览器，请使用“选择程序文件…”指定路径。");
+  if (!path) throw new Error(uiText("未检测到浏览器，请使用“选择程序文件…”指定路径。", "No browser was detected. Use Select program file… to specify its path."));
   return path;
 }
 
@@ -148,16 +149,16 @@ export async function selectWebAgentBrowser(
   const builtin = browser === "chrome" || browser === "edge";
   const entry = choices.available.find(entry => entry.browser === browser);
   if (!entry && !(customName && /^custom-[a-z0-9-]+$/.test(browser)))
-    throw new Error("浏览器配置不存在");
+    throw new Error(uiText("浏览器配置不存在", "Browser configuration does not exist"));
   const normalizedPath = customPath?.trim().replace(/^"(.*)"$/, "$1");
   if (normalizedPath && !(await host.exists(normalizedPath)))
-    throw new Error("浏览器程序路径不存在，请选择浏览器可执行文件。");
+    throw new Error(uiText("浏览器程序路径不存在，请选择浏览器可执行文件。", "The browser executable path does not exist; select a browser executable."));
   const path = normalizedPath || (customPath !== undefined
     ? (builtin ? await firstExisting(host, webAgentBrowserCandidates(host, browser)) : undefined)
     : choices.available.find((entry) => entry.browser === browser)?.path);
   if (!path)
     throw new Error(
-      `未找到 ${entry?.name ?? customName ?? browser}，请选择有效的浏览器程序路径。`,
+      uiText(`未找到 ${entry?.name ?? customName ?? browser}，请选择有效的浏览器程序路径。`, `Could not find ${entry?.name ?? customName ?? browser}; select a valid browser executable path.`),
     );
   const configPath = nativeJoin(
     host.platform,
@@ -171,11 +172,11 @@ export async function selectWebAgentBrowser(
       Object.values(health?.active ?? {}).some(Boolean) ||
       Object.values(health?.queued ?? {}).some((count) => count > 0)
     ) {
-      throw new Error("WEB 任务正在运行，请等待任务完成后再切换浏览器。");
+      throw new Error(uiText("WEB 任务正在运行，请等待任务完成后再切换浏览器。", "A WEB task is running. Wait for it to finish before switching browsers."));
     }
     if (health) {
       if (!(await host.stop(config)))
-        throw new Error("Web Agent 未能停止，浏览器设置未更改。");
+        throw new Error(uiText("Web Agent 未能停止，浏览器设置未更改。", "Web Agent could not be stopped; browser settings were not changed."));
       let stopped = false;
       for (let i = 0; i < 40; i++) {
         await host.delay(250);
@@ -184,7 +185,7 @@ export async function selectWebAgentBrowser(
           break;
         }
       }
-      if (!stopped) throw new Error("Web Agent 尚未退出，请稍后再切换浏览器。");
+      if (!stopped) throw new Error(uiText("Web Agent 尚未退出，请稍后再切换浏览器。", "Web Agent has not exited yet. Try switching browsers again later."));
     }
     const profiles = {
       ...config.browserProfiles,
@@ -376,7 +377,7 @@ export async function inspectWebAgentInstallation(
   if (!node) missing.push("Node.js 20+");
   if (!chromePath)
     missing.push(
-      browsers.available.find(entry => entry.browser === browsers.selected)?.name ?? "浏览器",
+      browsers.available.find(entry => entry.browser === browsers.selected)?.name ?? uiText("浏览器", "Browser"),
     );
   if (host.platform === "linux" && !clipboardPath) missing.push("xclip");
 
@@ -384,7 +385,10 @@ export async function inspectWebAgentInstallation(
     return {
       state: "blocked",
       action: config ? "upgrade" : "install",
-      message: `缺少系统依赖：${missing.join("、")}`,
+      message: uiText(
+        `缺少系统依赖：${missing.join("、")}`,
+        `Missing system dependencies: ${missing.join(", ")}`,
+      ),
       nodePath: node?.path,
       nodeVersion: node?.version,
       chromePath,
@@ -419,7 +423,7 @@ export async function inspectWebAgentInstallation(
       return {
         state: "ready",
         action: "none",
-        message: "Web Agent 已就绪",
+        message: uiText("Web Agent 已就绪", "Web Agent is ready"),
         nodePath: node?.path,
         nodeVersion: node?.version,
         chromePath,
@@ -435,10 +439,10 @@ export async function inspectWebAgentInstallation(
     action: config ? "upgrade" : "install",
     message:
       config && config.needsRuntimeUpdate !== false
-        ? "Web Agent 运行包与当前插件不匹配，请安装配套运行包"
+        ? uiText("Web Agent 运行包与当前插件不匹配，请安装配套运行包", "The Web Agent runtime does not match this add-on; install the matching runtime")
         : config
-          ? "Web Agent 需要检查或修复"
-          : "尚未安装 Web Agent，可以在线下载并安装",
+          ? uiText("Web Agent 需要检查或修复", "Web Agent needs to be checked or repaired")
+          : uiText("尚未安装 Web Agent，可以在线下载并安装", "Web Agent is not installed; download and install it online"),
     nodePath: node?.path,
     nodeVersion: node?.version,
     chromePath,
@@ -462,7 +466,7 @@ export async function repairWebAgentInstallation(
   } catch (error) {
     const detail = error instanceof Error ? error.message : String(error);
     throw new WebAgentRuntimeDownloadError(
-      `Web Agent 下载失败：${detail}`,
+      uiText(`Web Agent 下载失败：${detail}`, `Web Agent download failed: ${detail}`),
       release.downloadUrl,
       release.releaseUrl,
     );
@@ -500,12 +504,12 @@ async function installWebAgentRuntimeArchive(
   const previous = await readConfig(host, configPath);
   if (archiveBytes.byteLength !== release.size) {
     throw new Error(
-      `Web Agent 运行包大小不匹配：应为 ${release.size} 字节，实际为 ${archiveBytes.byteLength} 字节`,
+      uiText(`Web Agent 运行包大小不匹配：应为 ${release.size} 字节，实际为 ${archiveBytes.byteLength} 字节`, `Web Agent runtime size mismatch: expected ${release.size} bytes, received ${archiveBytes.byteLength} bytes`),
     );
   }
   const actualSha256 = await host.sha256(archiveBytes);
   if (actualSha256.toLowerCase() !== release.sha256.toLowerCase()) {
-    throw new Error("Web Agent 运行包 SHA-256 校验失败");
+    throw new Error(uiText("Web Agent 运行包 SHA-256 校验失败", "Web Agent runtime SHA-256 verification failed"));
   }
   const archive = validateRuntimeArchive(unzipSync(archiveBytes), release);
   if (report.state === "ready" && previous?.runtimeSha256 === release.sha256)
@@ -525,7 +529,7 @@ async function installWebAgentRuntimeArchive(
   if (previous && previousRunning) {
     previousStopped = await host.stop(previous).catch(() => false);
     if (!previousStopped)
-      throw new Error("旧 Web Agent 未能停止，请关闭 WEB 任务后重试升级");
+      throw new Error(uiText("旧 Web Agent 未能停止，请关闭 WEB 任务后重试升级", "The previous Web Agent could not be stopped. Close WEB tasks and retry the upgrade."));
   }
   const browser = (await getWebAgentBrowsers(host)).selected;
   const config: WebAgentConfig = {
@@ -560,7 +564,7 @@ async function installWebAgentRuntimeArchive(
 
     newRuntimeStarted = await host.start(config);
     if (!newRuntimeStarted) {
-      throw new Error("Web Agent 启动失败，请检查 Node.js 和浏览器路径");
+      throw new Error(uiText("Web Agent 启动失败，请检查 Node.js 和浏览器路径", "Web Agent failed to start. Check the Node.js and browser paths."));
     }
     for (let attempt = 0; attempt < 40; attempt += 1) {
       await refreshStartedConfig(host, configPath, config);
@@ -573,7 +577,7 @@ async function installWebAgentRuntimeArchive(
         return {
           state: "ready",
           action: "none",
-          message: "Web Agent 配套运行包已安装并通过健康检查",
+          message: uiText("Web Agent 配套运行包已安装并通过健康检查", "The matching Web Agent runtime is installed and passed its health check"),
           nodePath: report.nodePath,
           nodeVersion: report.nodeVersion,
           chromePath: report.chromePath,
@@ -584,7 +588,7 @@ async function installWebAgentRuntimeArchive(
       }
       await host.delay(250);
     }
-    throw new Error("Web Agent 安装完成，但健康检查未通过");
+    throw new Error(uiText("Web Agent 安装完成，但健康检查未通过", "Web Agent installed, but the health check failed"));
   } catch (error) {
     if (newRuntimeStarted) await host.stop(config).catch(() => false);
     if (previousRaw == null) {
@@ -826,7 +830,7 @@ function validateRuntimeArchive(
     "node_modules/playwright-core/package.json",
   ]) {
     if (!files[required]) {
-      throw new Error(`Web Agent 运行包不完整：缺少 ${required}`);
+      throw new Error(uiText(`Web Agent 运行包不完整：缺少 ${required}`, `Web Agent runtime is incomplete: missing ${required}`));
     }
   }
   const manifest = JSON.parse(
@@ -836,7 +840,7 @@ function validateRuntimeArchive(
     manifest.protocolVersion !== release.protocolVersion ||
     release.protocolVersion !== WEB_AGENT_PROTOCOL_VERSION
   ) {
-    throw new Error("Web Agent 运行包协议与插件不匹配");
+    throw new Error(uiText("Web Agent 运行包协议与插件不匹配", "Web Agent runtime protocol does not match the add-on"));
   }
   return files;
 }
@@ -852,7 +856,7 @@ async function writeRuntimeArchive(
       segments.length === 0 ||
       segments.some((segment) => segment === ".." || segment.includes("\\"))
     ) {
-      throw new Error(`Web Agent 运行包包含不安全路径：${archivePath}`);
+    throw new Error(uiText(`Web Agent 运行包包含不安全路径：${archivePath}`, `Web Agent runtime contains an unsafe path: ${archivePath}`));
     }
     const target = nativeJoin(host.platform, runtimeDir, ...segments);
     const parent = nativeJoin(
@@ -895,7 +899,7 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
     Z.Profile?.dir ?? (globalThis as any).PathUtils?.profileDir,
   );
   if (!homeDir || !dataDir || !profileDir) {
-    throw new Error("无法定位 Web Agent 所需的用户目录");
+    throw new Error(uiText("无法定位 Web Agent 所需的用户目录", "Could not locate the user directory required by Web Agent"));
   }
   const processEnvironment = (Cc as any)[
     "@mozilla.org/process/environment;1"
@@ -1039,5 +1043,5 @@ function secureRandomToken(): string {
 }
 
 function unsupportedPlatform(): never {
-  throw new Error("Web Agent 目前仅支持 Windows、Linux 和 macOS");
+  throw new Error(uiText("Web Agent 目前仅支持 Windows、Linux 和 macOS", "Web Agent currently supports Windows, Linux, and macOS only"));
 }

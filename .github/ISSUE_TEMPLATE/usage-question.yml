@@ -1,11 +1,14 @@
-name: 使用求助
+name: "[中文] 使用求助"
 description: 配置 / 使用上的问题（不是 Bug）
 title: "[Question] "
-labels: ["question"]
+labels:
+  - question
 body:
   - type: markdown
     attributes:
-      value: |
+      value: |-
+        需要英文？请使用[英文表单](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new?template=usage-question-en.yml)。
+
         提问前请先看 [使用教程](https://github.com/xuhan-rgb/zotero-ai-sidebar/blob/master/docs/USAGE.zh-CN.md) 的「故障排查」，以及侧边栏里的「使用须知」。
   - type: checkboxes
     id: preflight
@@ -21,7 +24,7 @@ body:
     attributes:
       label: 环境信息（可选）
       description: 在侧边栏「使用须知」底部点「复制环境信息」后粘贴到这里，方便判断你的版本与系统。
-      placeholder: "XPI 0.8.22 · Zotero 10.0.3 · Linux 5.15.0-191-generic"
+      placeholder: 示例：XPI 0.8.22 · Zotero 10.0.3 · Linux 5.15.0-191-generic
     validations:
       required: false
   - type: dropdown

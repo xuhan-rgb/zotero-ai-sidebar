@@ -1,3 +1,4 @@
+import { beforeEach as localeBeforeEach, afterEach as localeAfterEach, vi as localeVi } from "vitest";
 import { describe, expect, it, vi } from "vitest";
 import { version as ADDON_VERSION } from "../../package.json";
 import { renderWebUsageNotice } from "../../src/modules/web-usage-notice";
@@ -232,3 +233,14 @@ describe("WEB usage notice", () => {
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
   });
 });
+
+// These regression cases exercise the existing Chinese interface.
+localeBeforeEach(() => {
+  localeVi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: ["zh-CN"] }),
+    },
+  });
+  localeVi.stubGlobal("Ci", { mozIOSPreferences: {} });
+});
+localeAfterEach(() => localeVi.unstubAllGlobals());

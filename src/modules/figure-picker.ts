@@ -1,7 +1,11 @@
 import { el } from "./dom-utils";
 import { latexMaterialPreview } from "./latex-preview";
+import { uiText } from "../utils/ui-locale";
 import type { PaperFigure, PaperFigureKind } from "./paper-figures";
-import type { PaperReferenceOption, PaperReferenceScope } from "./paper-reference";
+import type {
+  PaperReferenceOption,
+  PaperReferenceScope,
+} from "./paper-reference";
 
 /**
  * What a page click meant while picking: `picked` attached a material, `miss`
@@ -17,7 +21,10 @@ export interface FigurePickerDeps {
   load(): Promise<PaperFigure[]>;
   preview(figure: PaperFigure): Promise<string | null>;
   pick(figure: PaperFigure): void;
-  searchPapers?(query: string, scope: PaperReferenceScope): Promise<{
+  searchPapers?(
+    query: string,
+    scope: PaperReferenceScope,
+  ): Promise<{
     collectionName: string | null;
     items: PaperReferenceOption[];
   }>;
@@ -101,10 +108,10 @@ interface FilterChip {
 const MAX_VISIBLE = 6;
 /** How often the open menu checks whether the reader scrolled to another page. */
 const PAGE_WATCH_MS = 400;
-const KIND_LABELS: Array<[PaperFigureKind, string]> = [
-  ["figure", "图片"],
-  ["table", "表格"],
-  ["equation", "公式"],
+const KIND_LABELS: Array<[PaperFigureKind, string, string]> = [
+  ["figure", "图片", "Figures"],
+  ["table", "表格", "Tables"],
+  ["equation", "公式", "Equations"],
 ];
 
 export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
@@ -273,9 +280,15 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
   // and only when there is at least one boxed item to hit.
   const pdfPickHint = (): string =>
     deps.watchPdf && (figures ?? []).some((figure) => figure.bbox)
-      ? "；也可在左侧 PDF 直接点击公式/图片/表格"
+      ? uiText(
+          "；也可在左侧 PDF 直接点击公式/图片/表格",
+          "; or click a formula, figure, or table in the PDF",
+        )
       : figures?.length
-        ? "；这类素材没有 PDF 位置（LaTeX 源），直接在列表里选（左侧 PDF 不响应点击）"
+        ? uiText(
+            "；这类素材没有 PDF 位置（LaTeX 源），直接在列表里选（左侧 PDF 不响应点击）",
+            "; these materials come from LaTeX and have no PDF position, so select them from the list",
+          )
         : "";
 
   const chipsFor = (list: PaperFigure[], page: number | null): FilterChip[] => {
@@ -285,12 +298,22 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
       // page holds nothing: `本页 0` is what explains the empty list, and the
       // user cannot pick a scope that was never offered.
       const onPage = list.filter((figure) => figureOnPage(figure, page)).length;
-      chips.push({ id: "page", text: `本页 ${onPage}` });
+      chips.push({
+        id: "page",
+        text: uiText(`本页 ${onPage}`, `This page ${onPage}`),
+      });
     }
-    chips.push({ id: "all", text: `全部 ${list.length}` });
-    for (const [kind, label] of KIND_LABELS) {
+    chips.push({
+      id: "all",
+      text: uiText(`全部 ${list.length}`, `All ${list.length}`),
+    });
+    for (const [kind, chinese, english] of KIND_LABELS) {
       const count = list.filter((figure) => figure.kind === kind).length;
-      if (count) chips.push({ id: kind, text: `${label} ${count}` });
+      if (count)
+        chips.push({
+          id: kind,
+          text: uiText(`${chinese} ${count}`, `${english} ${count}`),
+        });
     }
     return chips;
   };
@@ -329,10 +352,19 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
     );
     const hint =
       pool.length > 0 && noPages
-        ? "还没读到 PDF 页码（阅读器刚打开或没开 PDF）；点「全部」照常选，稍后重开列表会重试"
+        ? uiText(
+            "还没读到 PDF 页码（阅读器刚打开或没开 PDF）；点「全部」照常选，稍后重开列表会重试",
+            "PDF page numbers are not available yet (the reader may still be opening, or no PDF is open). Choose All to continue; reopening the list will retry.",
+          )
         : filter === "page" && page != null
-          ? `本页没有的素材，点「全部」或输入关键字查找`
-          : `输入关键字可以筛选这 ${pool.length} 个素材`;
+          ? uiText(
+              "本页没有的素材，点「全部」或输入关键字查找",
+              "No materials on this page. Choose All or enter a keyword to search.",
+            )
+          : uiText(
+              `输入关键字可以筛选这 ${pool.length} 个素材`,
+              `Enter a keyword to filter these ${pool.length} materials.`,
+            );
     return el(doc, "div", "figure-menu-foot", hint + pdfPickHint());
   };
 
@@ -381,7 +413,12 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
     row.append(thumb, labelLine);
     if (figure.caption) {
       row.append(
-        el(doc, "span", "figure-item-caption", figure.caption || "（无说明）"),
+        el(
+          doc,
+          "span",
+          "figure-item-caption",
+          figure.caption || uiText("（无说明）", "(No caption)"),
+        ),
       );
     }
     if (figure.path) {
@@ -420,12 +457,20 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
     menu.style.display = "";
     setVisible(true);
     startPageWatch();
-    if (figures?.length === 0 && !target?.query && deps.searchPapers && !filterPinned) {
+    if (
+      figures?.length === 0 &&
+      !target?.query &&
+      deps.searchPapers &&
+      !filterPinned
+    ) {
       pickerTab = "papers";
     }
     if (deps.searchPapers && !pdfOnly) {
       const tabs = el(doc, "div", "figure-menu-filters paper-reference-tabs");
-      for (const [tab, label] of [["materials", "本篇素材"], ["papers", "Zotero 文章"]] as const) {
+      for (const [tab, label] of [
+        ["materials", uiText("本篇素材", "Paper materials")],
+        ["papers", uiText("Zotero 文章", "Zotero items")],
+      ] as const) {
         const button = doc.createElement("button");
         button.type = "button";
         button.className = `figure-chip${pickerTab === tab ? " figure-chip-active" : ""}`;
@@ -443,8 +488,15 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
     }
     if (pickerTab === "papers" && deps.searchPapers) {
       stopPdfWatch();
-      const scopes = el(doc, "div", "figure-menu-filters paper-reference-scopes");
-      for (const [scope, label] of [["collection", "同目录"], ["library", "全库搜索"]] as const) {
+      const scopes = el(
+        doc,
+        "div",
+        "figure-menu-filters paper-reference-scopes",
+      );
+      for (const [scope, label] of [
+        ["collection", uiText("同目录", "Collection")],
+        ["library", uiText("全库搜索", "Entire library")],
+      ] as const) {
         const button = doc.createElement("button");
         button.type = "button";
         button.className = `figure-chip${paperScope === scope ? " figure-chip-active" : ""}`;
@@ -458,9 +510,21 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
         scopes.append(button);
       }
       if (paperCollectionName && paperScope === "collection") {
-        scopes.append(el(doc, "span", "paper-reference-collection", paperCollectionName));
+        scopes.append(
+          el(doc, "span", "paper-reference-collection", paperCollectionName),
+        );
       } else if (paperScope === "collection" && paperCollectionKnown) {
-        scopes.append(el(doc, "span", "paper-reference-collection", "未找到当前目录，显示全库"));
+        scopes.append(
+          el(
+            doc,
+            "span",
+            "paper-reference-collection",
+            uiText(
+              "未找到当前目录，显示全库",
+              "Collection not found; showing the entire library",
+            ),
+          ),
+        );
       }
       menu.append(scopes);
       const query = target?.query ?? "";
@@ -499,7 +563,17 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
         list.append(row);
       }
       if (!paperMatches.length) {
-        list.append(el(doc, "div", "figure-menu-note", "没有匹配的文章；可切换全库搜索或继续输入标题"));
+        list.append(
+          el(
+            doc,
+            "div",
+            "figure-menu-note",
+            uiText(
+              "没有匹配的文章；可切换全库搜索或继续输入标题",
+              "No matching items. Search the entire library or keep typing a title.",
+            ),
+          ),
+        );
       }
       menu.append(list);
       return;
@@ -513,10 +587,19 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
           "div",
           "figure-menu-note",
           loading
-            ? "正在读取这篇论文的图片和公式…"
+            ? uiText(
+                "正在读取这篇论文的图片和公式…",
+                "Loading figures and equations from this paper…",
+              )
             : failed
-              ? "读取素材失败，请稍后再试"
-              : "这篇论文还没有可用的图片、表格或公式",
+              ? uiText(
+                  "读取素材失败，请稍后再试",
+                  "Could not load materials. Please try again later.",
+                )
+              : uiText(
+                  "这篇论文还没有可用的图片、表格或公式",
+                  "This paper has no available figures, tables, or equations.",
+                ),
         ),
       );
       return;
@@ -554,7 +637,10 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
           doc,
           "div",
           "figure-menu-note",
-          "这篇论文还没有可用的图片、表格或公式",
+          uiText(
+            "这篇论文还没有可用的图片、表格或公式",
+            "This paper has no available figures, tables, or equations.",
+          ),
         ),
       );
       return;
@@ -569,7 +655,9 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
     });
     if (!matches.length) {
       const reason =
-        !query && filter === "page" ? "这一页没有素材" : "没有匹配的素材";
+        !query && filter === "page"
+          ? uiText("这一页没有素材", "No materials on this page")
+          : uiText("没有匹配的素材", "No matching materials");
       list.append(el(doc, "div", "figure-menu-note", reason));
     }
     menu.append(list);
@@ -668,7 +756,8 @@ export function createFigurePicker(deps: FigurePickerDeps): FigurePicker {
       event.preventDefault();
       return true;
     }
-    const activeCount = pickerTab === "papers" ? paperMatches.length : matches.length;
+    const activeCount =
+      pickerTab === "papers" ? paperMatches.length : matches.length;
     if (activeCount === 0) return false;
     if (event.key === "ArrowDown" || event.key === "ArrowUp") {
       const delta = event.key === "ArrowDown" ? 1 : -1;
@@ -759,14 +848,20 @@ function figureOnPage(figure: PaperFigure, page: number): boolean {
 
 function pageMeta(figure: PaperFigure, page: number | null): string {
   if (figure.page != null) {
-    if (page != null && figure.page === page) return "本页";
-    return `第 ${figure.page + 1} 页`;
+    if (page != null && figure.page === page)
+      return uiText("本页", "This page");
+    return uiText(`第 ${figure.page + 1} 页`, `Page ${figure.page + 1}`);
   }
   if (figure.pageRange) {
     const [first, last] = figure.pageRange;
     const label =
-      first === last ? `第 ${first + 1} 页` : `第 ${first + 1}–${last + 1} 页`;
-    return `${label}·推测`;
+      first === last
+        ? uiText(`第 ${first + 1} 页`, `Page ${first + 1}`)
+        : uiText(
+            `第 ${first + 1}–${last + 1} 页`,
+            `Pages ${first + 1}–${last + 1}`,
+          );
+    return uiText(`${label}·推测`, `${label} · estimated`);
   }
   return "";
 }

@@ -5,6 +5,22 @@ import {
   type ModelPreset,
   type ReasoningEffort,
 } from "./types";
+import { uiText } from "../utils/ui-locale";
+
+const ENGLISH_EFFORT_LABELS: Record<ReasoningEffort, string> = {
+  none: "Off",
+  minimal: "Minimal - Least reasoning",
+  low: "Low - Fast, less reasoning",
+  medium: "Medium - Balanced",
+  high: "High - More reasoning",
+  xhigh: "Extra high - Very high reasoning",
+  max: "Max - Maximum reasoning",
+};
+
+export function localizedReasoningEffortLabel(effort: ReasoningEffort): string {
+  const chinese = REASONING_EFFORT_OPTIONS.find(([value]) => value === effort)?.[1] ?? effort;
+  return uiText(chinese, ENGLISH_EFFORT_LABELS[effort] ?? effort);
+}
 
 // Model IDs, not the UI's suggestion group, determine wire capabilities.
 // Unknown aliases deliberately use the service default (no effort parameter).
@@ -76,8 +92,8 @@ export function reasoningEffortOptionsForPreset(
   return supportedEfforts(preset).map((effort) => [
     effort,
     budget && budgets[effort]
-      ? `${effort} - 思考预算 ${budgets[effort]} tokens`
-      : REASONING_EFFORT_OPTIONS.find(([value]) => value === effort)![1],
+      ? uiText(`${effort} - 思考预算 ${budgets[effort]} tokens`, `${effort} - Thinking budget ${budgets[effort]} tokens`)
+      : localizedReasoningEffortLabel(effort),
   ]);
 }
 
