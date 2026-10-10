@@ -7,17 +7,7 @@ import type { AddressInfo } from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-
-beforeEach(() => {
-  vi.stubGlobal("Cc", {
-    "@mozilla.org/intl/ospreferences;1": {
-      getService: () => ({ systemLocales: ["zh-CN"] }),
-    },
-  });
-  vi.stubGlobal("Ci", { mozIOSPreferences: {} });
-});
-afterEach(() => vi.unstubAllGlobals());
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 const chromePath = process.env.ZAI_TEST_CHROME || "/usr/bin/google-chrome";
 
