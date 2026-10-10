@@ -3,6 +3,7 @@ import type {
   OverviewPhase,
   OverviewSection,
 } from "../context/overview-types";
+import { uiText } from "../utils/ui-locale";
 import { renderMindmapBlock } from "./mindmap-render";
 import {
   renderNetworkDiagramWorkspace,
@@ -43,11 +44,161 @@ export interface OverviewViewHandlers {
   };
 }
 
-const PHASES: Array<{ key: OverviewPhase; badge: string; name: string }> = [
-  { key: "motivation", badge: "①", name: "动机与背景" },
-  { key: "method", badge: "②", name: "方法" },
-  { key: "validation", badge: "③", name: "验证与结论" },
+const PHASES: Array<{
+  key: OverviewPhase;
+  badge: string;
+  name: string;
+  nameEn: string;
+}> = [
+  {
+    key: "motivation",
+    badge: "①",
+    name: "动机与背景",
+    nameEn: "Motivation & background",
+  },
+  { key: "method", badge: "②", name: "方法", nameEn: "Method" },
+  {
+    key: "validation",
+    badge: "③",
+    name: "验证与结论",
+    nameEn: "Validation & conclusion",
+  },
 ];
+
+/** Refreshes only app-owned labels in an existing overview DOM subtree. */
+export function refreshOverviewUiLanguage(root: ParentNode): void {
+  const nodes: HTMLElement[] = [];
+  root
+    .querySelectorAll("[data-overview-ui]")
+    .forEach((element: Element) => nodes.push(element as HTMLElement));
+  const element = root as HTMLElement;
+  if (element.nodeType === 1 && element.hasAttribute("data-overview-ui")) {
+    nodes.unshift(element);
+  }
+  for (const node of nodes) {
+    switch (node.dataset.overviewUi) {
+      case "title":
+        node.textContent = uiText("📍 全文总览", "📍 Full overview");
+        break;
+      case "view-outline":
+        node.textContent = uiText("目录", "Outline");
+        break;
+      case "view-structure":
+        node.textContent = uiText("结构图", "Structure");
+        break;
+      case "view-network":
+        node.textContent = uiText("网络图", "Network");
+        break;
+      case "open-browser":
+        node.textContent = uiText("↗ 浏览器", "↗ Browser");
+        node.title = uiText(
+          "在浏览器中打开完整总览",
+          "Open the full overview in a browser",
+        );
+        break;
+      case "meta": {
+        const count = Number(node.dataset.sectionCount ?? 0);
+        const estimated = node.dataset.estimated === "true";
+        node.textContent = uiText(
+          `${count} 章${estimated ? " · 估算分段" : ""}`,
+          `${count} ${count === 1 ? "section" : "sections"}${estimated ? " · estimated sections" : ""}`,
+        );
+        break;
+      }
+      case "back": {
+        const no = node.dataset.sectionNo ?? "";
+        node.textContent = uiText(`↶ 返回 ${no}`, `↶ Back ${no}`);
+        node.title = uiText(
+          "退回上一处（同时跳 PDF）",
+          "Go back to the previous location and jump to its PDF position",
+        );
+        break;
+      }
+      case "reading": {
+        const no = node.dataset.sectionNo ?? "";
+        const title = node.dataset.sectionTitle ?? "";
+        node.textContent = uiText(`↩ 在读 ${no}`, `↩ Reading ${no}`);
+        node.title = uiText(
+          `回到正在读的章节：${no} ${title}`,
+          `Return to the section being read: ${no} ${title}`,
+        );
+        break;
+      }
+      case "reading-control": {
+        const no = node.dataset.sectionNo ?? "";
+        const title = node.dataset.sectionTitle ?? "";
+        node.title = uiText(
+          `回到正在读的章节：${no} ${title}`,
+          `Return to the section being read: ${no} ${title}`,
+        );
+        break;
+      }
+      case "lock": {
+        const locked = node.dataset.locked === "true";
+        const title = locked
+          ? uiText(
+              "已锁定：点别的章节只跳 PDF、不改在读。点此解锁",
+              "Locked: clicking another section only jumps the PDF and leaves the reading anchor unchanged. Click to unlock.",
+            )
+          : uiText(
+              "钉死在读锚点：之后点别的章节只跳转、不改在读",
+              "Pin the reading anchor: clicking another section will jump without changing it.",
+            );
+        node.title = title;
+        node.setAttribute("aria-label", title);
+        break;
+      }
+      case "narrative-label":
+        node.textContent = uiText("✦ 核心讲述", "✦ Core narrative");
+        break;
+      case "phase-motivation":
+      case "phase-method":
+      case "phase-validation": {
+        const phase = PHASES.find(
+          (item) => `phase-${item.key}` === node.dataset.overviewUi,
+        );
+        if (phase) node.textContent = uiText(phase.name, phase.nameEn);
+        break;
+      }
+      case "phase-other":
+        node.textContent = uiText("其他", "Other");
+        break;
+      case "emphasis-innovation":
+        node.textContent = uiText("创新", "Innovation");
+        break;
+      case "emphasis-result":
+        node.textContent = uiText("效果锚点", "Key result");
+        break;
+      case "structure-title":
+        node.textContent = uiText("📐 结构图纸", "📐 Structure diagram");
+        break;
+      case "network-title":
+        node.textContent = uiText("◫ 网络拓扑图", "◫ Network topology");
+        break;
+      case "graph-hint":
+        node.textContent = uiText(
+          "点击展开 · 点节点看解释 · 滚轮缩放/拖动",
+          "Click to expand · select a node for details · scroll to zoom or drag",
+        );
+        break;
+      case "graph-detail-hint":
+        node.textContent = uiText(
+          "▸ 点上方任一节点，这里显示它的解释（不遮挡图）",
+          "▸ Select a node above to see its explanation here (without covering the diagram)",
+        );
+        break;
+      case "graph-jump":
+        node.textContent = uiText("跳到 PDF", "Jump to PDF");
+        break;
+      case "graph-empty-explanation":
+        node.textContent = uiText(
+          "（该节点无对应章节解释）",
+          "(No section explanation is available for this node)",
+        );
+        break;
+    }
+  }
+}
 
 interface SectionNode {
   section: OverviewSection;
@@ -144,21 +295,16 @@ export function renderOverviewBlock(
   header.className = "overview-header";
   const title = doc.createElement("span");
   title.className = "overview-title";
-  title.textContent = "📍 全文总览";
+  title.dataset.overviewUi = "title";
 
   const viewTabs = doc.createElement("span");
   viewTabs.className = "overview-view-tabs";
   const viewButtons: HTMLButtonElement[] = [];
   const viewPanes: HTMLElement[] = [];
-  const addView = (
-    key: string,
-    label: string,
-    pane: HTMLElement,
-    active = false,
-  ): void => {
+  const addView = (key: string, pane: HTMLElement, active = false): void => {
     const button = doc.createElement("button");
     button.className = "overview-view-tab";
-    button.textContent = label;
+    button.dataset.overviewUi = `view-${key}`;
     button.dataset.overviewView = key;
     pane.classList.add("overview-view-pane");
     pane.dataset.overviewPane = key;
@@ -191,17 +337,16 @@ export function renderOverviewBlock(
   if (handlers.onOpenInBrowser) {
     const openBtn = doc.createElement("button");
     openBtn.className = "overview-open-browser";
-    openBtn.textContent = "↗ 浏览器";
-    openBtn.title = "在浏览器中打开完整总览";
+    openBtn.dataset.overviewUi = "open-browser";
     openBtn.addEventListener("click", () => handlers.onOpenInBrowser!());
     right.append(openBtn);
   }
   // Chapter count — shown only while nothing is 在读.
   const meta = doc.createElement("span");
   meta.className = "overview-meta";
-  meta.textContent = `${data.sections.length} 章${
-    data.coverage === "uniform-fallback" ? " · 估算分段" : ""
-  }`;
+  meta.dataset.overviewUi = "meta";
+  meta.dataset.sectionCount = String(data.sections.length);
+  meta.dataset.estimated = String(data.coverage === "uniform-fallback");
   // ↶ 返回 (back stack).
   const backBtn = doc.createElement("button");
   backBtn.className = "overview-back";
@@ -256,23 +401,27 @@ export function renderOverviewBlock(
       meta.style.display = "none";
       readingCtl.style.display = "";
       readingCtl.classList.toggle("locked", nav.locked);
-      readingLabel.textContent = `↩ 在读 ${reading.no}`;
-      readingCtl.title = `回到正在读的章节：${reading.no} ${reading.title}`;
+      readingCtl.dataset.overviewUi = "reading-control";
+      readingCtl.dataset.sectionNo = reading.no;
+      readingCtl.dataset.sectionTitle = reading.title;
+      readingLabel.dataset.overviewUi = "reading";
+      readingLabel.dataset.sectionNo = reading.no;
+      readingLabel.dataset.sectionTitle = reading.title;
       lockBtn.textContent = nav.locked ? "🔒" : "🔓";
-      lockBtn.title = nav.locked
-        ? "已锁定：点别的章节只跳 PDF、不改在读。点此解锁"
-        : "钉死在读锚点：之后点别的章节只跳转、不改在读";
+      lockBtn.dataset.overviewUi = "lock";
+      lockBtn.dataset.locked = String(nav.locked);
     } else {
       meta.style.display = "";
       readingCtl.style.display = "none";
     }
     if (nav.history.length) {
       backBtn.style.display = "";
-      backBtn.textContent = `↶ 返回 ${nav.history[nav.history.length - 1]}`;
-      backBtn.title = "退回上一处（同时跳 PDF）";
+      backBtn.dataset.overviewUi = "back";
+      backBtn.dataset.sectionNo = nav.history[nav.history.length - 1];
     } else {
       backBtn.style.display = "none";
     }
+    refreshOverviewUiLanguage(wrap);
   };
   const jump = (section: OverviewSection): void => {
     const from = cur();
@@ -323,7 +472,7 @@ export function renderOverviewBlock(
     nar.className = "overview-narrative";
     const lab = doc.createElement("div");
     lab.className = "overview-narrative-label";
-    lab.textContent = "✦ 核心讲述";
+    lab.dataset.overviewUi = "narrative-label";
     const body = doc.createElement("div");
     body.className = "overview-narrative-body";
     body.textContent = data.narrative;
@@ -351,20 +500,18 @@ export function renderOverviewBlock(
     }
     list!.append(renderSectionItem(doc, node, ctx));
   }
-  addView("outline", "目录", outline, initialView === "outline");
+  addView("outline", outline, initialView === "outline");
 
   if (data.flowchart && data.flowchart.nodes.length) {
     addView(
       "structure",
-      "结构图",
-      renderFlowchart(doc, data, ctx, data.flowchart, "📐 结构图纸", 0.25),
+      renderFlowchart(doc, data, ctx, data.flowchart, "structure-title", 0.25),
       initialView === "structure",
     );
   }
   if (handlers.networkDiagram) {
     addView(
       "network",
-      "网络图",
       renderNetworkDiagramWorkspace(
         doc,
         {
@@ -379,14 +526,14 @@ export function renderOverviewBlock(
   } else if (data.networkTopology && data.networkTopology.nodes.length) {
     addView(
       "network",
-      "网络图",
-      renderFlowchart(doc, data, ctx, data.networkTopology, "◫ 网络拓扑图"),
+      renderFlowchart(doc, data, ctx, data.networkTopology, "network-title"),
       initialView === "network",
     );
   }
 
   applyMarkers();
   applyHeader();
+  refreshOverviewUiLanguage(wrap);
   return wrap;
 }
 
@@ -402,7 +549,7 @@ function phaseBand(
   badge.textContent = def?.badge ?? "·";
   const name = doc.createElement("span");
   name.className = "overview-phase-name";
-  name.textContent = def?.name ?? "其他";
+  name.dataset.overviewUi = def ? `phase-${def.key}` : "phase-other";
   band.append(badge, name);
   return band;
 }
@@ -414,13 +561,13 @@ function emphasisChip(
   if (emphasis === "innovation") {
     const chip = doc.createElement("span");
     chip.className = "overview-chip overview-chip-innov";
-    chip.textContent = "创新";
+    chip.dataset.overviewUi = "emphasis-innovation";
     return chip;
   }
   if (emphasis === "result") {
     const chip = doc.createElement("span");
     chip.className = "overview-chip overview-chip-result";
-    chip.textContent = "效果锚点";
+    chip.dataset.overviewUi = "emphasis-result";
     return chip;
   }
   return null;
@@ -548,7 +695,7 @@ function renderFlowchart(
   data: OverviewData,
   ctx: RowCtx,
   graph: NonNullable<OverviewData["flowchart"]>,
-  title: string,
+  titleKey: "structure-title" | "network-title",
   minimumZoom = 0.625,
 ): HTMLElement {
   const card = doc.createElement("div");
@@ -561,10 +708,10 @@ function renderFlowchart(
   caret.textContent = "▸";
   const figTitle = doc.createElement("span");
   figTitle.className = "overview-fig-title";
-  figTitle.textContent = title;
+  figTitle.dataset.overviewUi = titleKey;
   const hint = doc.createElement("span");
   hint.className = "overview-fig-hint";
-  hint.textContent = "点击展开 · 点节点看解释 · 滚轮缩放/拖动";
+  hint.dataset.overviewUi = "graph-hint";
   head.append(caret, figTitle, hint);
   head.addEventListener("click", () => card.classList.toggle("open"));
   card.append(head);
@@ -586,7 +733,7 @@ function renderFlowchart(
   detail.className = "overview-node-detail";
   const dHint = doc.createElement("div");
   dHint.className = "overview-nd-hint";
-  dHint.textContent = "▸ 点上方任一节点，这里显示它的解释（不遮挡图）";
+  dHint.dataset.overviewUi = "graph-detail-hint";
   const dContent = doc.createElement("div");
   dContent.className = "overview-nd-content";
   dContent.style.display = "none";
@@ -600,7 +747,7 @@ function renderFlowchart(
     const acts = doc.createElement("div");
     acts.className = "overview-nd-acts";
     jumpBtn = doc.createElement("button");
-    jumpBtn.textContent = "跳到 PDF";
+    jumpBtn.dataset.overviewUi = "graph-jump";
     acts.append(jumpBtn);
     dContent.append(acts);
   }
@@ -617,7 +764,13 @@ function renderFlowchart(
         .forEach((x: Element) => x.classList.remove("zai-mm-sel"));
       nodeEl.classList.add("zai-mm-sel");
       dTitle.textContent = `§${no ?? ""}  ${section?.title ?? ""}`;
-      dGist.textContent = section?.gist ?? "（该节点无对应章节解释）";
+      if (section?.gist) {
+        delete dGist.dataset.overviewUi;
+        dGist.textContent = section.gist;
+      } else {
+        dGist.dataset.overviewUi = "graph-empty-explanation";
+        refreshOverviewUiLanguage(dGist);
+      }
       dHint.style.display = "none";
       dContent.style.display = "block";
       if (jumpBtn && section && ctx.canJump) {

@@ -408,7 +408,7 @@ import {
   uniqueStrings,
 } from "./reading-route-reference";
 import { renderMindmapBlock } from "./mindmap-render";
-import { renderOverviewBlock, type OverviewNavState } from "./overview-view";
+import { renderOverviewBlock, refreshOverviewUiLanguage, type OverviewNavState } from "./overview-view";
 import { renderNetworkDiagramAnalysisCard } from "./network-diagram-view";
 import { buildOverviewExportHtml } from "./overview-export";
 import {
@@ -2058,6 +2058,7 @@ export function refreshSidebarPreferences(): void {
       previousDisplayMode,
     );
     renderPanel(sidebar.mount, state);
+    refreshNoteHeaderLanguage(sidebar);
     void processNextQueuedChatTask(sidebar.mount, state);
   }
 }
@@ -10002,8 +10003,8 @@ function renderNoteWindow(sidebar: WindowSidebarState, note: Zotero.Item) {
     editable: true,
     action: isRoute
       ? {
-          label: "↻ 更新路线",
-          title: "重新生成阅读路线（覆盖 AI 生成区，保留「我的补充笔记」）",
+          label: uiText("↻ 更新路线", "↻ Update route"),
+          title: uiText("重新生成阅读路线（覆盖 AI 生成区，保留「我的补充笔记」）", "Regenerate the reading route, replacing AI content while keeping your additional notes"),
           onClick: (button) =>
             void generateReadingRouteFromNoteSwitcher(sidebar, button),
         }
@@ -10099,6 +10100,43 @@ async function removePriorReadingSummary(
   } catch (err) {
     debugZai("summary:strip-failed", { error: errorMessage(err) });
   }
+}
+
+function refreshNoteHeaderLanguage(sidebar: WindowSidebarState): void {
+  const root = sidebar.noteMount;
+  refreshOverviewUiLanguage(root);
+  const buttons = root.querySelectorAll<HTMLButtonElement>(".zai-note-seg button");
+  const labels = [
+    ["笔记", "Notes", "AI 笔记：对话里的「写入笔记」默认保存到这里", "AI notes: messages written with “Write to note” are saved here by default"],
+    ["路线", "Reading route", "阅读路线：AI 标出的精读顺序与重点", "Reading route: AI-selected reading order and key points"],
+    ["总览", "Overview", "全文总览：章节目录 + 逻辑结构图 + 可选网络拓扑图", "Full-text overview: section outline + logic diagram + optional network topology"],
+  ];
+  buttons.forEach((button: HTMLButtonElement, index: number) => {
+    const copy = labels[index];
+    // Preserve pending/error states and their diagnostic tooltips.
+    if (!copy || !copy.slice(0, 2).includes(button.textContent ?? "")) return;
+    button.textContent = uiText(copy[0], copy[1]);
+    button.title = uiText(copy[2], copy[3]);
+  });
+  const routeAction = root.querySelector<HTMLButtonElement>(".zai-note-act");
+  if (routeAction && ["↻ 更新路线", "↻ Update route"].includes(routeAction.textContent ?? "")) {
+    routeAction.textContent = uiText("↻ 更新路线", "↻ Update route");
+    routeAction.title = uiText("重新生成阅读路线（覆盖 AI 生成区，保留「我的补充笔记」）", "Regenerate the reading route, replacing AI content while keeping your additional notes");
+  }
+  if (routeAction && ["↻ 更新总览", "↻ Update overview"].includes(routeAction.textContent ?? "")) {
+    routeAction.textContent = uiText("↻ 更新总览", "↻ Update overview");
+    routeAction.title = states.get(sidebar.mount)?.itemID == null
+      ? uiText("请先选择一篇带 PDF 的文献", "Select a paper with a PDF first")
+      : uiText("调用工具重新生成全文总览", "Regenerate the full-text overview using tools");
+  }
+  const status = root.querySelector<HTMLElement>(".zai-note-window-status");
+  if (status && ["Zotero 自动保存", "Zotero autosave"].includes(status.textContent ?? "")) {
+    status.textContent = uiText("Zotero 自动保存", "Zotero autosave");
+  } else if (status && ["自动保存", "Autosave"].includes(status.textContent ?? "")) {
+    status.textContent = uiText("自动保存", "Autosave");
+  }
+  const close = root.querySelector<HTMLElement>(".zai-note-window-head > .zai-note-icobtn");
+  if (close) close.title = uiText("关闭", "Close");
 }
 
 function buildNoteSeg(
@@ -10446,7 +10484,7 @@ function renderNoteHead(
   if (opts.editable) {
     status = doc.createElementNS(XHTML_NS, "span") as HTMLElement;
     status.className = "zai-note-window-status";
-    status.textContent = "自动保存";
+    status.textContent = uiText("自动保存", "Autosave");
     head.append(status);
   }
 
@@ -10461,7 +10499,7 @@ function renderNoteHead(
 
   const close = buttonEl(doc, "✕");
   close.className = "zai-note-icobtn";
-  close.title = "关闭";
+  close.title = uiText("关闭", "Close");
   head.append(close);
 
   // Editable views keep a `save` element so the autosave wiring, Ctrl+S, and
@@ -10599,7 +10637,7 @@ async function generateReadingRouteFromNoteSwitcher(
     } else {
       await sendMessage(sidebar.mount, state, prompt, {
         readingRoute: true,
-        taskTitle: originalText.includes("更新") ? "更新路线" : "生成路线",
+        taskTitle: originalText.includes("更新") || originalText.includes("Update") ? "更新路线" : "生成路线",
       });
     }
   } catch (err) {
@@ -13792,6 +13830,13 @@ function mountDockedColumn(
 ): void {
   const root = entry.mainWindow.document.documentElement;
   if (!root) return;
+  const columns = [sidebar.noteSplitter, sidebar.noteColumn, sidebar.splitter, sidebar.column];
+  // Re-appending a connected note-editor destroys its iframe via
+  // disconnectedCallback, even when it stays under the same parent.
+  if (columns.every((column, index) =>
+    column.parentNode === root &&
+    (index === columns.length - 1 || column.nextSibling === columns[index + 1]),
+  )) return;
   root.append(
     sidebar.noteSplitter,
     sidebar.noteColumn,

@@ -1,7 +1,35 @@
-import { describe, expect, it, vi } from "vitest";
-import { renderOverviewBlock } from "../../src/modules/overview-view";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import {
+  refreshOverviewUiLanguage,
+  renderOverviewBlock,
+} from "../../src/modules/overview-view";
 import type { OverviewData } from "../../src/context/overview-types";
 import type { NetworkDiagramWorkspace } from "../../src/context/network-diagram-types";
+
+function systemLocale(locale: string): void {
+  vi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: [locale] }),
+    },
+  });
+  vi.stubGlobal("Ci", { mozIOSPreferences: {} });
+}
+
+beforeEach(() => systemLocale("zh-CN"));
+afterEach(() => vi.unstubAllGlobals());
+
+it("renders and refreshes in the plugin sandbox without a global HTMLElement constructor", () => {
+  vi.stubGlobal("HTMLElement", undefined);
+  const block = renderOverviewBlock(document, data, {});
+  expect(block.querySelector(".overview-title")!.textContent).toBe("📍 全文总览");
+  systemLocale("en-US");
+  refreshOverviewUiLanguage(block);
+  expect(block.querySelector(".overview-title")!.textContent).toBe("📍 Full overview");
+  const title = block.querySelector<HTMLElement>(".overview-title")!;
+  systemLocale("zh-CN");
+  refreshOverviewUiLanguage(title);
+  expect(title.textContent).toBe("📍 全文总览");
+});
 
 const data: OverviewData = {
   title: "T",
@@ -58,6 +86,79 @@ const data: OverviewData = {
 };
 
 describe("renderOverviewBlock (lean redesign)", () => {
+  it("refreshes app-owned overview UI in place when the interface language changes", () => {
+    const nav = {
+      history: ["1"],
+      locked: true,
+      readingNo: "3.1",
+      browseNo: "9",
+      activeView: "structure" as const,
+    };
+    const onOpenInBrowser = vi.fn();
+    const block = renderOverviewBlock(document, data, {
+      nav,
+      onOpenInBrowser,
+    });
+    const outline = block.querySelector(".overview-outline")!;
+    const readingState = block.querySelector(".overview-reading")!;
+    const lockedTitle = (block.querySelector(".overview-lock") as HTMLElement)
+      .title;
+
+    expect(block.querySelector(".overview-title")?.textContent).toBe(
+      "📍 全文总览",
+    );
+    expect(
+      block.querySelector('[data-overview-view="structure"]')?.textContent,
+    ).toBe("结构图");
+    expect(
+      block.querySelector('[data-overview-pane="structure"]')?.classList,
+    ).toContain("active");
+
+    systemLocale("de-DE");
+    refreshOverviewUiLanguage(block);
+
+    expect(block.querySelector(".overview-title")?.textContent).toBe(
+      "📍 Full overview",
+    );
+    expect(
+      block.querySelector('[data-overview-view="outline"]')?.textContent,
+    ).toBe("Outline");
+    expect(
+      block.querySelector('[data-overview-view="structure"]')?.textContent,
+    ).toBe("Structure");
+    expect(block.querySelector(".overview-open-browser")?.textContent).toBe(
+      "↗ Browser",
+    );
+    expect(
+      (block.querySelector(".overview-lock") as HTMLElement).title,
+    ).not.toBe(lockedTitle);
+    expect(block.querySelector(".overview-reading")).toBe(readingState);
+    expect(block.querySelector(".overview-outline")).toBe(outline);
+    expect(nav).toMatchObject({
+      history: ["1"],
+      locked: true,
+      readingNo: "3.1",
+      browseNo: "9",
+      activeView: "structure",
+    });
+    expect(
+      block.querySelector('[data-overview-pane="structure"]')?.classList,
+    ).toContain("active");
+    expect(block.querySelector(".overview-sec-title")?.textContent).toBe(
+      "Intro",
+    );
+
+    systemLocale("zh-CN");
+    refreshOverviewUiLanguage(block);
+    expect(block.querySelector(".overview-title")?.textContent).toBe(
+      "📍 全文总览",
+    );
+    expect(block.querySelector(".overview-open-browser")?.textContent).toBe(
+      "↗ 浏览器",
+    );
+    expect(onOpenInBrowser).not.toHaveBeenCalled();
+  });
+
   it("shows the interactive network workspace before a graph exists and preserves its tab", () => {
     const nav = { history: [] as string[], locked: false };
     const handlers = {

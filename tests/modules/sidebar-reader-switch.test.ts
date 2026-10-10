@@ -146,6 +146,65 @@ function expectPaper(id: number, answer?: string) {
 }
 
 describe("sidebar follows the active paper", () => {
+  it("does not disconnect a docked note editor when switching language", async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+    const { saveLocalUiSettings, DEFAULT_LOCAL_UI_SETTINGS } = await import("../../src/settings/local-ui-settings");
+    saveLocalUiSettings((globalThis as any).Zotero.Prefs, { ...DEFAULT_LOCAL_UI_SETTINGS, sidebarDisplayMode: "docked" });
+    refreshSidebarPreferences();
+    const sidebar = windowSidebars.get(window)!;
+    const disconnected = vi.fn();
+    class NoteEditor extends HTMLElement {
+      disconnectedCallback() { disconnected(); this.replaceChildren(); }
+    }
+    if (!customElements.get("test-language-note-editor")) customElements.define("test-language-note-editor", NoteEditor);
+    const editor = document.createElement("test-language-note-editor");
+    editor.textContent = "已加载的笔记内容";
+    sidebar.noteMount.append(editor);
+    for (const language of ["en-US", "zh-CN"]) {
+      Zotero.Prefs.set("extensions.zotero-ai-sidebar.interfaceLanguage", language, true);
+      refreshSidebarPreferences();
+      expect(disconnected).not.toHaveBeenCalled();
+      expect(editor.textContent).toBe("已加载的笔记内容");
+    }
+  });
+
+  it("updates the overview action in place when language changes", async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+    const sidebar = windowSidebars.get(window)!;
+    sidebar.noteMount.dataset.noteView = "overview";
+    sidebar.noteMount.innerHTML = '<div class="zai-note-window-head"><button class="zai-note-act">↻ 更新总览</button></div><p>模型生成的中文总览正文</p>';
+    const action = sidebar.noteMount.querySelector<HTMLButtonElement>(".zai-note-act")!;
+    const clicked = vi.fn(); action.addEventListener("click", clicked);
+    for (const language of ["en-US", "zh-CN"]) {
+      Zotero.Prefs.set("extensions.zotero-ai-sidebar.interfaceLanguage", language, true);
+      refreshSidebarPreferences();
+      expect(action.textContent).toBe(language === "en-US" ? "↻ Update overview" : "↻ 更新总览");
+      expect(sidebar.noteMount.querySelector(".zai-note-act")).toBe(action);
+      expect(sidebar.noteMount.querySelector("p")!.textContent).toBe("模型生成的中文总览正文");
+    }
+    action.click(); expect(clicked).toHaveBeenCalledOnce();
+  });
+
+  it("updates an open note header language without replacing its editor", async () => {
+    await vi.advanceTimersByTimeAsync(2000);
+    const sidebar = windowSidebars.get(window)!;
+    sidebar.noteMount.dataset.noteView = "normal";
+    sidebar.noteMount.innerHTML = '<div class="zai-note-window-head"><div class="zai-note-seg"><button class="on">笔记</button><button>路线</button><button>总览</button></div><button class="zai-note-act">↻ 更新路线</button><span class="zai-note-window-status">Zotero 自动保存</span></div><div class="zai-note-rich-editor" contenteditable="true">未保存的笔记</div>';
+    const editor = sidebar.noteMount.querySelector(".zai-note-rich-editor");
+    const tabs = Array.from(sidebar.noteMount.querySelectorAll(".zai-note-seg button"));
+    for (const language of ["en-US", "zh-CN"]) {
+      Zotero.Prefs.set("extensions.zotero-ai-sidebar.interfaceLanguage", language, true);
+      refreshSidebarPreferences();
+      expect(Array.from(sidebar.noteMount.querySelectorAll(".zai-note-seg button"), (node) => node.textContent)).toEqual(language === "en-US" ? ["Notes", "Reading route", "Overview"] : ["笔记", "路线", "总览"]);
+      expect(sidebar.noteMount.querySelector(".zai-note-window-status")!.textContent).toBe(language === "en-US" ? "Zotero autosave" : "Zotero 自动保存");
+      Array.from(sidebar.noteMount.querySelectorAll(".zai-note-seg button")).forEach((button, index) => expect(button).toBe(tabs[index]));
+      expect(tabs[0].classList.contains("on")).toBe(true);
+      expect(sidebar.noteMount.querySelector(".zai-note-act")!.textContent).toBe(language === "en-US" ? "↻ Update route" : "↻ 更新路线");
+      expect(sidebar.noteMount.querySelector(".zai-note-rich-editor")).toBe(editor);
+      expect(editor!.textContent).toBe("未保存的笔记");
+    }
+  });
+
   it("offers language below font size and saves changes without losing the draft", async () => {
     await vi.advanceTimersByTimeAsync(2000);
     const language = document.querySelector<HTMLSelectElement>(".chat-language-control select")!;
