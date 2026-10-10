@@ -125,6 +125,7 @@ it.each(["readingRoute", "overview"])(
         "sendMessage",
         "sendWebPromptMessage",
         "OVERVIEW_PROMPT",
+        "uiText",
         `${code}; return ${name};`,
       )(
         { get: () => state },
@@ -134,6 +135,7 @@ it.each(["readingRoute", "overview"])(
         api,
         web,
         "overview prompt",
+        (chinese: string) => chinese,
       );
       await run(
         { mount: {}, noteMount: { ownerDocument: {} } },

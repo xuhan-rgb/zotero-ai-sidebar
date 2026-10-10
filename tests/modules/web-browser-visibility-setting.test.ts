@@ -23,7 +23,7 @@ describe("WEB browser background preference", () => {
     const client = source("src/modules/web-agent-client.ts");
 
     expect(sidebar).toContain("对话时在后台隐藏浏览器");
-    expect(sidebar).toContain('"composer-web-account-label", "账号"');
+    expect(sidebar).toContain('"composer-web-account-label", uiText("账号", "Account")');
     expect(sidebar).toContain("checkbox.checked = state.localUiSettings.hideWebBrowser");
     expect(sidebar).toContain("hideBrowser: state.localUiSettings.hideWebBrowser");
     expect(client).toContain("hideBrowser: boolean");

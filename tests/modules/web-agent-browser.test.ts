@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from "vitest";
+import { afterEach, beforeEach, describe, it, expect, vi } from "vitest";
 import {
   getWebAgentBrowsers,
   addWebAgentBrowser,
@@ -7,6 +7,16 @@ import {
   webAgentBrowserCandidates,
   type WebAgentInstallerHost,
 } from "../../src/modules/web-agent-installer";
+
+beforeEach(() => {
+  vi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: ["zh-CN"] }),
+    },
+  });
+  vi.stubGlobal("Ci", { mozIOSPreferences: {} });
+});
+afterEach(() => vi.unstubAllGlobals());
 
 function fixture() {
   const files = new Map<string, string>([

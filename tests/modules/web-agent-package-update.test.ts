@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { zipSync } from "fflate";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   checkWebAgentAfterXpiUpdate,
   installLocalWebAgentRuntime,
@@ -9,6 +9,16 @@ import {
   type WebAgentInstallerHost,
   type WebAgentRuntimeRelease,
 } from "../../src/modules/web-agent-installer";
+
+beforeEach(() => {
+  vi.stubGlobal("Cc", {
+    "@mozilla.org/intl/ospreferences;1": {
+      getService: () => ({ systemLocales: ["zh-CN"] }),
+    },
+  });
+  vi.stubGlobal("Ci", { mozIOSPreferences: {} });
+});
+afterEach(() => vi.unstubAllGlobals());
 
 const configPath = "/data/zai-web-agent-config.json";
 const expectedSha = "a".repeat(64);

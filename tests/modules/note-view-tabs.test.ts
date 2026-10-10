@@ -8,10 +8,10 @@ const javascript = ts.transpileModule(body, { compilerOptions: { target: ts.Scri
 
 it("allows route navigation while a task is running and highlights the route view", () => {
   const openRouteView = vi.fn();
-  const build = new Function("XHTML_NS", "states", "buttonEl", "openRouteView", "switchNoteFile", "showOverviewWindow", `${javascript}; return buildNoteSeg;`)(
+  const build = new Function("XHTML_NS", "states", "buttonEl", "openRouteView", "switchNoteFile", "showOverviewWindow", "uiText", `${javascript}; return buildNoteSeg;`)(
     "http://www.w3.org/1999/xhtml", { get: () => ({ sending: true }) },
     (doc: Document, label: string) => { const b = doc.createElement("button"); b.textContent = label; return b; },
-    openRouteView, vi.fn(), vi.fn(),
+    openRouteView, vi.fn(), vi.fn(), (chinese: string) => chinese,
   );
   const sidebar = { mount: document.createElement("div") };
   const tabs = build(document, sidebar, "normal");

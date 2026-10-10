@@ -146,7 +146,7 @@ describe("Web Agent browser window visibility", () => {
       /if \(report\.state !== "blocked"\) return;[\s\S]*?dependencyActions\.hidden = false/,
     );
     expect(sidebar).toMatch(
-      /report\.state === "blocked"[\s\S]*?\? "重新检查环境"/,
+      /report\.state === "blocked"[\s\S]*?\? uiText\("重新检查环境", "Check environment again"\)/,
     );
     expect(sidebar).toContain("inspectWebAgentInstallation()");
     expect(sidebar).toContain("repairWebAgentInstallation()");

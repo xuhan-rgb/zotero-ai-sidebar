@@ -49,6 +49,7 @@ function setup() {
     "addWebAgentBrowser",
     "detectWebAgentBrowser",
     "traceBrowserPicker",
+    "uiText",
     `${js}; return renderWebAccountButton;`,
   )(
     el,
@@ -65,6 +66,7 @@ function setup() {
     addBrowser,
     detectBrowser,
     vi.fn(),
+    (chinese: string) => chinese,
   );
   const state = {
     localUiSettings: { webPromptProvider: "deepseek" },
