@@ -36,13 +36,11 @@ When [opening an issue](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/ne
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
-### What's new in v0.8.17
+### What's new in v0.8.18
 
-- **Selectable interface language**: choose Follow system, 中文, or English under Settings → Display settings → Interface language. Views such as the paper overview refresh to match the selection.
-- **Bilingual issue forms**: bug reports, feature requests, and usage questions each have Chinese and English forms.
-- **More stable note editing**: UI refreshes preserve note editors to reduce interruptions while editing.
-- **Recent chat improvements**: reference multiple papers' full readable text with `@`, save reasoning effort per account and model, and remember chat widths separately for the two layouts. Narrow composers compact account captions.
-- **WEB upload fix**: attachment status checks exclude status-like text in filenames to avoid mistaking a filename for a website status message.
+- **Prompts follow the interface language**: built-in quick prompts, tool guidance, WEB paper actions, translation instructions, and continuation prompts use Chinese or English according to the interface setting. Saved copies of built-in defaults follow the selection; user-edited prompts are preserved.
+- **Sidebar visibility is remembered**: reopening Zotero restores whether the sidebar was open, along with the saved layout and widths. Fresh profiles start with it collapsed.
+- **Composer and message styling**: upward model menus remain visible outside the API footer, reasoning labels follow the UI language, and headings in user messages use compact spacing and body-size text.
 - **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime; existing settings and browser login profiles are preserved.
 
 Release history: see [CHANGELOG.md](CHANGELOG.md).

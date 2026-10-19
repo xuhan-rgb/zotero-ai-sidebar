@@ -39,6 +39,11 @@ beforeEach(async () => {
     document.createElement(tag);
   const files = new Map<string, string>();
   const prefs = new Map<string, unknown>();
+  // These layout tests exercise an open sidebar; fresh profiles start collapsed.
+  prefs.set(
+    "extensions.zotero-ai-sidebar.readerLayout",
+    JSON.stringify({ aiOpen: true }),
+  );
   prefs.set(
     "extensions.zotero-ai-sidebar.presets",
     JSON.stringify([
@@ -598,7 +603,7 @@ describe("chat column width memory", () => {
   it("restores the embedded width after dragging and remounting without changing note width", async () => {
     const prefs = (globalThis as any).Zotero.Prefs;
     const key = "extensions.zotero-ai-sidebar.readerLayout";
-    prefs.set(key, JSON.stringify({ noteWidth: 530 }));
+    prefs.set(key, JSON.stringify({ aiOpen: true, noteWidth: 530 }));
     const sidebar = windowSidebars.get(window)!;
     sidebar.splitter.dispatchEvent(new MouseEvent("mousedown", { button: 0, bubbles: true }));
     sidebar.column.setAttribute("width", "645");
@@ -614,7 +619,7 @@ describe("chat column width memory", () => {
     unregisterSidebar();
     const prefs = (globalThis as any).Zotero.Prefs;
     const key = "extensions.zotero-ai-sidebar.readerLayout";
-    prefs.set(key, JSON.stringify({ aiWidth: 410, noteWidth: 530 }));
+    prefs.set(key, JSON.stringify({ aiOpen: true, aiWidth: 410, noteWidth: 530 }));
     const { saveLocalUiSettings, DEFAULT_LOCAL_UI_SETTINGS } = await import("../../src/settings/local-ui-settings");
     saveLocalUiSettings(prefs, { ...DEFAULT_LOCAL_UI_SETTINGS, sidebarDisplayMode: "docked" });
     vi.spyOn(window, "innerWidth", "get").mockReturnValue(1600);
@@ -660,7 +665,7 @@ describe("width persistence boundaries", () => {
     unregisterSidebar();
     const prefs = (globalThis as any).Zotero.Prefs;
     const key = "extensions.zotero-ai-sidebar.readerLayout";
-    prefs.set(key, JSON.stringify({ dockedAiWidth: 700 }));
+    prefs.set(key, JSON.stringify({ aiOpen: true, dockedAiWidth: 700 }));
     const { saveLocalUiSettings, DEFAULT_LOCAL_UI_SETTINGS } = await import("../../src/settings/local-ui-settings");
     saveLocalUiSettings(prefs, { ...DEFAULT_LOCAL_UI_SETTINGS, sidebarDisplayMode: "docked" });
     const width = vi.spyOn(window, "innerWidth", "get").mockReturnValue(1100);
