@@ -25,7 +25,10 @@ function memPrefs(): PrefsStore {
 
 beforeEach(() => {
   resetQuickPromptSettingsCache();
-  Reflect.deleteProperty(globalThis, 'Zotero');
+  Object.defineProperty(globalThis, 'Zotero', {
+    configurable: true,
+    value: { locale: 'zh-CN' },
+  });
 });
 
 describe('quick prompt settings storage', () => {
@@ -276,6 +279,22 @@ describe('quick prompt file storage', () => {
     expect(loadQuickPromptSettings(prefs).builtIns.summary).toBe('keep me');
   });
 
+  it('migrates the historical summary loaded from disk without changing custom buttons', async () => {
+    installFileBackend();
+    const legacy = '请用中文总结这篇论文，包含：研究背景与问题、核心方法流程、关键公式或算法步骤、主要贡献和创新点、实验结果与主要结论、适用场景、局限性、可能反例与后续改进方向，最后给出一句话概括。';
+    const customButtons = [{ id: 'custom', label: '自定义', prompt: '请用中文解释方法' }];
+    files.set(quickPromptsPath(), JSON.stringify({
+      builtIns: { summary: legacy, explainSelection: 'My edited selection prompt' },
+      customButtons,
+    }));
+    const prefs = memPrefs();
+    await hydrateQuickPromptSettings(prefs);
+    const settings = loadQuickPromptSettings(prefs);
+    expect(settings.builtIns.summary).toContain('Summarize this paper in English');
+    expect(settings.builtIns.explainSelection).toBe('My edited selection prompt');
+    expect(settings.customButtons).toEqual(customButtons);
+  });
+
   it('prefers the file over a leftover prefs blob', async () => {
     installFileBackend();
     files.set(
@@ -308,5 +327,95 @@ describe('quick prompt file storage', () => {
 
     expect(loadQuickPromptSettings(prefs).builtIns.summary).toBe('from file');
     expect(prefs.get(PREF_KEY)).toBeUndefined();
+  });
+});
+
+
+describe('built-in prompt languages', () => {
+  function setLanguage(language: string): void {
+    Object.defineProperty(globalThis, 'Zotero', {
+      configurable: true,
+      value: { locale: language },
+    });
+  }
+
+  it('uses English defaults for English and unsupported locales', () => {
+    for (const locale of ['en-US', 'fr-FR']) {
+      setLanguage(locale);
+      const prompts = loadQuickPromptSettings(memPrefs()).builtIns;
+      for (const prompt of Object.values(prompts)) {
+        expect(prompt).not.toMatch(/[\u4e00-\u9fff]/);
+        expect(prompt).toContain('English');
+      }
+      expect(prompts.readingRoute).toContain('zotero_get_current_item');
+      expect(prompts.fullTextHighlight).toContain('zotero_annotate_passage');
+    }
+  });
+
+  it('follows explicit interface language instead of the system locale', () => {
+    Object.defineProperty(globalThis, 'Zotero', {
+      configurable: true,
+      value: { locale: 'en-US', Prefs: { get: () => 'zh-CN' } },
+    });
+    expect(loadQuickPromptSettings(memPrefs()).builtIns).toEqual(
+      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns,
+    );
+  });
+
+  it('uses explicit English even on a Chinese system', () => {
+    Object.defineProperty(globalThis, 'Zotero', {
+      configurable: true,
+      value: { locale: 'zh-CN', Prefs: { get: () => 'en-US' } },
+    });
+    expect(loadQuickPromptSettings(memPrefs()).builtIns.summary).toContain('English');
+  });
+
+  it('switches saved defaults both ways while preserving edited and custom prompts', () => {
+    const prefs = memPrefs();
+    saveQuickPromptSettings(prefs, {
+      ...DEFAULT_QUICK_PROMPT_SETTINGS,
+      builtIns: {
+        ...DEFAULT_QUICK_PROMPT_SETTINGS.builtIns,
+        explainSelection: 'My edited prompt',
+      },
+      customButtons: [{ id: 'custom', label: 'Custom', prompt: '自定义提示词' }],
+    });
+    resetQuickPromptSettingsCache();
+    setLanguage('en-US');
+    const english = loadQuickPromptSettings(prefs);
+    expect(english.builtIns.summary).not.toMatch(/[\u4e00-\u9fff]/);
+    expect(english.builtIns.explainSelection).toBe('My edited prompt');
+    expect(english.customButtons[0].prompt).toBe('自定义提示词');
+    saveQuickPromptSettings(prefs, english);
+    setLanguage('zh-CN');
+    expect(loadQuickPromptSettings(prefs).builtIns.summary).toBe(
+      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.summary,
+    );
+    expect(loadQuickPromptSettings(prefs).builtIns.explainSelection).toBe('My edited prompt');
+  });
+
+  it('migrates the historical summary default but preserves edits to it', () => {
+    const legacy = '请用中文总结这篇论文，包含：研究背景与问题、核心方法流程、关键公式或算法步骤、主要贡献和创新点、实验结果与主要结论、适用场景、局限性、可能反例与后续改进方向，最后给出一句话概括。';
+    const prefs = memPrefs();
+    prefs.set(PREF_KEY, JSON.stringify({ builtIns: { summary: legacy } }));
+    setLanguage('en-US');
+    const english = loadQuickPromptSettings(prefs).builtIns.summary;
+    expect(english).toContain('Summarize this paper in English');
+    expect(english).not.toContain('请用中文');
+    setLanguage('zh-CN');
+    expect(loadQuickPromptSettings(prefs).builtIns.summary).toBe(
+      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.summary,
+    );
+    resetQuickPromptSettingsCache();
+    prefs.set(PREF_KEY, JSON.stringify({ builtIns: { summary: legacy + ' 只关注方法。' } }));
+    setLanguage('en-US');
+    expect(loadQuickPromptSettings(prefs).builtIns.summary).toBe(legacy + ' 只关注方法。');
+  });
+
+  it('updates hydrated defaults after changing language', async () => {
+    const prefs = memPrefs();
+    await hydrateQuickPromptSettings(prefs);
+    setLanguage('en-US');
+    expect(loadQuickPromptSettings(prefs).builtIns.summary).not.toMatch(/[\u4e00-\u9fff]/);
   });
 });

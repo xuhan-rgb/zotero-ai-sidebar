@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import {
   hasWebAnnotationProtocol,
@@ -9,6 +9,7 @@ import {
 } from "../../src/modules/web-annotation-batch";
 
 describe("WEB annotation batch protocol", () => {
+  beforeEach(() => vi.stubGlobal("Zotero", { locale: "zh-CN", Prefs: { get: () => "zh-CN" } }));
   it("extracts a strict manifest and removes it from the visible answer", () => {
     const answer = [
       "已选出两条重点句。",
@@ -189,5 +190,22 @@ describe("WEB annotation batch protocol", () => {
     expect(prompt).toContain("不要使用 Markdown 代码围栏");
     expect(prompt).toContain("---ZOTERO_ANNOTATIONS_V1---");
     expect(prompt).toContain("#2EA8E5 — 定义");
+  });
+
+  it("localizes annotation protocol instructions to English", () => {
+    vi.stubGlobal("Zotero", { locale: "en-US", Prefs: { get: () => "en-US" } });
+    const batch = webAnnotationProtocolInstructions("");
+    const optional = webOptionalAnnotationProtocolInstructions("");
+    const task = webAnnotationTaskQuestion();
+    expect(batch).toContain("## Zotero WEB Batch Annotation Output Protocol");
+    expect(batch).toContain("Write comments in English");
+    expect(batch).toContain('"comment":"Category: why it matters"');
+    expect(batch).not.toContain("comment 使用中文");
+    expect(optional).toContain("Optional PDF Annotation Output Convention");
+    expect(optional).toContain("Write comments in English");
+    expect(optional).toContain('"comment":"Category: brief reason"');
+    expect(optional).not.toContain("comment 使用中文");
+    expect(task).toContain("Read the attached paper");
+    expect(task).toContain("brief English comment");
   });
 });

@@ -84,9 +84,9 @@ describe("network diagram agent", () => {
       paperTitle: "A General Paper",
     });
 
-    expect(prompt).toContain("GitHub：https://github.com/owner/repo");
-    expect(prompt).toContain("固定 commit：0123456789abcdef");
-    expect(prompt).toContain("当前 Zotero 论文：A General Paper");
+    expect(prompt).toContain("GitHub: https://github.com/owner/repo");
+    expect(prompt).toContain("Pinned commit: 0123456789abcdef");
+    expect(prompt).toContain("Current Zotero paper: A General Paper");
     expect(prompt).toContain("1. Paper specification");
     expect(prompt).toContain("Parameters → Data flow → Loss / objective");
     expect(prompt).toContain("2. Implementation specification");
@@ -98,6 +98,39 @@ describe("network diagram agent", () => {
     expect(prompt).toContain("5. Validation");
     expect(prompt).not.toContain("GraspNet");
     expect(prompt).not.toContain("LAW");
+  });
+
+  it.each([
+    ["zh-CN", "请生成可核验的详细网络图。", "固定 commit"],
+    ["en-US", "Generate a detailed, verifiable network diagram.", "Pinned commit"],
+  ])("localizes built-in model instructions for %s at call time", async (locale, expectedPrompt, expectedToolText) => {
+    vi.stubGlobal("Zotero", { locale: "en-US", Prefs: { get: () => locale } });
+    expect(buildNetworkDiagramUserPrompt({ repositoryURL: "https://github.com/owner/repo" })).toContain(expectedPrompt);
+    expect(buildNetworkDiagramUserPrompt({ repositoryURL: "https://github.com/owner/repo" })).toContain(expectedToolText);
+
+    let capturedSystem = "";
+    let capturedTools: AgentTool[] = [];
+    const provider: Provider = {
+      async *stream(_messages, system, _preset, _signal, options) {
+        capturedSystem = system;
+        capturedTools = options?.tools ?? [];
+        yield { type: "error", message: "stop after locale check" };
+      },
+    };
+    await expect(runNetworkDiagramAgent({
+      repositoryURL: "https://github.com/owner/repo",
+      provider,
+      preset,
+      signal: new AbortController().signal,
+      fetcher: repositoryFetch,
+    })).rejects.toThrow("stop after locale check");
+
+    expect(capturedSystem).toContain(locale === "zh-CN" ? "你是 Zotero 内专用的网络图 agent。" : "You are the dedicated network-diagram agent inside Zotero.");
+    const descriptions = capturedTools.map((candidate) => candidate.description).join(" ");
+    expect(descriptions).toContain(locale === "zh-CN" ? "检查固定 commit 树中的真实候选路径" : "Inspect real candidate paths from the pinned commit tree");
+    const submit = capturedTools.find((candidate) => candidate.name === "submit_network_diagram");
+    expect(submit?.description).toContain(locale === "zh-CN" ? "提交一个完整的详细网络图候选" : "Submit one complete detailed network diagram candidate");
+    expect(submit?.parameters).toBeDefined();
   });
 
   it("accumulates token usage from every model round", async () => {

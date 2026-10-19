@@ -22,6 +22,26 @@ describe("preset connectivity protocol detection", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ["zh-CN", "连通性测试。只回复 OK。"],
+    ["en-US", "Connectivity test. Reply OK only."],
+  ])("localizes the connectivity instruction for %s without changing its reply token", async (locale, instructions) => {
+    vi.stubGlobal("Zotero", { locale: "en-US", Prefs: { get: () => locale } });
+    let body: Record<string, unknown> | undefined;
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+        body = JSON.parse(String(init?.body)) as Record<string, unknown>;
+        return new Response(null, { status: 200 });
+      }),
+    );
+
+    await testPresetConnectivity(preset, new AbortController().signal);
+
+    expect(body?.instructions).toBe(instructions);
+    expect(body?.input).toEqual([{ role: "user", content: "Reply OK." }]);
+  });
+
   it("prefers Responses then saves Chat Completions when the model rejects Responses", async () => {
     const requests: Array<{ url: string; body: Record<string, unknown> }> = [];
     vi.stubGlobal(

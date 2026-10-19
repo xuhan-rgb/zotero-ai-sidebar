@@ -1,3 +1,5 @@
+import { promptText } from "../utils/prompt-locale";
+
 const START_MARKER = "---ZOTERO_ANNOTATIONS_V1---";
 const END_MARKER = "---END_ZOTERO_ANNOTATIONS---";
 const COMPATIBLE_END_MARKERS = [
@@ -7,8 +9,12 @@ const COMPATIBLE_END_MARKERS = [
 const MAX_ANNOTATIONS = 24;
 const MAX_QUOTE_CHARS = 2400;
 const MAX_COMMENT_CHARS = 500;
-const SECTION_SCOPE_RULE =
-  "如果用户指定章节、小节、页码或其他范围，所有 quote 必须严格来自该范围。对于 LaTeX 章节，从该标题开始，到下一个同级或更高级标题之前结束；Abstract 不属于 Introduction。范围内不足指定数量时返回实际数量，不得从摘要或其他章节补足数量。";
+function sectionScopeRule(): string {
+  return promptText(
+  "如果用户指定章节、小节、页码或其他范围，所有 quote 必须严格来自该范围。对于 LaTeX 章节，从该标题开始，到下一个同级或更高级标题之前结束；Abstract 不属于 Introduction。范围内不足指定数量时返回实际数量，不得从摘要或其他章节补足数量。",
+  "If the user specifies a section, subsection, page, or other scope, every quote must come strictly from that scope. For LaTeX sections, start at the heading and stop before the next heading of equal or higher level; Abstract is not part of Introduction. If the scope contains fewer than the requested number, return only the available number; do not make up the count with text from the abstract or other sections.",
+  );
+}
 
 export function hasWebAnnotationProtocol(content: string): boolean {
   return (
@@ -140,19 +146,22 @@ export function webAnnotationProtocolInstructions(
 ): string {
   const colors =
     annotationColorGuide.trim() ||
-    "未提供颜色 rubric；color 字段可以省略，由 Zotero 使用默认颜色。";
+    promptText("未提供颜色 rubric；color 字段可以省略，由 Zotero 使用默认颜色。", "No color rubric was provided; omit the color field to use Zotero's default color.");
   return [
-    "## Zotero WEB 批量标注输出协议",
-    "这是 WEB 模式：不要调用 Zotero 工具，也不要声称已经修改 PDF。你的任务只是从附件中选择逐字原句并返回本地插件可解析的标注草稿。",
-    "选择 5–10 条真正值得标注的正文原句；quote 必须逐字来自附件，不得改写、翻译、省略或补全。每条 quote 只能是一段连续正文，不得跨越独立公式、表格或分页拼接；重点被公式打断时，只引用公式前或公式后的完整文字句。comment 使用中文，格式为“类别：理由”，不超过 80 字。",
-    SECTION_SCOPE_RULE,
-    "正常回答只保留一段简短摘要；随后严格输出下面的协议块，不要省略开始或结束标记，不要使用 Markdown 代码围栏，也不要在协议块后添加任何内容：",
+    promptText("## Zotero WEB 批量标注输出协议", "## Zotero WEB Batch Annotation Output Protocol"),
+    promptText("这是 WEB 模式：不要调用 Zotero 工具，也不要声称已经修改 PDF。你的任务只是从附件中选择逐字原句并返回本地插件可解析的标注草稿。", "This is WEB mode: do not call Zotero tools or claim that you modified the PDF. Select verbatim sentences from the attachment and return annotation drafts that the local plugin can parse."),
+    promptText("选择 5–10 条真正值得标注的正文原句；quote 必须逐字来自附件，不得改写、翻译、省略或补全。每条 quote 只能是一段连续正文，不得跨越独立公式、表格或分页拼接；重点被公式打断时，只引用公式前或公式后的完整文字句。comment 使用中文，格式为“类别：理由”，不超过 80 字。", "Select 5–10 genuinely noteworthy sentences from the main text. Each quote must be verbatim from the attachment: do not rewrite, translate, omit, or complete it. Each quote must be one continuous passage; do not join text across standalone equations, tables, or page breaks. If an important passage is interrupted by an equation, quote only a complete sentence before or after it. Write comments in English as “Category: reason”, no more than 80 characters."),
+    sectionScopeRule(),
+    promptText("正常回答只保留一段简短摘要；随后严格输出下面的协议块，不要省略开始或结束标记，不要使用 Markdown 代码围栏，也不要在协议块后添加任何内容：", "Give only a brief summary as the normal answer, then output exactly the protocol block below. Keep both boundary markers, do not use a Markdown code fence, and add nothing after the block:"),
     "",
     START_MARKER,
-    '{"annotations":[{"quote":"PDF 逐字原文","comment":"类别：为什么值得标注","color":"#允许的六位十六进制颜色"}]}',
+    promptText(
+      '{"annotations":[{"quote":"PDF 逐字原文","comment":"类别：为什么值得标注","color":"#允许的六位十六进制颜色"}]}',
+      '{"annotations":[{"quote":"verbatim PDF text","comment":"Category: why it matters","color":"#allowed six-digit hex color"}]}',
+    ),
     END_MARKER,
     "",
-    "颜色只能从以下用户配置中选择；类别不明确时省略 color，不要凭颜色直觉猜测：",
+    promptText("颜色只能从以下用户配置中选择；类别不明确时省略 color，不要凭颜色直觉猜测：", "Choose colors only from the user's settings below. Omit color when the category is unclear; do not guess based on color intuition:"),
     colors,
   ].join("\n");
 }
@@ -162,29 +171,32 @@ export function webOptionalAnnotationProtocolInstructions(
 ): string {
   const colors =
     annotationColorGuide.trim() ||
-    "未提供颜色 rubric；color 字段可以省略，由 Zotero 使用默认颜色。";
+    promptText("未提供颜色 rubric；color 字段可以省略，由 Zotero 使用默认颜色。", "No color rubric was provided; omit color to use Zotero's default color.");
   return [
-    "## 可选 PDF 标注输出约定",
-    "如果用户要求解释某个 PDF 句子或选区，请先正常说明原句含义、它在上下文中的作用以及为什么值得关注；仅当用户同时要求标注、高亮、划重点、保存原文或创建注释时，才追加下面的标注协议。",
-    "如果用户明确要求对 PDF 内容进行标注、高亮、划重点、保存原文，或者要求选出值得标注的重点句，请在正常回答后严格输出下面的协议。普通问答、解释、总结、翻译、比较或推导不要输出该协议。",
-    "quote 必须逐字来自当前提供的论文附件或 PDF 选区，不得改写、翻译、省略、补全或跨公式拼接。comment 使用中文，格式为“类别：为什么值得标注”，不超过 80 字。这只是标注草稿，不要声称已经修改 PDF。",
-    SECTION_SCOPE_RULE,
-    "输出协议时不要省略开始或结束标记，也不要使用 Markdown 代码围栏。",
+    promptText("## 可选 PDF 标注输出约定", "## Optional PDF Annotation Output Convention"),
+    promptText("如果用户要求解释某个 PDF 句子或选区，请先正常说明原句含义、它在上下文中的作用以及为什么值得关注；仅当用户同时要求标注、高亮、划重点、保存原文或创建注释时，才追加下面的标注协议。", "When asked to explain a PDF sentence or selection, first explain its meaning, role in context, and why it matters. Append the annotation protocol below only when the user also asks to annotate, highlight, mark key points, save the text, or create annotations."),
+    promptText("如果用户明确要求对 PDF 内容进行标注、高亮、划重点、保存原文，或者要求选出值得标注的重点句，请在正常回答后严格输出下面的协议。普通问答、解释、总结、翻译、比较或推导不要输出该协议。", "If the user explicitly asks to annotate, highlight, mark key points, save PDF text, or select noteworthy sentences, output the protocol below after the normal answer. Do not output it for ordinary questions, explanations, summaries, translations, comparisons, or derivations."),
+    promptText("quote 必须逐字来自当前提供的论文附件或 PDF 选区，不得改写、翻译、省略、补全或跨公式拼接。comment 使用中文，格式为“类别：为什么值得标注”，不超过 80 字。这只是标注草稿，不要声称已经修改 PDF。", "Quotes must be verbatim from the supplied paper attachment or PDF selection; do not rewrite, translate, omit, complete, or join text across equations. Write comments in English as “Category: why it matters”, no more than 80 characters. This is only an annotation draft; do not claim to have modified the PDF."),
+    sectionScopeRule(),
+    promptText("输出协议时不要省略开始或结束标记，也不要使用 Markdown 代码围栏。", "When outputting the protocol, include both boundary markers and do not use a Markdown code fence."),
     "",
     START_MARKER,
-    '{"annotations":[{"quote":"附件中的逐字原文","comment":"类别：简短理由","color":"#允许的六位十六进制颜色"}]}',
+    promptText(
+      '{"annotations":[{"quote":"附件中的逐字原文","comment":"类别：简短理由","color":"#允许的六位十六进制颜色"}]}',
+      '{"annotations":[{"quote":"verbatim text from the attachment","comment":"Category: brief reason","color":"#allowed six-digit hex color"}]}',
+    ),
     END_MARKER,
     "",
-    "color 只能从以下用户配置中选择；类别不明确时省略 color：",
+    promptText("color 只能从以下用户配置中选择；类别不明确时省略 color：", "Choose color only from the user's settings below; omit color when the category is unclear:"),
     colors,
   ].join("\n");
 }
 
 export function webAnnotationTaskQuestion(): string {
   return [
-    "请通读当前附件论文，选择最值得在 PDF 中标注的重点原句。",
-    "优先覆盖研究问题、关键定义、核心方法、主要结果、重要限制和结论；避免整段、公式以及只在摘要中重复正文的句子。",
-    "未指定数量时选择 5–10 条。每条给出简短中文注释，并按 Zotero WEB 批量标注输出协议返回。",
+    promptText("请通读当前附件论文，选择最值得在 PDF 中标注的重点原句。", "Read the attached paper and select the most noteworthy sentences to annotate in the PDF."),
+    promptText("优先覆盖研究问题、关键定义、核心方法、主要结果、重要限制和结论；避免整段、公式以及只在摘要中重复正文的句子。", "Prioritize the research question, key definitions, core method, main results, important limitations, and conclusions. Avoid whole paragraphs, equations, and sentences repeated in the abstract but not the body."),
+    promptText("未指定数量时选择 5–10 条。每条给出简短中文注释，并按 Zotero WEB 批量标注输出协议返回。", "Unless a count is specified, select 5–10 sentences. Provide a brief English comment for each and follow the Zotero WEB batch annotation protocol."),
   ].join("\n");
 }
 

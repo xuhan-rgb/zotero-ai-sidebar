@@ -1,10 +1,23 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { PrefsStore } from '../../src/settings/storage';
 import {
   DEFAULT_TOOL_SETTINGS,
+  DEFAULT_ANNOTATION_COLOR_GUIDE,
+  DEFAULT_ANNOTATION_COLOR_GUIDE_EN,
+  getDefaultToolSettings,
   loadToolSettings,
   saveToolSettings,
 } from '../../src/settings/tool-settings';
+import { UI_LANGUAGE_PREF } from '../../src/utils/ui-locale';
+
+function useLocale(locale: 'zh-CN' | 'en-US') {
+  vi.stubGlobal('Zotero', {
+    Prefs: { get: (key: string) => key === UI_LANGUAGE_PREF ? locale : undefined },
+  });
+}
+
+beforeEach(() => useLocale('zh-CN'));
+afterEach(() => vi.unstubAllGlobals());
 
 function memPrefs(): PrefsStore {
   const map = new Map<string, string>();
@@ -154,6 +167,50 @@ describe('tool settings storage', () => {
     );
     expect(loadToolSettings(prefs).annotationColorGuide).toBe(
       DEFAULT_TOOL_SETTINGS.annotationColorGuide,
+    );
+  });
+
+  it('selects localized default guides dynamically, including saved default copies', () => {
+    const prefs = memPrefs();
+    expect(getDefaultToolSettings().annotationColorGuide).toBe(
+      DEFAULT_ANNOTATION_COLOR_GUIDE,
+    );
+    prefs.set(
+      'extensions.zotero-ai-sidebar.toolSettings',
+      JSON.stringify({ annotationColorGuide: DEFAULT_ANNOTATION_COLOR_GUIDE }),
+    );
+    useLocale('en-US');
+    expect(getDefaultToolSettings().annotationColorGuide).toBe(
+      DEFAULT_ANNOTATION_COLOR_GUIDE_EN,
+    );
+    expect(loadToolSettings(prefs).annotationColorGuide).toBe(
+      DEFAULT_ANNOTATION_COLOR_GUIDE_EN,
+    );
+    const englishDefaults = memPrefs();
+    saveToolSettings(englishDefaults, getDefaultToolSettings());
+    useLocale('zh-CN');
+    expect(loadToolSettings(englishDefaults).annotationColorGuide).toBe(
+      DEFAULT_ANNOTATION_COLOR_GUIDE,
+    );
+    useLocale('en-US');
+    expect(loadToolSettings(memPrefs()).annotationColorGuide).toBe(
+      DEFAULT_ANNOTATION_COLOR_GUIDE_EN,
+    );
+  });
+
+  it('preserves edited guides when the UI locale changes', () => {
+    const prefs = memPrefs();
+    saveToolSettings(prefs, {
+      ...getDefaultToolSettings(),
+      annotationColorGuide: 'Custom guide written by the user.',
+    });
+    useLocale('en-US');
+    expect(loadToolSettings(prefs).annotationColorGuide).toBe(
+      'Custom guide written by the user.',
+    );
+    useLocale('zh-CN');
+    expect(loadToolSettings(prefs).annotationColorGuide).toBe(
+      'Custom guide written by the user.',
     );
   });
 });

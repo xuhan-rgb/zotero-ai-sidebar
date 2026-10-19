@@ -77,7 +77,7 @@ import {
   DEFAULT_IMMERSIVE_TOGGLE_KEY,
 } from "./translate/ask-mode";
 import {
-  DEFAULT_QUICK_PROMPT_SETTINGS,
+  getDefaultQuickPromptSettings,
   flushQuickPromptSettings,
   hydrateQuickPromptSettings,
   loadQuickPromptSettings,
@@ -101,7 +101,7 @@ import {
   zoteroPrefs,
 } from "./settings/storage";
 import {
-  DEFAULT_TOOL_SETTINGS,
+  getDefaultToolSettings,
   loadToolSettings,
   normalizeToolSettings,
   saveToolSettings,
@@ -548,7 +548,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
   byID<HTMLButtonElement>(doc, "zai-prompt-reset")?.addEventListener(
     "click",
     () => {
-      populateBuiltInPromptControls(doc, DEFAULT_QUICK_PROMPT_SETTINGS);
+      populateBuiltInPromptControls(doc, getDefaultQuickPromptSettings());
       refreshPreferenceDirtySection(doc, "prompts");
       setStatus(
         doc,
@@ -577,7 +577,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
         "zai-tool-annotation-color-guide",
       );
       if (colorGuide) {
-        colorGuide.value = DEFAULT_TOOL_SETTINGS.annotationColorGuide;
+        colorGuide.value = getDefaultToolSettings().annotationColorGuide;
         colorGuide.scrollTop = 0;
       }
       saveAnnotationColorGuideControl(
@@ -3184,34 +3184,35 @@ function populateBuiltInPromptControls(
 ): void {
   const wrap = byID<HTMLElement>(doc, "zai-built-in-prompts");
   if (!wrap) return;
+  const defaults = getDefaultQuickPromptSettings();
   wrap.replaceChildren(
     builtInPromptControl(
       doc,
       "summary",
       uiText("总结论文", "Summarize paper"),
       settings.builtIns.summary,
-      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.summary,
+      defaults.builtIns.summary,
     ),
     builtInPromptControl(
       doc,
       "readingRoute",
       uiText("阅读路线", "Reading route"),
       settings.builtIns.readingRoute,
-      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.readingRoute,
+      defaults.builtIns.readingRoute,
     ),
     builtInPromptControl(
       doc,
       "fullTextHighlight",
       uiText("全文重点", "Key points"),
       settings.builtIns.fullTextHighlight,
-      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.fullTextHighlight,
+      defaults.builtIns.fullTextHighlight,
     ),
     builtInPromptControl(
       doc,
       "explainSelection",
       uiText("解释选区", "Explain selection"),
       settings.builtIns.explainSelection,
-      DEFAULT_QUICK_PROMPT_SETTINGS.builtIns.explainSelection,
+      defaults.builtIns.explainSelection,
     ),
     selectionQuestionAnnotationControl(
       doc,

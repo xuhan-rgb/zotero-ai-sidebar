@@ -1,4 +1,5 @@
 import type { ItemAnnotation } from './types';
+import { promptText } from '../utils/prompt-locale';
 
 // Legacy context builder.
 //
@@ -36,41 +37,33 @@ export interface BuiltContext {
   pdfText: string | null;
 }
 
-const SYSTEM_BASE =
-  'You are a research assistant helping the user understand academic papers. ' +
-  'Cite the paper when answering questions about its content. Be precise and concise.' +
-  '\n\n' +
-  'CRITICAL OUTPUT RULE for evidence. Whenever you support a claim about the ' +
-  'paper — including any 原文论据 / 原文依据 / 证据 / evidence / supporting ' +
-  'point, however you label or format it — you MUST first quote the actual ' +
-  'PDF passage verbatim, word-for-word, in the language used in the PDF (do ' +
-  'NOT translate, paraphrase, shorten, or rephrase it), as its own Markdown ' +
-  'blockquote (>), then put any explanation on a separate line after it. ' +
-  '原文论据 means the literal original passage — NOT your restatement of it; ' +
-  'a paraphrased bullet is NEVER acceptable as 原文论据 or as evidence. If the ' +
-  'PDF has no verbatim sentence for a point, write （原文无直接对应句） ' +
-  'rather than inventing or paraphrasing one.' +
-  '\n\n' +
-  'For math, write LaTeX inside $...$ (inline) or $$...$$ (display). ' +
-  'Do NOT wrap math formulas in backticks (`) — backticks are for code, the chat ' +
-  'and note renderers typeset math automatically when it appears in plain text.';
+function systemBase(): string {
+  return promptText(
+    '你是帮助用户理解学术论文的研究助手。回答论文内容问题时引用论文，表达准确、简洁。\n\n' +
+      '证据输出的关键规则：凡是用来支持论文相关论点的内容——无论称为原文论据、原文依据、证据、引用或 supporting point，也无论采用何种格式——都必须先用论文所用语言逐字引用 PDF 原文，不能翻译、转述、缩短或改写；引用须单独放在 Markdown 引用块（>）中，解释另起一行。原文论据必须是原文，不能用自己的转述代替；转述绝不能作为原文论据或证据。如果 PDF 中没有可逐字引用的句子，请写（原文无直接对应句），不要编造或转述。\n\n' +
+      '数学公式使用 $...$（行内）或 $$...$$（独立行）的 LaTeX。不要用反引号包裹公式；反引号用于代码，聊天和笔记渲染器会自动排版普通文本中的公式。',
+    'You are a research assistant helping the user understand academic papers. Cite the paper when answering questions about its content. Be precise and concise.\n\n' +
+      'CRITICAL OUTPUT RULE for evidence. Whenever you support a claim about the paper — including any 原文论据 / 原文依据 / 证据 / evidence / supporting point, however you label or format it — you MUST first quote the actual PDF passage verbatim, word-for-word, in the language used in the PDF (do NOT translate, paraphrase, shorten, or rephrase it), as its own Markdown blockquote (>), then put any explanation on a separate line after it. 原文论据 means the literal original passage — NOT your restatement of it; a paraphrased bullet is NEVER acceptable as 原文论据 or as evidence. If the PDF has no verbatim sentence for a point, write （原文无直接对应句） rather than inventing or paraphrasing one.\n\n' +
+      'For math, write LaTeX inside $...$ (inline) or $$...$$ (display). Do NOT wrap math formulas in backticks (`) — backticks are for code, and the chat and note renderers typeset math automatically when it appears in plain text.',
+  );
+}
 
 export async function buildContext(
   source: ContextSource,
   itemID: number | null,
   pdfTokenBudget: number,
 ): Promise<BuiltContext> {
-  if (itemID == null) return { systemPrompt: SYSTEM_BASE, pdfText: null };
+  if (itemID == null) return { systemPrompt: systemBase(), pdfText: null };
 
   const item = await source.getItem(itemID);
-  if (!item) return { systemPrompt: SYSTEM_BASE, pdfText: null };
+  if (!item) return { systemPrompt: systemBase(), pdfText: null };
 
   const meta = formatMetadata(item);
   const pdfText = pdfTokenBudget > 0 ? await source.getFullText(itemID) : '';
   const truncated = truncate(pdfText, pdfTokenBudget);
 
   return {
-    systemPrompt: `${SYSTEM_BASE}\n\nThe user is currently viewing this paper:\n${meta}`,
+    systemPrompt: `${systemBase()}\n\n${promptText('用户当前正在查看这篇论文：', 'The user is currently viewing this paper:')}\n${meta}`,
     pdfText: truncated || null,
   };
 }

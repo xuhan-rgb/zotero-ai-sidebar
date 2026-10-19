@@ -1,4 +1,5 @@
 import type { PrefsStore } from './storage';
+import { promptText } from '../utils/prompt-locale';
 
 export type WebSearchMode = 'disabled' | 'cached' | 'live';
 export type McpApprovalMode = 'never' | 'always';
@@ -49,6 +50,24 @@ export const DEFAULT_ANNOTATION_COLOR_GUIDE = [
   '只能使用上面列出的 hex；如果类别不明确，不要强行分彩色，省略 color 使用 Zotero 默认色。',
 ].join('\n');
 
+export const DEFAULT_ANNOTATION_COLOR_GUIDE_EN = [
+  'PDF annotation color presets (used by zotero_annotate_passage):',
+  '- #ffd400 Yellow: research background / motivation / key context.',
+  '- #ff6666 Red: core problem / method gap / key limitation / point worth questioning.',
+  '- #2ea8e5 Blue: task definition / problem setup / evaluation protocol.',
+  '- #5fb236 Green: method module / model structure / algorithm mechanism.',
+  '- #a28ae5 Purple: dataset / data engine / experimental setup.',
+  '- #f19837 Orange: experimental result / ablation / quantitative evidence.',
+  "Use only the hex values listed above. If the category is unclear, do not force a color; omit color and use Zotero's default.",
+].join('\n');
+
+export function getDefaultAnnotationColorGuide(): string {
+  return promptText(
+    DEFAULT_ANNOTATION_COLOR_GUIDE,
+    DEFAULT_ANNOTATION_COLOR_GUIDE_EN,
+  );
+}
+
 export const DEFAULT_TOOL_SETTINGS: ToolSettings = {
   webSearchMode: 'disabled',
   mcpServers: [],
@@ -63,6 +82,18 @@ export const DEFAULT_TOOL_SETTINGS: ToolSettings = {
   },
 };
 
+export function getDefaultToolSettings(): ToolSettings {
+  return {
+    ...DEFAULT_TOOL_SETTINGS,
+    annotationColorGuide: getDefaultAnnotationColorGuide(),
+    arxivMcp: {
+      ...DEFAULT_TOOL_SETTINGS.arxivMcp,
+      allowedTools: [...DEFAULT_TOOL_SETTINGS.arxivMcp.allowedTools],
+    },
+    mcpServers: [],
+  };
+}
+
 const KEY = 'extensions.zotero-ai-sidebar.toolSettings';
 const LABEL_MAX_LENGTH = 64;
 const MAX_MCP_SERVERS = 8;
@@ -70,11 +101,11 @@ const MAX_ANNOTATION_COLOR_GUIDE_CHARS = 4000;
 
 export function loadToolSettings(prefs: PrefsStore): ToolSettings {
   const raw = prefs.get(KEY);
-  if (!raw) return DEFAULT_TOOL_SETTINGS;
+  if (!raw) return getDefaultToolSettings();
   try {
     return normalizeToolSettings(JSON.parse(raw));
   } catch {
-    return DEFAULT_TOOL_SETTINGS;
+    return getDefaultToolSettings();
   }
 }
 
@@ -119,7 +150,14 @@ export function normalizeToolSettings(value: unknown): ToolSettings {
 
 function normalizeAnnotationColorGuide(value: unknown): string {
   const guide = stringValue(value).slice(0, MAX_ANNOTATION_COLOR_GUIDE_CHARS);
-  return guide || DEFAULT_ANNOTATION_COLOR_GUIDE;
+  if (
+    !guide ||
+    guide === DEFAULT_ANNOTATION_COLOR_GUIDE ||
+    guide === DEFAULT_ANNOTATION_COLOR_GUIDE_EN
+  ) {
+    return getDefaultAnnotationColorGuide();
+  }
+  return guide;
 }
 
 function normalizeTextAnnotationFontSize(value: unknown): number {

@@ -1,3 +1,4 @@
+import { promptText } from "../utils/prompt-locale";
 import type { AgentTool, ToolExecutionResult } from "../providers/types";
 import type { ContextPolicy } from "./policy";
 
@@ -22,12 +23,12 @@ export function createPaperTools(policy: ContextPolicy): AgentTool[] {
     {
       name: "paper_search_arxiv",
       description:
-        "Search arXiv by paper title, natural-language query, DOI-like text, or arXiv URL/ID. Use when the user names a paper but the exact arXiv ID or PDF URL is not known. Returns metadata and PDF URLs; it does not read the full paper body.",
+        promptText("按论文标题、自然语言查询、类似 DOI 的文本或 arXiv URL/ID 搜索 arXiv。用户提到论文但尚不知道精确 arXiv ID 或 PDF URL 时使用。返回题录和 PDF URL，不读取全文正文。", "Search arXiv by paper title, natural-language query, DOI-like text, or arXiv URL/ID. Use when the user names a paper but the exact arXiv ID or PDF URL is not known. Returns metadata and PDF URLs; it does not read the full paper body."),
       parameters: objectSchema(
         {
-          query: stringSchema("Paper title, topic, arXiv URL, or arXiv ID."),
+          query: stringSchema(promptText("论文标题、主题、arXiv URL 或 arXiv ID。", "Paper title, topic, arXiv URL, or arXiv ID.")),
           maxResults: numberSchema(
-            "Maximum candidates to return. The harness clamps this to 1-10.",
+            promptText("最多返回的候选数，执行器会限制在 1–10。", "Maximum candidates to return. The harness clamps this to 1-10."),
           ),
         },
         ["query"],
@@ -67,16 +68,16 @@ export function createPaperTools(policy: ContextPolicy): AgentTool[] {
     {
       name: "paper_fetch_arxiv_fulltext",
       description:
-        "Fetch readable full text for an arXiv paper from an arXiv URL/ID, PDF URL, or paper title/query. Use when the user asks to summarize or analyze a paper that is not necessarily the current Zotero item. The model decides when to call this tool; the harness only resolves arXiv metadata and reads ar5iv HTML text. Optional start/end read a bounded character range from the remote paper text.",
+        promptText("根据 arXiv URL/ID、PDF URL 或论文标题/查询获取可读全文。用户要求总结或分析不一定是当前 Zotero 条目的论文时使用。模型决定何时调用，执行器仅解析 arXiv 题录并读取 ar5iv HTML 文本。可选 start/end 用于读取远程正文的有限字符范围。", "Fetch readable full text for an arXiv paper from an arXiv URL/ID, PDF URL, or paper title/query. Use when the user asks to summarize or analyze a paper that is not necessarily the current Zotero item. The model decides when to call this tool; the harness only resolves arXiv metadata and reads ar5iv HTML text. Optional start/end read a bounded character range from the remote paper text."),
       parameters: objectSchema(
         {
           queryOrUrl: stringSchema(
-            "arXiv abs/PDF URL, arXiv ID, or paper title/query.",
+            promptText("arXiv abs/PDF URL、arXiv ID 或论文标题/查询。", "arXiv abs/PDF URL, arXiv ID, or paper title/query."),
           ),
           start: numberSchema(
-            "Optional zero-based start character offset from a previous result.",
+            promptText("先前结果中可选的、从零开始的起始字符偏移。", "Optional zero-based start character offset from a previous result."),
           ),
-          end: numberSchema("Optional end character offset."),
+          end: numberSchema(promptText("可选的结束字符偏移。", "Optional end character offset.")),
         },
         ["queryOrUrl"],
       ),

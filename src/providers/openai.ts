@@ -1,3 +1,4 @@
+import { promptText } from "../utils/prompt-locale";
 import {
   effectiveReasoningEffort,
   isDeepSeekReasoningModel,
@@ -46,8 +47,12 @@ const OPENAI_FIRST_EVENT_TIMEOUT_MS = 60_000;
 const MAX_RELAY_RETRY = 3;
 const MAX_OUTPUT_CONTINUATIONS = 3;
 const OUTPUT_COMPLETION_MARKER = "[ZAI_COMPLETE]";
-const OUTPUT_CONTINUATION_PROMPT =
-  "Continue the same answer exactly from where it was cut off. Do not repeat existing text. Complete every remaining part of the user's request. When and only when the answer is fully complete, end with [ZAI_COMPLETE] on its own line.";
+function outputContinuationPrompt(): string {
+  return promptText(
+    "从被截断的位置准确接续同一回答，不要重复已有文字。完成用户请求的所有剩余部分。只有回答全部完成后，才在单独一行以 [ZAI_COMPLETE] 结束。",
+    "Continue the same answer exactly from where it was cut off. Do not repeat existing text. Complete every remaining part of the user's request. When and only when the answer is fully complete, end with [ZAI_COMPLETE] on its own line.",
+  );
+}
 
 // OpenAI Responses-API tool loop. Three load-bearing decisions, all aligned
 // with OpenAI Codex's harness model:
@@ -693,7 +698,7 @@ export class OpenAIProvider implements Provider {
         outputContinuations += 1;
         input.push(
           { role: "assistant", content: iterationText },
-          { role: "user", content: OUTPUT_CONTINUATION_PROMPT },
+          { role: "user", content: outputContinuationPrompt() },
         );
         yield {
           type: "status",
@@ -877,7 +882,7 @@ export function openAIHostedToolSpecs(
         ? { allowed_tools: server.allowedTools }
         : {}),
       require_approval: server.requireApproval,
-      server_description: `User-configured MCP server "${server.serverLabel}". Let the model decide when to call its allowed tools.`,
+      server_description: promptText(`用户配置的 MCP 服务 "${server.serverLabel}"。由模型决定何时调用允许的工具。`, `User-configured MCP server "${server.serverLabel}". Let the model decide when to call its allowed tools.`),
     });
   }
   const arxiv = settings.arxivMcp;
@@ -889,7 +894,7 @@ export function openAIHostedToolSpecs(
       allowed_tools: arxiv.allowedTools,
       require_approval: arxiv.requireApproval,
       server_description:
-        "Configurable arXiv MCP search server. Let the model decide when to search or fetch paper metadata.",
+        promptText("可配置的 arXiv MCP 搜索服务。由模型决定何时搜索或获取论文题录。", "Configurable arXiv MCP search server. Let the model decide when to search or fetch paper metadata."),
     });
   }
   return specs;

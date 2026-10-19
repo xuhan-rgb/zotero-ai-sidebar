@@ -5,12 +5,17 @@ import type {
   ReasoningEffort,
   TranslateThinking,
 } from "../settings/types";
+import { promptText } from "../utils/prompt-locale";
 
-const SYSTEM_PROMPT =
-  "英译中。准确、通顺，采用自然的中文学术表达；保持原文逻辑与句间衔接，不要逐词硬译。完整保留术语、缩写、变量、上下标、公式、集合符号及公式编号，不要改写或拆散公式。只输出简体中文译文。";
+const SYSTEM_PROMPT = () => promptText(
+  "英译中。准确、通顺，采用自然的中文学术表达；保持原文逻辑与句间衔接，不要逐词硬译。完整保留术语、缩写、变量、上下标、公式、集合符号及公式编号，不要改写或拆散公式。只输出简体中文译文。",
+  "Translate the English source into Chinese. Produce an accurate, fluent translation in natural academic Chinese, preserving the source logic and connections between sentences rather than translating word for word. Preserve terminology, abbreviations, variables, subscripts and superscripts, formulas, set symbols, and equation numbers exactly; do not rewrite or split formulas. Output only the Simplified Chinese translation.",
+);
 
-const STRICT_SYSTEM_PROMPT =
-  "英译中。准确、通顺，采用自然的中文学术表达；完整保留变量、上下标、公式、集合符号及公式编号。只输出含中文的译文，不要英文改写、解释或引号。";
+const STRICT_SYSTEM_PROMPT = () => promptText(
+  "英译中。准确、通顺，采用自然的中文学术表达；完整保留变量、上下标、公式、集合符号及公式编号。只输出含中文的译文，不要英文改写、解释或引号。",
+  "Translate the English source into accurate, fluent academic Chinese. Preserve variables, subscripts and superscripts, formulas, set symbols, and equation numbers exactly. Output only the Chinese translation; do not paraphrase in English, explain, or add quotation marks.",
+);
 const TRANSLATE_CONTEXT_CHAR_LIMIT = 600;
 const TRANSLATE_MAX_OUTPUT_TOKENS = 384;
 
@@ -133,7 +138,7 @@ export async function* translateSentence(
 
   const first = await collectTranslation(
     messages,
-    SYSTEM_PROMPT,
+    SYSTEM_PROMPT(),
     overriddenPreset,
     req.signal,
   );
@@ -164,7 +169,7 @@ async function retryStrictTranslation(
 ): Promise<TranslationResult> {
   const second = await collectTranslation(
     messages,
-    STRICT_SYSTEM_PROMPT,
+    STRICT_SYSTEM_PROMPT(),
     preset,
     signal,
   );

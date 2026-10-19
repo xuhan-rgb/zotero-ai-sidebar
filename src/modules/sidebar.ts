@@ -1,4 +1,5 @@
-import { effectiveReasoningEffort } from "../settings/reasoning";
+import { promptText } from "../utils/prompt-locale";
+import { effectiveReasoningEffort, withModelPreservingReasoningEffort } from "../settings/reasoning";
 import { uiText, UI_LANGUAGE_PREF, normalizeUiLanguage } from "../utils/ui-locale";
 import { renderComposerReasoningSelect } from "./composer-reasoning";
 import { bindReadingRouteProgress } from "./reading-route-progress";
@@ -598,7 +599,7 @@ import {
   SPLITTER_ID,
   TOGGLE_BUTTON_ID,
   XHTML_NS,
-  ZOTERO_TOOL_MANUAL,
+  getZoteroToolManual,
   activeRouteHighlights,
   contextPolicy,
   ignoredSelectedTextByItem,
@@ -6396,9 +6397,10 @@ function renderModelSwitcher(
     item.addEventListener("click", () => {
       closePopup();
       if (id === preset.model) return;
-      upsertPreset(state, { ...preset, model: id });
+      const nextPreset = withModelPreservingReasoningEffort(preset, id);
+      upsertPreset(state, nextPreset);
       persist(state);
-      updateToolbarOption(mount, { ...preset, model: id });
+      updateToolbarOption(mount, nextPreset);
       renderPanel(mount, state);
     });
     popup.append(item);
@@ -7321,7 +7323,7 @@ async function sendQuickAsk(
       conversation,
       contextPolicy,
     );
-    const systemPrompt = `${baseContext.systemPrompt}\n\nQuick Ask mode: this is a temporary in-memory conversation. Use the preceding Quick Ask turns to answer follow-up questions. No saved research conversation history is available. Use read-only tools when the current paper is needed; do not claim to remember chats outside this Quick Ask window.`;
+    const systemPrompt = `${baseContext.systemPrompt}\n\n${promptText("快速提问模式：这是临时的内存对话。用前面的快速提问轮次回答追问；无法访问已保存的研究对话历史。需要当前论文时使用只读工具；不要声称记得此快速提问窗口之外的对话。", "Quick Ask mode: this is a temporary in-memory conversation. Use the preceding Quick Ask turns to answer follow-up questions. No saved research conversation history is available. Use read-only tools when the current paper is needed; do not claim to remember chats outside this Quick Ask window.")}`;
     const promptCacheKey = `${buildPromptCacheKey(preset, controller.itemID)}:quick-ask`;
 
     controller.state.statusText = uiText("正在等待模型回答……", "Waiting for the model…");
@@ -8471,8 +8473,9 @@ function buildPromptCacheKey(
 
 function toolManualWithConfiguredGuides(): string {
   const guide = loadToolSettings(zoteroPrefs()).annotationColorGuide.trim();
-  if (!guide) return ZOTERO_TOOL_MANUAL;
-  return `${ZOTERO_TOOL_MANUAL}\n\nConfigured PDF annotation color presets:\n${guide}`;
+  const manual = getZoteroToolManual();
+  if (!guide) return manual;
+  return `${manual}\n\n${promptText("已配置的 PDF 注释颜色预设：", "Configured PDF annotation color presets:")}\n${guide}`;
 }
 
 // Tool-trace upsert. Each chunk that comes from the provider stream is
@@ -10737,18 +10740,34 @@ function renderEmptyNoteView(
   }
 }
 
-const OVERVIEW_PROMPT = [
-  "请为当前 Zotero 论文生成「全文总览」，让我对整篇论文有全局概念，并一眼知道重点读哪几章。",
-  "第一步：调用 zotero_outline_pdf 获取章节骨架（标题、字符范围、图表锚点）。",
-  "第二步：基于骨架整理出：",
-  "  · narrative：2–4 句中文核心讲述，结尾点出本文贡献；",
-  "  · 每个章节：一句话 gist（中文，≤30 字）；phase（motivation｜method｜validation）；emphasis（innovation｜result｜normal｜background）。emphasis=innovation 的章节，其 gist 必须写清“新在哪”（本文贡献）；结果/SOTA 章节用 result；相关工作/总结等背景章节用 background。",
-  "  · flowchart：问题→方法→结果及关键依赖的逻辑图；把本文新提出的部分节点 type 设为 innovation 并把 sectionNo 设为对应章节号，效果/SOTA 节点用 result，其余用 section/point。",
-  "第三步：调用 render_paper_overview，把 narrative、sections（含 gist/charStart/charEnd/anchors/phase/emphasis）与 flowchart 一起渲染。网络图由关联的 GitHub 代码单独生成，不要在全文总览中生成网络图。",
-  "重要：narrative 必填；每个 section 都必须带 phase 和 emphasis 两个字段，用英文值（phase: motivation|method|validation；emphasis: innovation|result|normal|background）。不要把“新：/创新：”写进 gist——改用 emphasis=innovation 表达。",
-  '示例：render_paper_overview({ "narrative":"……结尾点出贡献", "sections":[ {"no":"1","title":"Introduction","gist":"动机…","phase":"motivation","emphasis":"background"}, {"no":"5","title":"Estimator Initialization","gist":"……（新在哪）","phase":"method","emphasis":"innovation"}, {"no":"9","title":"Experiments","gist":"……","phase":"validation","emphasis":"result"} ], "flowchart":{…} })。',
-  "必须调用 render_paper_overview 完成渲染，不要只用文字回答。",
-].join("\n");
+function overviewPrompt(): string {
+  return promptText(
+    [
+      "请为当前 Zotero 论文生成「全文总览」，让我对整篇论文有全局概念，并一眼知道重点读哪几章。",
+      "第一步：调用 zotero_outline_pdf 获取章节骨架（标题、字符范围、图表锚点）。",
+      "第二步：基于骨架整理出：",
+      "  · narrative：2–4 句中文核心讲述，结尾点出本文贡献；",
+      "  · 每个章节：一句话 gist（中文，≤30 字）；phase（motivation｜method｜validation）；emphasis（innovation｜result｜normal｜background）。emphasis=innovation 的章节，其 gist 必须写清“新在哪”（本文贡献）；结果/SOTA 章节用 result；相关工作/总结等背景章节用 background。",
+      "  · flowchart：问题→方法→结果及关键依赖的逻辑图；把本文新提出的部分节点 type 设为 innovation 并把 sectionNo 设为对应章节号，效果/SOTA 节点用 result，其余用 section/point。",
+      "第三步：调用 render_paper_overview，把 narrative、sections（含 gist/charStart/charEnd/anchors/phase/emphasis）与 flowchart 一起渲染。网络图由关联的 GitHub 代码单独生成，不要在全文总览中生成网络图。",
+      "重要：narrative 必填；每个 section 都必须带 phase 和 emphasis 两个字段，用英文值（phase: motivation|method|validation；emphasis: innovation|result|normal|background）。不要把“新：/创新：”写进 gist——改用 emphasis=innovation 表达。",
+      '示例：render_paper_overview({ "narrative":"……结尾点出贡献", "sections":[ {"no":"1","title":"Introduction","gist":"动机…","phase":"motivation","emphasis":"background"}, {"no":"5","title":"Estimator Initialization","gist":"……（新在哪）","phase":"method","emphasis":"innovation"}, {"no":"9","title":"Experiments","gist":"……","phase":"validation","emphasis":"result"} ], "flowchart":{…} })。',
+      "必须调用 render_paper_overview 完成渲染，不要只用文字回答。",
+    ].join("\n"),
+    [
+      "Generate a full-paper Overview for the current Zotero paper so I can understand the entire work and identify which sections deserve close reading. Write the narrative, section gists and graph labels in English.",
+      "Step 1: Call zotero_outline_pdf for the section skeleton (headings, character ranges, figure/table anchors).",
+      "Step 2: Based on the skeleton, prepare:",
+      "  - narrative: 2-4 English sentences explaining the core work, ending with its contributions.",
+      "  - Each section: a one-sentence English gist (≤30 characters), phase (motivation|method|validation), and emphasis (innovation|result|normal|background). For innovation, the gist must explain what is new; use result for effect/SOTA sections and background for related work/conclusions.",
+      "  - flowchart: a logical graph from problem to method to results and key dependencies. Use innovation for this paper's new components and set sectionNo to the corresponding section; use result for effect/SOTA nodes and section/point otherwise.",
+      "Step 3: Call render_paper_overview with narrative, sections (including gist/charStart/charEnd/anchors/phase/emphasis), and flowchart. Network diagrams are generated separately from the linked GitHub code; do not include them in the overview.",
+      "Important: narrative is required. Every section must include phase and emphasis using the exact English enum values above. Do not put New:/Innovation: prefixes into gist; use emphasis=innovation instead.",
+      "Example: render_paper_overview({\"narrative\":\"...ending with contributions\", \"sections\":[{\"no\":\"1\",\"title\":\"Introduction\",\"gist\":\"Motivation...\",\"phase\":\"motivation\",\"emphasis\":\"background\"},{\"no\":\"5\",\"title\":\"Estimator Initialization\",\"gist\":\"...what is new\",\"phase\":\"method\",\"emphasis\":\"innovation\"},{\"no\":\"9\",\"title\":\"Experiments\",\"gist\":\"...\",\"phase\":\"validation\",\"emphasis\":\"result\"}], \"flowchart\":{...}}).",
+      "You must call render_paper_overview to render the result, rather than answering with text only.",
+    ].join("\n"),
+  );
+}
 
 function networkDiagramOfficialPrompt(
   sidebar: WindowSidebarState | null | undefined,
@@ -10760,7 +10779,7 @@ function networkDiagramOfficialPrompt(
     sidebar?.networkDiagramDraftRepositoryURL?.trim();
   return buildNetworkDiagramUserPrompt({
     repositoryURL:
-      explicitRepositoryURL || currentRepositoryURL || "当前已关联仓库",
+      explicitRepositoryURL || currentRepositoryURL || promptText("当前已关联仓库", "Currently linked repository"),
     commitSHA:
       !explicitRepositoryURL || explicitRepositoryURL === currentRepositoryURL
         ? sidebar?.networkDiagramCommitSHA
@@ -10777,7 +10796,7 @@ function networkDiagramInstructionWithSelection(
     sidebar.networkDiagramSelectedNode;
   if (!node) return instruction;
   return [
-    "[当前选中的网络图节点]",
+    promptText("[当前选中的网络图节点]", "[Currently selected network diagram node]"),
     `id: ${node.id}`,
     `label: ${node.label}`,
     `stage: ${node.stage}`,
@@ -10791,7 +10810,7 @@ function networkDiagramInstructionWithSelection(
     node.evidenceIDs.length
       ? `evidenceIDs: ${node.evidenceIDs.join(", ")}`
       : "",
-    "[用户要求]",
+    promptText("[用户要求]", "[User instruction]"),
     instruction,
   ]
     .filter(Boolean)
@@ -12143,11 +12162,11 @@ async function generateOverviewIntoPanel(
   button.disabled = true;
   try {
     if (state.localUiSettings.chatSendMode === "web") {
-      await sendWebPromptMessage(sidebar.mount, state, "请为当前论文生成全文总览。", state.localUiSettings.webPromptProvider, {
+      await sendWebPromptMessage(sidebar.mount, state, promptText("请为当前论文生成全文总览。", "Generate a full-paper overview for the current paper."), state.localUiSettings.webPromptProvider, {
         paperAction: "overview", taskTitle: "WEB · 全文总览",
       });
     } else {
-      await sendMessage(sidebar.mount, state, OVERVIEW_PROMPT, {
+      await sendMessage(sidebar.mount, state, overviewPrompt(), {
         taskTitle: "生成总览",
       });
     }
@@ -14102,6 +14121,7 @@ function reconcileSidebarDisplayMode(
   localSettings: LocalUiSettings,
   previousMode?: LocalUiSettings["sidebarDisplayMode"],
 ): void {
+  if (isColumnCollapsed(sidebar)) return;
   if (localSettings.sidebarDisplayMode === "docked") {
     enterDockedSidebarLayout(mainWindow, sidebar);
     return;
@@ -14135,6 +14155,7 @@ export function registerSidebarForWindow(win: Window) {
     return;
   }
   windowRegisterRetries.delete(win);
+  const layoutPrefs = loadReaderLayoutPrefs();
 
   doc.getElementById(SPLITTER_ID)?.remove();
   doc.getElementById(COLUMN_ID)?.remove();
@@ -14153,6 +14174,7 @@ export function registerSidebarForWindow(win: Window) {
   splitter.setAttribute("resizebefore", "closest");
   splitter.setAttribute("resizeafter", "closest");
   splitter.setAttribute("orient", "horizontal");
+  if (layoutPrefs.aiOpen !== true) splitter.setAttribute("hidden", "true");
 
   const noteSplitter = doc.createXULElement("splitter");
   noteSplitter.id = NOTE_SPLITTER_ID;
@@ -14183,11 +14205,12 @@ export function registerSidebarForWindow(win: Window) {
   column.setAttribute("class", "zai-column");
   column.setAttribute(
     "width",
-    String(loadReaderLayoutPrefs().aiWidth ?? DEFAULT_AI_COLUMN_WIDTH),
+    String(layoutPrefs.aiWidth ?? DEFAULT_AI_COLUMN_WIDTH),
   );
   column.setAttribute("minwidth", String(MIN_AI_COLUMN_WIDTH));
   column.setAttribute("maxwidth", String(MAX_AI_COLUMN_WIDTH));
   column.setAttribute("zotero-persist", "width");
+  if (layoutPrefs.aiOpen !== true) column.setAttribute("collapsed", "true");
   column.addEventListener("wheel", (event: Event) => event.stopPropagation(), {
     passive: true,
   });
@@ -14254,7 +14277,7 @@ export function registerSidebarForWindow(win: Window) {
   installReaderPromptShortcutHandler(win, state);
   renderWindowSidebar(win);
   const panelState = states.get(state.mount);
-  if (panelState) {
+  if (panelState && layoutPrefs.aiOpen === true) {
     reconcileSidebarDisplayMode(win, state, panelState.localUiSettings);
   }
   scheduleInitialSidebarRefresh(win, state);
@@ -14285,6 +14308,10 @@ function installReaderLayoutMemory(
   const remember = () => {
     rememberLastNoteWidth(state);
     if (aiDragging || aiSaveTimer != null) rememberAi();
+  };
+  const rememberOnClose = () => {
+    saveReaderLayoutPrefs({ aiOpen: !isColumnCollapsed(state) });
+    remember();
   };
   const startAiDrag = (event: Event) => {
     if ((event as MouseEvent).button === 0) aiDragging = true;
@@ -14320,7 +14347,7 @@ function installReaderLayoutMemory(
   win.addEventListener("mouseup", remember, true);
   win.addEventListener("resize", syncTranslation);
   state.layoutCleanup = () => {
-    remember();
+    rememberOnClose();
     resizeObserver?.disconnect();
     state.splitter.removeEventListener("mousedown", startAiDrag, true);
     state.splitter.removeEventListener("command", scheduleAiRemember);
@@ -14328,13 +14355,13 @@ function installReaderLayoutMemory(
     state.noteSplitter.removeEventListener("mouseup", remember);
     win.removeEventListener("mouseup", remember, true);
     win.removeEventListener("resize", syncTranslation);
-    win.removeEventListener("beforeunload", remember);
+    win.removeEventListener("beforeunload", rememberOnClose);
     if (state.layoutSaveTimer != null) {
       win.clearTimeout(state.layoutSaveTimer);
       state.layoutSaveTimer = undefined;
     }
   };
-  win.addEventListener("beforeunload", remember);
+  win.addEventListener("beforeunload", rememberOnClose);
 }
 
 function isNoteColumnVisible(state: WindowSidebarState): boolean {
@@ -14435,6 +14462,7 @@ function normalizeReaderLayoutPrefs(value: unknown): ReaderLayoutPrefs {
   const input =
     value && typeof value === "object" ? (value as ReaderLayoutPrefs) : {};
   return {
+    ...(typeof input.aiOpen === "boolean" ? { aiOpen: input.aiOpen } : {}),
     ...(typeof input.aiWidth === "number" && Number.isFinite(input.aiWidth)
       ? {
           aiWidth: clampWidth(input.aiWidth, MIN_AI_COLUMN_WIDTH, MAX_AI_COLUMN_WIDTH),

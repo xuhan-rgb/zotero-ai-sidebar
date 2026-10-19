@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 import type { Message } from "../../src/providers/types";
 import {
@@ -7,6 +7,7 @@ import {
 } from "../../src/modules/web-prompt-format";
 
 describe("WEB prompt formatting", () => {
+  beforeEach(() => vi.stubGlobal("Zotero", { locale: "zh-CN", Prefs: { get: () => "zh-CN" } }));
   it("distinguishes a referenced article from the current paper", () => {
     const prompt = buildWebPrompt({
       content: "用这篇分析本篇", title: "Current Paper", selectedText: "", history: [],
@@ -244,6 +245,52 @@ describe("WEB prompt formatting", () => {
       },
     ];
     expect(completedWebHistory(history)).toEqual(history);
+  });
+
+  it("localizes built-in instructions and headings to English", () => {
+    vi.stubGlobal("Zotero", { locale: "en-US", Prefs: { get: () => "en-US" } });
+    const prompt = buildWebPrompt({ content: "Explain", title: "Paper", selectedText: "", history: [] });
+    expect(prompt).toContain("## Response Requirements");
+    expect(prompt).toContain("Answer the final");
+    expect(prompt).toContain("## Paper");
+    expect(prompt).toContain("Explain");
+    expect(prompt).not.toContain("## 回答要求");
+  });
+
+  it("keeps complex English prompt instructions localized while preserving source data and fixed annotation markers", () => {
+    vi.stubGlobal("Zotero", { locale: "en-US", Prefs: { get: () => "en-US" } });
+    const prompt = buildWebPrompt({
+      content: "Create a PNG diagram",
+      title: "Current Paper",
+      selectedText: "Selected source sentence.",
+      selectedTextOrigin: "pdf",
+      history: [
+        { role: "user", content: "Earlier question" },
+        { role: "assistant", content: "Earlier answer" },
+      ],
+      attachmentKind: "markdown",
+      referencedPapers: [{ title: "Reference Paper", attachmentName: "reference.txt", fullTextChars: 10, totalChars: 20 }],
+      imageLabels: ["figure.png"],
+      tocAttachmentAvailable: true,
+      tocAttachmentName: "outline.txt",
+      annotationSuggestion: true,
+      annotationColorGuide: "#2EA8E5 — Definition",
+    });
+    expect(prompt).toContain("## Reference Quotation (from PDF Selection)");
+    expect(prompt).toContain("## Paper Material");
+    expect(prompt).toContain("## File Output Requirements");
+    expect(prompt).toContain("## Suggested Annotation Format for PDF Selection");
+    expect(prompt).toContain("reference.txt");
+    expect(prompt).toContain("outline.txt");
+    expect(prompt).toContain("Selected source sentence.");
+    expect(prompt).toContain("Earlier question");
+    expect(prompt).toContain("figure.png");
+    expect(prompt).toContain("建议注释：");
+    expect(prompt).toContain("建议颜色：#hex");
+    expect(prompt).not.toContain("你正在处理");
+    expect(prompt).not.toContain("请先读取");
+    expect(prompt).not.toContain("用户要求生成");
+    expect(prompt).not.toContain("当前未配置");
   });
 });
 

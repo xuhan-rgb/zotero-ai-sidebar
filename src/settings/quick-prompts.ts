@@ -1,5 +1,7 @@
 import type { PrefsStore } from './storage';
 import { appendLocalPath } from '../utils/local-path';
+import { getUiLocale } from '../utils/ui-locale';
+import { ENGLISH_BUILT_IN_PROMPTS } from './quick-prompts-en';
 
 export type BuiltInPromptID =
   | 'summary'
@@ -26,6 +28,10 @@ export interface QuickPromptSettings {
   customButtons: CustomPromptButton[];
   selectionQuestionAnnotationEnabled: boolean;
 }
+
+// Shipped before the Markdown-heading default (replaced in e94a0be).
+const LEGACY_SUMMARY_PROMPT =
+  '请用中文总结这篇论文，包含：研究背景与问题、核心方法流程、关键公式或算法步骤、主要贡献和创新点、实验结果与主要结论、适用场景、局限性、可能反例与后续改进方向，最后给出一句话概括。';
 
 export const DEFAULT_SUMMARY_PROMPT = [
   '请用中文总结这篇论文，按以下小标题分段输出（每段 1-3 句，可用 `- ` 列要点）：',
@@ -146,6 +152,19 @@ export const DEFAULT_QUICK_PROMPT_SETTINGS: QuickPromptSettings = {
   selectionQuestionAnnotationEnabled: true,
 };
 
+/** Built-in defaults follow the interface language; editable prompts stay untouched. */
+export function getDefaultQuickPromptSettings(): QuickPromptSettings {
+  return {
+    ...DEFAULT_QUICK_PROMPT_SETTINGS,
+    builtIns: {
+      ...(getUiLocale() === 'zh-CN'
+        ? DEFAULT_QUICK_PROMPT_SETTINGS.builtIns
+        : ENGLISH_BUILT_IN_PROMPTS),
+    },
+    customButtons: [],
+  };
+}
+
 const KEY = 'extensions.zotero-ai-sidebar.quickPrompts';
 const PROMPTS_FILE = 'zotero-ai-sidebar-quick-prompts.json';
 const MAX_CUSTOM_BUTTONS = 12;
@@ -176,14 +195,14 @@ export function quickPromptsPath(): string {
 }
 
 export function loadQuickPromptSettings(prefs: PrefsStore): QuickPromptSettings {
-  if (loaded && cached) return cached;
+  if (loaded && cached) return normalizeQuickPromptSettings(cached);
   const fromPrefs = parsePrefs(prefs);
   if (fromPrefs) {
     cached = fromPrefs;
     loaded = true;
     return cached;
   }
-  return DEFAULT_QUICK_PROMPT_SETTINGS;
+  return getDefaultQuickPromptSettings();
 }
 
 export function saveQuickPromptSettings(
@@ -204,7 +223,7 @@ export function hydrateQuickPromptSettings(prefs: PrefsStore): Promise<void> {
   hydratePromise = (async () => {
     if (!canUseFileStorage()) {
       if (!loaded) {
-        cached = parsePrefs(prefs) ?? DEFAULT_QUICK_PROMPT_SETTINGS;
+        cached = parsePrefs(prefs) ?? getDefaultQuickPromptSettings();
         loaded = true;
       }
       return;
@@ -226,7 +245,7 @@ export function hydrateQuickPromptSettings(prefs: PrefsStore): Promise<void> {
       await flushQuickPromptSettings();
       return;
     }
-    cached = DEFAULT_QUICK_PROMPT_SETTINGS;
+    cached = getDefaultQuickPromptSettings();
     loaded = true;
   })();
   return hydratePromise;
@@ -328,21 +347,23 @@ export function normalizeQuickPromptSettings(value: unknown): QuickPromptSetting
   const builtIns = input.builtIns && typeof input.builtIns === 'object'
     ? (input.builtIns as Partial<BuiltInPromptSettings>)
     : {};
+  const defaults = getDefaultQuickPromptSettings().builtIns;
+  const localizedPrompt = (id: BuiltInPromptID): string => {
+    const value = promptValue(builtIns[id], defaults[id]);
+    // Recognize only exact built-in copies, including defaults saved by older
+    // versions. Never translate or overwrite a user's edited prompt.
+    return value === DEFAULT_QUICK_PROMPT_SETTINGS.builtIns[id] ||
+      value === ENGLISH_BUILT_IN_PROMPTS[id] ||
+      (id === 'summary' && value === LEGACY_SUMMARY_PROMPT)
+      ? defaults[id]
+      : value;
+  };
   return {
     builtIns: {
-      summary: promptValue(builtIns.summary, DEFAULT_SUMMARY_PROMPT),
-      readingRoute: promptValue(
-        builtIns.readingRoute,
-        DEFAULT_READING_ROUTE_PROMPT,
-      ),
-      fullTextHighlight: promptValue(
-        builtIns.fullTextHighlight,
-        DEFAULT_FULL_TEXT_HIGHLIGHT_PROMPT,
-      ),
-      explainSelection: promptValue(
-        builtIns.explainSelection,
-        DEFAULT_EXPLAIN_SELECTION_PROMPT,
-      ),
+      summary: localizedPrompt('summary'),
+      readingRoute: localizedPrompt('readingRoute'),
+      fullTextHighlight: localizedPrompt('fullTextHighlight'),
+      explainSelection: localizedPrompt('explainSelection'),
     },
     customButtons: normalizeCustomButtons(input.customButtons),
     // Treat ONLY explicit `false` as off — undefined / unknown / legacy

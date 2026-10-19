@@ -37,6 +37,7 @@ import {
   type AskMode,
 } from "./asker";
 import { cacheKey, getCachedTranslation, setCachedTranslation } from "./cache";
+import { promptText } from "../utils/prompt-locale";
 import { newConversationId, recordReadingConversation } from "./reading-log";
 import { matchesKeybinding, parseKeybinding } from "./keybinding";
 import {
@@ -1816,7 +1817,7 @@ export class AskModeController {
       this.askMessages = [
         {
           role: "user",
-          content: `请基于这句英文回答我的问题（简体中文，简洁具体）。\n这句话：${current.text}${ctx}\n\n我的问题：${question}`,
+          content: `${promptText("请基于这句英文回答我的问题（简体中文，简洁具体）。", "Answer my question based on this English sentence. Respond in Simplified Chinese, concisely and specifically.")}\n这句话：${current.text}${ctx}\n\n我的问题：${question}`,
         },
       ];
       this.currentConvId = newConversationId();

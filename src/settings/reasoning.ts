@@ -150,6 +150,15 @@ export function withModelReasoningEffort(
   };
 }
 
+export function withModelPreservingReasoningEffort(
+  preset: ModelPreset,
+  model: string,
+): ModelPreset {
+  const next = { ...preset, model };
+  const effort = effectiveReasoningEffort(preset);
+  return effort === undefined ? next : withModelReasoningEffort(next, effort);
+}
+
 export function isReasoningEffort(value: unknown): value is ReasoningEffort {
   return REASONING_EFFORT_OPTIONS.some(([effort]) => value === effort);
 }

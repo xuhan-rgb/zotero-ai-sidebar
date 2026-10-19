@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   contextSummaryLine,
   contextSummaryParts,
@@ -10,6 +10,15 @@ import {
 } from '../../src/context/message-format';
 import { DEFAULT_CONTEXT_POLICY } from '../../src/context/policy';
 import type { Message } from '../../src/providers/types';
+import { UI_LANGUAGE_PREF } from '../../src/utils/ui-locale';
+
+function useLocale(locale: 'zh-CN' | 'en-US') {
+  vi.stubGlobal('Zotero', {
+    Prefs: { get: (key: string) => key === UI_LANGUAGE_PREF ? locale : undefined },
+  });
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('formatUserMessageForApi', () => {
   it('identifies the attached Zotero paper and its read tool', () => {
@@ -79,6 +88,7 @@ describe('formatUserMessageForApi', () => {
     });
   });
   it('places selected PDF text before the user question', () => {
+    useLocale('zh-CN');
     const message: Message = {
       role: 'user',
       content: '解释这段',
@@ -106,6 +116,7 @@ describe('formatUserMessageForApi', () => {
   });
 
   it('reminds the model to quote evidence verbatim right before the question when paper text is attached', () => {
+    useLocale('zh-CN');
     const message: Message = { role: 'user', content: '总结论点和证据' };
     const formatted = formatUserMessageForApi(
       message,
@@ -183,6 +194,7 @@ describe('formatUserMessageForApi', () => {
   });
 
   it('adds hidden annotation instruction without changing the visible question', () => {
+    useLocale('zh-CN');
     const message: Message = {
       role: 'user',
       content: '这句话为什么重要？',
@@ -204,6 +216,54 @@ describe('formatUserMessageForApi', () => {
     expect(formatted).toContain('Configured PDF annotation color presets');
     expect(formatted).not.toContain('#2ea8e5 蓝色');
     expect(formatted.endsWith('[User question]\n这句话为什么重要？')).toBe(true);
+  });
+
+  it('localizes model instructions to English while preserving protocol markers and source text', () => {
+    useLocale('en-US');
+    const message: Message = {
+      role: 'user',
+      content: 'Keep my question unchanged',
+      context: {
+        selectedText: 'Source text stays verbatim.',
+        annotationSuggestion: true,
+        annotationColorGuide: '#2ea8e5 blue: task definition.',
+        promptCacheLedger: '- turn 1; mode=full_pdf; full_pdf_chars=12000',
+      },
+    };
+    const formatted = formatUserMessageForApi(message);
+    expect(formatted).toContain('If the user asks to translate');
+    expect(formatted).toContain('Any content presented as support for a claim');
+    expect(formatted).toContain('This compact ledger records previous context metadata');
+    expect(formatted).toContain('exact protocol marker `建议注释：`');
+    expect(formatted).toContain('exact protocol marker and format `建议颜色：#hex`');
+    expect(formatted).toContain('[原文论据格式]');
+    expect(formatted).toContain('Source text stays verbatim.');
+    expect(formatted).toContain('Keep my question unchanged');
+    expect(formatted).not.toContain('用户问题若要求翻译');
+  });
+
+  it('localizes quoted-chat handling while preserving the referenced reply', () => {
+    const message: Message = {
+      role: 'user',
+      content: 'Explain this excerpt',
+      context: {
+        selectedText: 'Exact excerpt',
+        selectedTextOrigin: 'chat',
+        quotedChatReply: {
+          fullReply: 'Referenced reply text',
+          sourceConversationTitle: 'Prior chat',
+        },
+      },
+    };
+    useLocale('zh-CN');
+    const chinese = formatUserMessageForApi(message);
+    expect(chinese).toContain('请将完整的 [Referenced assistant reply — full]');
+    expect(chinese).toContain('Referenced reply text');
+
+    useLocale('en-US');
+    const english = formatUserMessageForApi(message);
+    expect(english).toContain('Answer using the complete [Referenced assistant reply — full]');
+    expect(english).toContain('Referenced reply text');
   });
 });
 
