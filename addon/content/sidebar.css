@@ -1178,6 +1178,8 @@
 }
 
 .zai-web-account-node-picker { display: grid; gap: 6px; min-width: 0; }
+.zai-web-account-node-settings { margin: 8px 0; }
+.zai-web-account-node-settings > summary { cursor: pointer; margin-bottom: 6px; }
 .zai-web-account-node-picker input { width: 100%; min-width: 0; box-sizing: border-box; }
 .zai-web-account-node-actions { display: flex; flex-wrap: wrap; gap: 6px; }
 

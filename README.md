@@ -76,7 +76,7 @@ WEB mode uses a local companion process and a dedicated browser profile. Chrome,
 
 > When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
-Requirements: Node.js 20 or newer and a browser supported by the Web Agent (automatically detected Chrome / Edge / Firefox, or a compatible custom browser). Firefox also requires Node.js. Linux additionally needs `xclip`:
+Requirements: Node.js 20 or newer and a browser supported by the Web Agent (automatically detected Chrome / Edge / Firefox, or a compatible custom browser). Linux additionally needs `xclip`:
 
 ```bash
 sudo apt install xclip
@@ -84,7 +84,7 @@ sudo apt install xclip
 
 Node detection first reuses a validated saved path, then checks the process PATH and standard installation locations. If those do not provide Node.js 20+, it scans version directories under `~/.nvm`, `~/.config/nvm`, `NVM_DIR`, and `XDG_CONFIG_HOME/nvm`, verifying the executable's actual version. This works even when a desktop-launched Zotero does not inherit an interactive terminal's NVM environment. A working saved Node is kept rather than automatically upgraded.
 
-If Node is still not found, the account dialog accepts a full executable path, a directory containing `node` / `node.exe`, or an installation directory containing `bin/node`. Use **Choose Node executable…** or paste the path, then click **Validate and use**. The path is saved only after validation succeeds; installation scripts such as `install.sh` are rejected. Changing the Node path is blocked while WEB tasks are running or queued. No installation script is run automatically.
+The account dialog always shows **Node.js path settings**, expanded by default; you can collapse it when it is not needed. The field displays the detected Node path when available, and the section reopens if Node is missing. It accepts a full executable path, a directory containing `node` / `node.exe`, or an installation directory containing `bin/node`. Use **Choose Node executable…** or paste the path, then click **Validate and use** (or press Enter). Choosing a file fills the field; validation saves the path and rechecks the environment. The path is saved only after validation succeeds; installation scripts such as `install.sh` are rejected. Changing the Node path is blocked while WEB tasks are running or queued. No installation script is run automatically.
 
 **Choose and configure a browser**
 

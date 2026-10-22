@@ -5761,6 +5761,7 @@ function configureWebAccount(
     });
     saveLocalUiSettings(zoteroPrefs(), state.localUiSettings);
   });
+  const nodeSettings = renderWebAgentNodePicker(doc, () => pickWebAgentRuntimeFile(doc, "node"), () => checkAndRepair(false));
   body.append(
     renderWebBrowserPicker(doc, state, () => {
       configured = false;
@@ -5768,6 +5769,7 @@ function configureWebAccount(
       void checkAndRepair(false);
     }),
     status,
+    nodeSettings,
     dependencyActions,
     downloadActions,
     explanation,
@@ -5825,10 +5827,10 @@ function configureWebAccount(
       const copy = el(doc, "div", "zai-web-account-dependency-copy");
       let action: HTMLButtonElement;
       if (missing === "Node.js 20+") {
+        nodeSettings.open = true;
         copy.append(
           el(doc, "strong", "", uiText("Node.js 20+ 未找到", "Node.js 20+ not found")),
           el(doc, "small", "", uiText("已安装但未找到时，可指定 node 程序或所在目录；请勿选择 install.sh。尚未安装可安装 Node.js 24 LTS。", "If Node is installed but not found, choose its executable or directory, not install.sh. Otherwise, install Node.js 24 LTS.")),
-          renderWebAgentNodePicker(doc, () => pickWebAgentRuntimeFile(doc, "node"), () => checkAndRepair(false)),
         );
         action = buttonEl(doc, uiText("打开 Node.js 下载页", "Open Node.js downloads"));
         action.addEventListener("click", () => {
@@ -5981,6 +5983,8 @@ function configureWebAccount(
     if (closed) return;
     hideDownloadActions();
     showDependencyActions(report);
+    const nodePathInput = nodeSettings.querySelector<HTMLInputElement>("input");
+    if (report.nodePath && nodePathInput && !nodePathInput.value) nodePathInput.value = report.nodePath;
     webAgentReady = report.state === "ready";
     status.classList.toggle("is-ready", webAgentReady);
     status.classList.toggle("is-error", report.state === "blocked");

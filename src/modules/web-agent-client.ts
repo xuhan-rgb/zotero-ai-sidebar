@@ -1,3 +1,4 @@
+import { webAgentTimers } from "./web-agent-timers";
 import type { WebPromptProvider } from "./web-prompt-hub";
 import type {
   ChatGPTWebSettings,
@@ -418,7 +419,8 @@ async function webAgentControlRequest(
   options: RequestInit,
 ): Promise<{ ok: boolean; status: number; body: unknown }> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 2_000);
+  const timers = webAgentTimers();
+  const timeout = timers.setTimeout(() => controller.abort(), 2_000);
   try {
     const response = await fetch(`http://127.0.0.1:${config.port}${path}`, {
       ...options,
@@ -430,7 +432,7 @@ async function webAgentControlRequest(
       body: await response.json().catch(() => null),
     };
   } finally {
-    clearTimeout(timeout);
+    timers.clearTimeout(timeout);
   }
 }
 
@@ -460,7 +462,7 @@ function ioUtils(): { readUTF8(path: string): Promise<string> } {
 }
 
 function delay(milliseconds: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds));
+  return new Promise((resolve) => webAgentTimers().setTimeout(resolve, milliseconds));
 }
 
 function webProviderName(provider: WebPromptProvider): string {

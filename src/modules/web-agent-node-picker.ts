@@ -5,9 +5,14 @@ export function renderWebAgentNodePicker(
   doc: Document,
   chooseExecutable: () => Promise<string | null>,
   onSaved: () => Promise<void>,
-): HTMLElement {
-  const root = doc.createElement("div");
-  root.className = "zai-web-account-node-picker";
+): HTMLDetailsElement {
+  const root = doc.createElement("details");
+  root.className = "zai-web-account-node-settings";
+  root.open = true;
+  const summary = doc.createElement("summary");
+  summary.textContent = uiText("Node.js 路径设置", "Node.js path settings");
+  const fields = doc.createElement("div");
+  fields.className = "zai-web-account-node-picker";
   const input = doc.createElement("input");
   input.type = "text";
   input.setAttribute(
@@ -29,7 +34,8 @@ export function renderWebAgentNodePicker(
   const status = doc.createElement("small");
   status.setAttribute("role", "status");
   actions.append(choose, save);
-  root.append(input, actions, status);
+  fields.append(input, actions, status);
+  root.append(summary, fields);
   let busy = false;
   const setBusy = (value: boolean) => {
     busy = value;

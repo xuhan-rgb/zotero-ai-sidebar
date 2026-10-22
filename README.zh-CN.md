@@ -70,26 +70,39 @@ Quick Ask 默认用 `Alt+Q` 打开。首次使用时采用当前 AI 对话模型
 
 ### 可选 WEB 模式（Windows / Linux / macOS）
 
-WEB 模式使用一个本地伴随进程和独立的浏览器配置目录。支持自动检测 Chrome、Microsoft Edge，也可配置其他兼容 Chromium 的浏览器程序路径。API 模式不依赖这些组件；未安装 Web Agent 时，普通 API 对话不受影响。
+WEB 模式使用一个本地伴随进程和独立的浏览器配置目录。支持自动检测 Chrome、Microsoft Edge 和 Firefox，也可配置其他兼容 Chromium 的浏览器程序路径。Firefox 使用独立的 WebDriver BiDi 连接。API 模式不依赖这些组件；未安装 Web Agent 时，普通 API 对话不受影响。
 
 > 从旧版升级时，请安装新版 XPI，并按账号窗口提示安装或更新其配套 Web Agent ZIP。
 
-需要 Node.js 20 或更高版本，以及 Web Agent 支持的浏览器（自动检测 Chrome / Edge，或自定义兼容浏览器）；Linux 还需要 `xclip`：
+需要 Node.js 20 或更高版本，以及 Web Agent 支持的浏览器（自动检测 Chrome / Edge / Firefox，或自定义兼容浏览器）；Linux 还需要 `xclip`：
 
 ```bash
 sudo apt install xclip
 ```
 
+**检测和指定 Node.js 路径**
+
+插件优先使用已验证并保存的 Node 路径，再检查进程 PATH 和标准安装位置。如果仍未找到 Node.js 20+，会扫描 `~/.nvm`、`~/.config/nvm`、`NVM_DIR` 和 `XDG_CONFIG_HOME/nvm` 下的版本目录，并验证程序的实际版本。因此，从桌面启动 Zotero、未继承终端 NVM 环境时，也能查找已有安装。已保存且可用的 Node 不会被自动替换为更新版本。
+
+账号窗口始终显示**Node.js 路径设置**，默认展开，可按需收起。检测到 Node 后，输入框会显示其路径；缺少 Node 时，该区域会重新展开。可以粘贴 `node` / `node.exe` 的完整路径、包含该程序的目录，或包含 `bin/node` 的安装目录，也可以点击**选择 Node 程序…**填入路径。点击**验证并使用**或按 Enter 后，插件才会验证、保存路径并重新检查环境；仅选择文件不会保存。`install.sh` 等安装脚本不能作为 Node 程序使用，插件也不会自动执行安装脚本。运行中或排队的 WEB 任务结束前，不能更换 Node 路径。
+
 **选择和配置浏览器**
 
 点击「账号」旁的小箭头打开浏览器配置。网页服务菜单用于选择 AI 网站，账号菜单用于选择运行网站的浏览器；「账号」主按钮仍会直接打开当前网站。
 
-- **Chrome / Edge**：从下拉框选择浏览器，核对检测到或已保存的程序路径，再点击「应用浏览器选择」保存。
+- **Chrome / Edge / Firefox**：从下拉框选择浏览器，核对检测到或已保存的程序路径，再点击「应用浏览器选择」保存。
 - **自定义路径**：编辑完整路径，或点击「选择程序文件…」。Windows 选择 `chrome.exe` / `msedge.exe`，Linux 选择浏览器启动程序，macOS 选择应用内 `Contents/MacOS/` 下的可执行文件。
-- **重新检测**：Chrome / Edge 路径不正确时，点击「重新检测」搜索标准安装位置和 PATH，核对后再应用；检测本身不会保存或启动浏览器。
+- **重新检测**：Chrome / Edge / Firefox 路径不正确时，点击「重新检测」搜索标准安装位置和 PATH，核对后再应用；检测本身不会保存或启动浏览器。
 - **添加浏览器**：选择「＋ 添加其他浏览器…」，填写名称和程序路径后点击「保存并使用」。自定义浏览器须支持 Chromium 远程调试连接，保存路径不会验证兼容性。
+- **移除浏览器**：选中手动添加的条目后，点击「移除此浏览器」。浏览器程序和登录资料会保留；移除当前条目前会先切换到其他可用浏览器。存在运行中或排队的 WEB 任务，或没有可替代浏览器时，不能移除当前条目；内置浏览器条目不能移除。
 
 浏览器选择由所有 WEB 服务共用，每个浏览器配置独立保留登录资料。切换前需等待运行中及排队的 WEB 任务结束；点击配置菜单外部可关闭菜单而不应用修改。旧版 Chrome 配置会保留，新安装仅检测到 Edge 时会自动选择 Edge。
+
+Firefox 使用持久化的独立配置，支持可见窗口登录和无界面对话。检测使用当前电脑的 PATH、用户目录和系统安装位置；保存的程序路径失效时，环境检查会重新查找本机安装，并将来自其他电脑且已失效的配置目录替换为当前 Zotero 配置下的目录。已有有效登录配置会保留。
+
+Firefox 登录和对话会复用已有服务页面。相同程序从自定义 Firefox 条目切换到内置条目时，如果目标没有保存的配置，会沿用当前登录配置。插件控制的 Firefox 重启前会在配置目录中保存会话 Cookie，并在启动时恢复一次；网站主动退出或登录过期仍可能要求重新登录。
+
+Linux 同时支持原生和 Snap Firefox，自动检测时优先选择原生安装，也会查找当前用户的 `~/.local/opt/firefox/firefox`。Snap Firefox 的独立配置保存在 `~/snap/firefox/common/zotero-ai-sidebar/` 下，按 Zotero 配置分别存放；原生与 Snap 登录配置分别记录，切换回来时可复用。附件上传和下载使用 Snap 可访问的暂存目录，任务清理仅删除暂存副本，保留原始文件。插件不会自动安装浏览器。Firefox 不支持通过 Chrome CDP 自动最小化窗口；ChatGLM 和 Z.ai 等保留可见会话的服务可能需要手动最小化。
 
 安装 XPI 后，在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 或自定义服务，再点击**账号**。窗口会自动检查环境：缺少 Node.js 或浏览器时提供官方下载按钮，Linux 缺少 `xclip` 时提供可复制的安装说明；插件不会自动运行安装程序或系统命令。环境满足后，按状态点击**安装 / 修复 / 升级 Web Agent**，插件会从同版本 GitHub Release 下载预构建运行包，校验大小与 SHA-256，并在健康检查通过后打开登录网页；用户电脑不执行 npm。自动下载失败时，窗口会提供 Release 页面、直接下载链接和本地 ZIP 选择入口。在所选专用浏览器中完成所选网站的登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
 
@@ -199,7 +212,7 @@ flowchart TB
         direction LR
         Provider[LLM 提供商 API<br/>OpenAI / Anthropic / 兼容端点]
         WebAgent[本地 Web Agent<br/>localhost 令牌 + 任务队列]
-        Browser[独立浏览器配置<br/>Chrome / Edge / 自定义 Chromium 兼容浏览器]
+        Browser[独立浏览器配置<br/>Chrome / Edge / Firefox / 自定义 Chromium 兼容浏览器]
         Tools[本地 AgentTool<br/>可选自动化]
     end
 

@@ -8,6 +8,15 @@ vi.mock("../../src/modules/web-agent-installer", () => ({
 vi.mock("../../src/utils/ui-locale", () => ({ uiText: (zh: string) => zh }));
 
 describe("manual Node path controls", () => {
+  it("shows the path controls by default without requiring a missing dependency error", () => {
+    const root = renderWebAgentNodePicker(document, vi.fn(), vi.fn());
+    expect(root.tagName).toBe("DETAILS");
+    expect(root.querySelector("summary")!.textContent).toBe("Node.js 路径设置");
+    expect(root.querySelector("input")).not.toBeNull();
+    expect(root.open).toBe(true);
+    root.open = false;
+    expect(root.open).toBe(false);
+  });
   it("accepts a pasted directory and rechecks the environment after validation", async () => {
     const onSaved = vi.fn(async () => {});
     vi.mocked(selectWebAgentNode).mockResolvedValueOnce({

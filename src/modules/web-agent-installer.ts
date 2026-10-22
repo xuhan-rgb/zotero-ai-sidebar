@@ -1,3 +1,4 @@
+import { webAgentTimers } from "./web-agent-timers";
 import { version as ADDON_VERSION } from "../../package.json";
 import { unzipSync } from "fflate";
 import { uiText } from "../utils/ui-locale";
@@ -1085,7 +1086,7 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
 
   const health = readWebAgentHealth;
   const delay = (milliseconds: number) =>
-    new Promise<void>((resolve) => setTimeout(resolve, milliseconds));
+    new Promise<void>((resolve) => webAgentTimers().setTimeout(resolve, milliseconds));
 
   return {
     platform,
@@ -1127,13 +1128,14 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
     health,
     fetchRuntimeArchive: async (url) => {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 30_000);
+      const timers = webAgentTimers();
+      const timeout = timers.setTimeout(() => controller.abort(), 30_000);
       try {
         const response = await fetch(url, { signal: controller.signal });
         if (!response.ok) throw new Error(`HTTP ${response.status}`);
         return new Uint8Array(await response.arrayBuffer());
       } finally {
-        clearTimeout(timeout);
+        timers.clearTimeout(timeout);
       }
     },
     sha256: async (value) => {
