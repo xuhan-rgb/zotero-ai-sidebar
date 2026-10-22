@@ -1,3 +1,4 @@
+import { promptText } from "../utils/prompt-locale";
 // Shared foundation for the sidebar module cluster: layout constants, the core
 // PanelState / WindowSidebarState types, and the module-level maps that track
 // per-window / per-item sidebar state. Extracted from sidebar.ts so feature
@@ -72,26 +73,50 @@ export const OPENAI_QUICK_MODELS = [
 ];
 // Tool guidance injected into each turn. This documents available choices;
 // the model still decides which tool, if any, to call.
-export const ZOTERO_TOOL_MANUAL = [
-  "Zotero tool manual:",
-  "- The model, not the local UI, decides which Zotero tool to call. The local harness only validates arguments, enforces budgets/permissions, executes tools, and returns visible tool traces.",
-  "- Use zotero_get_current_item for title, authors, year, tags, and abstract. Prefer it before whole-paper summaries, contribution analysis, or full-paper annotation planning.",
-  "- When the user attaches another Zotero paper with @, its item ID and title appear on that user turn. Use zotero_read_referenced_paper with that ID to read its metadata, search passages, ranges, or full text as needed. Keep evidence from the current and referenced papers separate; decide from the user's prompt whether to compare them or use the reference to analyze the current paper.",
-  "- Context-size selection is part of the model's tool planning: choose metadata, search hits, exact ranges, or the full PDF according to the current question instead of relying on local intent routing.",
-  "- The ledger includes prior source identity, ranges, and tool summaries. Use it as structured memory to distinguish the current Zotero item from remote papers named by URLs and to choose the needed context size.",
-  "- Use chat_get_previous_context when the ledger says relevant snippets were already attached in this chat and the raw text is needed again. This is a read-only chat-history tool; it does not fetch Zotero, arXiv, or web content.",
-  "- Use zotero_get_full_pdf when the model decides the whole current Zotero PDF is needed for reading, summary, review, comparison, or analysis. Prior full-PDF sends appear in the ledger as source/range metadata so the model can choose between current history, targeted ranges, fresh full text, or asking the user for a resend.",
-  "- If the front block is an arXiv section index, it is only a table of contents, not the paper body. For whole-paper summaries/reviews/comparisons, call zotero_get_full_pdf before answering; for a specific section, call arxiv_get_section; for a specific equation/formula number such as 'Equation (3)' or '公式3', call arxiv_get_equation; for a specific figure number such as 'Figure 3' or '图3', call arxiv_get_figure with `number`; for a specific table number such as 'Table 2' or '表2', call arxiv_get_table with `number`; for references/citations/bibliography, call arxiv_get_bibliography.",
-  "- Use zotero_search_pdf for targeted concepts, figures without a known number, experiments, equations without a known number, claims, definitions, section/chapter headings, and local evidence; use zotero_read_pdf_range only to expand cache-based ranges from prior tool output or the ledger.",
-  "- Use zotero_get_annotations when the user asks about existing Zotero highlights, notes, comments, annotations, or reading marks.",
-  "- Use zotero_get_current_pdf_selection when the user asks to inspect, print, translate, explain, or reason about the current PDF selection and [Selected PDF text] was not already supplied. This is read-only and follows the Zotero Reader selection snapshot used by annotation creation.",
-  "- Use zotero_get_reader_pdf_text when the user explicitly asks to write PDF highlights/annotations or annotate the whole paper. Copy zotero_annotate_passage.text verbatim from zotero_get_reader_pdf_text output so the passage can be located in the Reader text layer.",
-  "- Use zotero_add_text_annotation_to_selection when the user explicitly asks to place visible text directly on the PDF page like Zotero's T text tool. This creates a text-box annotation, not a highlight comment.",
-  "- Use zotero_add_annotation_to_selection only when the user explicitly asks to save a note/comment on the current PDF selection.",
-  "- Use zotero_annotate_passage only when the user explicitly asks to write highlights/annotations into the PDF. Do not use write tools for ordinary requests like summarizing key points unless the user asks to write/highlight/annotate in Zotero.",
-  "- PDF modification requires approval or YOLO mode. If a write tool is blocked, explain that the user must enable YOLO or approve the write, and do not pretend the PDF was modified.",
-  "- For paper-specific claims, rely on current context, prior assistant answers when the user is asking a continuation, chat_get_previous_context, or fresh Zotero/arXiv tool outputs. If you have only caption/text and not an image, say so explicitly for visual questions.",
-].join("\n");
+export function getZoteroToolManual(): string {
+  return promptText(
+    [
+      "Zotero 工具说明：",
+      "- 由模型决定调用哪个 Zotero 工具。执行器只验证参数、限制预算/权限、执行工具，并返回可见的工具轨迹。",
+      "- 用 zotero_get_current_item 读取标题、作者、年份、标签和摘要。整篇总结、贡献分析或全文标注计划之前优先使用。",
+      "- 用户通过 @ 附加另一篇 Zotero 论文时，本轮消息会提供其条目 ID 和标题。用 zotero_read_referenced_paper 按需读取题录、检索段落、范围或全文。区分当前论文与引用论文的证据；根据用户提示词决定对比，还是用引用论文分析当前论文。",
+      "- 上下文大小选择属于模型的工具规划：根据当前问题选择题录、搜索命中、精确范围或全文，不依赖本地意图路由。",
+      "- 账本包含先前来源标识、范围和工具摘要。用它区分当前 Zotero 条目与 URL 指定的远程论文，并选择所需上下文大小。",
+      "- 账本显示相关片段此前已附加，而需要再次查看原文时，使用 chat_get_previous_context。它是只读对话历史工具，不获取 Zotero、arXiv 或网页内容。",
+      "- 模型判断整篇当前 Zotero PDF 对阅读、总结、审阅、对比或分析必要时，使用 zotero_get_full_pdf。此前发送的全文在账本中记为来源/范围元数据，可据此选择现有历史、定向范围、新的全文或请用户重发。",
+      "- 前置块若为 arXiv 章节索引，它只是目录而非正文。整篇总结/审阅/对比前先调用 zotero_get_full_pdf；特定章节用 arxiv_get_section；指定公式号如 Equation (3) / 公式3 用 arxiv_get_equation；指定图号如 Figure 3 / 图3 用 arxiv_get_figure 的 number；指定表号如 Table 2 / 表2 用 arxiv_get_table 的 number；参考文献/引用/书目用 arxiv_get_bibliography。",
+      "- 用 zotero_search_pdf 获取定向概念、未知编号的图表、实验、未知编号的公式、论点、定义、章节标题和局部证据；zotero_read_pdf_range 仅扩展先前工具输出或账本中的缓存范围。",
+      "- 用户询问已有 Zotero 高亮、笔记、评论、注释或阅读标记时，用 zotero_get_annotations。",
+      "- 用户要求查看、输出、翻译、解释或分析当前 PDF 选区，且 [Selected PDF text] 尚未提供选区时，用 zotero_get_current_pdf_selection。此工具只读，使用与注释创建相同的 Reader 选区快照。",
+      "- 用户明确要求写入 PDF 高亮/注释或全文标注时，用 zotero_get_reader_pdf_text。zotero_annotate_passage.text 必须逐字复制其输出，以便在 Reader 文本层定位。",
+      "- 用户明确要求像 Zotero 的 T 工具那样在 PDF 页面放置可见文字时，用 zotero_add_text_annotation_to_selection。它创建文字框注释，而非高亮+评论。",
+      "- 只有用户明确要求将笔记/评论保存到当前 PDF 选区时，才使用 zotero_add_annotation_to_selection。",
+      "- 只有用户明确要求向 PDF 写入高亮/注释时，才使用 zotero_annotate_passage。普通总结重点请求不要使用写入工具，除非用户要求在 Zotero 中写入/高亮/标注。",
+      "- 修改 PDF 需要审批或 YOLO 模式。若写入被阻止，说明用户必须启用 YOLO 或批准写入，不要假装 PDF 已修改。",
+      "- 论文相关论点应依赖当前上下文、追问时的先前助手回答、chat_get_previous_context 或新获取的 Zotero/arXiv 工具输出。视觉问题若只有 caption/文字而没有图片，应明确说明。",
+    ].join("\n"),
+    [
+      "Zotero tool manual:",
+      "- The model, not the local UI, decides which Zotero tool to call. The local harness only validates arguments, enforces budgets/permissions, executes tools, and returns visible tool traces.",
+      "- Use zotero_get_current_item for title, authors, year, tags, and abstract. Prefer it before whole-paper summaries, contribution analysis, or full-paper annotation planning.",
+      "- When the user attaches another Zotero paper with @, its item ID and title appear on that user turn. Use zotero_read_referenced_paper with that ID to read its metadata, search passages, ranges, or full text as needed. Keep evidence from the current and referenced papers separate; decide from the user's prompt whether to compare them or use the reference to analyze the current paper.",
+      "- Context-size selection is part of the model's tool planning: choose metadata, search hits, exact ranges, or the full PDF according to the current question instead of relying on local intent routing.",
+      "- The ledger includes prior source identity, ranges, and tool summaries. Use it as structured memory to distinguish the current Zotero item from remote papers named by URLs and to choose the needed context size.",
+      "- Use chat_get_previous_context when the ledger says relevant snippets were already attached in this chat and the raw text is needed again. This is a read-only chat-history tool; it does not fetch Zotero, arXiv, or web content.",
+      "- Use zotero_get_full_pdf when the model decides the whole current Zotero PDF is needed for reading, summary, review, comparison, or analysis. Prior full-PDF sends appear in the ledger as source/range metadata so the model can choose between current history, targeted ranges, fresh full text, or asking the user for a resend.",
+      "- If the front block is an arXiv section index, it is only a table of contents, not the paper body. For whole-paper summaries/reviews/comparisons, call zotero_get_full_pdf before answering; for a specific section, call arxiv_get_section; for a specific equation/formula number such as 'Equation (3)' or '公式3', call arxiv_get_equation; for a specific figure number such as 'Figure 3' or '图3', call arxiv_get_figure with `number`; for a specific table number such as 'Table 2' or '表2', call arxiv_get_table with `number`; for references/citations/bibliography, call arxiv_get_bibliography.",
+      "- Use zotero_search_pdf for targeted concepts, figures without a known number, experiments, equations without a known number, claims, definitions, section/chapter headings, and local evidence; use zotero_read_pdf_range only to expand cache-based ranges from prior tool output or the ledger.",
+      "- Use zotero_get_annotations when the user asks about existing Zotero highlights, notes, comments, annotations, or reading marks.",
+      "- Use zotero_get_current_pdf_selection when the user asks to inspect, print, translate, explain, or reason about the current PDF selection and [Selected PDF text] was not already supplied. This is read-only and follows the Zotero Reader selection snapshot used by annotation creation.",
+      "- Use zotero_get_reader_pdf_text when the user explicitly asks to write PDF highlights/annotations or annotate the whole paper. Copy zotero_annotate_passage.text verbatim from zotero_get_reader_pdf_text output so the passage can be located in the Reader text layer.",
+      "- Use zotero_add_text_annotation_to_selection when the user explicitly asks to place visible text directly on the PDF page like Zotero's T text tool. This creates a text-box annotation, not a highlight comment.",
+      "- Use zotero_add_annotation_to_selection only when the user explicitly asks to save a note/comment on the current PDF selection.",
+      "- Use zotero_annotate_passage only when the user explicitly asks to write highlights/annotations into the PDF. Do not use write tools for ordinary requests like summarizing key points unless the user asks to write/highlight/annotate in Zotero.",
+      "- PDF modification requires approval or YOLO mode. If a write tool is blocked, explain that the user must enable YOLO or approve the write, and do not pretend the PDF was modified.",
+      "- For paper-specific claims, rely on current context, prior assistant answers when the user is asking a continuation, chat_get_previous_context, or fresh Zotero/arXiv tool outputs. If you have only caption/text and not an image, say so explicitly for visual questions.",
+    ].join("\n"),
+  );
+}
 
 export interface WindowSidebarState {
   column: Element;
@@ -142,6 +167,7 @@ export interface WindowSidebarState {
 }
 
 export interface ReaderLayoutPrefs {
+  aiOpen?: boolean;
   aiWidth?: number;
   dockedAiWidth?: number;
   noteWidth?: number;

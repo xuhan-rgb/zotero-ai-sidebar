@@ -5,9 +5,30 @@ import { describe, expect, it } from "vitest";
 import {
   browserModeFromVersion,
   chromeLaunchArguments,
+  firefoxLaunchOptions,
+  isFirefoxBrowser,
 } from "../../web-agent/browser-mode.mjs";
 
 describe("Web Agent browser modes", () => {
+  it("recognizes existing custom Firefox entries by executable path", () => {
+    expect(isFirefoxBrowser({ browser: "firefox", chromePath: "/portable/browser" })).toBe(true);
+    expect(isFirefoxBrowser({ browser: "custom-123", chromePath: "/usr/bin/firefox" })).toBe(true);
+    expect(isFirefoxBrowser({ chromePath: "C:\\Program Files\\Mozilla Firefox\\firefox.exe" })).toBe(true);
+    expect(isFirefoxBrowser({ chromePath: "/usr/bin/google-chrome" })).toBe(false);
+  });
+
+  it("uses Firefox BiDi with a persistent profile and Firefox headless options", () => {
+    const options = firefoxLaunchOptions({ chromePath: "/usr/bin/firefox" }, "headless");
+    expect(options).toMatchObject({ channel: "moz-firefox", executablePath: "/usr/bin/firefox", headless: true });
+    expect(options).not.toHaveProperty("args");
+    expect(firefoxLaunchOptions({ chromePath: "/usr/bin/firefox" }, "visible").headless).toBe(false);
+  });
+
+  it("places Snap Firefox downloads inside its accessible profile", () => {
+    const options = firefoxLaunchOptions({ chromePath: "/snap/bin/firefox", firefoxSnap: true, profileDir: "/home/ada/snap/firefox/common/profile" }, "headless");
+    expect(options.downloadsPath).toBe("/home/ada/snap/firefox/common/profile/browser-downloads");
+  });
+
   it("uses the allocated nonzero debugging port for a visible Z.ai session", () => {
     const args = chromeLaunchArguments(
       { profileDir: "/existing profile" },

@@ -10,12 +10,17 @@ import {
 } from "./translator";
 import type { FullDocumentTranslationChunk } from "./full-document-runner";
 import { mergeUsage } from "./full-document-usage";
+import { promptText } from "../utils/prompt-locale";
 
 const FULL_DOCUMENT_TRANSLATION_PREFIX = "英译中：";
-const FULL_DOCUMENT_TRANSLATION_PROMPT =
-  "仅输出简中译文；ZAILATEXTOKEN0X不变。";
-const FULL_DOCUMENT_STRICT_TRANSLATION_PROMPT =
-  "只译不问；ZAILATEXTOKEN0X不变。";
+const FULL_DOCUMENT_TRANSLATION_PROMPT = () => promptText(
+  "仅输出简中译文；ZAILATEXTOKEN0X不变。",
+  "Translate the English source into Simplified Chinese. Output only the translation. Preserve ZAILATEXTOKEN0X exactly.",
+);
+const FULL_DOCUMENT_STRICT_TRANSLATION_PROMPT = () => promptText(
+  "只译不问；ZAILATEXTOKEN0X不变。",
+  "Translate only; do not ask questions. Preserve ZAILATEXTOKEN0X exactly.",
+);
 const FULL_DOCUMENT_MODEL_SELECTION_KEY =
   "extensions.zotero-ai-sidebar.fullTranslationModelSelection";
 
@@ -232,7 +237,7 @@ async function translateChunk(
         messages,
         preset,
         signal,
-        FULL_DOCUMENT_STRICT_TRANSLATION_PROMPT,
+        FULL_DOCUMENT_STRICT_TRANSLATION_PROMPT(),
       )
     : first;
   const usage = retried ? mergeUsage(first.usage, result.usage) : first.usage;
@@ -255,7 +260,7 @@ async function requestTranslation(
   messages: Message[],
   preset: ModelPreset,
   signal: AbortSignal,
-  prompt = FULL_DOCUMENT_TRANSLATION_PROMPT,
+  prompt = FULL_DOCUMENT_TRANSLATION_PROMPT(),
 ): Promise<FullDocumentTranslationChunk> {
   const provider = getProvider(preset);
   let text = "";

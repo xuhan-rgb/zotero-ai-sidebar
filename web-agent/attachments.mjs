@@ -53,15 +53,17 @@ export async function stageWebAttachment(
   attachment,
   adapter,
   stagingDirectory,
+  copyForSnap = false,
 ) {
   const extension = adapter?.latexUploadExtension;
-  if (attachment?.kind !== "latex" || !extension) return attachment;
+  const convertLatex = attachment?.kind === "latex" && !!extension;
+  if (!convertLatex && !copyForSnap) return attachment;
   const sourceName = path.basename(attachment.name);
   const sourceExtension = path.extname(sourceName);
   const stem = sourceExtension
     ? sourceName.slice(0, -sourceExtension.length)
     : sourceName;
-  const targetName = `${stem}${extension}`;
+  const targetName = convertLatex ? `${stem}${extension}` : path.basename(attachment.path);
   await mkdir(stagingDirectory, { recursive: true });
   const targetPath = path.join(stagingDirectory, targetName);
   await copyFile(attachment.path, targetPath);
@@ -69,7 +71,8 @@ export async function stageWebAttachment(
     ...attachment,
     path: targetPath,
     name: targetName,
-    mimeType: "text/plain",
+    mimeType: convertLatex ? "text/plain" : attachment.mimeType,
+    ...(copyForSnap ? { sourcePath: attachment.path } : {}),
   };
 }
 

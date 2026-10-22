@@ -124,7 +124,8 @@ it.each(["readingRoute", "overview"])(
         "zoteroPrefs",
         "sendMessage",
         "sendWebPromptMessage",
-        "OVERVIEW_PROMPT",
+        "overviewPrompt",
+        "promptText",
         "uiText",
         `${code}; return ${name};`,
       )(
@@ -134,7 +135,8 @@ it.each(["readingRoute", "overview"])(
         () => ({}),
         api,
         web,
-        "overview prompt",
+        () => "overview prompt",
+        (chinese: string) => chinese,
         (chinese: string) => chinese,
       );
       await run(
@@ -213,3 +215,22 @@ it.each(["readingRoute", "overview"])(
     expect(create).not.toHaveBeenCalled();
   },
 );
+
+
+it("accepts complete English reading routes and rejects incomplete ones", () => {
+  const route = "## First pass\nA\n## Second pass\nB\n## Third pass\nC\n--- End of reading route ---";
+  expect(parseWebReadingRoute("```markdown\n" + route + "\n```")).toBe(route);
+  expect(() => parseWebReadingRoute(route.replace("## Third pass", "## Other"))).toThrow("尚未覆盖");
+  expect(() => parseWebReadingRoute(route.replace("--- End of reading route ---", ""))).toThrow("尚未覆盖");
+  expect(webReadingRoutePrompt("Read in English")).toContain("--- End of reading route ---");
+});
+
+it("asks English WEB overviews for English prose and flowchart labels", () => {
+  vi.stubGlobal("Zotero", { locale: "en-US", Prefs: { get: () => "en-US" } });
+  const prompt = webOverviewPrompt(outline);
+  expect(prompt).toContain("generate an English overview");
+  expect(prompt).toContain("one-sentence English gist");
+  expect(prompt).toContain("Use English for every node label");
+  expect(prompt).not.toContain("生成中文");
+  expect(prompt).not.toContain("中文 gist");
+});

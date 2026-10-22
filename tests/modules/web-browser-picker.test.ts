@@ -14,12 +14,16 @@ const text = outsideClickSource + source.slice(
 const js = ts.transpileModule(text, {
   compilerOptions: { target: ts.ScriptTarget.ES2022 },
 }).outputText;
-function setup() {
+function setup(customBrowser = false, selectedBrowser = "chrome", snapFirefox = false) {
   const configure = vi.fn(),
     change = vi.fn(async () => {}),
     render = vi.fn();
   const detectBrowser = vi.fn(async () => "/detected/chrome");
   const addBrowser = vi.fn(async () => {});
+  const removeBrowser = vi.fn(async (browser: string) => {
+    customBrowser = false;
+    if (selectedBrowser === browser) selectedBrowser = "chrome";
+  });
   const pickFile = vi.fn(async () => "/portable/edge");
   const el = (doc: Document, tag: string, cls = "", text = "") => {
     const e = doc.createElement(tag);
@@ -28,10 +32,12 @@ function setup() {
     return e;
   };
   const choices = vi.fn(async () => ({
-    selected: "chrome",
+    selected: selectedBrowser,
     available: [
       { browser: "chrome", name: "Google Chrome", path: "/chrome" },
       { browser: "edge", name: "Microsoft Edge", path: "/edge" },
+      ...(snapFirefox ? [{ browser: "firefox", name: "Firefox", path: "/usr/bin/firefox", firefoxSnap: true }] : []),
+      ...(customBrowser ? [{ browser: "custom-test", name: "My browser", path: "/custom/browser" }] : []),
     ],
   }));
   const make = new Function(
@@ -47,6 +53,7 @@ function setup() {
     "renderPanel",
     "pickWebAgentRuntimeFile",
     "addWebAgentBrowser",
+    "removeWebAgentBrowser",
     "detectWebAgentBrowser",
     "traceBrowserPicker",
     "uiText",
@@ -64,6 +71,7 @@ function setup() {
     render,
     pickFile,
     addBrowser,
+    removeBrowser,
     detectBrowser,
     vi.fn(),
     (chinese: string) => chinese,
@@ -80,6 +88,7 @@ function setup() {
     state,
     pickFile,
     addBrowser,
+    removeBrowser,
   };
 }
 
@@ -94,6 +103,54 @@ function chooseBrowser(root: HTMLElement, value: string) {
 }
 
 describe("account browser picker", () => {
+  it("shows an installed Snap Firefox as available", async () => {
+    const { root } = setup(false, "chrome", true);
+    await vi.waitFor(() => expect(root.querySelectorAll("option")).toHaveLength(4));
+    const option = root.querySelector<HTMLOptionElement>('option[value="firefox"]')!;
+    expect(option.textContent).toBe("Firefox");
+    expect(option.textContent).not.toContain("未安装");
+    chooseBrowser(root, "firefox");
+    expect(root.querySelector<HTMLInputElement>('input[aria-label="浏览器程序路径"]')!.value).toBe("/usr/bin/firefox");
+    expect(root.querySelector('[role="status"]')!.textContent).toBe("");
+  });
+
+  it("shows removal only for a manually added browser and refreshes the choices after removal", async () => {
+    const { root, removeBrowser, render } = setup(true);
+    await vi.waitFor(() => expect(root.querySelectorAll("option")).toHaveLength(4));
+    const remove = root.querySelector<HTMLButtonElement>(".composer-browser-remove")!;
+    expect(remove.hidden).toBe(true);
+    chooseBrowser(root, "custom-test");
+    expect(remove.hidden).toBe(false);
+    remove.click();
+    await vi.waitFor(() => expect(root.querySelectorAll("option")).toHaveLength(3));
+    expect(removeBrowser).toHaveBeenCalledWith("custom-test");
+    expect(root.querySelector("select")!.value).toBe("chrome");
+    expect(remove.hidden).toBe(true);
+    expect(render).not.toHaveBeenCalled();
+  });
+
+  it("updates the account state when removing the current custom browser", async () => {
+    const { root, state, render, removeBrowser } = setup(true, "custom-test");
+    await vi.waitFor(() => expect(root.querySelectorAll("option")).toHaveLength(4));
+    root.querySelector<HTMLButtonElement>(".composer-browser-remove")!.click();
+    await vi.waitFor(() => expect(render).toHaveBeenCalledOnce());
+    expect(removeBrowser).toHaveBeenCalledWith("custom-test");
+    expect((state as any).webAccountConfigured).toBe(false);
+    expect(root.querySelector("select")!.value).toBe("chrome");
+  });
+
+  it("keeps the entry and displays the error when removal is rejected", async () => {
+    const { root, removeBrowser, render } = setup(true, "custom-test");
+    removeBrowser.mockRejectedValueOnce(new Error("WEB task is running"));
+    await vi.waitFor(() => expect(root.querySelectorAll("option")).toHaveLength(4));
+    const remove = root.querySelector<HTMLButtonElement>(".composer-browser-remove")!;
+    remove.click();
+    await vi.waitFor(() => expect(remove.disabled).toBe(false));
+    expect(root.querySelector('[role="status"]')!.textContent).toContain("WEB task is running");
+    expect(root.querySelector("select")!.value).toBe("custom-test");
+    expect(render).not.toHaveBeenCalled();
+  });
+
   it("keeps the main account click and browser selection separate", async () => {
     const { root, configure, change } = setup();
     await vi.waitFor(() =>

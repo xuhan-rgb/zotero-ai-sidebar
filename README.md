@@ -75,26 +75,37 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 
 ### Optional WEB mode (Windows / Linux / macOS)
 
-WEB mode uses a local companion process and a dedicated browser profile. Chrome and Microsoft Edge are detected automatically; other Chromium-compatible browsers can be configured by executable path. API mode does not need these components and is unaffected if the Web Agent is not installed.
+WEB mode uses a local companion process and a dedicated browser profile. Chrome, Microsoft Edge, and Firefox are detected automatically; other Chromium-compatible browsers can be configured by executable path. Firefox uses a separate WebDriver BiDi connection. API mode does not need these components and is unaffected if the Web Agent is not installed.
 
 > The Z.ai, automatic port allocation, and login detection flows below apply to `v0.8.9`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
-Requirements: Node.js 20 or newer and a browser supported by the Web Agent (automatically detected Chrome / Edge, or a compatible custom browser). Linux additionally needs `xclip`:
+Requirements: Node.js 20 or newer and a browser supported by the Web Agent (automatically detected Chrome / Edge / Firefox, or a compatible custom browser). Firefox also requires Node.js. Linux additionally needs `xclip`:
 
 ```bash
 sudo apt install xclip
 ```
 
+Node detection first reuses a validated saved path, then checks the process PATH and standard installation locations. If those do not provide Node.js 20+, it scans version directories under `~/.nvm`, `~/.config/nvm`, `NVM_DIR`, and `XDG_CONFIG_HOME/nvm`, verifying the executable's actual version. This works even when a desktop-launched Zotero does not inherit an interactive terminal's NVM environment. A working saved Node is kept rather than automatically upgraded.
+
+If Node is still not found, the account dialog accepts a full executable path, a directory containing `node` / `node.exe`, or an installation directory containing `bin/node`. Use **Choose Node executable…** or paste the path, then click **Validate and use**. The path is saved only after validation succeeds; installation scripts such as `install.sh` are rejected. Changing the Node path is blocked while WEB tasks are running or queued. No installation script is run automatically.
+
 **Choose and configure a browser**
 
 Open the small arrow next to **Account** (`账号 ▾`). The website selector chooses the AI service; the account menu chooses which browser runs it. The main **Account** button still opens the selected website directly in the saved browser. The account dialog also provides a browser-selection entry.
 
-- **Chrome / Edge**: choose a browser from the native dropdown. The program-path field displays the detected or saved executable path. Choosing an option keeps the configuration menu open; click **Apply browser selection** (`应用浏览器选择`) to save.
+- **Chrome / Edge / Firefox**: choose a browser from the native dropdown. The program-path field displays the detected or saved executable path. Choosing an option keeps the configuration menu open; click **Apply browser selection** (`应用浏览器选择`) to save.
 - **Custom installation path**: edit the complete executable path or use **Choose program file…** (`选择程序文件…`). Select the browser executable, not a document or shortcut: `chrome.exe` / `msedge.exe` on Windows, the browser launcher on Linux, or the executable inside the app's `Contents/MacOS/` directory on macOS.
-- **Recover a mistaken path**: for Chrome or Edge, click **Detect again** (`重新检测`). This ignores the saved path and searches the normal installation locations and PATH. Review the result, then apply it; detection alone does not save or launch the browser.
+- **Recover a mistaken path**: for Chrome, Edge, or Firefox, click **Detect again** (`重新检测`). This ignores the saved path and searches the normal installation locations and PATH. Review the result, then apply it; detection alone does not save or launch the browser.
 - **Add another browser**: choose **＋ Add another browser…** (`＋ 添加其他浏览器…`), enter a name, select its executable, and click **Save and use** (`保存并使用`). The saved entry appears in the dropdown. Custom browsers must support the existing Chromium remote-debugging connection; saving a path does not verify compatibility or add support for another browser engine.
+- **Remove a manually added browser**: select its entry and click **Remove this browser** (`移除此浏览器`). The browser program and login data are kept. Removing the current entry first switches to another available browser; this is blocked while WEB tasks are running or queued, or when no replacement is available. Built-in browser entries cannot be removed.
 
 Click outside the configuration menu to dismiss it without applying changes. Browser choice is shared by all WEB services and does not affect API mode. Each browser entry has a separate login profile; switching back reuses it. Running or queued WEB tasks must finish before switching browsers. Existing Chrome configurations are preserved; a fresh setup with only Edge detected selects Edge automatically.
+
+Firefox uses a persistent profile and supports visible login and headless conversations. Executable detection uses the current computer's PATH, home directory, and system installation locations; it does not embed a developer's home directory. If a saved Firefox executable is missing, the account environment check redetects a local installation and replaces missing profile paths from another computer with a directory under the current Zotero profile. Valid existing login profiles are preserved.
+
+Firefox account setup reuses the startup page, and conversations reuse the existing service page. The pinned browser driver adopts Firefox's initial window rather than creating an extra one. Switching from a custom Firefox entry to the built-in entry for the same executable reuses the active login profile when the destination has no saved profile. Before a plugin-controlled Firefox restart, session cookies are saved privately inside that profile and restored once on startup; cookies and local storage normally persisted by Firefox remain in its profile. Website logout and expired sessions can still require a new login.
+
+On Linux, detection recognizes both native and Snap Firefox, preferring a native installation when both are found automatically. Snap Firefox uses a dedicated profile under the current user's `~/snap/firefox/common/zotero-ai-sidebar/`, with separate directories for each Zotero profile. Native and Snap login profiles are recorded separately and reused when switching back. PDF, text, and image attachments are copied to per-task staging directories inside this accessible area before upload or file-clipboard fallback; task cleanup removes the staged copies and preserves the originals. Browser download staging also uses this accessible directory. No browser is installed automatically. The Web Agent also detects a native installation at `~/.local/opt/firefox/firefox`, resolving `~` to the current user's home. Automatic window minimization through Chrome's CDP is unavailable for Firefox; services that keep a visible browser session (ChatGLM and Z.ai) may require manual minimization.
 
 After installing the XPI, select `WEB` in the composer, choose ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, or a custom service, and click **Account**. The dialog checks the environment automatically. Missing Node.js or browser dependencies include official download buttons, while a missing Linux `xclip` dependency includes copyable installation guidance; the plugin never runs an installer or system command. Once the environment is ready, **Install**, **Repair**, or **Upgrade Web Agent** downloads the matching prebuilt runtime from the same GitHub Release, verifies its size and SHA-256, and opens the login page only after its health check passes. The user's computer never runs npm. If automatic download fails, the dialog provides the Release page, direct link, and a picker for the downloaded ZIP. Sign in to the selected website in the selected dedicated browser and keep **Hide browser in the background while chatting** checked if desired; it is enabled by default.
 
@@ -203,7 +214,7 @@ flowchart TB
         direction LR
         Provider[LLM provider API<br/>OpenAI / Anthropic / compatible]
         WebAgent[Local Web Agent<br/>localhost token + task queue]
-        Browser[Dedicated browser profile<br/>Chrome / Edge / custom Chromium-compatible browser]
+        Browser[Dedicated browser profile<br/>Chrome / Edge / Firefox / custom Chromium-compatible browser]
         Tools[Local AgentTool<br/>optional automation]
     end
 

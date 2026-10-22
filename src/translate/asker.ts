@@ -1,14 +1,17 @@
 import { getProvider } from '../providers/factory';
 import type { Message, StreamChunk } from '../providers/types';
 import type { ModelPreset, ReasoningEffort, TranslateThinking } from '../settings/types';
+import { promptText } from '../utils/prompt-locale';
 
 // In-place "read this sentence" helper for immersive reading. Two first-turn
 // shapes (follow-ups are plain Q&A):
 //   - "explain": a short Chinese explanation (the chooser's 问 AI).
 //   - "translateExplain": 【译】faithful translation + 【解】plain-language
 //     meaning + key-term unpacking (the default unified card).
-const SYSTEM_PROMPT =
-  '你在帮用户精读一篇英文论文、逐句读懂。用简体中文，简洁、具体、就事论事，不要客套，也不要重复已说过的内容。';
+const SYSTEM_PROMPT = () => promptText(
+  '你在帮用户精读一篇英文论文、逐句读懂。用简体中文，简洁、具体、就事论事，不要客套，也不要重复已说过的内容。',
+  'Help the user carefully understand an English paper sentence by sentence. Respond in Simplified Chinese, concisely and specifically. Stay focused, avoid pleasantries, and do not repeat what has already been said.',
+);
 
 const ASK_CONTEXT_CHAR_LIMIT = 800;
 const ASK_MAX_OUTPUT_TOKENS = 900;
@@ -256,7 +259,7 @@ export function buildUserMessage(req: AskRequest): string {
     : '';
   if (req.mode === 'translateExplain') {
     return (
-      '请帮我读懂下面这句话，严格按这个格式输出（简体中文）：\n' +
+      promptText('请帮我读懂下面这句话，严格按这个格式输出（简体中文）：\n', 'Help me understand the following sentence. Follow this format exactly (in Simplified Chinese):\n') +
       '【译】给出准确翻译，术语/缩写/公式/模型名保留原文。\n' +
       '【解】用大白话说清这句到底在讲什么、作者在干嘛（不要复述翻译）；若有关键术语/缩写，顺带点破 1–2 个；若与上下文论证相关，点出它的作用。控制在几句。\n' +
       `\n这句话：${sentence}${ctx}`
@@ -264,15 +267,15 @@ export function buildUserMessage(req: AskRequest): string {
   }
   if (req.mode === 'breakdown') {
     return (
-      '请把下面这句英文做「长句拆解」，用内联标注格式输出，目的是看清**语法结构**而不是逐词翻译。规则：\n' +
-      '- 保留英文原句词序，照常用空格分词；只给真正有结构意义的成分加标注，其余英文原样保留。\n' +
-      '- [主:英文|中文]：主句主语。\n' +
-      '- [谓:英文|中文]：主句谓语动词（含系动词 + 过去分词等被动结构，如 are shown）。\n' +
-      '- [词:英文|中文]：关键实词 / 术语 / 难词（普通常见词不要标）。\n' +
-      '- [定:英文|中文]：**修饰名词**的成分（关系从句、of 短语等定语）。\n' +
-      '- [状:英文|中文]：**修饰动词或全句**的成分（时间 / 地点 / 方式 / 原因等状语，包括介词短语作状语、副词）。\n' +
-      '- 关键区分：介词短语作状语用 [状]，不要用 [定]；[定] 只能修饰名词。例如 “are shown in Figure 8” 里 in Figure 8 是状语 → [状]。\n' +
-      '- 不要嵌套标注；层层修饰时只标最外层或拆成相邻片段。不要 Markdown / 代码块 / 额外解释，只输出标注后的句子。\n' +
+      promptText('请把下面这句英文做「长句拆解」，用内联标注格式输出，目的是看清**语法结构**而不是逐词翻译。规则：\n', 'Break down the following English sentence using inline annotations to show its **grammatical structure**, not to translate it word by word. Rules:\n') +
+      promptText('- 保留英文原句词序，照常用空格分词；只给真正有结构意义的成分加标注，其余英文原样保留。\n', '- Preserve the original English word order and spacing. Annotate only structurally meaningful parts; leave all other English unchanged.\n') +
+      promptText('- [主:英文|中文]：主句主语。\n', '- [主:English|Chinese]: the main clause subject.\n') +
+      promptText('- [谓:英文|中文]：主句谓语动词（含系动词 + 过去分词等被动结构，如 are shown）。\n', '- [谓:English|Chinese]: the main clause predicate, including passive forms such as are shown.\n') +
+      promptText('- [词:英文|中文]：关键实词 / 术语 / 难词（普通常见词不要标）。\n', '- [词:English|Chinese]: a key content word, term, or difficult word; do not annotate common words.\n') +
+      promptText('- [定:英文|中文]：**修饰名词**的成分（关系从句、of 短语等定语）。\n', '- [定:English|Chinese]: a phrase that **modifies a noun**, such as a relative clause or an of-phrase.\n') +
+      promptText('- [状:英文|中文]：**修饰动词或全句**的成分（时间 / 地点 / 方式 / 原因等状语，包括介词短语作状语、副词）。\n', '- [状:English|Chinese]: a phrase that **modifies a verb or the whole sentence**, such as an adverbial of time, place, manner, or cause, including adverbial prepositional phrases and adverbs.\n') +
+      promptText('- 关键区分：介词短语作状语用 [状]，不要用 [定]；[定] 只能修饰名词。例如 “are shown in Figure 8” 里 in Figure 8 是状语 → [状]。\n', '- Key distinction: use [状] for an adverbial prepositional phrase, not [定]. [定] modifies nouns only. For example, in “are shown in Figure 8”, “in Figure 8” is adverbial → [状].\n') +
+      promptText('- 不要嵌套标注；层层修饰时只标最外层或拆成相邻片段。不要 Markdown / 代码块 / 额外解释，只输出标注后的句子。\n', '- Do not nest annotations. For layered modifiers, annotate only the outermost phrase or split into adjacent spans. Output only the annotated sentence, without Markdown, code fences, or extra explanation.\n') +
       '示例：[主:The results of the first experiment|第一次实验的结果] [谓:are shown|被展示] [状:in Figure 8|在图8中] .\n' +
       '示例：However, [主:the diversity of situations|情境的多样性] [谓:requires|需要] more than just [词:scale|规模] : [主:we|我们] [谓:need to design|需要设计] [词:training recipes|训练配方] [定:that can provide the breadth of knowledge|能提供广度知识的] .\n' +
       `\n这句话：${sentence}${ctx}`
@@ -284,11 +287,11 @@ export function buildUserMessage(req: AskRequest): string {
         ? `- 在所有句子行之后，另起一行附上重点词对应，格式：词对：英文词=中文词 | 英文词=中文词（每个句子挑 ${kwRange} 个关键术语/难词，合计可有多个；英文词须为段中出现的片段，中文词须在上面的译文里出现）。\n`
         : '';
       return (
-        '请把下面这段英文做「逐句对照」：按句子逐句切分，每个句子一行，英文与中文用 ||| 分隔：英文句 ||| 中文译文。\n' +
-        '- 一句一行，保持原文句子顺序；不要把多句合并成一行，也不要把一句拆成多行，更不要把句子再细分成意群。\n' +
-        '- 术语、缩写、公式、模型名保留原文。\n' +
+        promptText('请把下面这段英文做「逐句对照」：按句子逐句切分，每个句子一行，英文与中文用 ||| 分隔：英文句 ||| 中文译文。\n', 'Align the following English passage sentence by sentence, one sentence per line. Separate English and Chinese with |||: English sentence ||| Chinese translation.\n') +
+        promptText('- 一句一行，保持原文句子顺序；不要把多句合并成一行，也不要把一句拆成多行，更不要把句子再细分成意群。\n', '- Put one sentence on each line in source order. Do not merge sentences, split a sentence across lines, or further divide sentences into clauses.\n') +
+        promptText('- 术语、缩写、公式、模型名保留原文。\n', '- Keep terminology, abbreviations, formulas, and model names in the original language.\n') +
         termsLine +
-        '- 不要 Markdown、不要编号、不要额外解释，只输出这些行。\n' +
+        promptText('- 不要 Markdown、不要编号、不要额外解释，只输出这些行。\n', '- Output only these lines, without Markdown, numbering, or extra explanation.\n') +
         '示例：\n' +
         'We tackle this problem by training our policy as a generative model. ||| 我们通过将策略训练为生成模型来解决这个问题。\n' +
         'Modeling the action sequence as a whole reduces compounding errors. ||| 将动作序列作为整体建模可减少累积误差。\n' +
@@ -299,15 +302,15 @@ export function buildUserMessage(req: AskRequest): string {
       ? `- 在所有意群行之后，另起一行附上重点词对应，格式：词对：英文词=中文词 | 英文词=中文词（挑 ${kwRange} 个关键术语/难词；英文词须为句中出现的片段，中文词须在上面的译文里出现）。\n`
       : '';
     return (
-      '请把【目标句】切成几段，做「逐句对照」。每段一行，英文与中文用 ||| 分隔：英文段 ||| 中文意思。\n' +
+      promptText('请把【目标句】切成几段，做「逐句对照」。每段一行，英文与中文用 ||| 分隔：英文段 ||| 中文意思。\n', 'Split the target sentence into several segments and align them. Put one segment per line, separating English and Chinese with |||: English segment ||| Chinese meaning.\n') +
       '**最重要：只切分并翻译下面"这句话："后面的那一句（目标句）本身。** 如果还给了「上下相邻句」「所在段落」等上下文，那只是帮你理解词义、消除歧义的参考——**绝不要翻译它、不要把上下文里的任何句子放进输出**。输出的英文必须全部来自目标句。\n' +
-      '切分原则：\n' +
-      '- 在自然停顿处断开：逗号、分号、冒号、并列连词 (and/but/or)、从句引导词 (which/that/who/when/because…)。\n' +
-      '- 每段是一个分句或较完整的片段；很短的尾巴（如 in training.）并入相邻段，不要单独成段。\n' +
-      '- 有多个分句的长句要切成 **2~5 段**——**绝不要把整句只给成一段**，也不要把单个词单独成段。\n' +
-      '- 每段英文可以较长，显示时会自动换行。\n' +
+      promptText('切分原则：\n', 'Segmentation rules:\n') +
+      promptText('- 在自然停顿处断开：逗号、分号、冒号、并列连词 (and/but/or)、从句引导词 (which/that/who/when/because…)。\n', '- Split at natural pauses: commas, semicolons, colons, coordinating conjunctions (and/but/or), and clause introducers (which/that/who/when/because…).\n') +
+      promptText('- 每段是一个分句或较完整的片段；很短的尾巴（如 in training.）并入相邻段，不要单独成段。\n', '- Each segment should be a clause or substantial phrase. Attach a very short ending (such as “in training.”) to a neighboring segment; do not leave it alone.\n') +
+      promptText('- 有多个分句的长句要切成 **2~5 段**——**绝不要把整句只给成一段**，也不要把单个词单独成段。\n', '- Split a long sentence with multiple clauses into **2–5 segments**. **Never return the whole sentence as one segment**, and never make a single word its own segment.\n') +
+      promptText('- 每段英文可以较长，显示时会自动换行。\n', '- English segments may be long; they will wrap automatically in the display.\n') +
       termsLine +
-      '- 不要 Markdown、不要编号、不要额外解释，只输出目标句的这些行。\n' +
+      promptText('- 不要 Markdown、不要编号、不要额外解释，只输出目标句的这些行。\n', '- Output only these lines for the target sentence, without Markdown, numbering, or extra explanation.\n') +
       '示例：\n' +
       'Perhaps surprisingly, the second best model is the implicit HL ablation, ||| 或许有些出人意料，排名第二的是隐式分层消融，\n' +
       'which does not perform any high-level inference, ||| 它不做任何高层推理，\n' +
@@ -322,15 +325,17 @@ export function buildUserMessage(req: AskRequest): string {
       ? `词对要求：每个句子挑 ${kwRange} 个关键实词或术语，覆盖整段每个句子的要点；英文词必须是这段话里出现的连续原文片段，中文词必须出现在你给的译文里；不确定就少给。\n`
       : `词对要求：挑 ${kwRange} 个关键实词或术语；英文词必须是这句话里出现的连续原文片段，中文词必须出现在你给的译文里；不确定就少给或留空。\n`;
     return (
-      `请翻译下面这${unit}英文（简体中文），并附上「重点词对应」。严格按这个格式输出：\n` +
-      '译文：<准确、通顺的翻译；术语/缩写/公式/模型名保留原文>\n' +
+      promptText(`请翻译下面这${unit}英文（简体中文），并附上「重点词对应」。严格按这个格式输出：\n`, `Translate the following English ${req.paragraph ? 'passage' : 'sentence'} into Simplified Chinese and include key term pairs. Follow this format exactly:\n`) +
+    promptText('译文：<准确、通顺的翻译；术语/缩写/公式/模型名保留原文>\n', '译文：<accurate, fluent translation; keep terminology, abbreviations, formulas, and model names in the original language>\n') +
       '词对：<英文词>=<中文词> | <英文词>=<中文词>\n' +
-      termReq +
+    promptText(termReq, req.paragraph
+      ? `Key term pairs: choose ${kwRange} key content words or terms per sentence, covering each sentence's main points across the passage. The English phrase must appear verbatim in the passage and the Chinese phrase in your translation; omit uncertain pairs.\n`
+      : `Key term pairs: choose ${kwRange} key content words or terms. The English phrase must appear verbatim in the sentence and the Chinese phrase in your translation; include fewer or none if uncertain.\n`) +
       `\n${target}：${sentence}${ctx}`
     );
   }
   return (
-    '请简洁解释这句话的含义或作用（2–4 句；术语/缩写/公式/模型名保留原文）。\n' +
+    promptText('请简洁解释这句话的含义或作用（2–4 句；术语/缩写/公式/模型名保留原文）。\n', 'Briefly explain the meaning or role of this sentence in 2–4 sentences. Keep terminology, abbreviations, formulas, and model names in the original language.\n') +
     `这句话：${sentence}${ctx}`
   );
 }
@@ -365,7 +370,7 @@ async function* streamAskMessages(
   const preset = buildAskPreset(req);
   const provider = getProvider(preset);
   try {
-    for await (const chunk of provider.stream(messages, SYSTEM_PROMPT, preset, req.signal)) {
+    for await (const chunk of provider.stream(messages, SYSTEM_PROMPT(), preset, req.signal)) {
       const mapped = mapChunk(chunk);
       if (!mapped) continue;
       yield mapped;

@@ -1,17 +1,19 @@
 import type { Message } from "../providers/types";
 import type { ModelPreset } from "../settings/types";
 import { getProvider } from "../providers/factory";
+import { promptText } from "../utils/prompt-locale";
 
 export interface TranscribeFigure {
   id: string;          // matches the figure file stem, e.g. "eq-p6-1"
   pngDataUrl: string;  // "data:image/png;base64,..."
 }
 
-const SYSTEM_PROMPT =
-  "You transcribe cropped images of scientific-paper regions. Each image is " +
-  "tagged with an id. Output ONLY a JSON object mapping every id to a faithful " +
-  "transcription: LaTeX (no $ delimiters) for a formula, a GitHub-flavored " +
-  "markdown table for a table, plain text for a text block. Do not add commentary.";
+function systemPrompt(): string {
+  return promptText(
+    "你负责转录科学论文区域的裁剪图像。每张图都带有 id。只输出一个 JSON 对象，将每个 id 映射到忠实的转录内容：公式使用 LaTeX（不要加 $ 定界符），表格使用 GitHub 风格的 Markdown 表格，文本块使用纯文本。保留图像中的原语言和原有措辞，不要翻译或改写。不要添加说明。",
+    "You transcribe cropped images of scientific-paper regions. Each image is tagged with an id. Output ONLY a JSON object mapping every id to a faithful transcription: LaTeX (no $ delimiters) for a formula, a GitHub-flavored Markdown table for a table, plain text for a text block. Preserve the source language and wording; do not translate or paraphrase. Do not add commentary.",
+  );
+}
 
 // Pure: extract the id->transcription map from model output.
 export function parseTranscriptionResponse(text: string): Map<string, string> {
@@ -44,9 +46,7 @@ export async function transcribeFigures(
   if (!figures.length) return new Map();
   const message: Message = {
     role: "user",
-    content:
-      "Transcribe each tagged image. ids: " +
-      figures.map((f) => f.id).join(", "),
+    content: `${promptText("转录每张带标签的图像。ids：", "Transcribe each tagged image. ids: ")}${figures.map((f) => f.id).join(", ")}`,
     images: figures.map((f) => ({
       id: f.id,
       marker: `[id=${f.id}]`,
@@ -60,7 +60,7 @@ export async function transcribeFigures(
   try {
     for await (const chunk of getProvider(preset).stream(
       [message],
-      SYSTEM_PROMPT,
+      systemPrompt(),
       preset,
       signal,
     )) {

@@ -10,7 +10,7 @@ import {
   type WebAgentConfig,
 } from "./web-agent-client";
 
-export type WebAgentBrowser = "chrome" | "edge";
+export type WebAgentBrowser = "chrome" | "edge" | "firefox";
 
 export function webAgentBrowserCandidates(
   input: WebAgentExecutableCandidatesInput,
@@ -20,6 +20,26 @@ export function webAgentBrowserCandidates(
   const dirs = (input.env.PATH ?? "")
     .split(input.platform === "win32" ? ";" : ":")
     .filter(Boolean);
+  if (browser === "firefox") {
+    if (input.platform === "win32")
+      return unique([
+        ...dirs.map((dir) => winJoin(dir, "firefox.exe")),
+        ...[input.env.ProgramFiles, input.env["ProgramFiles(x86)"], input.env.LOCALAPPDATA]
+          .filter((dir): dir is string => !!dir)
+          .map((dir) => winJoin(dir, "Mozilla Firefox", "firefox.exe")),
+      ]);
+    if (input.platform === "darwin")
+      return unique([
+        "/Applications/Firefox.app/Contents/MacOS/firefox",
+        posixJoin(input.homeDir, "Applications", "Firefox.app", "Contents", "MacOS", "firefox"),
+        ...dirs.map((dir) => posixJoin(dir, "firefox")),
+      ]);
+    return unique([
+      posixJoin(input.homeDir, ".local", "opt", "firefox", "firefox"),
+      ...dirs.flatMap((dir) => ["firefox", "firefox-esr"].map((name) => posixJoin(dir, name))),
+      "/usr/bin/firefox", "/usr/bin/firefox-esr", "/opt/firefox/firefox", "/snap/bin/firefox",
+    ]);
+  }
   if (input.platform === "win32")
     return unique([
       ...dirs.map((dir) => winJoin(dir, "msedge.exe")),
@@ -61,8 +81,55 @@ export function webAgentBrowserCandidates(
 function configuredBrowser(config: WebAgentConfig): string {
   return (
     config.browser ??
-    (/msedge|microsoft[- ]edge/i.test(config.chromePath) ? "edge" : "chrome")
+    (/(?:^|[\\/])firefox(?:-esr)?(?:\.exe)?$/i.test(config.chromePath) ? "firefox" : /msedge|microsoft[- ]edge/i.test(config.chromePath) ? "edge" : "chrome")
   );
+}
+
+function isFirefoxPath(path: string): boolean {
+  return /(?:^|[\\/])firefox(?:-esr)?(?:\.exe)?$/i.test(path);
+}
+
+async function resolveBrowserExecutable(
+  host: WebAgentInstallerHost,
+  browser: string,
+  paths: Array<string | undefined>,
+): Promise<{ path?: string; firefoxSnap?: boolean; unsupportedReason?: string }> {
+  let snapPath: string | undefined;
+  for (const path of unique(paths)) {
+    if (!(await host.exists(path))) continue;
+    if (host.platform === "linux" && (browser === "firefox" || isFirefoxPath(path))) {
+      const launcher = await readOptionalUTF8(host, path);
+      if (path.startsWith("/snap/") ||
+          (launcher?.startsWith("#!") && /\/snap\/bin\/firefox|\bsnap\s+(?:run\s+)?firefox\b/.test(launcher))) {
+        snapPath ??= path;
+        continue;
+      }
+    }
+    return { path };
+  }
+  return snapPath ? { path: snapPath, firefoxSnap: true } : {};
+}
+
+function browserProfileKey(browser: string, firefoxSnap = false): string {
+  return firefoxSnap ? `${browser}:snap` : browser;
+}
+
+async function snapFirefoxProfileRoot(host: WebAgentInstallerHost): Promise<string> {
+  const profileHash = await host.sha256(new TextEncoder().encode(host.profileDir));
+  return nativeJoin(host.platform, host.homeDir, "snap", "firefox", "common", "zotero-ai-sidebar", profileHash.slice(0, 16));
+}
+
+async function browserProfileDirectory(host: WebAgentInstallerHost, browser: string, firefoxSnap: boolean, saved?: string): Promise<string> {
+  if (firefoxSnap) {
+    const root = await snapFirefoxProfileRoot(host);
+    return saved?.startsWith(root + "/") ? saved : nativeJoin(host.platform, root, `browser-profile-${browser}`);
+  }
+  return saved ?? nativeJoin(host.platform, host.profileDir, "zai-web-agent", browser === "chrome" ? "browser-profile" : `browser-profile-${browser}`);
+}
+
+async function needsLocalFirefoxProfile(host: WebAgentInstallerHost, profileDir: string): Promise<boolean> {
+  const separator = host.platform === "win32" ? "\\" : "/";
+  return !profileDir.startsWith(host.profileDir + separator) && !(await host.exists(profileDir));
 }
 
 interface CustomWebBrowser {
@@ -91,6 +158,32 @@ export async function addWebAgentBrowser(
   await selectWebAgentBrowser(id, host, path, name.trim());
 }
 
+export async function removeWebAgentBrowser(
+  browser: string,
+  host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
+): Promise<void> {
+  const entries = await readCustomWebBrowsers(host);
+  if (!entries.some(entry => entry.browser === browser))
+    throw new Error(uiText("只能移除已添加的自定义浏览器", "Only added custom browsers can be removed"));
+  const choices = await getWebAgentBrowsers(host);
+  if (choices.selected === browser) {
+    const currentPath = choices.available.find(entry => entry.browser === browser)?.path;
+    const alternatives = choices.available.filter(entry => entry.browser !== browser && entry.path);
+    const replacement = alternatives.find(entry => entry.path === currentPath) ?? alternatives[0];
+    if (!replacement)
+      throw new Error(uiText("请先安装或选择其他可用浏览器，再移除此项", "Install or select another available browser before removing this entry"));
+    await selectWebAgentBrowser(replacement.browser, host);
+  }
+  await host.writeUTF8(
+    nativeJoin(host.platform, host.dataDir, "zai-web-custom-browsers.json"),
+    JSON.stringify(entries.filter(entry => entry.browser !== browser), null, 2),
+  );
+  const preferencePath = nativeJoin(host.platform, host.dataDir, "zai-web-browser.txt");
+  if ((await readOptionalUTF8(host, preferencePath))?.trim() === browser) {
+    await host.writeUTF8(preferencePath, choices.selected);
+  }
+}
+
 export async function getWebAgentBrowsers(
   host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
 ) {
@@ -102,29 +195,33 @@ export async function getWebAgentBrowsers(
     host,
     nativeJoin(host.platform, host.dataDir, "zai-web-browser.txt"),
   );
-  const available: Array<CustomWebBrowser & { path?: string }> = await Promise.all(
-    (["chrome", "edge"] as const).map(async (browser) => {
+  const available: Array<CustomWebBrowser & { path?: string; firefoxSnap?: boolean; unsupportedReason?: string }> = await Promise.all(
+    (["chrome", "edge", "firefox"] as const).map(async (browser) => {
       const customPath = (await readOptionalUTF8(
         host,
         nativeJoin(host.platform, host.dataDir, `zai-web-browser-${browser}-path.txt`),
       ))?.trim() ?? "";
+      const preferred = await resolveBrowserExecutable(host, browser, customPath ? [customPath] :
+        config && configuredBrowser(config) === browser ? [config.chromePath] : []);
+      const resolved = preferred.path || (customPath && browser !== "firefox") ? preferred :
+        await resolveBrowserExecutable(host, browser, webAgentBrowserCandidates(host, browser));
       return {
         browser,
-        name: browser === "edge" ? "Microsoft Edge" : "Google Chrome",
-        customPath,
-        path: await firstExisting(host, customPath ? [customPath] : [
-          ...(config && configuredBrowser(config) === browser ? [config.chromePath] : []),
-          ...webAgentBrowserCandidates(host, browser),
-        ]),
+        name: browser === "firefox" ? "Firefox" : browser === "edge" ? "Microsoft Edge" : "Google Chrome",
+        customPath: customPath && resolved.path ? resolved.path : customPath,
+        ...resolved,
       };
     }),
   );
   for (const entry of await readCustomWebBrowsers(host)) {
-    available.push({ ...entry, path: await firstExisting(host, [entry.customPath]) });
+    const preferred = await resolveBrowserExecutable(host, entry.browser, [entry.customPath]);
+    const resolved = preferred.path || !isFirefoxPath(entry.customPath) ? preferred :
+      await resolveBrowserExecutable(host, "firefox", webAgentBrowserCandidates(host, "firefox"));
+    available.push({ ...entry, customPath: resolved.path ?? entry.customPath, ...resolved });
   }
   const saved = config ? configuredBrowser(config) : preference?.trim();
   const selected = available.some(entry => entry.browser === saved)
-    ? saved! : (available.find(entry => entry.path)?.browser ?? "chrome");
+    ? saved! : (available.find(entry => entry.path)?.browser ?? available.find(entry => entry.unsupportedReason)?.browser ?? "chrome");
   return { selected, available };
 }
 
@@ -132,11 +229,11 @@ export async function detectWebAgentBrowser(
   browser: string,
   host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
 ): Promise<string> {
-  if (browser !== "chrome" && browser !== "edge")
+  if (browser !== "chrome" && browser !== "edge" && browser !== "firefox")
     throw new Error(uiText("自定义浏览器请使用“选择程序文件…”指定路径。", "For a custom browser, use Select program file… to specify its path."));
-  const path = await firstExisting(host, webAgentBrowserCandidates(host, browser));
-  if (!path) throw new Error(uiText("未检测到浏览器，请使用“选择程序文件…”指定路径。", "No browser was detected. Use Select program file… to specify its path."));
-  return path;
+  const resolved = await resolveBrowserExecutable(host, browser, webAgentBrowserCandidates(host, browser));
+  if (!resolved.path) throw new Error(resolved.unsupportedReason ?? uiText("未检测到浏览器，请使用“选择程序文件…”指定路径。", "No browser was detected. Use Select program file… to specify its path."));
+  return resolved.path;
 }
 
 export async function selectWebAgentBrowser(
@@ -146,19 +243,20 @@ export async function selectWebAgentBrowser(
   customName?: string,
 ): Promise<void> {
   const choices = await getWebAgentBrowsers(host);
-  const builtin = browser === "chrome" || browser === "edge";
+  const builtin = browser === "chrome" || browser === "edge" || browser === "firefox";
   const entry = choices.available.find(entry => entry.browser === browser);
   if (!entry && !(customName && /^custom-[a-z0-9-]+$/.test(browser)))
     throw new Error(uiText("浏览器配置不存在", "Browser configuration does not exist"));
   const normalizedPath = customPath?.trim().replace(/^"(.*)"$/, "$1");
   if (normalizedPath && !(await host.exists(normalizedPath)))
     throw new Error(uiText("浏览器程序路径不存在，请选择浏览器可执行文件。", "The browser executable path does not exist; select a browser executable."));
-  const path = normalizedPath || (customPath !== undefined
-    ? (builtin ? await firstExisting(host, webAgentBrowserCandidates(host, browser)) : undefined)
-    : choices.available.find((entry) => entry.browser === browser)?.path);
+  const resolved = await resolveBrowserExecutable(host, browser, normalizedPath ? [normalizedPath] : customPath !== undefined
+    ? (builtin ? webAgentBrowserCandidates(host, browser) : [])
+    : [entry?.path]);
+  const path = resolved.path;
   if (!path)
     throw new Error(
-      uiText(`未找到 ${entry?.name ?? customName ?? browser}，请选择有效的浏览器程序路径。`, `Could not find ${entry?.name ?? customName ?? browser}; select a valid browser executable path.`),
+      resolved.unsupportedReason ?? entry?.unsupportedReason ?? uiText(`未找到 ${entry?.name ?? customName ?? browser}，请选择有效的浏览器程序路径。`, `Could not find ${entry?.name ?? customName ?? browser}; select a valid browser executable path.`),
     );
   const configPath = nativeJoin(
     host.platform,
@@ -166,7 +264,14 @@ export async function selectWebAgentBrowser(
     "zai-web-agent-config.json",
   );
   const config = await readConfig(host, configPath);
-  if (config && (configuredBrowser(config) !== browser || config.chromePath !== path)) {
+  const profiles = config ? { ...config.browserProfiles, [browserProfileKey(configuredBrowser(config), config.firefoxSnap)]: config.profileDir } : {};
+  const profileKey = browserProfileKey(browser, resolved.firefoxSnap);
+  const sameFirefox = config && browser === "firefox" && isFirefoxPath(path) && config.chromePath === path && !!config.firefoxSnap === !!resolved.firefoxSnap;
+  let profileDir = await browserProfileDirectory(host, browser, !!resolved.firefoxSnap, profiles[profileKey] ?? (sameFirefox ? config.profileDir : undefined));
+  if (!resolved.firefoxSnap && (browser === "firefox" || isFirefoxPath(path)) && await needsLocalFirefoxProfile(host, profileDir)) {
+    profileDir = nativeJoin(host.platform, host.profileDir, "zai-web-agent", `browser-profile-${browser}`);
+  }
+  if (config && (configuredBrowser(config) !== browser || config.chromePath !== path || config.profileDir !== profileDir || !!config.firefoxSnap !== !!resolved.firefoxSnap)) {
     const health = await host.health(config);
     if (
       Object.values(health?.active ?? {}).some(Boolean) ||
@@ -187,23 +292,13 @@ export async function selectWebAgentBrowser(
       }
       if (!stopped) throw new Error(uiText("Web Agent 尚未退出，请稍后再切换浏览器。", "Web Agent has not exited yet. Try switching browsers again later."));
     }
-    const profiles = {
-      ...config.browserProfiles,
-      [configuredBrowser(config)]: config.profileDir,
-    };
-    const profileDir =
-      profiles[browser] ??
-      nativeJoin(
-        host.platform,
-        host.profileDir,
-        "zai-web-agent",
-        `browser-profile-${browser}`,
-      );
     await host.makeDirectory(profileDir);
+    if (resolved.firefoxSnap) await host.setPermissions(profileDir, 0o700);
     const next = {
       ...config,
       browser,
-      browserProfiles: { ...profiles, [browser]: profileDir },
+      firefoxSnap: !!resolved.firefoxSnap,
+      browserProfiles: { ...profiles, [profileKey]: profileDir },
       chromePath: path,
       profileDir,
       port: 0,
@@ -213,9 +308,9 @@ export async function selectWebAgentBrowser(
     await host.setPermissions(configPath, 0o600).catch(() => undefined);
     clearWebAgentConfigCache();
   }
-  if (!builtin && normalizedPath) {
+  if (!builtin && (normalizedPath || entry?.customPath !== path)) {
     const entries = await readCustomWebBrowsers(host);
-    const next = { browser, name: customName ?? entry!.name, customPath: normalizedPath };
+    const next = { browser, name: customName ?? entry!.name, customPath: path };
     const index = entries.findIndex(entry => entry.browser === browser);
     if (index < 0) entries.push(next); else entries[index] = next;
     await host.writeUTF8(
@@ -286,6 +381,7 @@ export interface WebAgentInstallerHost {
   exists(path: string): Promise<boolean>;
   read(path: string): Promise<Uint8Array>;
   readUTF8(path: string): Promise<string>;
+  listChildren?(path: string): Promise<string[]>;
   probeNodeVersion(path: string): Promise<string | null>;
   health(config: WebAgentConfig): Promise<WebAgentHealth | null>;
   fetchRuntimeArchive(url: string): Promise<Uint8Array>;
@@ -311,6 +407,46 @@ export interface WebAgentInstallationReport {
   clipboardPath?: string;
   configPresent: boolean;
   missing: string[];
+}
+
+export async function selectWebAgentNode(
+  input: string,
+  host: WebAgentInstallerHost = createZoteroWebAgentInstallerHost(),
+): Promise<{ path: string; version: string }> {
+  const raw = input.trim().replace(/^"(.*)"$/, "$1");
+  const selected = /^~[\\/]/.test(raw) ? nativeJoin(host.platform, host.homeDir, raw.slice(2)) : raw;
+  const absolute = host.platform === "win32" ? /^(?:[A-Za-z]:[\\/]|\\\\)/.test(selected) : selected.startsWith("/");
+  if (!selected || !absolute)
+    throw new Error(uiText("请输入 Node 程序或所在目录的完整路径", "Enter the absolute path to Node or its directory"));
+  if (/\.sh$/i.test(selected))
+    throw new Error(uiText("install.sh 等安装脚本不是 Node 程序，请选择 node、node.exe 或其所在目录", "Installation scripts such as install.sh are not Node executables. Select node, node.exe, or its directory."));
+  const name = host.platform === "win32" ? "node.exe" : "node";
+  const node = await findSupportedNode(host, [selected, nativeJoin(host.platform, selected, name), nativeJoin(host.platform, selected, "bin", name)]);
+  if (!node)
+    throw new Error(uiText("未找到可运行的 Node.js 20+，请选择 node、node.exe 或其所在目录", "No runnable Node.js 20+ was found. Select node, node.exe, or its directory."));
+  const configPath = nativeJoin(host.platform, host.dataDir, "zai-web-agent-config.json");
+  const config = await readConfig(host, configPath);
+  if (config && config.nodePath !== node.path) {
+    const health = await host.health(config);
+    if (Object.values(health?.active ?? {}).some(Boolean) || Object.values(health?.queued ?? {}).some(count => count > 0))
+      throw new Error(uiText("WEB 任务正在运行，请等待任务完成后再更改 Node 路径", "Wait for WEB tasks to finish before changing the Node path"));
+    if (health) {
+      if (!(await host.stop(config))) throw new Error(uiText("Web Agent 未能停止，Node 设置未更改", "Web Agent could not be stopped. Node settings were not changed."));
+      let stopped = false;
+      for (let attempt = 0; attempt < 40; attempt++) {
+        await host.delay(250);
+        if (!(await host.health(config))) { stopped = true; break; }
+      }
+      if (!stopped) throw new Error(uiText("Web Agent 尚未退出，Node 设置未更改", "Web Agent has not exited. Node settings were not changed."));
+    }
+    await host.writeUTF8(configPath, `${JSON.stringify({ ...config, nodePath: node.path, port: 0 }, null, 2)}\n`);
+    await host.setPermissions(configPath, 0o600).catch(() => undefined);
+    clearWebAgentConfigCache();
+  }
+  const preferencePath = nativeJoin(host.platform, host.dataDir, "zai-web-node-path.txt");
+  await host.writeUTF8(preferencePath, node.path);
+  await host.setPermissions(preferencePath, 0o600).catch(() => undefined);
+  return node;
 }
 
 export async function checkWebAgentAfterXpiUpdate(
@@ -355,20 +491,24 @@ export async function inspectWebAgentInstallation(
     host.dataDir,
     "zai-web-agent-config.json",
   );
-  const config = await readConfig(host, configPath);
+  let config = await readConfig(host, configPath);
   // Only explicit installation/update checks supply a release. Ordinary use
   // reads the saved result without comparing ZIP identities or hashing files.
   if (config && release)
     await recordPackageMatch(host, configPath, config, release.sha256);
   const candidates = webAgentExecutableCandidates(host);
-  const node = await findSupportedNode(host, [
+  const savedNodePath = await readOptionalUTF8(host, nativeJoin(host.platform, host.dataDir, "zai-web-node-path.txt"));
+  let node = await findSupportedNode(host, [
+    savedNodePath?.trim(),
     config?.nodePath,
     ...candidates.node,
   ]);
+  if (!node) node = await findSupportedNode(host, await nvmNodeCandidates(host));
   const browsers = await getWebAgentBrowsers(host);
-  const chromePath = browsers.available.find(
+  const selectedBrowser = browsers.available.find(
     (entry) => entry.browser === browsers.selected,
-  )?.path;
+  );
+  const chromePath = selectedBrowser?.path;
   const clipboardPath =
     host.platform === "linux"
       ? await firstExisting(host, candidates.clipboard)
@@ -385,7 +525,7 @@ export async function inspectWebAgentInstallation(
     return {
       state: "blocked",
       action: config ? "upgrade" : "install",
-      message: uiText(
+      message: (!chromePath && browsers.available.find(entry => entry.browser === browsers.selected)?.unsupportedReason) || uiText(
         `缺少系统依赖：${missing.join("、")}`,
         `Missing system dependencies: ${missing.join(", ")}`,
       ),
@@ -396,6 +536,19 @@ export async function inspectWebAgentInstallation(
       configPresent: Boolean(config),
       missing,
     };
+  }
+
+  if (config && node && config.nodePath !== node.path) {
+    await selectWebAgentNode(node.path, host);
+    config = await readConfig(host, configPath);
+  }
+  if (config && chromePath && (browsers.selected === "firefox" || isFirefoxPath(chromePath)) &&
+      (config.chromePath !== chromePath || !!config.firefoxSnap !== !!selectedBrowser?.firefoxSnap ||
+        (selectedBrowser?.firefoxSnap
+          ? !config.profileDir.startsWith(await snapFirefoxProfileRoot(host) + "/")
+          : await needsLocalFirefoxProfile(host, config.profileDir)))) {
+    await selectWebAgentBrowser(browsers.selected, host, chromePath);
+    config = await readConfig(host, configPath);
   }
 
   if (
@@ -531,10 +684,14 @@ async function installWebAgentRuntimeArchive(
     if (!previousStopped)
       throw new Error(uiText("旧 Web Agent 未能停止，请关闭 WEB 任务后重试升级", "The previous Web Agent could not be stopped. Close WEB tasks and retry the upgrade."));
   }
-  const browser = (await getWebAgentBrowsers(host)).selected;
+  const browserChoices = await getWebAgentBrowsers(host);
+  const browser = browserChoices.selected;
+  const firefoxSnap = !!browserChoices.available.find(entry => entry.browser === browser)?.firefoxSnap;
+  const profileDir = await browserProfileDirectory(host, browser, firefoxSnap, previous?.profileDir);
   const config: WebAgentConfig = {
     browser,
-    browserProfiles: previous?.browserProfiles,
+    firefoxSnap,
+    browserProfiles: { ...previous?.browserProfiles, [browserProfileKey(browser, firefoxSnap)]: profileDir },
     runtimeSha256: release.sha256,
     checkedXpiVersion: ADDON_VERSION,
     needsRuntimeUpdate: false,
@@ -542,14 +699,7 @@ async function installWebAgentRuntimeArchive(
     nodePath: report.nodePath!,
     chromePath: report.chromePath!,
     agentScript: nativeJoin(host.platform, runtimeDir, "agent.mjs"),
-    profileDir:
-      previous?.profileDir ||
-      nativeJoin(
-        host.platform,
-        host.profileDir,
-        "zai-web-agent",
-        browser === "chrome" ? "browser-profile" : `browser-profile-${browser}`,
-      ),
+    profileDir,
     cdpPort: 0,
     port: 0,
     callbackUrl:
@@ -558,6 +708,7 @@ async function installWebAgentRuntimeArchive(
   let newRuntimeStarted = false;
   try {
     await host.makeDirectory(config.profileDir);
+    if (firefoxSnap) await host.setPermissions(config.profileDir, 0o700);
     await host.writeUTF8(configPath, `${JSON.stringify(config, null, 2)}\n`);
     await host.setPermissions(configPath, 0o600).catch(() => undefined);
     clearWebAgentConfigCache();
@@ -784,6 +935,28 @@ async function firstExisting(
   return undefined;
 }
 
+async function nvmNodeCandidates(host: WebAgentInstallerHost): Promise<string[]> {
+  if (host.platform === "win32" || !host.listChildren) return [];
+  const roots = unique([
+    host.env.NVM_DIR,
+    posixJoin(host.homeDir, ".nvm"),
+    posixJoin(host.homeDir, ".config", "nvm"),
+    host.env.XDG_CONFIG_HOME && posixJoin(host.env.XDG_CONFIG_HOME, "nvm"),
+  ]);
+  const directories: string[] = [];
+  for (const root of roots) {
+    try {
+      directories.push(...(await host.listChildren(posixJoin(root, "versions", "node")))
+        .filter(dir => /^v\d+\.\d+\.\d+$/.test(dir.split("/").at(-1) ?? "")));
+    } catch {
+      // A missing or unreadable NVM root must not hide other installations.
+    }
+  }
+  return unique(directories)
+    .sort((a, b) => (b.split("/").at(-1) ?? "").localeCompare(a.split("/").at(-1) ?? "", undefined, { numeric: true }))
+    .map(dir => posixJoin(dir, "bin", "node"));
+}
+
 async function findSupportedNode(
   host: WebAgentInstallerHost,
   paths: Array<string | undefined>,
@@ -905,7 +1078,7 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
     "@mozilla.org/process/environment;1"
   ].getService((Ci as any).nsIEnvironment);
   const env = Object.fromEntries(
-    ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)", "PATH"].map(
+    ["LOCALAPPDATA", "ProgramFiles", "ProgramFiles(x86)", "PATH", "NVM_DIR", "XDG_CONFIG_HOME"].map(
       (name) => [name, processEnvironment.get(name) || undefined],
     ),
   );
@@ -923,6 +1096,7 @@ export function createZoteroWebAgentInstallerHost(): WebAgentInstallerHost {
     exists: (path) => io.exists(path),
     read: (path) => io.read(path),
     readUTF8: (path) => io.readUTF8(path),
+    listChildren: (path) => io.getChildren(path),
     probeNodeVersion: async (nodePath) => {
       const probeDir = nativeJoin(platform, profileDir, "zai-web-agent");
       const probePath = nativeJoin(

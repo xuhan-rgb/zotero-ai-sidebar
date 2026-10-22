@@ -16,6 +16,7 @@ import {
 } from "../providers/openai-cache-policy";
 import { getProvider } from "../providers/factory";
 import type { Message } from "../providers/types";
+import { promptText } from "../utils/prompt-locale";
 import { savePresets, zoteroPrefs } from "../settings/storage";
 import {
   DEFAULT_BASE_URLS,
@@ -139,7 +140,7 @@ export async function testPresetConnectivity(
 
   for await (const chunk of provider.stream(
     messages,
-    "Connectivity test. Reply with OK only.",
+    promptText("连通性测试。只回复 OK。", "Connectivity test. Reply with OK only."),
     testPreset,
     signal,
   )) {
@@ -303,7 +304,7 @@ async function requestOpenAIConnectivity(
 ): Promise<OpenAITestResult> {
   const body = {
     model: preset.model,
-    instructions: "Connectivity test. Reply OK only.",
+    instructions: promptText("连通性测试。只回复 OK。", "Connectivity test. Reply OK only."),
     input: [{ role: "user", content: "Reply OK." }],
     ...(includeMaxOutputTokens ? { max_output_tokens: 256 } : {}),
     ...openAIResponsesReasoningBodyParam(preset),
@@ -383,7 +384,7 @@ async function requestPromptCacheOnce(
   );
   const body = {
     model: preset.model,
-    instructions: "Prompt cache test. Reply CACHE_OK only.",
+    instructions: promptText("提示缓存测试。只回复 CACHE_OK。", "Prompt cache test. Reply CACHE_OK only."),
     input: [
       {
         role: "user",

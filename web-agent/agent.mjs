@@ -13,7 +13,7 @@ import http from "node:http";
 import process from "node:process";
 import path from "node:path";
 import { pathToFileURL, URL } from "node:url";
-import { chromium } from "playwright-core";
+import { chromium, firefox } from "playwright-core";
 
 import {
   firstPopulatedLocator,
@@ -44,8 +44,11 @@ import { hideBrowserWindow, showBrowserWindow } from "./window-visibility.mjs";
 import {
   browserModeFromVersion,
   chromeLaunchArguments,
+  firefoxLaunchOptions,
+  isFirefoxBrowser,
 } from "./browser-mode.mjs";
 import { readClipboardText } from "./clipboard.mjs";
+import { saveFirefoxSessionCookies, restoreFirefoxSessionCookies } from "./firefox-session.mjs";
 
 const configPath = process.argv[2];
 if (!configPath) throw new Error("Web Agent config path is required");
@@ -547,8 +550,8 @@ async function runTask(task) {
 
 async function stageTaskAttachments(task, adapter, attachments) {
   if (
-    !adapter.latexUploadExtension ||
-    !attachments.some((attachment) => attachment.kind === "latex")
+    !attachments.length || (!config.firefoxSnap && (!adapter.latexUploadExtension ||
+    !attachments.some((attachment) => attachment.kind === "latex")))
   ) {
     return attachments;
   }
@@ -556,8 +559,8 @@ async function stageTaskAttachments(task, adapter, attachments) {
     `${config.profileDir}/zai-web-upload-`,
   );
   return Promise.all(
-    attachments.map((attachment) =>
-      stageWebAttachment(attachment, adapter, task.attachmentStageDir),
+    attachments.map((attachment, index) =>
+      stageWebAttachment(attachment, adapter, config.firefoxSnap ? path.join(task.attachmentStageDir, String(index)) : task.attachmentStageDir, !!config.firefoxSnap),
     ),
   );
 }
@@ -807,7 +810,8 @@ async function webSession(browserContext, task, adapter) {
     return previousSession;
   }
   if (!page || page.isClosed()) {
-    page = await browserContext.newPage();
+    page = (isFirefoxBrowser(config) && browserContext.pages().find(candidate =>
+      candidate.url().includes(adapter.host) || candidate.url() === "about:blank")) || await browserContext.newPage();
     page.on("close", () => {
       if (sessions.get(sessionSlot)?.page === page)
         sessions.delete(sessionSlot);
@@ -1060,6 +1064,9 @@ function conversationIdentity(value, adapter) {
 
 async function ensureContext() {
   if (context) return context;
+  if (isFirefoxBrowser(config)) {
+    throw new Error("专用 Firefox 尚未打开，请先点击账号配置按钮并手动登录");
+  }
   if (contextConnecting) return contextConnecting;
   contextConnecting = (async () => {
     const endpoint = await readDevToolsEndpoint();
@@ -1116,6 +1123,9 @@ async function openDedicatedBrowser(provider, customProvider) {
         }
       }
       page ||= pages[0];
+      if (!page && isFirefoxBrowser(config)) {
+        page = connectedContext.pages().find(candidate => candidate.url() === "about:blank");
+      }
       if (!page) page = await connectedContext.newPage();
       await showBrowserWindow(page);
       if (!page.url().includes(adapter.host)) {
@@ -1167,7 +1177,7 @@ async function browserAccountStatus(provider, customProvider) {
     }
     let page = configuredPage || pages[0];
     if (!page) {
-      page = await connectedContext.newPage();
+      page = (isFirefoxBrowser(config) && connectedContext.pages().find(candidate => candidate.url() === "about:blank")) || await connectedContext.newPage();
       await page.goto(adapter.accountUrl || adapter.url, {
         waitUntil: "domcontentloaded",
         timeout: 60_000,
@@ -1199,7 +1209,7 @@ async function browserAccountStatus(provider, customProvider) {
 
 async function hideDedicatedBrowser(provider, customProvider) {
   const adapter = providerDefinition(provider, customProvider);
-  const endpoint = await readDevToolsEndpoint();
+  const endpoint = isFirefoxBrowser(config) ? context : await readDevToolsEndpoint();
   if (!endpoint) {
     accountWindowVisible = false;
     return { ok: true, provider, browserOpen: false, configured: false };
@@ -1255,7 +1265,7 @@ async function hideDedicatedBrowser(provider, customProvider) {
 async function enforceHiddenWindowPolicy() {
   if (accountWindowVisible || visibleTaskIDs.size > 0 || browserLaunching)
     return;
-  const endpoint = await readDevToolsEndpoint();
+  const endpoint = isFirefoxBrowser(config) ? context : await readDevToolsEndpoint();
   if (!endpoint) return;
   try {
     if ((await currentBrowserMode()) === "headless") return;
@@ -1275,7 +1285,7 @@ async function minimizeDedicatedBrowser() {
   const connectedContext = await ensureContext();
   for (const page of connectedContext.pages()) {
     if (!(await hideBrowserWindow(page))) {
-      throw new Error("无法将专用 Chrome 最小化，请保持显示或手动最小化");
+      throw new Error("无法将专用浏览器最小化，请保持显示或手动最小化 / Cannot minimize the browser; keep it visible or minimize it manually");
     }
   }
 }
@@ -1293,6 +1303,7 @@ async function ensureDedicatedBrowserMode(mode, adapter) {
   browserTransition = (async () => {
     const runningMode = await currentBrowserMode();
     const zaiBrowser =
+      isFirefoxBrowser(config) ||
       adapter.host !== "chat.z.ai" ||
       (await readFile(devToolsPortFile(), "utf8")
         .then((raw) => raw.split(/\r?\n/)[2] === "zai-visible")
@@ -1325,6 +1336,25 @@ async function ensureDedicatedBrowserMode(mode, adapter) {
 }
 
 async function startDedicatedBrowser(mode, adapter) {
+  if (isFirefoxBrowser(config)) {
+    if (config.firefoxSnap) await mkdir(`${config.profileDir}/browser-downloads`, { recursive: true });
+    const connectedContext = await firefox.launchPersistentContext(
+      config.profileDir,
+      firefoxLaunchOptions(config, mode),
+    );
+    try {
+      await restoreFirefoxSessionCookies(connectedContext, config.profileDir);
+    } catch (error) {
+      await connectedContext.close().catch(() => undefined);
+      throw error;
+    }
+    context = connectedContext;
+    browserMode = mode;
+    connectedContext.on("close", () => {
+      if (context === connectedContext) resetBrowserConnection();
+    });
+    return;
+  }
   await unlink(devToolsPortFile()).catch(() => undefined);
   if (adapter.host === "chat.z.ai") {
     await startZaiBrowser();
@@ -1443,6 +1473,14 @@ async function startZaiBrowser() {
 }
 
 async function stopDedicatedBrowser() {
+  if (isFirefoxBrowser(config)) {
+    if (context) {
+      await saveFirefoxSessionCookies(context, config.profileDir);
+      await context.close();
+    }
+    resetBrowserConnection();
+    return;
+  }
   const endpoint = await readDevToolsEndpoint();
   if (endpoint) {
     try {
@@ -1474,6 +1512,7 @@ function resetBrowserConnection() {
 }
 
 async function currentBrowserMode() {
+  if (isFirefoxBrowser(config)) return context ? browserMode : undefined;
   const endpoint = await readDevToolsEndpoint();
   if (!endpoint) {
     browserMode = undefined;

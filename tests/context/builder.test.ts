@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { buildContext, type ContextSource } from '../../src/context/builder';
+import { UI_LANGUAGE_PREF } from '../../src/utils/ui-locale';
 
 const fakeSource: ContextSource = {
   async getItem(id) {
@@ -16,6 +17,14 @@ const fakeSource: ContextSource = {
     return 'A'.repeat(10_000);
   },
 };
+
+function useLocale(locale: 'zh-CN' | 'en-US') {
+  vi.stubGlobal('Zotero', {
+    Prefs: { get: (key: string) => key === UI_LANGUAGE_PREF ? locale : undefined },
+  });
+}
+
+afterEach(() => vi.unstubAllGlobals());
 
 describe('buildContext', () => {
   it('returns base prompt only when no item id', async () => {
@@ -45,10 +54,27 @@ describe('buildContext', () => {
   });
 
   it('instructs the model to quote evidence verbatim in blockquotes', async () => {
+    useLocale('en-US');
     const ctx = await buildContext(fakeSource, 1, 0);
     // Evidence must be verbatim PDF quotes (not paraphrase) so the chat's
     // "jump to source" feature always has locatable text to work with.
     expect(ctx.systemPrompt).toMatch(/verbatim/i);
     expect(ctx.systemPrompt).toMatch(/blockquote/i);
+  });
+
+  it('builds Chinese prompts when the UI preference is Chinese', async () => {
+    useLocale('zh-CN');
+    const ctx = await buildContext(fakeSource, 1, 0);
+    expect(ctx.systemPrompt).toContain('研究助手');
+    expect(ctx.systemPrompt).toContain('逐字引用 PDF 原文');
+    expect(ctx.systemPrompt).toContain('用户当前正在查看这篇论文');
+  });
+
+  it('builds English prompts when the UI preference is English', async () => {
+    useLocale('en-US');
+    const ctx = await buildContext(fakeSource, 1, 0);
+    expect(ctx.systemPrompt).toContain('research assistant');
+    expect(ctx.systemPrompt).toContain('quote the actual PDF passage verbatim');
+    expect(ctx.systemPrompt).toContain('The user is currently viewing this paper');
   });
 });

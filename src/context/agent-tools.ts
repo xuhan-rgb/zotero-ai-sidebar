@@ -1,3 +1,4 @@
+import { promptText } from "../utils/prompt-locale";
 import type {
   AgentTool,
   Message,
@@ -138,7 +139,7 @@ export function createZoteroAgentToolSession(
     {
       name: "zotero_get_current_item",
       description:
-        "Read metadata for the Zotero item currently selected or opened by the user. Use this before answering when title, authors, year, abstract, or tags are needed.",
+        promptText("读取用户当前选中或打开的 Zotero 条目题录。回答需要标题、作者、年份、摘要或标签时，先使用此工具。", "Read metadata for the Zotero item currently selected or opened by the user. Use this before answering when title, authors, year, abstract, or tags are needed."),
       parameters: objectSchema({}),
       execute: async () => {
         const itemID = currentItemID(options);
@@ -161,7 +162,7 @@ export function createZoteroAgentToolSession(
     {
       name: "zotero_get_annotations",
       description:
-        "Read Zotero PDF annotations for the current item, including highlights, comments, page labels, colors, and order. Use when the user asks about their highlights, notes, annotations, or reading marks.",
+        promptText("读取当前条目的 Zotero PDF 注释，包括高亮、评论、页码、颜色及顺序。用户询问其高亮、笔记、注释或阅读标记时使用。", "Read Zotero PDF annotations for the current item, including highlights, comments, page labels, colors, and order. Use when the user asks about their highlights, notes, annotations, or reading marks."),
       parameters: objectSchema({}),
       execute: async () => {
         const itemID = currentItemID(options);
@@ -188,7 +189,7 @@ export function createZoteroAgentToolSession(
     {
       name: "zotero_outline_pdf",
       description:
-        "Get a cheap whole-paper skeleton (section headings, char ranges, first-line previews, figure/table anchors) WITHOUT reading the full PDF. Use this first when the user wants an overview/总览 of the entire paper. arXiv items use the cached LaTeX section list; other PDFs use heuristic heading detection with an even-window fallback. After reading the skeleton, write a one-line gist per section and a logical flowchart, then call render_paper_overview.",
+        promptText("不读取全文，以低成本获取整篇论文骨架（章节标题、字符范围、首行预览、图表锚点）。用户需要全文总览时先使用。arXiv 条目使用缓存的 LaTeX 章节列表；其他 PDF 使用启发式标题检测，失败时回退到均匀窗口。读取骨架后，为每节撰写一句话 gist 和逻辑流程图，再调用 render_paper_overview。", "Get a cheap whole-paper skeleton (section headings, char ranges, first-line previews, figure/table anchors) WITHOUT reading the full PDF. Use this first when the user wants an overview/总览 of the entire paper. arXiv items use the cached LaTeX section list; other PDFs use heuristic heading detection with an even-window fallback. After reading the skeleton, write a one-line gist per section and a logical flowchart, then call render_paper_overview."),
       parameters: objectSchema({}),
       execute: async () => {
         const itemID = currentItemID(options);
@@ -252,12 +253,12 @@ export function createZoteroAgentToolSession(
     {
       name: "zotero_search_pdf",
       description:
-        "Search the current PDF full-text cache using a query written by the model. Use this for targeted evidence, follow-up questions, definitions, figures, experiments, equations, claims, section/chapter headings, or local passages. The harness returns bounded passages with character ranges so the model can decide whether to expand only a relevant section with zotero_read_pdf_range instead of reading the whole PDF. For passages that will be written back as PDF highlights, use zotero_get_reader_pdf_text instead so the copied text matches the Reader text layer.",
+        promptText("用模型编写的 query 搜索当前 PDF 全文缓存。适用于定向证据、追问、定义、图表、实验、公式、论点、章节标题或局部段落。执行器返回有字符范围的有限段落，模型可决定只用 zotero_read_pdf_range 扩展相关部分，而非读取全文。需要写回 PDF 高亮的原文应改用 zotero_get_reader_pdf_text，以匹配 Reader 文本层。", "Search the current PDF full-text cache using a query written by the model. Use this for targeted evidence, follow-up questions, definitions, figures, experiments, equations, claims, section/chapter headings, or local passages. The harness returns bounded passages with character ranges so the model can decide whether to expand only a relevant section with zotero_read_pdf_range instead of reading the whole PDF. For passages that will be written back as PDF highlights, use zotero_get_reader_pdf_text instead so the copied text matches the Reader text layer."),
       parameters: objectSchema(
         {
-          query: stringSchema("Search query for the current PDF full text."),
+          query: stringSchema(promptText("当前 PDF 全文的搜索查询。", "Search query for the current PDF full text.")),
           topK: numberSchema(
-            "Maximum passages to return. The harness clamps this to policy limits.",
+            promptText("最多返回的段落数。执行器会限制在策略允许范围内。", "Maximum passages to return. The harness clamps this to policy limits."),
           ),
         },
         ["query"],
@@ -298,14 +299,14 @@ export function createZoteroAgentToolSession(
     {
       name: "zotero_read_pdf_range",
       description:
-        "Read an exact character range from the current PDF full-text cache. Use only when a previous cache-based tool result or ledger gives useful start/end ranges, including section/chapter ranges chosen by the model. The harness validates and caps the range. For passages that will be written back as PDF highlights, use zotero_get_reader_pdf_text instead.",
+        promptText("从当前 PDF 全文缓存读取精确字符范围。仅在先前缓存工具结果或上下文账本提供可用 start/end 范围时使用，包括模型选定的章节范围。执行器会验证并限制范围。需写回 PDF 高亮的段落应改用 zotero_get_reader_pdf_text。", "Read an exact character range from the current PDF full-text cache. Use only when a previous cache-based tool result or ledger gives useful start/end ranges, including section/chapter ranges chosen by the model. The harness validates and caps the range. For passages that will be written back as PDF highlights, use zotero_get_reader_pdf_text instead."),
       parameters: objectSchema(
         {
           start: numberSchema(
-            "Zero-based start character offset from a previous tool result.",
+            promptText("先前工具结果中从零开始的起始字符偏移。", "Zero-based start character offset from a previous tool result."),
           ),
           end: numberSchema(
-            "End character offset from a previous tool result.",
+            promptText("先前工具结果中的结束字符偏移。", "End character offset from a previous tool result."),
           ),
         },
         ["start", "end"],
@@ -346,7 +347,7 @@ export function createZoteroAgentToolSession(
     {
       name: "zotero_get_full_pdf",
       description:
-        "Read the current PDF full-text cache for whole-paper synthesis. Use when the model decides the entire current Zotero paper is needed and smaller tools are insufficient. Prior full-PDF sends appear in the context ledger as source/range metadata so the model can choose between current history, targeted ranges, fresh full text, or asking the user for a resend. Do not copy highlight text from this tool for zotero_annotate_passage; use zotero_get_reader_pdf_text for PDF write workflows. The harness applies a full-PDF budget cap.",
+        promptText("读取当前 PDF 全文缓存以综合整篇论文。模型判断需要整篇当前 Zotero 论文且小范围工具不足时使用。此前发送的全文在上下文账本中以来源/范围元数据记录，可据此选择现有历史、定向范围、重新读取或请用户重发。不要从此工具复制 zotero_annotate_passage 的高亮原文；PDF 写入流程使用 zotero_get_reader_pdf_text。执行器会限制全文预算。", "Read the current PDF full-text cache for whole-paper synthesis. Use when the model decides the entire current Zotero paper is needed and smaller tools are insufficient. Prior full-PDF sends appear in the context ledger as source/range metadata so the model can choose between current history, targeted ranges, fresh full text, or asking the user for a resend. Do not copy highlight text from this tool for zotero_annotate_passage; use zotero_get_reader_pdf_text for PDF write workflows. The harness applies a full-PDF budget cap."),
       parameters: objectSchema({}),
       execute: async () => {
         const itemID = currentItemID(options);
@@ -414,7 +415,7 @@ export function createZoteroAgentToolSession(
     {
       name: "arxiv_list_sections",
       description:
-        "List the table of contents of the current arXiv paper's cached LaTeX source as JSON: each entry is {number, level, title, label?, bodyChars}. Use this to discover what sections exist (and how big each is) BEFORE deciding to fetch one with arxiv_get_section, so you do not pull a 30 KB section when a 2 KB one suffices. Only works when the current Zotero item has a cached arXiv source — when not, fall back to the PDF tools (zotero_search_pdf / zotero_read_pdf_range / zotero_get_full_pdf).",
+        promptText("以 JSON 列出当前 arXiv 论文缓存 LaTeX 源码的目录，每项为 {number, level, title, label?, bodyChars}。在决定用 arxiv_get_section 读取章节之前，先了解章节及大小，避免 2 KB 足够时读取 30 KB。仅适用于当前 Zotero 条目已有 arXiv 源码缓存的情形；否则使用 zotero_search_pdf / zotero_read_pdf_range / zotero_get_full_pdf。", "List the table of contents of the current arXiv paper's cached LaTeX source as JSON: each entry is {number, level, title, label?, bodyChars}. Use this to discover what sections exist (and how big each is) BEFORE deciding to fetch one with arxiv_get_section, so you do not pull a 30 KB section when a 2 KB one suffices. Only works when the current Zotero item has a cached arXiv source — when not, fall back to the PDF tools (zotero_search_pdf / zotero_read_pdf_range / zotero_get_full_pdf)."),
       parameters: objectSchema({}),
       execute: async () => {
         const loaded = await loadArxivSections(options);
@@ -436,16 +437,16 @@ export function createZoteroAgentToolSession(
     {
       name: "arxiv_get_figure",
       description:
-        "Fetch a figure from the current arXiv paper and attach it as an image the model can SEE in a follow-up multimodal turn. Use `number` for user requests such as 'Figure 3' / '图3' / 'Fig. 3'; `label` for a LaTeX figure label; or `name` for a figure basename, relative path, caption substring, or includegraphics substring. Raster source files (PNG/JPG/GIF/WebP) are attached directly. Vector source files (.pdf/.eps) are cropped from the active Zotero PDF Reader when possible, so keep the PDF open for best results. Only works when the current item has a cached arXiv source.",
+        promptText("获取当前 arXiv 论文中的图，以图像附加到后续多模态轮次，让模型实际查看。用户指定 Figure 3 / 图3 / Fig. 3 时使用 number；LaTeX 图标签使用 label；图文件名、相对路径、caption 或 includegraphics 子串使用 name。PNG/JPG/GIF/WebP 直接附加；.pdf/.eps 尽可能从当前 Zotero PDF Reader 裁剪，最好保持 PDF 打开。仅适用于当前条目已有 arXiv 源码缓存。", "Fetch a figure from the current arXiv paper and attach it as an image the model can SEE in a follow-up multimodal turn. Use `number` for user requests such as 'Figure 3' / '图3' / 'Fig. 3'; `label` for a LaTeX figure label; or `name` for a figure basename, relative path, caption substring, or includegraphics substring. Raster source files (PNG/JPG/GIF/WebP) are attached directly. Vector source files (.pdf/.eps) are cropped from the active Zotero PDF Reader when possible, so keep the PDF open for best results. Only works when the current item has a cached arXiv source."),
       parameters: objectSchema({
         number: numberSchema(
-          "Compiled figure number, e.g. 3 for Figure 3. Optional if label or name is provided.",
+          promptText("编译后的图号，例如 Figure 3 对应 3。提供 label 或 name 时可省略。", "Compiled figure number, e.g. 3 for Figure 3. Optional if label or name is provided."),
         ),
         label: stringSchema(
-          "LaTeX figure label, e.g. fig:occupancy. Optional if number or name is provided.",
+          promptText("LaTeX 图标签，例如 fig:occupancy。提供 number 或 name 时可省略。", "LaTeX figure label, e.g. fig:occupancy. Optional if number or name is provided."),
         ),
         name: stringSchema(
-          "Figure basename, relative path, caption substring, or includegraphics substring (e.g. 'occupancy' or 'figures/occupancy.pdf'). Optional if number or label is provided.",
+          promptText("图文件名、相对路径、caption 或 includegraphics 子串，例如 occupancy 或 figures/occupancy.pdf。提供 number 或 label 时可省略。", "Figure basename, relative path, caption substring, or includegraphics substring (e.g. 'occupancy' or 'figures/occupancy.pdf'). Optional if number or label is provided."),
         ),
       }),
       execute: async (args) => {
@@ -500,16 +501,16 @@ export function createZoteroAgentToolSession(
     {
       name: "arxiv_get_table",
       description:
-        "Return one numbered table from the current arXiv paper's cached LaTeX source by compiled table number (e.g. 2 for 'Table 2' / '表2'), LaTeX label, or caption/name substring. Use this before answering questions that mention a specific table number, because PDF pages can contain multiple floats and nearby visible content can point to the wrong table. The result includes the authoritative LaTeX table source for verification.",
+        promptText("按编译表号（如 Table 2 / 表2 对应 2）、LaTeX 标签或 caption/name 子串，读取当前 arXiv 论文缓存源码中的一张表。回答指定表号的问题前先使用，因为 PDF 页面可能包含多个浮动对象，邻近内容可能指向错误表格。结果包含权威 LaTeX 表格源码以供核对。", "Return one numbered table from the current arXiv paper's cached LaTeX source by compiled table number (e.g. 2 for 'Table 2' / '表2'), LaTeX label, or caption/name substring. Use this before answering questions that mention a specific table number, because PDF pages can contain multiple floats and nearby visible content can point to the wrong table. The result includes the authoritative LaTeX table source for verification."),
       parameters: objectSchema({
         number: numberSchema(
-          "Compiled table number, e.g. 2 for Table 2. Optional if label or name is provided.",
+          promptText("编译后的表号，例如 Table 2 对应 2。提供 label 或 name 时可省略。", "Compiled table number, e.g. 2 for Table 2. Optional if label or name is provided."),
         ),
         label: stringSchema(
-          "LaTeX table label, e.g. tab:main-results. Optional if number or name is provided.",
+          promptText("LaTeX 表标签，例如 tab:main-results。提供 number 或 name 时可省略。", "LaTeX table label, e.g. tab:main-results. Optional if number or name is provided."),
         ),
         name: stringSchema(
-          "Caption substring, label substring, or table-source substring. Optional if number or label is provided.",
+          promptText("caption、标签或表格源码的子串。提供 number 或 label 时可省略。", "Caption substring, label substring, or table-source substring. Optional if number or label is provided."),
         ),
       }),
       execute: async (args) => {
@@ -561,11 +562,11 @@ export function createZoteroAgentToolSession(
     {
       name: "arxiv_get_section",
       description:
-        "Return the LaTeX body of ONE section of the current arXiv paper's cached source. `section` accepts the dotted number (e.g. '3.1'), the LaTeX label (e.g. 'sec:method'), or a case-insensitive substring of the section title (e.g. 'methodology'). Prefer this over re-reading the whole paper whenever the user's question is scoped to a specific section. Only works when the current item has a cached arXiv source.",
+        promptText("读取当前 arXiv 论文缓存源码中一个章节的 LaTeX 正文。section 接受点分编号（如 3.1）、LaTeX 标签（如 sec:method）或不区分大小写的标题子串（如 methodology）。问题限于特定章节时，优先使用此工具而非重读全文。仅适用于当前条目已有 arXiv 源码缓存。", "Return the LaTeX body of ONE section of the current arXiv paper's cached source. `section` accepts the dotted number (e.g. '3.1'), the LaTeX label (e.g. 'sec:method'), or a case-insensitive substring of the section title (e.g. 'methodology'). Prefer this over re-reading the whole paper whenever the user's question is scoped to a specific section. Only works when the current item has a cached arXiv source."),
       parameters: objectSchema(
         {
           section: stringSchema(
-            "Section number ('3.1'), label ('sec:method'), or title substring ('methodology').",
+            promptText("章节号（3.1）、标签（sec:method）或标题子串（methodology）。", "Section number ('3.1'), label ('sec:method'), or title substring ('methodology')."),
           ),
         },
         ["section"],
@@ -604,13 +605,13 @@ export function createZoteroAgentToolSession(
     {
       name: "arxiv_get_equation",
       description:
-        "Return one numbered equation from the current arXiv paper's cached LaTeX source by compiled equation number (e.g. 3 for 'Equation (3)' / '公式3') or by LaTeX label (e.g. 'eq:loss'). Use this before answering questions that mention a specific formula/equation number, because PDF-visible numbers like '(3)' are generated at compile time and are not reliable in plain section text. The result includes display math for final answers and exact LaTeX source for verification; prefer the display math unless the user asks for raw/source LaTeX.",
+        promptText("按编译公式号（如 Equation (3) / 公式3 对应 3）或 LaTeX 标签（如 eq:loss），读取当前 arXiv 论文缓存源码中的一个编号公式。回答指定公式号的问题前先使用，因为 PDF 可见编号如 (3) 在编译时生成，普通章节文本中不可靠。结果包含用于回答的展示公式和供核对的精确 LaTeX 源码；除非用户要求源码，否则优先用展示公式。", "Return one numbered equation from the current arXiv paper's cached LaTeX source by compiled equation number (e.g. 3 for 'Equation (3)' / '公式3') or by LaTeX label (e.g. 'eq:loss'). Use this before answering questions that mention a specific formula/equation number, because PDF-visible numbers like '(3)' are generated at compile time and are not reliable in plain section text. The result includes display math for final answers and exact LaTeX source for verification; prefer the display math unless the user asks for raw/source LaTeX."),
       parameters: objectSchema({
         number: numberSchema(
-          "Compiled equation number, e.g. 3 for Equation (3). Optional if label is provided.",
+          promptText("编译后的公式号，例如 Equation (3) 对应 3。提供 label 时可省略。", "Compiled equation number, e.g. 3 for Equation (3). Optional if label is provided."),
         ),
         label: stringSchema(
-          "LaTeX equation label, e.g. eq:mix_schedule. Optional if number is provided.",
+          promptText("LaTeX 公式标签，例如 eq:mix_schedule。提供 number 时可省略。", "LaTeX equation label, e.g. eq:mix_schedule. Optional if number is provided."),
         ),
       }),
       execute: async (args) => {
@@ -656,7 +657,7 @@ export function createZoteroAgentToolSession(
     {
       name: "arxiv_get_bibliography",
       description:
-        "Read the current arXiv paper's cached bibliography files. Prefer this when the user asks about references, citation keys, related works cited by the paper, or when the cleaned full LaTeX source only contains `\\bibliography{...}` without expanded entries. Returns compiled .bbl files when available; otherwise returns .bib files. Only works when the current item has a cached arXiv source.",
+        promptText("读取当前 arXiv 论文缓存的参考文献文件。用户询问参考文献、引用键或论文引用的相关工作，或者清理后的 LaTeX 全文只有 \\bibliography{...} 而没有展开条目时，优先使用。有编译 .bbl 文件时返回 .bbl，否则返回 .bib。仅适用于当前条目已有 arXiv 源码缓存。", "Read the current arXiv paper's cached bibliography files. Prefer this when the user asks about references, citation keys, related works cited by the paper, or when the cleaned full LaTeX source only contains `\\bibliography{...}` without expanded entries. Returns compiled .bbl files when available; otherwise returns .bib files. Only works when the current item has a cached arXiv source."),
       parameters: objectSchema({}),
       execute: async () => {
         const loaded = await loadArxivBibliography(options);
@@ -691,18 +692,18 @@ export function createZoteroAgentToolSession(
     {
       name: "render_paper_overview",
       description:
-        "Render the whole-paper overview map into the note panel's 总览 view. Call AFTER zotero_outline_pdf. Provide: 'narrative' = a 2–4 sentence Chinese 核心讲述 (what the paper does and its contribution); 'sections' in document order, each with no, level, title, a ≤30-char Chinese gist, charStart, charEnd, optional anchors, 'phase' (motivation|method|validation) and 'emphasis' (innovation|result|normal|background) — for emphasis='innovation' the gist MUST say what is NEW; and a 'flowchart' (nodes id/label/type[root|section|point|result|innovation]/optional sectionNo + edges source/target/optional label). Mark THIS paper's contributions as type='innovation' with sectionNo set to the matching section number; 'result' marks effect/SOTA nodes. Network diagrams are generated separately from linked source code and must not be included here.",
+        promptText("将全文总览图渲染到笔记面板的总览视图。在 zotero_outline_pdf 之后调用。提供 narrative：2–4 句中文核心讲述，说明论文内容与贡献；sections 按文档顺序排列，每项含 no、level、title、≤30 字中文 gist、charStart、charEnd、可选 anchors、phase（motivation|method|validation）、emphasis（innovation|result|normal|background）。emphasis=innovation 时 gist 必须说明新在哪。flowchart 含 nodes（id/label/type[root|section|point|result|innovation]/可选 sectionNo）及 edges（source/target/可选 label）。本文贡献节点用 innovation，并设置对应 sectionNo；效果/SOTA 节点用 result。网络图从关联代码单独生成，不应包含在此处。", "Render the whole-paper overview map into the note panel's Overview view. Call AFTER zotero_outline_pdf. Provide: 'narrative' = a 2–4 sentence English synthesis (what the paper does and its contribution); 'sections' in document order, each with no, level, title, a ≤30-char English gist, charStart, charEnd, optional anchors, 'phase' (motivation|method|validation) and 'emphasis' (innovation|result|normal|background) — for emphasis='innovation' the gist MUST say what is NEW; and a 'flowchart' (nodes id/label/type[root|section|point|result|innovation]/optional sectionNo + edges source/target/optional label). Mark THIS paper's contributions as type='innovation' with sectionNo set to the matching section number; 'result' marks effect/SOTA nodes. Network diagrams are generated separately from linked source code and must not be included here."),
       parameters: objectSchema(
         {
-          title: stringSchema("Paper title."),
-          source: stringSchema("'arxiv' or 'pdf'."),
-          coverage: stringSchema("'headings' or 'uniform-fallback'."),
+          title: stringSchema(promptText("论文标题。", "Paper title.")),
+          source: stringSchema(promptText("取值为 arxiv 或 pdf。", "'arxiv' or 'pdf'.")),
+          coverage: stringSchema(promptText("取值为 headings 或 uniform-fallback。", "'headings' or 'uniform-fallback'.")),
           narrative: stringSchema(
-            "2–4 sentence Chinese whole-paper synthesis (核心讲述), ending by pointing out the contributions.",
+            promptText("2–4 句中文全文核心讲述，结尾点出贡献。", "2–4 sentence English whole-paper synthesis, ending by pointing out the contributions."),
           ),
           sections: {
             type: "array",
-            description: "Document-order sections, each gisted and classified.",
+            description: promptText("按文档顺序排列的章节，每节含 gist 和分类。", "Document-order sections, each gisted and classified."),
             items: {
               type: "object",
               properties: {
@@ -722,7 +723,7 @@ export function createZoteroAgentToolSession(
           },
           flowchart: {
             type: "object",
-            description: "Logical structure graph (mermaid-flowchart-like).",
+            description: promptText("逻辑结构图（类似 Mermaid 流程图）。", "Logical structure graph (mermaid-flowchart-like)."),
             properties: {
               rankdir: { type: "string" },
               nodes: { type: "array", items: { type: "object" } },
@@ -817,16 +818,16 @@ export function createZoteroAgentToolSession(
     {
       name: "zotero_add_annotation_to_selection",
       description:
-        "Create a Zotero PDF `highlight` annotation (Zotero Reader toolbar tool 'Highlight Text / 高亮文本') with a comment attached to the user's current selected PDF text. Use this when the user asks for a highlight, a comment on the highlight, or a 高亮 / 高亮+评论 / 划线评论 — the result colors the selected text and attaches the comment. Do NOT use this when the user asks for a visible text BOX placed on the page (use zotero_add_text_annotation_to_selection / 新增文字 / Add Text for that). Write tool, requires approval or YOLO mode.",
+        promptText("为用户当前 PDF 选区创建 Zotero highlight 注释（Reader 工具栏的高亮文本工具），并附加评论。用户要求高亮、高亮+评论或划线评论时使用，结果会给选区着色并附加评论。用户要求在页面放置可见文字框时不要使用，应改用 zotero_add_text_annotation_to_selection / 新增文字 / Add Text。写入工具，需要审批或 YOLO 模式。", "Create a Zotero PDF `highlight` annotation (Zotero Reader toolbar tool 'Highlight Text / 高亮文本') with a comment attached to the user's current selected PDF text. Use this when the user asks for a highlight, a comment on the highlight, or a 高亮 / 高亮+评论 / 划线评论 — the result colors the selected text and attaches the comment. Do NOT use this when the user asks for a visible text BOX placed on the page (use zotero_add_text_annotation_to_selection / 新增文字 / Add Text for that). Write tool, requires approval or YOLO mode."),
       requiresApproval: true,
       parameters: objectSchema(
         {
           comment: stringSchema(
-            "Annotation comment to save on the selected PDF text.",
+            promptText("保存到 PDF 选区的注释评论。", "Annotation comment to save on the selected PDF text."),
           ),
           color: stringSchema(colorDescription),
           type: stringSchema(
-            "Optional annotation type. Supported values are highlight or underline. If omitted, highlight is used.",
+            promptText("可选注释类型：highlight 或 underline。省略时使用 highlight。", "Optional annotation type. Supported values are highlight or underline. If omitted, highlight is used."),
           ),
         },
         ["comment"],
@@ -886,7 +887,7 @@ function createGetCurrentPdfSelectionTool(
   return {
     name: "zotero_get_current_pdf_selection",
     description:
-      "Read the user's current selected text in the active Zotero PDF Reader, preserving semantic paragraph/list structure when available. Use when the user asks to inspect, print, translate, explain, or reason about the current PDF selection and the selection was not already supplied in [Selected PDF text]. This is read-only and does not create annotations.",
+      promptText("读取当前 Zotero PDF Reader 中用户选中的文本，尽可能保留语义段落和列表结构。用户要求查看、输出、翻译、解释或分析 PDF 选区，而 [Selected PDF text] 尚未提供选区时使用。只读，不创建注释。", "Read the user's current selected text in the active Zotero PDF Reader, preserving semantic paragraph/list structure when available. Use when the user asks to inspect, print, translate, explain, or reason about the current PDF selection and the selection was not already supplied in [Selected PDF text]. This is read-only and does not create annotations."),
     parameters: objectSchema({}),
     execute: async () => {
       const draft = options.selectionAnnotation?.();
@@ -949,21 +950,21 @@ function createTextAnnotationNearSelectionTool(
   return {
     name: "zotero_add_text_annotation_to_selection",
     description:
-      "Create a Zotero PDF `text` annotation — the Zotero Reader toolbar tool 'Add Text / 新增文字' (the T tool). This places a visible text box on the page near the user's current PDF text selection. Use this when the user asks for 新增文字 / 加文字 / 写到 PDF 上 / 文字框 / a 'text' annotation / the T tool / 'Add Text' — anything that means 'put visible text on the page', as opposed to highlighting words. The selected text is the anchor; the text box appears below (or above/over) it. This creates annotation type `text`, NOT a highlight + comment (use zotero_add_annotation_to_selection / 高亮+评论 for that). Requires a current PDF selection. Write tool, requires approval or YOLO mode.",
+      promptText("创建 Zotero PDF text 注释，即 Reader 工具栏的新增文字 / Add Text（T 工具）。在用户当前 PDF 选区附近放置可见文字框。用户要求新增文字、加文字、写到 PDF 上、文字框、text 注释、T 工具或 Add Text 等可见页面文字时使用，而非高亮文字。选区作为锚点，文字框可位于下方、上方或覆盖选区。创建的是 text 类型，而非高亮+评论（后者使用 zotero_add_annotation_to_selection）。必须有当前 PDF 选区。写入工具，需要审批或 YOLO 模式。", "Create a Zotero PDF `text` annotation — the Zotero Reader toolbar tool 'Add Text / 新增文字' (the T tool). This places a visible text box on the page near the user's current PDF text selection. Use this when the user asks for 新增文字 / 加文字 / 写到 PDF 上 / 文字框 / a 'text' annotation / the T tool / 'Add Text' — anything that means 'put visible text on the page', as opposed to highlighting words. The selected text is the anchor; the text box appears below (or above/over) it. This creates annotation type `text`, NOT a highlight + comment (use zotero_add_annotation_to_selection / 高亮+评论 for that). Requires a current PDF selection. Write tool, requires approval or YOLO mode."),
     requiresApproval: true,
     parameters: objectSchema(
       {
         comment: stringSchema(
-          "Visible text to place on the PDF page, for example a short Chinese note.",
+          promptText("放置到 PDF 页面上的可见文字，例如简短中文笔记。", "Visible text to place on the PDF page, for example a short English note."),
         ),
         color: stringSchema(
-          "Optional text color, such as #ffd400. If omitted, Zotero/default annotation color is used.",
+          promptText("可选文字颜色，例如 #ffd400。省略时使用 Zotero 默认注释颜色。", "Optional text color, such as #ffd400. If omitted, Zotero/default annotation color is used."),
         ),
         fontSize: numberSchema(
-          "Optional font size in PDF points. Defaults to 14.",
+          promptText("可选字号，单位为 PDF 点，默认 14。", "Optional font size in PDF points. Defaults to 14."),
         ),
         placement: stringSchema(
-          "Optional placement relative to the current selection: below, above, or over. Defaults to below.",
+          promptText("相对当前选区的可选位置：below、above 或 over。默认 below。", "Optional placement relative to the current selection: below, above, or over. Defaults to below."),
         ),
       },
       ["comment"],
@@ -1019,14 +1020,14 @@ function createReferencedPaperTool(
   return {
     name: "zotero_read_referenced_paper",
     description:
-      "Read a Zotero paper explicitly attached with @ to this user turn. Use itemID from the attached-paper list in the user message. action=metadata reads title/abstract; action=search retrieves bounded passages using query; action=range expands a prior result using start/end; action=full reads bounded full text when needed for whole-paper comparison. Do not substitute the current paper for the referenced paper. The user prompt determines whether to compare or use the referenced paper to analyze the current one.",
+      promptText("读取用户在本轮通过 @ 明确附加的 Zotero 论文。itemID 使用用户消息中附加论文列表的 ID。action=metadata 读取标题/摘要；search 用 query 检索有限段落；range 用 start/end 扩展先前结果；full 在需要整篇对比时读取受限全文。不要用当前论文替代引用论文。由用户提示词决定是对比还是用引用论文分析当前论文。", "Read a Zotero paper explicitly attached with @ to this user turn. Use itemID from the attached-paper list in the user message. action=metadata reads title/abstract; action=search retrieves bounded passages using query; action=range expands a prior result using start/end; action=full reads bounded full text when needed for whole-paper comparison. Do not substitute the current paper for the referenced paper. The user prompt determines whether to compare or use the referenced paper to analyze the current one."),
     parameters: objectSchema(
       {
-        itemID: numberSchema("Item ID of a paper explicitly attached with @."),
-        action: stringSchema("One of metadata, search, range, full."),
-        query: stringSchema("Search query when action is search."),
-        start: numberSchema("Start character offset when action is range."),
-        end: numberSchema("End character offset when action is range."),
+        itemID: numberSchema(promptText("通过 @ 明确附加的论文条目 ID。", "Item ID of a paper explicitly attached with @.")),
+        action: stringSchema(promptText("取值为 metadata、search、range 或 full。", "One of metadata, search, range, full.")),
+        query: stringSchema(promptText("action=search 时的搜索查询。", "Search query when action is search.")),
+        start: numberSchema(promptText("action=range 时的起始字符偏移。", "Start character offset when action is range.")),
+        end: numberSchema(promptText("action=range 时的结束字符偏移。", "End character offset when action is range.")),
       },
       ["itemID", "action"],
     ),
@@ -1178,13 +1179,13 @@ function createGetReaderPdfTextTool(
   return {
     name: "zotero_get_reader_pdf_text",
     description:
-      "Read PDF text from the active Zotero Reader/PDF.js text layer. Use this when the user explicitly asks to write PDF highlights/annotations, because passages copied from this tool can be located by zotero_annotate_passage. Requires the PDF to be open in Zotero Reader. For ordinary summarization or non-writing analysis, use zotero_get_full_pdf instead. Optional start/end read an exact Reader-text range from a previous zotero_get_reader_pdf_text result.",
+      promptText("读取当前 Zotero Reader/PDF.js 文本层。用户明确要求写入 PDF 高亮/注释时使用，从此工具复制的段落可由 zotero_annotate_passage 定位。PDF 必须在 Zotero Reader 中打开。普通总结或不写入的分析应使用 zotero_get_full_pdf。可选 start/end 可读取先前 zotero_get_reader_pdf_text 结果中的精确范围。", "Read PDF text from the active Zotero Reader/PDF.js text layer. Use this when the user explicitly asks to write PDF highlights/annotations, because passages copied from this tool can be located by zotero_annotate_passage. Requires the PDF to be open in Zotero Reader. For ordinary summarization or non-writing analysis, use zotero_get_full_pdf instead. Optional start/end read an exact Reader-text range from a previous zotero_get_reader_pdf_text result."),
     parameters: objectSchema({
       start: numberSchema(
-        "Optional zero-based start character offset from a previous Reader-text result.",
+        promptText("先前 Reader 文本结果中可选的、从零开始的起始字符偏移。", "Optional zero-based start character offset from a previous Reader-text result."),
       ),
       end: numberSchema(
-        "Optional end character offset from a previous Reader-text result.",
+        promptText("先前 Reader 文本结果中可选的结束字符偏移。", "Optional end character offset from a previous Reader-text result."),
       ),
     }),
     execute: async (args) => {
@@ -1263,15 +1264,15 @@ function createAnnotatePassageTool(
   return {
     name: "zotero_annotate_passage",
     description:
-      "Create a Zotero PDF highlight annotation on a specific passage. Use only when the user explicitly asks to write highlights/annotations into the PDF, such as annotating the whole paper or highlighting key sentences. Before using this tool for full-text annotation, call zotero_get_current_item to read the abstract, then call zotero_get_reader_pdf_text and copy `text` verbatim from that Reader-text output. Do not copy highlight text from zotero_get_full_pdf, because that tool uses Zotero's full-text cache rather than the Reader text layer. For ordinary summaries, do not use this write tool. PDF modification requires approval or YOLO mode.",
+      promptText("对指定段落创建 Zotero PDF 高亮注释。仅在用户明确要求向 PDF 写入高亮/注释时使用，例如全文标注或高亮重点句。全文标注前先调用 zotero_get_current_item 读取摘要，再调用 zotero_get_reader_pdf_text，并从 Reader 文本输出逐字复制 text。不要从 zotero_get_full_pdf 复制，因为它使用全文缓存而非 Reader 文本层。普通总结不要使用此写入工具。PDF 修改需要审批或 YOLO 模式。", "Create a Zotero PDF highlight annotation on a specific passage. Use only when the user explicitly asks to write highlights/annotations into the PDF, such as annotating the whole paper or highlighting key sentences. Before using this tool for full-text annotation, call zotero_get_current_item to read the abstract, then call zotero_get_reader_pdf_text and copy `text` verbatim from that Reader-text output. Do not copy highlight text from zotero_get_full_pdf, because that tool uses Zotero's full-text cache rather than the Reader text layer. For ordinary summaries, do not use this write tool. PDF modification requires approval or YOLO mode."),
     requiresApproval: true,
     parameters: objectSchema(
       {
         text: stringSchema(
-          "Exact passage from the PDF (verbatim, no paraphrasing).",
+          promptText("PDF 中精确的原文段落，逐字复制，不可改写。", "Exact passage from the PDF (verbatim, no paraphrasing)."),
         ),
         comment: stringSchema(
-          "Reading note (≤ 80 chars Chinese), explaining why this passage is important.",
+          promptText("阅读笔记（中文，≤80 字），说明该段落为何重要。", "Reading note (≤ 80 characters in English), explaining why this passage is important."),
         ),
         color: stringSchema(colorDescription),
       },
@@ -1367,7 +1368,7 @@ function objectSchema(
 // project-specific semantics.
 function buildAnnotationColorDescription(guide?: string): string {
   const fallback =
-    "Optional Zotero annotation color, e.g. #ffd400. If omitted, the selection/default color is used.";
+    promptText("可选 Zotero 注释颜色，例如 #ffd400。省略时使用选区或默认颜色。", "Optional Zotero annotation color, e.g. #ffd400. If omitted, the selection/default color is used.");
   if (!guide) return fallback;
   const entries: string[] = [];
   for (const line of guide.split(/\r?\n/)) {
@@ -1379,11 +1380,11 @@ function buildAnnotationColorDescription(guide?: string): string {
   }
   if (!entries.length) return fallback;
   return [
-    "Optional Zotero annotation color. MUST pick a hex from the configured presets below; omit the field if no category clearly matches (do not force-fit colors).",
+    promptText("可选 Zotero 注释颜色。必须从下列已配置预设中选择 hex；无明确匹配类别时省略，不要强行分类。", "Optional Zotero annotation color. MUST pick a hex from the configured presets below; omit the field if no category clearly matches (do not force-fit colors)."),
     "",
     ...entries,
     "",
-    "IMPORTANT: These category-to-hex mappings are project-specific and may CONTRADICT common color intuition. Map by the category labels above, NOT by general color associations (e.g., do not assume red=problem, green=good results, or orange=warning — read each entry).",
+    promptText("重要：这些类别与 hex 的映射是项目特定规则，可能与常见颜色直觉相反。按上面的类别标签匹配，不要依赖一般颜色联想（例如不要假定红色=问题、绿色=好结果或橙色=警告，应逐条阅读）。", "IMPORTANT: These category-to-hex mappings are project-specific and may CONTRADICT common color intuition. Map by the category labels above, NOT by general color associations (e.g., do not assume red=problem, green=good results, or orange=warning — read each entry)."),
   ].join("\n");
 }
 
@@ -1424,25 +1425,25 @@ function createPreviousContextTool(
   return {
     name: "chat_get_previous_context",
     description:
-      "Read snippets that were already attached earlier in this chat history. Use when the context ledger shows useful prior source/range metadata and the model wants to reuse prior context instead of querying Zotero/arXiv again. This tool only returns locally retained prior snippets; it does not read the live PDF, fetch URLs, or infer which snippet is needed.",
+      promptText("读取此前已附加到本次对话历史的片段。上下文账本显示可用的先前来源/范围元数据，模型希望复用而非再次查询 Zotero/arXiv 时使用。仅返回本地保留片段，不读取实时 PDF、不获取 URL，也不推断需要哪段。", "Read snippets that were already attached earlier in this chat history. Use when the context ledger shows useful prior source/range metadata and the model wants to reuse prior context instead of querying Zotero/arXiv again. This tool only returns locally retained prior snippets; it does not read the live PDF, fetch URLs, or infer which snippet is needed."),
     parameters: objectSchema({
       sourceKind: stringSchema(
-        "Optional source kind from the ledger, for example zotero_item or arxiv.",
+        promptText("账本中的可选来源类型，例如 zotero_item 或 arxiv。", "Optional source kind from the ledger, for example zotero_item or arxiv."),
       ),
       sourceID: stringSchema(
-        "Optional source ID from the ledger, for example a Zotero item ID or arXiv ID.",
+        promptText("账本中的可选来源 ID，例如 Zotero 条目 ID 或 arXiv ID。", "Optional source ID from the ledger, for example a Zotero item ID or arXiv ID."),
       ),
       start: numberSchema(
-        "Optional start offset; when provided with end, only overlapping prior PDF ranges are returned.",
+        promptText("可选起始偏移；与 end 同时提供时仅返回重叠的先前 PDF 范围。", "Optional start offset; when provided with end, only overlapping prior PDF ranges are returned."),
       ),
       end: numberSchema(
-        "Optional end offset; when provided with start, only overlapping prior PDF ranges are returned.",
+        promptText("可选结束偏移；与 start 同时提供时仅返回重叠的先前 PDF 范围。", "Optional end offset; when provided with start, only overlapping prior PDF ranges are returned."),
       ),
       query: stringSchema(
-        "Optional literal text filter for prior snippets. Leave empty to rely on source/range filters.",
+        promptText("先前片段的可选字面文本过滤器。留空则依赖来源/范围过滤。", "Optional literal text filter for prior snippets. Leave empty to rely on source/range filters."),
       ),
       maxChars: numberSchema(
-        "Optional character budget for returned prior snippets. The harness clamps this to a safe limit.",
+        promptText("返回先前片段的可选字符预算，执行器会限制在安全范围内。", "Optional character budget for returned prior snippets. The harness clamps this to a safe limit."),
       ),
     }),
     execute: async (args) => {
@@ -1734,7 +1735,7 @@ function createAppendToChildNoteTool(options: ToolFactoryOptions): AgentTool {
   return {
     name: "zotero_append_to_note",
     description:
-      "Append the given Markdown content to the rich-text child note for the current Zotero item — " +
+      promptText("将 Markdown 内容追加到当前 Zotero 条目的富文本子笔记，与用户点击“写入笔记”按钮写入的是同一笔记。尚无子笔记时自动创建。仅在用户明确要求写入、保存、添加或追加到笔记时使用，例如“写到笔记里”“加到 MD 笔记”“save this to my note”。不要用于 PDF 高亮或注释；应改用 zotero_annotate_passage（段落高亮+评论）或 zotero_add_annotation_to_selection（选区评论）。这是写入工具，除非启用 YOLO 模式，否则需要审批。", "Append the given Markdown content to the rich-text child note for the current Zotero item — " +
       "the same note the user's '写入笔记' (Save to Note) button writes to. " +
       "If the current item has no child note yet, one is created automatically. " +
       "Use when the user explicitly asks to write/save/add/append content to their note " +
@@ -1742,18 +1743,18 @@ function createAppendToChildNoteTool(options: ToolFactoryOptions): AgentTool {
       "DO NOT use this for PDF highlights or PDF annotations — for those use " +
       "`zotero_annotate_passage` (passage highlight + comment) or " +
       "`zotero_add_annotation_to_selection` (selection-based comment) instead. " +
-      "This is a write tool and requires approval unless YOLO mode is enabled.",
+      "This is a write tool and requires approval unless YOLO mode is enabled."),
     requiresApproval: true,
     parameters: objectSchema(
       {
         content: stringSchema(
-          "Markdown content to append. Will be converted to Zotero note HTML " +
+          promptText("待追加的 Markdown 内容，将转为 Zotero 笔记 HTML（已安装 Better Notes 时使用它，否则用内置转换器）。可包含标题、列表和代码块。公式使用 $...$（行内）或 $$...$$（独立行）包裹 LaTeX 源码，例如 $\\mathbb{E}_{x}[f(x)]$。也接受并规范化 \\(...\\) 与 \\[...\\]。不要预先将公式转换为 Unicode（例如公式中不要用 θ 替代 \\theta）；保留 LaTeX 源码以便笔记排版。", "Markdown content to append. Will be converted to Zotero note HTML " +
             "(via Better Notes if installed, otherwise a built-in converter). " +
             "Include headings, lists, code blocks as needed. " +
             "For math: write LaTeX source wrapped in $...$ (inline) or $$...$$ (display); " +
             "e.g. $\\mathbb{E}_{x}[f(x)]$. \\(...\\) and \\[...\\] are also accepted and " +
             "will be normalized. Do NOT pre-render math to Unicode (e.g. don't write 'θ' " +
-            "for \\theta inside math) — keep it as LaTeX source so the note can typeset it.",
+            "for \\theta inside math) — keep it as LaTeX source so the note can typeset it."),
         ),
       },
       ["content"],
@@ -1803,32 +1804,32 @@ function createDrawMindmapTool(options: ToolFactoryOptions): AgentTool {
   return {
     name: "draw_article_mindmap",
     description:
-      "Render a visual flowchart (思维导图 / 流程图 / 结构图) showing the article's main thesis, structure, arguments, and key points. Call this when the user asks for 思维导图, 流程图, 结构图, 脉络图, mindmap, flowchart, or a visual overview of the article structure. Supply 'nodes' (each with id, label, and type: root|section|point) and 'edges' (source→target). Use type='root' for the central thesis, 'section' for major arguments or chapters, 'point' for supporting details.",
+      promptText("渲染展示文章主旨、结构、论证和要点的可视化流程图（思维导图/流程图/结构图）。用户要求思维导图、流程图、结构图、脉络图、mindmap、flowchart 或文章结构总览时调用。提供 nodes（每项 id、label、type: root|section|point）和 edges（source→target）。root 表示中心主旨，section 表示主要论点或章节，point 表示支撑细节。", "Render a visual flowchart (思维导图 / 流程图 / 结构图) showing the article's main thesis, structure, arguments, and key points. Call this when the user asks for 思维导图, 流程图, 结构图, 脉络图, mindmap, flowchart, or a visual overview of the article structure. Supply 'nodes' (each with id, label, and type: root|section|point) and 'edges' (source→target). Use type='root' for the central thesis, 'section' for major arguments or chapters, 'point' for supporting details."),
     parameters: {
       type: "object",
       properties: {
         title: {
           type: "string",
           description:
-            "Optional chart title, usually the article or paper title.",
+            promptText("可选图标题，通常为文章或论文标题。", "Optional chart title, usually the article or paper title."),
         },
         nodes: {
           type: "array",
           description:
-            "Graph nodes. Each node has an id, a display label, and an optional type.",
+            promptText("图节点，每个节点含 id、展示标签和可选 type。", "Graph nodes. Each node has an id, a display label, and an optional type."),
           items: {
             type: "object",
             properties: {
-              id: { type: "string", description: "Unique node identifier." },
+              id: { type: "string", description: promptText("唯一节点标识。", "Unique node identifier.") },
               label: {
                 type: "string",
-                description: "Display label (≤30 chars).",
+                description: promptText("展示标签（≤30 字符）。", "Display label (≤30 chars)."),
               },
               type: {
                 type: "string",
                 enum: ["root", "section", "point"],
                 description:
-                  "root: central thesis; section: major argument/chapter; point: detail.",
+                  promptText("root：中心主旨；section：主要论点/章节；point：细节。", "root: central thesis; section: major argument/chapter; point: detail."),
               },
             },
             required: ["id", "label"],
@@ -1836,12 +1837,12 @@ function createDrawMindmapTool(options: ToolFactoryOptions): AgentTool {
         },
         edges: {
           type: "array",
-          description: "Directed edges connecting nodes.",
+          description: promptText("连接节点的有向边。", "Directed edges connecting nodes."),
           items: {
             type: "object",
             properties: {
-              source: { type: "string", description: "Source node id." },
-              target: { type: "string", description: "Target node id." },
+              source: { type: "string", description: promptText("源节点 ID。", "Source node id.") },
+              target: { type: "string", description: promptText("目标节点 ID。", "Target node id.") },
             },
             required: ["source", "target"],
           },

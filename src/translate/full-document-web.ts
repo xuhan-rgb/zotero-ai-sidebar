@@ -12,6 +12,7 @@ import type {
   CustomWebProvider,
 } from "../settings/local-ui-settings";
 import { cleanTranslationOutput, translationNeedsRetry } from "./translator";
+import { promptText } from "../utils/prompt-locale";
 
 export interface FullDocumentWebOptions {
   settings: LocalUiSettings;
@@ -41,11 +42,11 @@ export function createFullDocumentWebTranslator(
         : 0;
       if (wait) await waitBetweenBatches(wait, options.signal);
       const prompt = [
-        "把以下一批论文段落翻译成简体中文，不总结、不解释。",
-        "将全部译文放在一个 ```text 代码块中。每段保留原样的起始标记 <<<ZAI_TRANSLATION:原段落id>>> 和结束标记 <<<END_ZAI_TRANSLATION:原段落id>>>，标记各独占一行，中间只放译文。每个输入 id 恰好返回一次，不能合并或遗漏段落。",
-        "直接输出正文中的 LaTeX 反斜杠和换行，不要使用 JSON 字符串或对正文再次转义。",
-        "每段中的 ZAILATEXTOKEN数字X 必须逐字保留且出现次数不变；保留 LaTeX 命令、算法结构和 [1] 等引用编号，不要把引用改成公式。",
-        "仅处理本条消息中的段落，不重复之前批次。",
+        promptText("把以下一批论文段落翻译成简体中文，不总结、不解释。", "Translate the following batch of paper passages into Simplified Chinese. Do not summarize or explain."),
+        promptText("将全部译文放在一个 ```text 代码块中。每段保留原样的起始标记 <<<ZAI_TRANSLATION:原段落id>>> 和结束标记 <<<END_ZAI_TRANSLATION:原段落id>>>，标记各独占一行，中间只放译文。每个输入 id 恰好返回一次，不能合并或遗漏段落。", "Put all translations in one ```text code block. Preserve each passage's exact start marker <<<ZAI_TRANSLATION:原段落id>>> and end marker <<<END_ZAI_TRANSLATION:原段落id>>> on separate lines, with only its translation between them. Return each input id exactly once; do not merge or omit passages."),
+        promptText("直接输出正文中的 LaTeX 反斜杠和换行，不要使用 JSON 字符串或对正文再次转义。", "Output LaTeX backslashes and line breaks directly. Do not use JSON strings or escape the passage text again."),
+        promptText("每段中的 ZAILATEXTOKEN数字X 必须逐字保留且出现次数不变；保留 LaTeX 命令、算法结构和 [1] 等引用编号，不要把引用改成公式。", "Preserve every ZAILATEXTOKEN-digit-X placeholder in each passage exactly, with the same count. Preserve LaTeX commands, algorithm structure, and citation numbers such as [1]; do not turn citations into formulas."),
+        promptText("仅处理本条消息中的段落，不重复之前批次。", "Process only the passages in this message; do not repeat translations from earlier batches."),
         entries
           .map(
             (entry) =>
@@ -66,10 +67,10 @@ export function createFullDocumentWebTranslator(
     },
     translate: async (source: string) => {
       const prompt = [
-        "将下面的论文原文翻译为简体中文，只输出译文，不解释、不总结、不添加标题。",
-        "所有 ZAILATEXTOKEN数字X 占位符必须逐字保留且各出现一次，不能增加、删除或改写。",
-        "保留 LaTeX 命令、算法结构、数字和引用编号；引用 [1] 不要改写为 \\[1\\]。",
-        "仅处理本条消息中的原文，忽略之前消息的翻译内容。",
+        promptText("将下面的论文原文翻译为简体中文，只输出译文，不解释、不总结、不添加标题。", "Translate the paper source below into Simplified Chinese. Output only the translation, without explanation, summary, or heading."),
+        promptText("所有 ZAILATEXTOKEN数字X 占位符必须逐字保留且各出现一次，不能增加、删除或改写。", "Preserve every ZAILATEXTOKEN-digit-X placeholder exactly once. Do not add, remove, or alter any placeholder."),
+        promptText("保留 LaTeX 命令、算法结构、数字和引用编号；引用 [1] 不要改写为 \\[1\\]。", "Preserve LaTeX commands, algorithm structure, numbers, and citation numbers. Do not rewrite a citation like [1] as \\[1\\]."),
+        promptText("仅处理本条消息中的原文，忽略之前消息的翻译内容。", "Process only the source in this message; ignore translations from earlier messages."),
         "原文：",
         source,
       ].join("\n\n");

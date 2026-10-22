@@ -32,6 +32,9 @@ function prefs(): PrefsStore {
 }
 
 beforeEach(() => {
+  vi.stubGlobal("Zotero", {
+    Prefs: { get: (key: string) => key.endsWith("interfaceLanguage") ? "zh-CN" : undefined },
+  });
   stream.mockReset();
   stream.mockImplementation(async function* () {
     yield { type: "text_delta", text: "中文译文 ZAILATEXTOKEN0X" };
@@ -83,6 +86,23 @@ describe("createFullDocumentTranslator usage", () => {
     expect(messages[0]?.content.slice("英译中：".length)).toBe(source);
     expect(systemPrompt).toBe("仅输出简中译文；ZAILATEXTOKEN0X不变。");
     expect(systemPrompt.length).toBeLessThanOrEqual(40);
+  });
+
+  it("selects the English instruction at request time while keeping Chinese as the target", async () => {
+    vi.stubGlobal("Zotero", {
+      Prefs: { get: (key: string) => key.endsWith("interfaceLanguage") ? "en-US" : undefined },
+    });
+    const translator = createFullDocumentTranslator(
+      prefs(),
+      new AbortController().signal,
+    );
+
+    await translator.translate("Source ZAILATEXTOKEN0X");
+
+    const [messages, prompt] = stream.mock.calls[0];
+    expect(messages[0]?.content).toBe("英译中：Source ZAILATEXTOKEN0X");
+    expect(prompt).toContain("Simplified Chinese");
+    expect(prompt).toContain("ZAILATEXTOKEN0X");
   });
 
   it("returns the API token usage with translated text", async () => {

@@ -3,13 +3,16 @@ import type { Message } from "../providers/types";
 import { loadTranslateSettings } from "./settings";
 import { loadPresets, type PrefsStore } from "../settings/storage";
 import { getReadingConversations, type ReadingConversation } from "./reading-log";
+import { promptText } from "../utils/prompt-locale";
 
 // Summarize a paper's immersive-reading in-place Q&A (all per-sentence cards)
 // into one Markdown digest the caller then writes into the AI note. Reuses the
 // same preset/model selection as the ask flow so it needs no separate config.
 
-const SUMMARY_SYSTEM =
-  "你在帮用户总结一篇论文的「沉浸式阅读」就地问答记录。用简体中文,条理清晰地归纳读者关注的要点、提出的疑问与对应解答;可按主题分组,突出关键结论与仍存疑之处。不要逐句复述,提炼即可。";
+const SUMMARY_SYSTEM = () => promptText(
+  "你在帮用户总结一篇论文的「沉浸式阅读」就地问答记录。用简体中文,条理清晰地归纳读者关注的要点、提出的疑问与对应解答;可按主题分组,突出关键结论与仍存疑之处。不要逐句复述,提炼即可。",
+  "Summarize the user's in-place Q&A notes from immersive reading of a paper. Write in Simplified Chinese. Clearly organize the topics the reader focused on, their questions, and the corresponding answers. Group by theme if useful, and highlight key conclusions and unresolved questions. Synthesize rather than recounting each sentence.",
+);
 
 function buildSummaryUserMessage(convos: ReadingConversation[]): string {
   const blocks = convos.map((c, i) => {
@@ -23,7 +26,7 @@ function buildSummaryUserMessage(convos: ReadingConversation[]): string {
     const sentence = c.sentence.trim();
     return `【片段 ${i + 1}】${sentence ? `原文句:${sentence}\n` : ""}${qa}`;
   });
-  return `以下是我阅读这篇论文时,针对若干句子与 AI 的就地问答记录(每段是一句话的独立小对话)。请总结整篇阅读中我关注与弄懂了什么:\n\n${blocks.join(
+  return `${promptText("以下是我阅读这篇论文时,针对若干句子与 AI 的就地问答记录(每段是一句话的独立小对话)。请总结整篇阅读中我关注与弄懂了什么:", "These are my in-place Q&A notes with AI about individual sentences while reading this paper. Each block is a separate short conversation about one sentence. Summarize what I focused on and understood across the reading:")}\n\n${blocks.join(
     "\n\n",
   )}`;
 }
@@ -59,7 +62,7 @@ export async function summarizeReadingConversations(
   let out = "";
   for await (const chunk of provider.stream(
     messages,
-    SUMMARY_SYSTEM,
+    SUMMARY_SYSTEM(),
     tuned,
     signal,
   )) {

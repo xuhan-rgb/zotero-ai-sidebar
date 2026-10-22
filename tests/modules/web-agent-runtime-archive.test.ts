@@ -42,6 +42,8 @@ describe("Web Agent runtime archive", () => {
     const files = unzipSync(archive);
 
     expect(files["agent.mjs"]).toBeInstanceOf(Uint8Array);
+    expect(files["firefox-session.mjs"]).toBeInstanceOf(Uint8Array);
+    expect(new TextDecoder().decode(files["node_modules/playwright-core/lib/coreBundle.js"])).toContain("Zotero: adopt Firefox's startup window");
     expect(files["attachments.mjs"]).toBeInstanceOf(Uint8Array);
     expect(files["node_modules/playwright-core/index.mjs"]).toBeInstanceOf(
       Uint8Array,

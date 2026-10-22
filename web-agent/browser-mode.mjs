@@ -1,3 +1,23 @@
+export function isFirefoxBrowser(config) {
+  return (
+    config.browser === "firefox" ||
+    /(?:^|[\\/])firefox(?:-esr)?(?:\.exe)?$/i.test(config.chromePath || "")
+  );
+}
+
+export function firefoxLaunchOptions(config, mode) {
+  return {
+    channel: "moz-firefox",
+    executablePath: config.chromePath,
+    headless: mode === "headless",
+    viewport: null,
+    timeout: 30_000,
+    ...(config.firefoxSnap
+      ? { downloadsPath: `${config.profileDir}/browser-downloads` }
+      : {}),
+  };
+}
+
 export function chromeLaunchArguments(config, mode, debugPort = 0) {
   return [
     `--user-data-dir=${config.profileDir}`,

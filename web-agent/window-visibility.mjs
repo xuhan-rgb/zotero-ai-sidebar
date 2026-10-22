@@ -23,6 +23,9 @@ export async function hideBrowserWindow(page) {
 }
 
 export async function showBrowserWindow(page) {
+  if (page.context().browser?.()?.browserType().name() === "firefox") {
+    return page.bringToFront().then(() => true).catch(() => false);
+  }
   const restored = await setBrowserWindowState(page, "normal");
   const focused = await page
     .bringToFront()

@@ -708,6 +708,27 @@ describe("OpenAIProvider", () => {
     ]);
   });
 
+  it("uses Chinese continuation instructions with the same completion marker", async () => {
+    vi.stubGlobal("Zotero", { locale: "zh-CN" });
+    try {
+      requestLog.incompleteResponsesRemaining = 1;
+      for await (const _chunk of new OpenAIProvider().stream(
+        [{ role: "user", content: "总结论文" }], "be helpful", preset,
+        new AbortController().signal,
+        { toolSettings: { webSearchMode: "live", mcpServers: [], arxivMcp: {
+          enabled: false, serverLabel: "arxiv", serverUrl: "",
+          allowedTools: [], requireApproval: "never",
+        } } },
+      )) { /* consume the complete response */ }
+      expect(requestLog.requests).toHaveLength(2);
+      const input = requestLog.requests[1].input as Array<{ content: string }>;
+      expect(input.at(-1)!.content).toContain("从被截断的位置准确接续");
+      expect(input.at(-1)!.content).toContain("[ZAI_COMPLETE]");
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
   it("repeatedly continues compatible streams until a response completes", async () => {
     requestLog.unterminatedResponsesRemaining = 2;
     const p = new OpenAIProvider();
@@ -1207,7 +1228,7 @@ describe("withFrontBlock", () => {
       referenceInFrontBlock: true,
     });
     expect(firstApi[0].content).not.toContain(reference);
-    expect(firstApi[0].content).toContain("原文已附在前置论文块");
+    expect(firstApi[0].content).toContain("source text from the referenced paper is in the preceding paper block");
     first.context.promptCacheWireContent = firstApi[0].content as string;
 
     const answer = { role: "assistant" as const, content: "First answer" };

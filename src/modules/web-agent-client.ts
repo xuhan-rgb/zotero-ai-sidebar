@@ -27,6 +27,7 @@ export interface WebAgentConfig {
   nodePath: string;
   chromePath: string;
   browser?: string;
+  firefoxSnap?: boolean;
   browserProfiles?: Record<string, string>;
   agentScript: string;
   profileDir: string;

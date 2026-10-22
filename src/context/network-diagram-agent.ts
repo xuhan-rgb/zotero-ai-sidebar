@@ -14,6 +14,7 @@ import type {
 } from "../providers/types";
 import type { ModelPreset } from "../settings/types";
 import type { ToolSettings } from "../settings/tool-settings";
+import { promptText } from "../utils/prompt-locale";
 import {
   isNetworkDiagramOrchestrationNode,
   type DetailedNetworkGraph,
@@ -100,25 +101,25 @@ export interface NetworkDiagramPromptSource {
 export function buildNetworkDiagramUserPrompt(
   source: NetworkDiagramPromptSource,
 ): string {
-  const repositoryURL = source.repositoryURL.trim() || "当前已关联仓库";
+  const repositoryURL = source.repositoryURL.trim() || promptText("当前已关联仓库", "the linked repository");
   const commitSHA = source.commitSHA?.trim();
-  const paperTitle = source.paperTitle?.trim() || "当前 Zotero 论文";
+  const paperTitle = source.paperTitle?.trim() || promptText("当前 Zotero 论文", "the current Zotero paper");
   return [
-    "请生成可核验的详细网络图。",
+    promptText("请生成可核验的详细网络图。", "Generate a detailed, verifiable network diagram."),
     "",
-    "[本轮数据源]",
-    `GitHub：${repositoryURL}`,
-    `固定 commit：${commitSHA || "分析开始时由工具锁定，并随结果保存"}`,
-    `当前 Zotero 论文：${paperTitle}`,
+    promptText("[本轮数据源]", "[Sources for this run]"),
+    `${promptText("GitHub", "GitHub")}: ${repositoryURL}`,
+    `${promptText("固定 commit", "Pinned commit")}: ${commitSHA || promptText("分析开始时由工具锁定，并随结果保存", "pinned by the tool at analysis start and saved with the result")}`,
+    `${promptText("当前 Zotero 论文", "Current Zotero paper")}: ${paperTitle}`,
     "",
-    "[五阶段分析契约]",
-    "1. Paper specification：按 Parameters → Data flow → Loss / objective 整理论文定义；总览只用于定位，关键模型主张必须继续读取方法正文、公式、图注、训练目标或附录后才能采用。",
-    "2. Implementation specification：依次核对 README / config / factory / __init__ / forward / loss / inference，锁定一个真实可执行变体，并追踪关键张量名称与 shape。",
-    "3. Reconciliation：区分论文定义与固定 commit 的实际实现；forward 明确执行的边、公式、当前配置和文字描述分级取证，冲突或推断写入备注，不把互斥变体混成一张图。",
-    "4. Architecture IR：先建立唯一 nodes / edges / canonical tensor names，再渲染纵向 TB 架构图；标准主干合并，模型特有模块、注意力、跨分支与特征融合展开。",
-    "5. Validation：检查参数与模块有据可查、仅用部署输入可执行完整推理、loss 输入可追溯到对应输出，并检查 shape 连续、无重复/悬空节点、训练监督不混入推理主链。",
+    promptText("[五阶段分析契约]", "[Five-stage analysis contract]"),
+    promptText("1. Paper specification：按 Parameters → Data flow → Loss / objective 整理论文定义；总览只用于定位，关键模型主张必须继续读取方法正文、公式、图注、训练目标或附录后才能采用。", "1. Paper specification: organize the paper's definition as Parameters → Data flow → Loss / objective. Use overviews only for navigation; verify key model claims in method text, equations, figure captions, training objectives, or appendices before using them."),
+    promptText("2. Implementation specification：依次核对 README / config / factory / __init__ / forward / loss / inference，锁定一个真实可执行变体，并追踪关键张量名称与 shape。", "2. Implementation specification: inspect README / config / factory / __init__ / forward / loss / inference in order, identify one executable variant, and trace key tensor names and shapes."),
+    promptText("3. Reconciliation：区分论文定义与固定 commit 的实际实现；forward 明确执行的边、公式、当前配置和文字描述分级取证，冲突或推断写入备注，不把互斥变体混成一张图。", "3. Reconciliation: distinguish the paper's definition from the pinned commit's implementation. Rank evidence from edges and formulas executed by forward, active configuration, and prose; record conflicts or inferences in notes, and never merge mutually exclusive variants."),
+    promptText("4. Architecture IR：先建立唯一 nodes / edges / canonical tensor names，再渲染纵向 TB 架构图；标准主干合并，模型特有模块、注意力、跨分支与特征融合展开。", "4. Architecture IR: establish unique nodes / edges / canonical tensor names before rendering a TB architecture graph. Collapse standard backbones; expand model-specific modules, attention, cross-branch paths, and feature fusion."),
+    promptText("5. Validation：检查参数与模块有据可查、仅用部署输入可执行完整推理、loss 输入可追溯到对应输出，并检查 shape 连续、无重复/悬空节点、训练监督不混入推理主链。", "5. Validation: verify evidence for parameters and modules, complete inference using deployment-time inputs only, and trace loss inputs to their corresponding outputs. Check shape continuity, duplicate or dangling nodes, and keep training supervision out of the inference spine."),
     "",
-    "每个关键节点写输入 shape → 输出 shape，并按 Parameters、Data flow、Loss / objective、方法归属、实现依据记录备注。数值维度无法由论文、配置或代码确认时使用符号维度，不得猜测。",
+    promptText("每个关键节点写输入 shape → 输出 shape，并按 Parameters、Data flow、Loss / objective、方法归属、实现依据记录备注。数值维度无法由论文、配置或代码确认时使用符号维度，不得猜测。", "For each key node, state input shape → output shape and add notes for Parameters, Data flow, Loss / objective, attribution, and implementation evidence. Use symbolic dimensions when numeric dimensions cannot be confirmed from the paper, configuration, or code; never guess."),
   ].join("\n");
 }
 
@@ -984,8 +985,8 @@ async function runNetworkDiagramAgentInner(
   const paperTools = availablePaperTools.map((paperTool) => ({
     ...paperTool,
     description: PAPER_INDEX_TOOL_NAMES.has(paperTool.name)
-      ? `${paperTool.description} This is a paper index tool for locating substantive sections. Its output is not claim evidence; follow it with a section, range, equation, figure, or table retrieval.`
-      : `${paperTool.description} This is a paper-evidence tool: use it to verify the paper specification, not to infer repository implementation.`,
+      ? `${paperTool.description} ${promptText("这是用于定位实质章节的论文索引工具。其输出不是主张证据；之后应读取具体章节、范围、公式、图或表。", "This is a paper index tool for locating substantive sections. Its output is not claim evidence; follow it with a section, range, equation, figure, or table retrieval.")}`
+      : `${paperTool.description} ${promptText("这是论文证据工具：用于核验论文定义，不用于推断仓库实现。", "This is a paper-evidence tool: use it to verify the paper specification, not to infer repository implementation.")}`,
     execute: async (args: unknown) => {
       const isIndexTool = PAPER_INDEX_TOOL_NAMES.has(paperTool.name);
       emit(
@@ -1057,7 +1058,10 @@ async function runNetworkDiagramAgentInner(
           tool: toolName,
           summary: cached.summary,
         },
-        instruction: "Reuse the earlier navigation result from tool history.",
+        instruction: promptText(
+          "复用工具历史中的先前导航结果。",
+          "Reuse the earlier navigation result from tool history.",
+        ),
       }),
       summary: `复用导航结果：${cached.summary}`,
     };
@@ -1082,13 +1086,15 @@ async function runNetworkDiagramAgentInner(
   const reusedEvidenceOutput = (evidenceIDs: string[]): string =>
     JSON.stringify({
       reusedEvidenceIDs: evidenceIDs,
-      instruction: "Reuse these existing evidence IDs; do not read them again.",
+      instruction: promptText(
+        "复用这些现有 evidence ID；不要再次读取。",
+        "Reuse these existing evidence IDs; do not read them again.",
+      ),
     });
 
   const listPathsTool: AgentTool = {
     name: "github_list_paths",
-    description:
-      "Inspect real candidate paths from the pinned commit tree. Use prefix and/or contains to discover exact files before reading them. This never reads file contents.",
+    description: promptText("检查固定 commit 树中的真实候选路径。读取文件前可用 prefix 和/或 contains 查找确切文件。本工具不会读取文件内容。", "Inspect real candidate paths from the pinned commit tree. Use prefix and/or contains to discover exact files before reading them. This never reads file contents."),
     parameters: toolSchema({
       prefix: { type: "string" },
       contains: { type: "string" },
@@ -1123,8 +1129,7 @@ async function runNetworkDiagramAgentInner(
 
   const searchCodeTool: AgentTool = {
     name: "github_search_code",
-    description:
-      "Search code text in candidate files from the pinned commit, like a bounded case-insensitive `rg -n -F`. Returns only matching paths, line numbers, and matching lines. This is navigation output, not graph evidence. Narrow with prefix and repeat when truncated.",
+    description: promptText("在固定 commit 的候选文件中搜索代码文本，类似有界、不区分大小写的 `rg -n -F`。仅返回匹配路径、行号和匹配行。这是导航结果，不是图的证据。可用 prefix 缩小范围；结果截断时重复搜索。", "Search code text in candidate files from the pinned commit, like a bounded case-insensitive `rg -n -F`. Returns only matching paths, line numbers, and matching lines. This is navigation output, not graph evidence. Narrow with prefix and repeat when truncated."),
     parameters: toolSchema(
       {
         query: { type: "string" },
@@ -1164,8 +1169,7 @@ async function runNetworkDiagramAgentInner(
 
   const outlineFileTool: AgentTool = {
     name: "github_outline_file",
-    description:
-      "Inspect one pinned-commit file as a compact symbol outline, like ctags plus declaration search. Returns imports, classes, functions/methods, types, and suggested line ranges without returning function bodies. This is navigation output, not graph evidence.",
+    description: promptText("以紧凑符号大纲检查固定 commit 中的一个文件，类似 ctags 加声明搜索。返回导入、类、函数/方法、类型和建议行范围，不返回函数体。这是导航结果，不是图的证据。", "Inspect one pinned-commit file as a compact symbol outline, like ctags plus declaration search. Returns imports, classes, functions/methods, types, and suggested line ranges without returning function bodies. This is navigation output, not graph evidence."),
     parameters: toolSchema(
       {
         path: { type: "string" },
@@ -1262,7 +1266,7 @@ async function runNetworkDiagramAgentInner(
 
   const readRangeTool: AgentTool = {
     name: "github_read_range",
-    description: `Read one exact inclusive line range from a pinned-commit file, like \`sed -n START,ENDp\`. The span must be at most ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} lines. Requires path, startLine, endLine, reason, and coverage. The returned evidence is eligible for graph nodes. Never request the same path and range twice; reuse its evidence ID.`,
+    description: promptText(`读取固定 commit 文件中一段精确的闭区间行号，类似 \`sed -n START,ENDp\`。范围最多 ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} 行。必须提供 path、startLine、endLine、reason 和 coverage。返回的证据可用于图节点。同一路径和范围不得重复读取；请复用其 evidence ID。`, `Read one exact inclusive line range from a pinned-commit file, like \`sed -n START,ENDp\`. The span must be at most ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} lines. Requires path, startLine, endLine, reason, and coverage. The returned evidence is eligible for graph nodes. Never request the same path and range twice; reuse its evidence ID.`),
     parameters: toolSchema(
       {
         path: { type: "string" },
@@ -1332,7 +1336,7 @@ async function runNetworkDiagramAgentInner(
 
   const readFilesTool: AgentTool = {
     name: "github_read_files",
-    description: `Batch-read AI-selected evidence from the pinned commit. Every source file requires an exact line range found through search/outline, and each range must span at most ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} lines. Split a longer symbol into consecutive ranges inside this same batch call. Only small config/document files may be read whole. Never request a broad source file or repeat an exact path/range already read. Every item requires a reason and coverage category.`,
+    description: promptText(`批量读取 AI 从固定 commit 选择的证据。每个源文件都必须提供通过搜索/大纲找到的精确行范围，每段最多 ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} 行。较长符号应在同一次批量调用中拆成连续范围。只有较小的配置/文档文件可以整篇读取。不得请求宽泛的源文件，也不得重复读取已读过的精确路径/范围。每项都必须提供 reason 和 coverage 类别。`, `Batch-read AI-selected evidence from the pinned commit. Every source file requires an exact line range found through search/outline, and each range must span at most ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} lines. Split a longer symbol into consecutive ranges inside this same batch call. Only small config/document files may be read whole. Never request a broad source file or repeat an exact path/range already read. Every item requires a reason and coverage category.`),
     parameters: toolSchema(
       {
         files: {
@@ -1447,8 +1451,7 @@ async function runNetworkDiagramAgentInner(
 
   const submitTool: AgentTool = {
     name: "submit_network_diagram",
-    description:
-      "Submit one complete detailed network diagram candidate. This is atomic: a sparse or unsupported candidate is rejected and never replaces the current graph. Call only after checking all eight detail categories.",
+    description: promptText("提交一个完整的详细网络图候选。此操作是原子的：信息稀疏或缺少依据的候选会被拒绝，不会替换当前图。只有检查完全部八类细节后才能调用。", "Submit one complete detailed network diagram candidate. This is atomic: a sparse or unsupported candidate is rejected and never replaces the current graph. Call only after checking all eight detail categories."),
     parameters: toolSchema(
       {
         assistantSummary: { type: "string" },
@@ -1465,20 +1468,17 @@ async function runNetworkDiagramAgentInner(
                   type: {
                     type: "string",
                     enum: ["root", "section", "point", "result", "innovation"],
-                    description:
-                      "Use root only for an actual zero-indegree forward input tensor; learned parameters are not nodes.",
+                    description: promptText("仅当 root 表示真实的零入度前向输入张量时使用；可学习参数不是节点。", "Use root only for an actual zero-indegree forward input tensor; learned parameters are not nodes."),
                   },
                   stage: {
                     type: "string",
                     enum: VISIBLE_NODE_STAGES,
-                    description:
-                      "Visible forward-computation role only. Training supervision and parameter evidence belong in coverage, never in graph nodes.",
+                    description: promptText("仅填写可见的前向计算角色。训练监督和参数证据应放在 coverage 中，不得作为图节点。", "Visible forward-computation role only. Training supervision and parameter evidence belong in coverage, never in graph nodes."),
                   },
                   description: { type: "string" },
                   tensorShape: {
                     type: "string",
-                    description:
-                      "Source input: `name [shape]`. Every other node: `named input shape(s) → named output shape` using the literal →.",
+                    description: promptText("源输入格式：`name [shape]`。其他节点均使用 `带名称的输入 shape → 带名称的输出 shape`，并保留字面符号 →。", "Source input: `name [shape]`. Every other node: `named input shape(s) → named output shape` using the literal →."),
                   },
                   notes: toolSchema(
                     {
@@ -1503,8 +1503,7 @@ async function runNetworkDiagramAgentInner(
                   evidenceIDs: {
                     type: "array",
                     items: { type: "string" },
-                    description:
-                      "Exact evidenceID strings copied from github_read_range/github_read_files or supplied paper evidence.",
+                    description: promptText("从 github_read_range/github_read_files 返回值或提供的论文证据中原样复制的 evidenceID 字符串。", "Exact evidenceID strings copied from github_read_range/github_read_files or supplied paper evidence."),
                   },
                 },
                 [
@@ -1527,8 +1526,7 @@ async function runNetworkDiagramAgentInner(
                   target: { type: "string" },
                   label: {
                     type: "string",
-                    description:
-                      "One canonical tensor name that occurs verbatim in the source output and target input tensorShape.",
+                    description: promptText("一个规范张量名称，必须原样出现在源节点输出和目标节点 input tensorShape 中。", "One canonical tensor name that occurs verbatim in the source output and target input tensorShape."),
                   },
                 },
                 ["source", "target", "label"],
@@ -1695,47 +1693,47 @@ async function runNetworkDiagramAgentInner(
     ? JSON.stringify(options.currentGraph)
     : "none";
   const systemPrompt = [
-    "You are the dedicated network-diagram agent inside Zotero.",
-    "The harness pinned one PUBLIC GitHub commit and exposes read-only tools. Static analysis is not runtime tracing: never invent shapes, layers, losses, branches, or calls. Choose evidence by symbol/range and give path, reason, and missing coverage; completion depends on eight coverage categories, never file count.",
-    "Resolve target identity from the paper/request, selected config, model entry and reachable forward. Repositories can contain several unrelated model families; exclude unlinked baselines. Bind the graph to one concrete executable variant and never union mutually exclusive paths.",
-    "Evidence workflow: Paper specification → Implementation specification → Reconciliation → Architecture IR → Validation. Use paper retrieval tools for Parameters → Data flow → Loss / objective and attribution; use fixed-commit forward/config for executable edges/shapes and loss code for objectives. Keep paper claims and implementation distinct, label uncertainty, then simulate inference and tensor continuity before submission.",
+    promptText("你是 Zotero 内专用的网络图 agent。", "You are the dedicated network-diagram agent inside Zotero."),
+    promptText("Harness 已固定一个公开 GitHub commit，并提供只读工具。静态分析不等于运行时追踪：不得臆造 shape、层、loss、分支或调用。按符号/范围选择证据，并提供路径、理由和待补覆盖类别；完成度取决于八类覆盖，而非文件数量。", "The harness pinned one PUBLIC GitHub commit and exposes read-only tools. Static analysis is not runtime tracing: never invent shapes, layers, losses, branches, or calls. Choose evidence by symbol/range and give path, reason, and missing coverage; completion depends on eight coverage categories, never file count."),
+    promptText("根据论文/请求、所选配置、模型入口及可达的 forward 确定目标身份。仓库可能包含多个无关模型族；排除未关联的基线。将图绑定到一个具体可执行变体，不得合并互斥路径。", "Resolve target identity from the paper/request, selected config, model entry and reachable forward. Repositories can contain several unrelated model families; exclude unlinked baselines. Bind the graph to one concrete executable variant and never union mutually exclusive paths."),
+    promptText("证据流程：Paper specification → Implementation specification → Reconciliation → Architecture IR → Validation。使用论文检索工具确认 Parameters → Data flow → Loss / objective 和方法归属；使用固定 commit 中的 forward/config 确认可执行边和 shape，使用 loss 代码确认目标。区分论文主张和实现，标注不确定性，并在提交前模拟推理及张量连续性。", "Evidence workflow: Paper specification → Implementation specification → Reconciliation → Architecture IR → Validation. Use paper retrieval tools for Parameters → Data flow → Loss / objective and attribution; use fixed-commit forward/config for executable edges/shapes and loss code for objectives. Keep paper claims and implementation distinct, label uncertainty, then simulate inference and tensor continuity before submission."),
     options.paperSourceMode === "latex"
-      ? "Paper source policy: LaTeX source is available, so use only arxiv_list_sections, arxiv_get_section, arxiv_get_equation, arxiv_get_figure, and arxiv_get_table for paper evidence. Read an important architecture figure with arxiv_get_figure when it can clarify module grouping, branches, or author intent. Treat the figure as auxiliary semantic evidence and cross-check every executable edge and tensor shape against the pinned code."
+      ? promptText("论文来源策略：有 LaTeX 源码，因此论文证据仅使用 arxiv_list_sections、arxiv_get_section、arxiv_get_equation、arxiv_get_figure 和 arxiv_get_table。若重要架构图有助于说明模块分组、分支或作者意图，请用 arxiv_get_figure 读取。图仅作辅助语义证据，每条可执行边和张量 shape 都要对照固定代码核验。", "Paper source policy: LaTeX source is available, so use only arxiv_list_sections, arxiv_get_section, arxiv_get_equation, arxiv_get_figure, and arxiv_get_table for paper evidence. Read an important architecture figure with arxiv_get_figure when it can clarify module grouping, branches, or author intent. Treat the figure as auxiliary semantic evidence and cross-check every executable edge and tensor shape against the pinned code.")
       : options.paperSourceMode === "pdf"
-        ? "Paper source policy: LaTeX source is unavailable, so fall back to targeted PDF search and exact PDF ranges before any whole-paper retrieval. Do not claim visual figure evidence unless a tool actually returns an image."
-        : "Paper source policy: use the available targeted paper tools before whole-paper retrieval, and keep any unresolved formula or figure structure explicitly uncertain.",
-    "Paper context is an index, not claim evidence. Retrieve targeted method text/equations/figures; use whole-paper retrieval only as fallback.",
-    "Refinement identity-continuity contract: preserve unchanged node ids and current code evidence. First read at least one exact path from Current target code anchors, then follow its imports/calls; do not require every anchor before targeted search.",
-    "Universal model roles: source tensors/conditions; shape transforms; standard encoder/backbone or embedding; adapters; model-specific representation; interaction/fusion/routing; prediction head/decoder/selection; outputs. Draw only evidenced roles and only forward-time computation. Exclude datasets, augmentation, training/runtime managers, optimizer/loss aggregation, metrics, logging, wrappers and titles from topology.",
-    "Graph contract: rankdir=TB; compact DAG; each semantic concept is one node exactly once. Use one main inference spine with adjacent branches. Never duplicate downstream nodes, edges, cycles, transitive shortcuts or aliases. Every visible node lies on an input-to-output path; sources are actual forward tensors, not parameters or model wrappers.",
-    "Granularity: collapse a generic CNN or standard backbone such as ResNet18 into one topology node; keep proven rank transforms/adapters adjacent. Expand model-specific blocks and multi-input feature fusion, including alignment/projection, attention/gating, concat/add, normalization and output projection when evidenced.",
-    "Tensor contract: each source is `name [shape]`; every other node states input shape(s) → output shape with canonical tensor names. Use symbolic dimensions when needed, never guessed numbers. Every forward-time side input is a separate source. Show meaningful reshape, unsqueeze, squeeze, flatten, repeat, permute, concat, split, mask/index and mode selection. Attention notes identify Q, K, and V origins/shapes.",
-    "Each edge label is one canonical tensor name present verbatim in source output and target input; multi-input nodes need all real incoming edges. Short labels only. Node notes follow Parameters → Data flow → Objective / supervision → Attribution → Implementation evidence, using `none` where inapplicable.",
-    "Attribution: paper-contribution requires both targeted paper evidence and fixed-commit code evidence and uses innovation; otherwise use adopted-baseline, standard-module, tensor-operation, or input-output conservatively. Code proves execution, not authorship. End at semantic predictions, not evaluation metrics.",
-    "Codex-style tools: github_list_paths=`rg --files`; github_search_code=bounded `rg -n -F`; github_outline_file=symbol outline; github_read_range=one exact range; github_read_files=parallel exact ranges/small config. Search/outline are navigation, never evidence. Locate symbols before reading; never fall back to the full source file. Batch independent reads, reuse prior navigation and evidence IDs, and copy returned evidenceID strings exactly.",
-    `Each source range is at most ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} lines. Use submit_network_diagram only for one complete atomic candidate after all eight categories are done/not-applicable; if rejected, fix only the reported gaps.`,
-    `Mode: ${mode}`,
-    `Pinned repository: ${JSON.stringify(repository.reference)}`,
-    `User instruction: ${options.userInstruction?.trim() || "生成一次可用的详细网络图 v1"}`,
-    `Paper context: ${(options.paperContext ?? "none").slice(0, DEFAULT_CONTEXT_POLICY.outlineCharBudget)}`,
-    `Independent diagram conversation: ${(options.conversationContext ?? "none").slice(0, DEFAULT_CONTEXT_POLICY.retainedContextCharBudget)}`,
-    `Known evidence index (metadata only): ${JSON.stringify(evidence)}`,
-    `Current target code anchors: ${currentTargetPaths.length ? currentTargetPaths.join("\n") : "none"}`,
-    `Current graph: ${currentGraph}`,
-    `Candidate path manifest:\n${manifest}`,
+        ? promptText("论文来源策略：没有 LaTeX 源码，因此整篇检索前先使用定向 PDF 搜索和精确 PDF 范围。除非工具实际返回图像，否则不得声称获得了图的视觉证据。", "Paper source policy: LaTeX source is unavailable, so fall back to targeted PDF search and exact PDF ranges before any whole-paper retrieval. Do not claim visual figure evidence unless a tool actually returns an image.")
+        : promptText("论文来源策略：整篇检索前先使用可用的定向论文工具；未解决的公式或图结构须明确标为不确定。", "Paper source policy: use the available targeted paper tools before whole-paper retrieval, and keep any unresolved formula or figure structure explicitly uncertain."),
+    promptText("论文上下文是索引，不是主张证据。请检索定向方法文本/公式/图；仅在兜底时才检索全文。", "Paper context is an index, not claim evidence. Retrieve targeted method text/equations/figures; use whole-paper retrieval only as fallback."),
+    promptText("精修时保持身份连续：保留未变化的节点 id 和现有代码证据。先读取 Current target code anchors 中至少一个精确路径，再沿其导入/调用追踪；定向搜索前无需读完所有锚点。", "Refinement identity-continuity contract: preserve unchanged node ids and current code evidence. First read at least one exact path from Current target code anchors, then follow its imports/calls; do not require every anchor before targeted search."),
+    promptText("通用模型角色：源张量/条件；shape 变换；标准编码器/主干或 embedding；adapter；模型特有表示；交互/融合/路由；预测头/解码器/选择；输出。仅绘制有证据的角色和前向计算。拓扑中排除数据集、增强、训练/运行管理器、优化器/loss 汇总、指标、日志、包装器和标题。", "Universal model roles: source tensors/conditions; shape transforms; standard encoder/backbone or embedding; adapters; model-specific representation; interaction/fusion/routing; prediction head/decoder/selection; outputs. Draw only evidenced roles and only forward-time computation. Exclude datasets, augmentation, training/runtime managers, optimizer/loss aggregation, metrics, logging, wrappers and titles from topology."),
+    promptText("图契约：rankdir=TB；紧凑 DAG；每个语义概念恰好作为一个节点。使用一条主推理链，分支置于相邻位置。不得重复下游节点/边，不得有环、传递捷径或别名。每个可见节点都位于输入到输出的路径上；源必须是实际前向张量，而非参数或模型包装器。", "Graph contract: rankdir=TB; compact DAG; each semantic concept is one node exactly once. Use one main inference spine with adjacent branches. Never duplicate downstream nodes, edges, cycles, transitive shortcuts or aliases. Every visible node lies on an input-to-output path; sources are actual forward tensors, not parameters or model wrappers."),
+    promptText("粒度：将通用 CNN 或 ResNet18 等标准主干合并为一个拓扑节点；已证实的秩变换/adapter 保持相邻。展开模型特有模块和多输入特征融合；有证据时包括对齐/投影、注意力/门控、拼接/相加、归一化及输出投影。", "Granularity: collapse a generic CNN or standard backbone such as ResNet18 into one topology node; keep proven rank transforms/adapters adjacent. Expand model-specific blocks and multi-input feature fusion, including alignment/projection, attention/gating, concat/add, normalization and output projection when evidenced."),
+    promptText("张量契约：每个源写作 `name [shape]`；其他节点须用规范张量名说明输入 shape(s) → 输出 shape。需要时使用符号维度，绝不猜数字。每个前向侧输入都是独立源。展示有意义的 reshape、unsqueeze、squeeze、flatten、repeat、permute、concat、split、mask/index 和模式选择。注意力备注须指出 Q、K、V 的来源/shape。", "Tensor contract: each source is `name [shape]`; every other node states input shape(s) → output shape with canonical tensor names. Use symbolic dimensions when needed, never guessed numbers. Every forward-time side input is a separate source. Show meaningful reshape, unsqueeze, squeeze, flatten, repeat, permute, concat, split, mask/index and mode selection. Attention notes identify Q, K, and V origins/shapes."),
+    promptText("每条边的标签是一个规范张量名，必须原样出现在源输出和目标输入中；多输入节点需要所有真实入边。标签简短。节点备注依次为 Parameters → Data flow → Objective / supervision → Attribution → Implementation evidence；不适用时写 `none`。", "Each edge label is one canonical tensor name present verbatim in source output and target input; multi-input nodes need all real incoming edges. Short labels only. Node notes follow Parameters → Data flow → Objective / supervision → Attribution → Implementation evidence, using `none` where inapplicable."),
+    promptText("归属：paper-contribution 必须同时有定向论文证据和固定 commit 代码证据，并使用 innovation；否则保守使用 adopted-baseline、standard-module、tensor-operation 或 input-output。代码能证明执行，不能证明作者归属。终点应是语义预测，而非评估指标。", "Attribution: paper-contribution requires both targeted paper evidence and fixed-commit code evidence and uses innovation; otherwise use adopted-baseline, standard-module, tensor-operation, or input-output conservatively. Code proves execution, not authorship. End at semantic predictions, not evaluation metrics."),
+    promptText("Codex 风格工具：github_list_paths=`rg --files`；github_search_code=有界 `rg -n -F`；github_outline_file=符号大纲；github_read_range=一个精确范围；github_read_files=并行精确范围/小型配置。搜索/大纲只用于导航，不是证据。先定位符号再读取；不得退回读取完整源文件。批量读取独立范围，复用先前导航和 evidence ID，并原样复制返回的 evidenceID 字符串。", "Codex-style tools: github_list_paths=`rg --files`; github_search_code=bounded `rg -n -F`; github_outline_file=symbol outline; github_read_range=one exact range; github_read_files=parallel exact ranges/small config. Search/outline are navigation, never evidence. Locate symbols before reading; never fall back to the full source file. Batch independent reads, reuse prior navigation and evidence IDs, and copy returned evidenceID strings exactly."),
+    promptText(`每个源码范围最多 ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} 行。仅在八类都标记为 done/not-applicable 后，才通过 submit_network_diagram 提交一个完整原子候选；若被拒绝，只修复报告的问题。`, `Each source range is at most ${DEFAULT_CONTEXT_POLICY.githubMaxRangeLines} lines. Use submit_network_diagram only for one complete atomic candidate after all eight categories are done/not-applicable; if rejected, fix only the reported gaps.`),
+    `${promptText("模式", "Mode")}: ${mode}`,
+    `${promptText("固定仓库", "Pinned repository")}: ${JSON.stringify(repository.reference)}`,
+    `${promptText("用户指令", "User instruction")}: ${options.userInstruction?.trim() || promptText("生成一次可用的详细网络图 v1", "Generate a usable detailed network diagram v1")}`,
+    `${promptText("论文上下文", "Paper context")}: ${(options.paperContext ?? "none").slice(0, DEFAULT_CONTEXT_POLICY.outlineCharBudget)}`,
+    `${promptText("网络图独立对话", "Independent diagram conversation")}: ${(options.conversationContext ?? "none").slice(0, DEFAULT_CONTEXT_POLICY.retainedContextCharBudget)}`,
+    `${promptText("已知证据索引（仅元数据）", "Known evidence index (metadata only)")}: ${JSON.stringify(evidence)}`,
+    `${promptText("当前目标代码锚点", "Current target code anchors")}: ${currentTargetPaths.length ? currentTargetPaths.join("\n") : "none"}`,
+    `${promptText("当前图", "Current graph")}: ${currentGraph}`,
+    `${promptText("候选路径清单", "Candidate path manifest")}:\n${manifest}`,
   ].join("\n\n");
   const taskInstruction =
     options.userInstruction?.trim() ||
-    "分析固定 commit 的实现，并一次生成通过八类细节门槛的网络图。";
+    promptText("分析固定 commit 的实现，并一次生成通过八类细节门槛的网络图。", "Analyze the pinned commit and generate a network diagram that passes all eight detail requirements in one submission.");
   const messages: Message[] = [
     {
       role: "user",
       content: compatibleRelayNeedsInlineContract(options.preset)
         ? [
-            "[Network diagram task]",
-            "Follow the system instructions and use only the supplied read-only tools. Analyze the pinned fixed commit; use paper evidence for authorship and exact code ranges for executable edges. Search/outline are navigation only. Submit one complete validated TB graph through submit_network_diagram.",
-            `Pinned fixed commit: ${repository.reference.owner}/${repository.reference.repo}@${repository.reference.commitSHA}`,
-            `User instruction: ${taskInstruction}`,
+            promptText("[网络图任务]", "[Network diagram task]"),
+            promptText("遵循系统指令，仅使用提供的只读工具。分析固定 commit；使用论文证据判断方法归属，使用精确代码范围确认可执行边。搜索/大纲仅用于导航。通过 submit_network_diagram 提交一个完整且通过校验的 TB 图。", "Follow the system instructions and use only the supplied read-only tools. Analyze the pinned fixed commit; use paper evidence for authorship and exact code ranges for executable edges. Search/outline are navigation only. Submit one complete validated TB graph through submit_network_diagram."),
+            `${promptText("固定 commit", "Pinned fixed commit")}: ${repository.reference.owner}/${repository.reference.repo}@${repository.reference.commitSHA}`,
+            `${promptText("用户指令", "User instruction")}: ${taskInstruction}`,
           ].join("\n\n")
         : taskInstruction,
     },

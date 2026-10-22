@@ -1,0 +1,745 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>@ 引用其他文章 · 侧边栏交互方案</title>
+    <style>
+      :root {
+        font-family:
+          Inter, "Noto Sans SC", "Microsoft YaHei", system-ui, sans-serif;
+        color: #48413d;
+        background: #f5f4f2;
+      }
+      * {
+        box-sizing: border-box;
+      }
+      body {
+        margin: 0;
+      }
+      button,
+      textarea {
+        font: inherit;
+      }
+      button {
+        cursor: pointer;
+      }
+      button:focus-visible,
+      textarea:focus-visible {
+        outline: 2px solid #8a69e8;
+        outline-offset: 2px;
+      }
+      main {
+        width: min(100%, 980px);
+        margin: 30px auto 45px;
+        padding: 0 18px;
+      }
+      h1 {
+        margin: 0 0 8px;
+        font-size: 23px;
+      }
+      .lead {
+        margin: 0 0 19px;
+        max-width: 760px;
+        color: #756d66;
+        font-size: 13px;
+        line-height: 1.7;
+      }
+      .layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 570px;
+        min-height: 650px;
+        overflow: hidden;
+        border: 1px solid #d4d0cb;
+        border-radius: 11px;
+        background: #fff;
+        box-shadow: 0 15px 40px #55473719;
+      }
+      .reader {
+        background: #f8f7f4;
+        border-right: 3px double #b5b0aa;
+      }
+      .sidebar {
+        display: flex;
+        flex-direction: column;
+        min-width: 0;
+      }
+      .blank {
+        flex: 1;
+        min-height: 260px;
+        background: #fdfcfa;
+      }
+      .conversation-bar {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+        min-height: 53px;
+        padding: 8px 13px;
+        border-top: 1px solid #a98cff;
+        background: #fffefd;
+      }
+      .turn {
+        min-width: 37px;
+        height: 36px;
+        padding: 6px;
+        border: 1px solid #8966e6;
+        border-radius: 8px;
+        background: #f8f5ff;
+        color: #5540af;
+        font-weight: 700;
+      }
+      .bar-right {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        margin-left: auto;
+      }
+      .tiny {
+        min-width: 31px;
+        height: 34px;
+        padding: 5px 8px;
+        border: 1px solid #d9c9b9;
+        border-radius: 8px;
+        background: white;
+        color: #665850;
+        font-size: 12px;
+      }
+      .tiny.muted {
+        color: #c8c4c0;
+        border-color: #eeeae6;
+      }
+      .empty-material {
+        margin: 0 14px 8px;
+        padding: 9px 12px;
+        border: 1px solid #ebe3db;
+        border-radius: 12px;
+        color: #9a8c80;
+        background: #fff;
+        box-shadow: 0 5px 15px #64564714;
+        font-size: 12px;
+      }
+      .composer-wrap {
+        position: relative;
+        margin: 0 12px 11px;
+      }
+      .composer {
+        position: relative;
+        min-height: 156px;
+        padding: 11px 14px 10px;
+        border: 1px solid #e0ccb5;
+        border-radius: 22px;
+        background: #fff;
+        box-shadow: 0 5px 19px #86715f12;
+      }
+      .composer textarea {
+        display: block;
+        width: 100%;
+        height: 91px;
+        padding: 0;
+        border: 0;
+        resize: none;
+        outline: none;
+        color: #514c47;
+        background: transparent;
+        font-size: 13px;
+        line-height: 1.55;
+      }
+      .composer-actions {
+        display: flex;
+        align-items: center;
+        gap: 7px;
+      }
+      .plus {
+        border: 0;
+        background: transparent;
+        color: #766f6a;
+        font-size: 22px;
+        font-weight: 700;
+        line-height: 1;
+        padding: 1px 0;
+      }
+      .chip {
+        border: 1px solid #e5dbd0;
+        border-radius: 18px;
+        background: white;
+        color: #817972;
+        padding: 5px 10px;
+        font-size: 11px;
+        line-height: 1;
+      }
+      .chip.active {
+        border-color: #dc8251;
+        background: #fff1e9;
+        color: #ba5f31;
+        font-weight: 700;
+      }
+      .send {
+        margin-left: auto;
+        width: 37px;
+        height: 37px;
+        border: 0;
+        border-radius: 12px;
+        background: #bd683c;
+        color: white;
+        font-size: 21px;
+        font-weight: 700;
+      }
+      .mode-row {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        margin: 0 15px 10px;
+        font-size: 12px;
+      }
+      .mode-group {
+        display: flex;
+        border: 1px solid #e4d9cc;
+        border-radius: 9px;
+        overflow: hidden;
+      }
+      .mode-group button {
+        border: 0;
+        border-right: 1px solid #e4d9cc;
+        padding: 6px 10px;
+        background: #fff;
+        color: #7e7166;
+      }
+      .mode-group button:last-child {
+        border-right: 0;
+      }
+      .mode-group button.active {
+        background: #e7f4f8;
+        color: #227291;
+        font-weight: 700;
+      }
+      .provider {
+        min-width: 145px;
+        border: 1px solid #e4d9cc;
+        border-radius: 9px;
+        padding: 6px 10px;
+        background: #fff;
+      }
+      .picker {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: calc(100% + 7px);
+        overflow: hidden;
+        border: 1px solid #dfd4c9;
+        border-radius: 13px;
+        background: white;
+        box-shadow: 0 12px 28px #453d3426;
+        z-index: 2;
+      }
+      .picker[hidden] {
+        display: none;
+      }
+      .picker-head {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        padding: 8px 9px;
+        border-bottom: 1px solid #eee7df;
+      }
+      .picker-head strong {
+        padding: 0 5px;
+        font-size: 11px;
+        color: #786b62;
+      }
+      .tab {
+        border: 1px solid #e9e0d7;
+        border-radius: 7px;
+        background: #fff;
+        color: #84786e;
+        padding: 5px 9px;
+        font-size: 11px;
+      }
+      .tab.active {
+        border-color: #cba989;
+        background: #fff5ed;
+        color: #a75e36;
+        font-weight: 700;
+      }
+      .picker-hint {
+        padding: 7px 12px;
+        background: #faf8f5;
+        color: #94887d;
+        font-size: 11px;
+      }
+      .scope-row {
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        padding: 7px 11px;
+        border-bottom: 1px solid #eee7df;
+      }
+      .scope-row[hidden] {
+        display: none;
+      }
+      .scope-row button {
+        border: 1px solid #e4d9ce;
+        border-radius: 6px;
+        padding: 4px 7px;
+        background: white;
+        color: #84776b;
+        font-size: 10px;
+      }
+      .scope-row button.active {
+        border-color: #cba989;
+        background: #fff5ed;
+        color: #a75e36;
+        font-weight: 700;
+      }
+      .scope-row small {
+        margin-left: auto;
+        max-width: 190px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        color: #94887d;
+        font-size: 10px;
+      }
+      .results {
+        max-height: 225px;
+        overflow-y: auto;
+      }
+      .result {
+        display: block;
+        width: 100%;
+        padding: 9px 13px;
+        border: 0;
+        border-top: 1px solid #f2ede8;
+        background: white;
+        text-align: left;
+      }
+      .result:hover,
+      .result:focus-visible {
+        background: #fff8f1;
+      }
+      .result strong {
+        display: block;
+        color: #51463f;
+        font-size: 12px;
+        font-weight: 600;
+      }
+      .result small {
+        display: block;
+        margin-top: 3px;
+        color: #95887e;
+        font-size: 10px;
+      }
+      .empty {
+        padding: 15px 13px;
+        color: #968b82;
+        font-size: 12px;
+      }
+      .selected {
+        display: flex;
+        align-items: center;
+        gap: 5px;
+        margin: 0 0 7px;
+        color: #736358;
+        font-size: 10px;
+      }
+      .selected[hidden] {
+        display: none;
+      }
+      .selected span {
+        max-width: 330px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+        padding: 3px 7px;
+        border: 1px solid #d6c4b1;
+        border-radius: 6px;
+        background: #fff6ed;
+      }
+      .selected button {
+        border: 0;
+        background: none;
+        color: #967d69;
+        font-size: 15px;
+      }
+      .demo-reply {
+        margin: 0 13px 9px;
+        padding: 9px 12px;
+        border: 1px solid #e6dcd2;
+        border-radius: 9px;
+        color: #736b63;
+        background: #fdfbf8;
+        font-size: 11px;
+        line-height: 1.55;
+      }
+      .demo-reply[hidden] {
+        display: none;
+      }
+      .notes {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 11px;
+        margin-top: 13px;
+      }
+      .note {
+        padding: 12px;
+        border: 1px solid #e0d8d0;
+        border-radius: 10px;
+        background: white;
+        font-size: 11px;
+        line-height: 1.6;
+      }
+      .note strong {
+        display: block;
+        margin-bottom: 4px;
+        color: #5a4a3f;
+      }
+      .note p {
+        margin: 0;
+        color: #81766e;
+      }
+      @media (max-width: 760px) {
+        .layout {
+          display: block;
+          min-height: 620px;
+        }
+        .reader {
+          display: none;
+        }
+        .sidebar {
+          min-height: 620px;
+        }
+        .notes {
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>在现有 @ 菜单里引用 Zotero 文章</h1>
+      <p class="lead">
+        按截图中的侧边栏结构展示：本篇没有可用素材时，素材页仍如实提示空状态；同一个
+        @ 菜单的“Zotero
+        文章”页可继续搜索和引用。文章用途由问题决定，界面不添加“对比／分析”开关。
+      </p>
+      <div class="layout">
+        <div class="reader" aria-label="PDF 阅读区示意"></div>
+        <div class="sidebar">
+          <div class="blank"></div>
+          <div class="conversation-bar">
+            <button class="turn" type="button">1</button>
+            <div class="bar-right">
+              <button class="tiny" type="button">1轮</button
+              ><button class="tiny" type="button">＋</button
+              ><button class="tiny muted" type="button">×</button
+              ><button class="tiny muted" type="button">▣</button
+              ><button class="tiny muted" type="button">⌫</button>
+            </div>
+          </div>
+          <div class="empty-material">这篇论文还没有可用的图片、表格或公式</div>
+          <div id="reply" class="demo-reply" hidden></div>
+          <div class="composer-wrap">
+            <div id="picker" class="picker" hidden>
+              <div class="picker-head">
+                <strong>@ 引用</strong
+                ><button id="materialsTab" class="tab" type="button">
+                  本篇素材 0</button
+                ><button id="papersTab" class="tab" type="button">
+                  Zotero 文章
+                </button>
+              </div>
+              <div id="pickerHint" class="picker-hint"></div>
+              <div id="scopeRow" class="scope-row">
+                <button id="sameCollection" class="active" type="button">
+                  同目录</button
+                ><button id="allLibrary" type="button">全库搜索</button
+                ><small>研究 / 视觉模型</small>
+              </div>
+              <div id="results" class="results"></div>
+            </div>
+            <div class="composer">
+              <div id="selected" class="selected" hidden>
+                已引用 <span id="selectedTitle"></span
+                ><button id="remove" type="button" aria-label="移除引用文章">
+                  ×
+                </button>
+              </div>
+              <label
+                for="question"
+                style="
+                  position: absolute;
+                  width: 1px;
+                  height: 1px;
+                  overflow: hidden;
+                "
+                >问题</label
+              >
+              <textarea
+                id="question"
+                aria-controls="picker"
+                placeholder="输入 @ 引用本篇素材或 Zotero 文章"
+              >
+@</textarea
+              >
+              <div class="composer-actions">
+                <button class="plus" type="button" aria-label="添加附件">
+                  ＋</button
+                ><button id="materialButton" class="chip active" type="button">
+                  素材</button
+                ><button class="chip" type="button">联网</button
+                ><button class="chip" type="button">▤ 原文</button
+                ><button class="chip" type="button">使用须知</button
+                ><button id="send" class="send" type="button" aria-label="发送">
+                  ↑
+                </button>
+              </div>
+            </div>
+          </div>
+          <div class="mode-row">
+            <div class="mode-group">
+              <button id="api" type="button">API</button
+              ><button id="web" class="active" type="button">WEB</button>
+            </div>
+            <span class="provider">DeepSeek</span><span>♙ 账号 ▾</span>
+          </div>
+        </div>
+      </div>
+      <div class="notes">
+        <div class="note">
+          <strong>当前截图对应的空状态</strong>
+          <p>
+            “本篇素材
+            0”说明当前论文没有可选的图片、表格或公式，只影响这个分组；文章检索仍可用。
+          </p>
+        </div>
+        <div class="note">
+          <strong>先看同目录</strong>
+          <p>
+            文章页先列出当前正在浏览的 Zotero
+            分类中的其他论文；若当前分类不可确定，再用全库结果。切换“全库搜索”可找其他分类；选中后保留条目
+            ID。
+          </p>
+        </div>
+        <div class="note">
+          <strong>模型如何使用文章</strong>
+          <p>
+            提示词决定是两篇对比，还是参考另一篇分析本篇。API 与 WEB
+            使用相同的选择交互；此稿仅演示界面，未验证 WEB 的跨文章材料传递。
+          </p>
+        </div>
+      </div>
+    </main>
+    <script>
+      const papers = [
+        {
+          id: 101,
+          title: "另一种视觉模型的研究",
+          detail: "陈某等 · 2024 · 有 PDF",
+          sameCollection: true,
+        },
+        {
+          id: 102,
+          title: "视觉模型的实验基准",
+          detail: "李某等 · 2023 · 有 PDF",
+          sameCollection: true,
+        },
+        {
+          id: 103,
+          title: "视觉模型综述",
+          detail: "王某等 · 2022 · 仅题录",
+          sameCollection: true,
+        },
+        {
+          id: 104,
+          title: "轻量视觉编码器的比较",
+          detail: "赵某等 · 2025 · 有 PDF",
+          sameCollection: true,
+        },
+        {
+          id: 105,
+          title: "视觉模型的消融研究",
+          detail: "周某等 · 2024 · 有 PDF",
+          sameCollection: true,
+        },
+        {
+          id: 106,
+          title: "跨模态表示学习",
+          detail: "孙某等 · 2021 · 有 PDF · 其他分类",
+          sameCollection: false,
+        },
+      ];
+      const question = document.getElementById("question");
+      const picker = document.getElementById("picker");
+      const results = document.getElementById("results");
+      const hint = document.getElementById("pickerHint");
+      const materialsTab = document.getElementById("materialsTab");
+      const papersTab = document.getElementById("papersTab");
+      const scopeRow = document.getElementById("scopeRow");
+      const sameCollection = document.getElementById("sameCollection");
+      const allLibrary = document.getElementById("allLibrary");
+      const selectedBox = document.getElementById("selected");
+      const selectedTitle = document.getElementById("selectedTitle");
+      let tab = "papers";
+      let scope = "same";
+      let selected = null;
+      let mention = null;
+      function activeMention() {
+        const before = question.value.slice(0, question.selectionStart);
+        const match = before.match(/(?:^|\s)@([^@\n]*)$/);
+        return !match || match[1].startsWith("[")
+          ? null
+          : {
+              start: before.length - match[1].length - 1,
+              end: question.selectionStart,
+              query: match[1].trim(),
+            };
+      }
+      function renderSelected() {
+        selectedBox.hidden = !selected;
+        selectedTitle.textContent = selected?.title || "";
+      }
+      function renderPicker() {
+        picker.hidden = !mention;
+        if (!mention) return;
+        materialsTab.classList.toggle("active", tab === "materials");
+        papersTab.classList.toggle("active", tab === "papers");
+        scopeRow.hidden = tab !== "papers";
+        sameCollection.classList.toggle("active", scope === "same");
+        allLibrary.classList.toggle("active", scope === "all");
+        results.replaceChildren();
+        if (tab === "materials") {
+          hint.textContent =
+            "本篇素材 · 可通过 @ 列表或左侧 PDF 点选；此示例论文尚无素材";
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "这篇论文还没有可用的图片、表格或公式";
+          results.append(empty);
+          return;
+        }
+        hint.textContent = mention.query
+          ? `${scope === "same" ? "同目录" : "全库"}筛选：${mention.query}`
+          : scope === "same"
+            ? "当前分类里的其他文章 · 输入标题或作者筛选"
+            : "搜索 Zotero 全库 · 输入标题或作者筛选";
+        const matches = papers.filter(
+          (paper) =>
+            (scope === "all" || paper.sameCollection) &&
+            (paper.title + paper.detail)
+              .toLowerCase()
+              .includes(mention.query.toLowerCase()),
+        );
+        if (!matches.length) {
+          const empty = document.createElement("div");
+          empty.className = "empty";
+          empty.textContent = "没有匹配的示例条目";
+          results.append(empty);
+        }
+        for (const paper of matches) {
+          const row = document.createElement("button");
+          row.type = "button";
+          row.className = "result";
+          const title = document.createElement("strong");
+          title.textContent = paper.title;
+          const detail = document.createElement("small");
+          detail.textContent = paper.detail;
+          row.append(title, detail);
+          row.addEventListener("click", () => {
+            const marker = `@[${paper.title}]`;
+            let next =
+              question.value.slice(0, mention.start) +
+              marker +
+              question.value.slice(mention.end);
+            if (selected) next = next.replace(`@[${selected.title}]`, "");
+            question.value = next;
+            selected = paper;
+            mention = null;
+            renderSelected();
+            renderPicker();
+            question.focus();
+            question.setSelectionRange(next.length, next.length);
+          });
+          results.append(row);
+        }
+      }
+      function refresh() {
+        if (selected && !question.value.includes(`@[${selected.title}]`)) {
+          selected = null;
+          renderSelected();
+        }
+        mention = activeMention();
+        if (mention && !selected && !mention.query) tab = "papers";
+        renderPicker();
+      }
+      materialsTab.addEventListener("click", () => {
+        tab = "materials";
+        renderPicker();
+      });
+      papersTab.addEventListener("click", () => {
+        tab = "papers";
+        renderPicker();
+      });
+      sameCollection.addEventListener("click", () => {
+        scope = "same";
+        renderPicker();
+      });
+      allLibrary.addEventListener("click", () => {
+        scope = "all";
+        renderPicker();
+      });
+      question.addEventListener("input", refresh);
+      question.addEventListener("click", refresh);
+      document.getElementById("remove").addEventListener("click", () => {
+        if (selected)
+          question.value = question.value.replace(`@[${selected.title}]`, "");
+        selected = null;
+        renderSelected();
+        question.focus();
+      });
+      document
+        .getElementById("materialButton")
+        .addEventListener("click", () => {
+          if (!question.value.endsWith("@")) question.value += " @";
+          question.setSelectionRange(
+            question.value.length,
+            question.value.length,
+          );
+          mention = activeMention();
+          tab = "materials";
+          renderPicker();
+          question.focus();
+        });
+      document.addEventListener("keydown", (event) => {
+        if (event.key === "Escape") {
+          mention = null;
+          picker.hidden = true;
+        }
+      });
+      for (const name of ["api", "web"])
+        document.getElementById(name).addEventListener("click", () => {
+          document
+            .getElementById("api")
+            .classList.toggle("active", name === "api");
+          document
+            .getElementById("web")
+            .classList.toggle("active", name === "web");
+        });
+      document.getElementById("send").addEventListener("click", () => {
+        const text = question.value.trim();
+        if (!text) return;
+        const paper =
+          selected && text.includes(`@[${selected.title}]`) ? selected : null;
+        const reply = document.getElementById("reply");
+        reply.hidden = false;
+        reply.textContent = paper
+          ? `演示：已在本轮引用《${paper.title}》。实际实现由提示词决定对比或参考分析，并区分两篇文章的证据。`
+          : "演示：本轮未引用其他文章。";
+        question.value = "";
+        selected = null;
+        mention = null;
+        renderSelected();
+        renderPicker();
+      });
+      question.setSelectionRange(question.value.length, question.value.length);
+      refresh();
+    </script>
+  </body>
+</html>

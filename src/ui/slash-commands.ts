@@ -1,3 +1,5 @@
+import { promptText } from '../utils/prompt-locale';
+
 export interface SlashCommand {
   name: string;
   usage: string;
@@ -16,10 +18,16 @@ export const SLASH_COMMANDS: SlashCommand[] = [
       'Search arXiv or inspect an arXiv paper with available tools.',
     prompt: (args) =>
       [
-        'User explicitly selected /arxiv-search.',
+        promptText(
+          '用户明确选择了 /arxiv-search。',
+          'User explicitly selected /arxiv-search.',
+        ),
         args
-          ? `Search/analyze request: ${args}`
-          : 'No query was provided. If the current Zotero item title/abstract is enough, use it as the query; otherwise ask the user what to search.',
+          ? `${promptText('搜索/分析请求', 'Search/analyze request')}: ${args}`
+          : promptText(
+              '用户没有提供查询内容。如果当前 Zotero 条目的标题/摘要足够，就用它作为查询；否则询问用户要搜索什么。',
+              'No query was provided. If the current Zotero item title/abstract is enough, use it as the query; otherwise ask the user what to search.',
+            ),
       ].join('\n'),
   },
   {
@@ -28,11 +36,17 @@ export const SLASH_COMMANDS: SlashCommand[] = [
     description: 'Search the web with the configured built-in search tool.',
     prompt: (args) =>
       [
-        'User explicitly selected /web-search.',
-        'Use the configured built-in web search tool when it is available. If no web search tool is available, say that search is not enabled instead of pretending to search.',
+        promptText(
+          '用户明确选择了 /web-search。',
+          'User explicitly selected /web-search.',
+        ),
+        promptText(
+          '如果有可用的内置网页搜索工具，请使用它。如果没有可用工具，请说明当前未启用搜索，不要假装已经搜索。',
+          'Use the configured built-in web search tool when it is available. If no web search tool is available, say that search is not enabled instead of pretending to search.',
+        ),
         args
-          ? `Search request: ${args}`
-          : 'No query was provided; ask for a query.',
+          ? `${promptText('搜索请求', 'Search request')}: ${args}`
+          : promptText('用户没有提供查询内容；请询问查询内容。', 'No query was provided; ask for a query.'),
       ].join('\n'),
   },
 ];

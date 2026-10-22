@@ -124,6 +124,18 @@ describe("DeepSeek draft uploads", () => {
     expect(h.setInputFiles).toHaveBeenCalledTimes(1);
   });
 
+  it("reuses a pending source file after Snap staging gives it a new temporary path", async () => {
+    let visible = false;
+    const h = harness(() => ({ cards: visible ? [card] : [], busy: false, failed: false }));
+    const source = file().path;
+    await expect(uploadDeepSeekAttachments(h.page, h.composer, adapter,
+      [{ ...file(), sourcePath: source, path: join(folder, "first-stage.pdf") }], "paper-1")).rejects.toThrow();
+    visible = true;
+    await uploadDeepSeekAttachments(h.page, h.composer, adapter,
+      [{ ...file(), sourcePath: source, path: join(folder, "second-stage.pdf") }], "paper-1");
+    expect(h.setInputFiles).toHaveBeenCalledTimes(1);
+  });
+
   it("does not send unknown attachments already in the composer", async () => {
     const h = harness(() => ({
       cards: [],

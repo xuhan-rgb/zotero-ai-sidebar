@@ -21,7 +21,7 @@
   "homepage": "https://github.com/xuhan-rgb/zotero-ai-sidebar#readme",
   "license": "AGPL-3.0-or-later",
   "scripts": {
-    "prepare:web-agent": "npm ci --prefix web-agent --omit=dev --ignore-scripts",
+    "prepare:web-agent": "npm ci --prefix web-agent --omit=dev --ignore-scripts && node scripts/patch-playwright-firefox.mjs",
     "prestart": "npm run prepare:web-agent",
     "start": "zotero-plugin serve",
     "prebuild": "npm run prepare:web-agent",

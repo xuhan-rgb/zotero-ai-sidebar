@@ -1177,6 +1177,10 @@
   line-height: 1.45;
 }
 
+.zai-web-account-node-picker { display: grid; gap: 6px; min-width: 0; }
+.zai-web-account-node-picker input { width: 100%; min-width: 0; box-sizing: border-box; }
+.zai-web-account-node-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+
 .zai-web-account-download-actions {
   display: flex;
   flex-wrap: wrap;
@@ -3088,6 +3092,16 @@ div.math-fallback {
   font-size: 13px;
 }
 
+.bubble-user .bubble-body h1,
+.bubble-user .bubble-body h2,
+.bubble-user .bubble-body h3,
+.bubble-user .bubble-body h4 {
+  margin: 6px 0 4px;
+  font-size: var(--zai-chat-font-size);
+  font-weight: 600;
+  line-height: 1.45;
+}
+
 .bubble-body ul,
 .bubble-body ol,
 .bubble-thinking-body ul,
@@ -4208,6 +4222,8 @@ div.math-fallback {
 
 .composer-footer-actions-api {
   flex-wrap: wrap;
+  /* The model menu opens upward outside the footer. */
+  overflow: visible;
 }
 
 .composer-reasoning {

@@ -24,6 +24,21 @@ function browserPage() {
 }
 
 describe("Web Agent browser window visibility", () => {
+  it("focuses Firefox without sending Chrome window commands", async () => {
+    const newCDPSession = vi.fn();
+    const bringToFront = vi.fn(async () => undefined);
+    const page = {
+      context: () => ({
+        browser: () => ({ browserType: () => ({ name: () => "firefox" }) }),
+        newCDPSession,
+      }),
+      bringToFront,
+    };
+    await expect(showBrowserWindow(page)).resolves.toBe(true);
+    expect(bringToFront).toHaveBeenCalledOnce();
+    expect(newCDPSession).not.toHaveBeenCalled();
+  });
+
   it("minimizes the dedicated browser through CDP", async () => {
     const { page, send, detach, bringToFront } = browserPage();
 

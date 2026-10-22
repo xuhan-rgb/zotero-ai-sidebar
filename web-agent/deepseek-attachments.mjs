@@ -228,7 +228,7 @@ async function runDeepSeekUploads(
     draft.rootId = initial.rootId;
   }
   for (const [filePath, record] of draft.files) {
-    if (attachments.some((attachment) => attachment.path === filePath))
+    if (attachments.some((attachment) => (attachment.sourcePath || attachment.path) === filePath))
       continue;
     if ((await snapshot(record.name)).cards.length) {
       throw new Error("DeepSeek 草稿仍有上次任务的其他附件，请处理草稿后重试");
@@ -245,16 +245,17 @@ async function runDeepSeekUploads(
     }
   };
   for (const attachment of attachments) {
-    const info = await stat(attachment.path);
+    const sourcePath = attachment.sourcePath || attachment.path;
+    const info = await stat(sourcePath);
     const fingerprint = JSON.stringify([
-      attachment.path,
+      sourcePath,
       info.size,
       info.mtimeMs,
     ]);
     let state = await snapshot(attachment.name);
     rejectUnknownCards(state);
     if (state.failed) throw new Error(`DeepSeek 拒绝了附件 ${attachment.name}`);
-    const previous = draft.files.get(attachment.path);
+    const previous = draft.files.get(sourcePath);
     const reusable =
       previous?.fingerprint === fingerprint &&
       previous.rootId === state.rootId &&
@@ -271,7 +272,7 @@ async function runDeepSeekUploads(
       log("reuse_or_observe", { name: attachment.name, reusable, pending });
     // A previous attempt without a preview may still be arriving on this page.
     if (!reusable && !pending) {
-      draft.files.set(attachment.path, {
+      draft.files.set(sourcePath, {
         fingerprint,
         rootId: state.rootId,
         name: attachment.name,
@@ -301,7 +302,7 @@ async function runDeepSeekUploads(
     while (Date.now() < deadline) {
       state = await snapshot(attachment.name);
       rejectUnknownCards(state);
-      const record = draft.files.get(attachment.path);
+      const record = draft.files.get(sourcePath);
       if (state.failed)
         throw new Error(`DeepSeek 拒绝了附件 ${attachment.name}`);
       if (record.rootId !== state.rootId || state.cards.length > 1) {
