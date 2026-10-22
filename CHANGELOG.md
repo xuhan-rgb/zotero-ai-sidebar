@@ -2,6 +2,13 @@
 
 Release notes for earlier versions. The newest release is described in [README.md](README.md); [中文](CHANGELOG.zh-CN.md).
 
+## v0.8.18
+
+- **Prompts follow the interface language**: built-in quick prompts, tool guidance, WEB paper actions, translation instructions, and continuation prompts use Chinese or English according to the interface setting. Saved copies of built-in defaults follow the selection; user-edited prompts are preserved.
+- **Sidebar visibility is remembered**: reopening Zotero restores whether the sidebar was open, along with the saved layout and widths. Fresh profiles start with it collapsed.
+- **Composer and message styling**: upward model menus remain visible outside the API footer, reasoning labels follow the UI language, and headings in user messages use compact spacing and body-size text.
+- **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime; existing settings and browser login profiles are preserved.
+
 ## v0.8.17
 
 - **Selectable interface language**: choose Follow system, 中文, or English under Settings → Display settings → Interface language. Views such as the paper overview refresh to match the selection.

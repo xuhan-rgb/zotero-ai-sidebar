@@ -36,11 +36,12 @@ When [opening an issue](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/ne
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
-### What's new in v0.8.18
+### What's new in v0.8.19
 
-- **Prompts follow the interface language**: built-in quick prompts, tool guidance, WEB paper actions, translation instructions, and continuation prompts use Chinese or English according to the interface setting. Saved copies of built-in defaults follow the selection; user-edited prompts are preserved.
-- **Sidebar visibility is remembered**: reopening Zotero restores whether the sidebar was open, along with the saved layout and widths. Fresh profiles start with it collapsed.
-- **Composer and message styling**: upward model menus remain visible outside the API footer, reasoning labels follow the UI language, and headings in user messages use compact spacing and body-size text.
+- **Firefox in WEB mode**: choose Firefox alongside Chrome and Edge. Native and Snap installations keep separate login profiles, and attachment staging supports Snap's accessible directories.
+- **Node.js setup**: detect NVM installations even when Zotero starts from the desktop, or choose a Node executable or installation directory in the account dialog. Path settings stay available and validate before saving.
+- **More reliable Web Agent setup**: health checks, runtime downloads, and startup waits use Gecko timers in Zotero's sandbox.
+- **Browser management and documentation**: remove manually added browser entries while preserving their login data; Chinese and English setup instructions cover Firefox and Node detection.
 - **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime; existing settings and browser login profiles are preserved.
 
 Release history: see [CHANGELOG.md](CHANGELOG.md).
