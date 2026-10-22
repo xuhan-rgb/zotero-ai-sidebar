@@ -2,6 +2,15 @@
 
 Release notes for earlier versions. The newest release is described in [README.md](README.md); [中文](CHANGELOG.zh-CN.md).
 
+## v0.8.17
+
+- **Selectable interface language**: choose Follow system, 中文, or English under Settings → Display settings → Interface language. Views such as the paper overview refresh to match the selection.
+- **Bilingual issue forms**: bug reports, feature requests, and usage questions each have Chinese and English forms.
+- **More stable note editing**: UI refreshes preserve note editors to reduce interruptions while editing.
+- **Recent chat improvements**: reference multiple papers' full readable text with `@`, save reasoning effort per account and model, and remember chat widths separately for the two layouts. Narrow composers compact account captions.
+- **WEB upload fix**: attachment status checks exclude status-like text in filenames to avoid mistaking a filename for a website status message.
+- **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime; existing settings and browser login profiles are preserved.
+
 ## v0.8.14
 
 - **Multiple referenced papers in one question**: use `@` to pick several Zotero papers, then compare them or use them to analyze the current paper. API sends each paper's available original text with a reading tool; WEB uploads each as a separate text attachment.

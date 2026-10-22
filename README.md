@@ -8,23 +8,23 @@ An AI research assistant that lives inside Zotero. Ask about the paper you're re
 
 📖 [Full usage guide](docs/USAGE.md) ([中文](docs/USAGE.zh-CN.md)) — quick start, workflows, reference, and troubleshooting.
 
-Choose Follow system, 中文, or English under Settings → Display settings → Interface language. The default follows the system: Chinese on Chinese systems and English on English or unsupported system languages. If the system language cannot be read, Zotero's interface language is used instead. AI response language is controlled by your prompts; you can edit the built-in prompts in Settings → Quick prompts.
+Choose Follow system, 中文, or English under Settings → Display settings → Interface language. The default follows the system: Chinese on Chinese systems and English on English or unsupported system languages. If the system language cannot be read, Zotero's interface language is used instead. Built-in defaults are available in Chinese or English according to the interface language; saved copies of built-in defaults follow the selection too, while user-edited prompts keep their original text. AI response language is controlled by the prompts actually sent; review and edit them in Settings → Quick prompts.
 
 When [opening an issue](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new/choose), choose a **[中文]** or **[English]** form for bug reports, feature requests, or usage questions. Each form also links to the other language at the top.
 
 ## What you can do with it
 
-- **Ask anything about the paper you're reading** — *"summarize this"*, *"what's the core contribution"*, *"compare with X"*. The model fetches the parts of the PDF it needs and shows its work in a tool trace.
+- **Ask anything about the paper you're reading** — _"summarize this"_, _"what's the core contribution"_, _"compare with X"_. The model fetches the parts of the PDF it needs and shows its work in a tool trace.
 - **Choose API or WEB for each conversation** — use configured API presets directly, or mirror ChatGPT, DeepSeek, ChatGLM, Z.ai, Kimi, and custom ChatGPT-like sites through a local Web Agent. WEB mode keeps the website's current model/search/thinking state, reports staged progress, and incrementally mirrors the growing answer into Zotero.
 - **Open Quick Ask anywhere and keep following up** — press `Alt+Q` by default for a temporary conversation that remembers turns while the window stays open, is destroyed on close, and can be explicitly transferred into the current paper's research chat.
-- **See the whole paper at a glance** — generate a *全文总览* map: a phase-grouped section skeleton (motivation / method / validation) with one-line gists, innovation / result markers, and a structural flowchart. Click a section to jump to that spot in the PDF; your reading position is remembered per paper and synced across machines.
-- **arXiv papers come through clean** — equations and figures are pulled from the LaTeX source instead of broken PDF text. *"Explain Eq. (3)"* and *"walk me through Figure 2"* actually work.
+- **See the whole paper at a glance** — generate a _全文总览_ map: a phase-grouped section skeleton (motivation / method / validation) with one-line gists, innovation / result markers, and a structural flowchart. Click a section to jump to that spot in the PDF; your reading position is remembered per paper and synced across machines.
+- **arXiv papers come through clean** — equations and figures are pulled from the LaTeX source instead of broken PDF text. _"Explain Eq. (3)"_ and _"walk me through Figure 2"_ actually work.
 - **Ask with the paper's own material** — type `@` to list the paper's pictures, tables, and formulas, starting with the page you are reading (本页 / 全部 / 图片 / 表格 / 公式). Click 素材 (default `Ctrl+Shift+M`) to pick them straight on the PDF instead. A picked picture is sent as an image; a table or formula stays a short `[表 #1]` marker in the composer and expands to its LaTeX source on send.
 - **Bring other Zotero papers into one question** — use `@` to select several articles, then ask to compare them or use them to analyze the current paper. The prompt decides the task; you do not need to choose a separate comparison mode.
 - **Immersive PDF translation** — turn on immersive mode, click a sentence to get a translation card in place; walk the paper with `Enter` / `Shift+Enter`, `/` jumps the cursor into the ask box, and `Esc` closes the card while keeping the sentence on the reading highlight.
 - **Write back into Zotero** — append answers to the paper's note, or ask the model to add color-coded highlights to the PDF (gated by per-preset permission).
 - **Bring your own model** — Anthropic, OpenAI, or any OpenAI-compatible endpoint; all configured locally in Zotero preferences.
-- **Local-first, and you own the sync target** — nothing leaves this machine until you turn on WebDAV sync, which pushes a single `state.json` to *your own* endpoint. It carries settings, model presets (API keys included), chat history, PDF annotations, and translation cache — never to zotero.org or any third party.
+- **Local-first, and you own the sync target** — settings, chat history, and caches are stored locally. API / WEB requests send your questions and relevant paper material to the selected model service; MinerU parsing uploads the PDF to MinerU. Optional WebDAV sync pushes settings, model presets (API keys included), chat history, PDF annotations, and translation cache as a single `state.json` to _your own_ endpoint.
 
 ## Install
 
@@ -36,17 +36,14 @@ When [opening an issue](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/ne
 
 Installed plugins also update automatically: each release publishes `update.json` / `update-beta.json` to a fixed `release` Release, which the plugin's `update_url` checks, so both stable and preview installs are offered new versions in-place.
 
-### What's new in v0.8.12
+### What's new in v0.8.18
 
-- **`@` picks the paper's material**: typing `@` in the composer lists the paper's pictures, tables, and formulas. For a MinerU-parsed PDF — including the PDF opened next to a LaTeX paper — material on the page you are reading is listed first and marked 本页, and the chips at the top switch between 本页 / 全部 / 图片 / 表格 / 公式. A picked picture is sent as an image; a picked table or formula stays a short `[表 #1]` marker in the composer and expands to its LaTeX source when you send.
-- **`@` works for LaTeX-only papers**: arXiv figure files that are PDF or EPS are rasterised into pictures on the fly, and `\input` / `\include` files are expanded first, so papers whose sections live in separate `.tex` files no longer show an empty list.
-- **WEB images are really uploaded**: pictures attached in the composer, including the ones picked with `@`, now travel with the message instead of being silently dropped.
-- **Pick on the PDF, not just in the list**: the 素材 chip left of the composer arms click-to-pick (the default `Ctrl+Shift+M` does the same) — click a picture, table, or formula on the page to attach it, pick the same kind again to stack, and a green dashed box marks the current round's references. The page's text is locked while picking, so prose cannot be grabbed into a quote by accident; closing the list with the chip or `Esc` also deletes the half-typed `@`.
-- **Straight answers about pages and sources**: material pages are resolved from the page text the reader prints (第 N–M 页·推测 when only the neighbours bound them), a list opened before that text is ready says so and is never cached, and on a LaTeX-only paper a click on the PDF points back to the list instead of pretending there is nothing to pick.
-- **A usage notice**: the low-contrast 使用须知 chip right of 原文 in the input row now opens with where the paper's material comes from (LaTeX source / MinerU parse / neither yet) and how material is used (`@` list, picking on the PDF, `[表 #1]` markers, definite pages vs 推测 ranges), then what differs between API and WEB mode — above all that WEB sends no figures by default — and records the 素材 shortcut (default `Ctrl+Shift+M`). The paper card no longer repeats that warning.
-- **Upgrade**: install the 0.8.12 XPI and restart Zotero. Existing settings, prompt edits, and WEB logins are kept.
+- **Prompts follow the interface language**: built-in quick prompts, tool guidance, WEB paper actions, translation instructions, and continuation prompts use Chinese or English according to the interface setting. Saved copies of built-in defaults follow the selection; user-edited prompts are preserved.
+- **Sidebar visibility is remembered**: reopening Zotero restores whether the sidebar was open, along with the saved layout and widths. Fresh profiles start with it collapsed.
+- **Composer and message styling**: upward model menus remain visible outside the API footer, reasoning labels follow the UI language, and headings in user messages use compact spacing and body-size text.
+- **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime; existing settings and browser login profiles are preserved.
 
-Older release notes: see [CHANGELOG.md](CHANGELOG.md).
+Release history: see [CHANGELOG.md](CHANGELOG.md).
 
 ## Configuration
 
@@ -77,7 +74,7 @@ Do not hardcode personal API keys, base URLs, or private model IDs in this repos
 
 WEB mode uses a local companion process and a dedicated browser profile. Chrome, Microsoft Edge, and Firefox are detected automatically; other Chromium-compatible browsers can be configured by executable path. Firefox uses a separate WebDriver BiDi connection. API mode does not need these components and is unaffected if the Web Agent is not installed.
 
-> The Z.ai, automatic port allocation, and login detection flows below apply to `v0.8.9`. When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
+> When upgrading, install the new XPI and follow the account dialog to install or update its paired Web Agent ZIP.
 
 Requirements: Node.js 20 or newer and a browser supported by the Web Agent (automatically detected Chrome / Edge / Firefox, or a compatible custom browser). Firefox also requires Node.js. Linux additionally needs `xclip`:
 
@@ -174,6 +171,7 @@ For `@`-referenced Zotero papers, WEB mode uploads a separate text attachment fo
 ### Translation
 
 - **Immersive PDF translation**: turn on `沉浸` (immersive) in the PDF Reader toolbar, then click a sentence for an in-place card (original + translation, cheapest path). The card can switch to interleaved EN/中文 (逐句对照), key-term linking (重点词对应), neighbour context (结合上下句), and adaptive width — and you can keep asking (追问) for an explanation or examples.
+- **Full-document translation for ordinary PDFs**: configure a mineru.net Token to parse PDFs without arXiv LaTeX source through MinerU, then use the bilingual reader with interleaved paragraphs, sentence line breaks, and original-PDF comparison. Parsing uploads the PDF to MinerU.
 - **arXiv full-document translation**: when a paper has the `LaTeX 源` badge, open a reconstructed full-paper reader and switch between bilingual / translation / source and parallel / interleaved layouts. Click the model name in its toolbar to choose the account, model, and reasoning effort; the first run inherits the translation default, then remembers an independent selection.
 - **Save & reuse translations**: save a card's translation as a Zotero highlight annotation (💾); if the sentence already carries one, the card shows that saved note instead of re-translating, and saving upserts by key so you never get duplicate highlights. While immersive mode is on, Zotero's native selection popup is suppressed so the card stays the single surface.
 - **Stepping, quick-translate & ask**: `Enter` / `Shift+Enter` move to the next / previous sentence; selecting (or hovering) a sentence and pressing the quick key (default Space) translates it directly; `/` moves the cursor into the card's 追问 box (Enter is reserved for stepping); `Esc` closes the card while keeping the sentence on the reading highlight, so you can keep stepping; a collapse-toolbar key (default `h`) folds the card's meta bar and foot row down to just the composer. All keys are configurable in settings.
@@ -185,7 +183,7 @@ For `@`-referenced Zotero papers, WEB mode uploads a separate text attachment fo
 - **WebDAV cloud sync**: push and pull a single `state.json` snapshot to a WebDAV endpoint (e.g. Nutstore) — model presets (API keys included), UI settings, quick prompts, tool/MCP settings, translation settings, AI chat history, sentence-translation cache, full PDF annotations (highlight / underline / note / ink), per-item paper overviews, and reading positions (the `在读` anchor).
 - **Auto sync**: disabled by default; when enabled, startup and every 10 minutes pull from cloud first, merge local chat/cache data, then push the merged state back to WebDAV.
 - **Non-destructive chat sync**: cloud chat messages are appended when missing locally; existing local-only chat messages are preserved.
-- **You-controlled secrets**: API keys, base URLs, and model IDs live in Zotero prefs and are never hardcoded in source or sent to zotero.org / the plugin author / any third party. They *do* travel inside your own `state.json` (WebDAV sync) and config-export file — both are private artifacts you control, so treat them like any file that holds credentials. The WebDAV account password itself is never written into the snapshot.
+- **You-controlled secrets**: API keys, base URLs, and model IDs live in Zotero prefs and are never hardcoded in source or sent to zotero.org / the plugin author / any third party. They _do_ travel inside your own `state.json` (WebDAV sync) and config-export file — both are private artifacts you control, so treat them like any file that holds credentials. The WebDAV account password itself is never written into the snapshot.
 
 ## Architecture
 

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import {
@@ -13,6 +13,12 @@ const sidebarSource = readFileSync(
 );
 
 describe("sidebar selected-text menu", () => {
+  beforeEach(() => {
+    vi.stubGlobal("Zotero", { locale: "zh-CN" });
+  });
+
+  afterEach(() => vi.unstubAllGlobals());
+
   it("falls back to the recent cached sidebar selection on right click", () => {
     expect(sidebarSource).toContain("sidebarSelectionMenuText(");
     expect(sidebarSource).toContain("sidebar.lastCopySelection");
