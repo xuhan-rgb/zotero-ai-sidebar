@@ -276,3 +276,27 @@ it('discards an empty loading frame snapshot when history loads the same convers
   restore(mount, true);
   expect(messages.scrollTop).toBe(1700);
 });
+
+it('restores the network conversation without overwriting normal chat scroll', () => {
+  vi.useFakeTimers();
+  try {
+    const mount = document.createElement('div');
+    const messages = document.createElement('div');
+    messages.className = 'messages';
+    messages.dataset.conversationKind = 'network';
+    Object.defineProperties(messages, {
+      scrollHeight: { value: 1600 }, clientHeight: { value: 400 },
+    });
+    mount.append(messages);
+    const state = { activeConversationID: 'a', messagesScrollTop: 300,
+      autoFollowMessages: false } as PanelState;
+    states.set(mount, state);
+    scheduleMessagesScrollRestore(mount, { top: 600, atBottom: false });
+    expect(state.networkDiagramMessagesScrollTop).toBe(600);
+    expect(state.networkDiagramAutoFollowMessages).toBe(false);
+    expect(state.messagesScrollTop).toBe(300);
+    vi.runAllTimers();
+  } finally {
+    vi.useRealTimers();
+  }
+});

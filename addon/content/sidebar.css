@@ -180,40 +180,6 @@
   overflow: hidden;
 }
 
-.zai-floating-toggle {
-  position: fixed;
-  top: 74px;
-  right: 48px;
-  z-index: 10000;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 30px;
-  padding: 0 11px;
-  border: 1px solid rgba(192, 103, 61, 0.42);
-  border-radius: 999px;
-  background: rgba(255, 253, 248, 0.94);
-  color: var(--zai-accent-strong);
-  box-shadow: var(--zai-shadow);
-  font: 700 12px/1 var(--zai-font);
-  cursor: pointer;
-}
-
-.zai-floating-toggle:hover,
-.zai-floating-toggle.is-open {
-  background: var(--zai-accent-soft);
-  border-color: var(--zai-accent);
-}
-
-.zai-floating-toggle img {
-  width: 16px;
-  height: 16px;
-}
-
-.zai-floating-toggle[hidden] {
-  display: none;
-}
-
 .zai-note-root {
   display: flex;
   flex-direction: column;
@@ -8646,6 +8612,10 @@ div.math-fallback {
   font-size: 15px;
   line-height: 1;
   padding: 4px 9px;
+}
+
+.zai-collapse-btn[hidden] {
+  display: none;
 }
 
 /* 字号 icon button (🎚) + its font-size popup in the AI 对话 header */

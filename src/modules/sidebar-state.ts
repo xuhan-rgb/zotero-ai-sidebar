@@ -161,6 +161,9 @@ export interface WindowSidebarState {
   lastCopySelection?: { text: string; updatedAt: number };
   toggleButton?: Element;
   floatingButton?: HTMLElement;
+  floatingToggleCleanup?: () => void;
+  floatingToolbar?: HTMLElement;
+  collapsedDockedWidth?: number;
   selectionMonitorID?: number;
   originalItemSelected?: (...args: unknown[]) => unknown;
   patchedItemSelected?: (...args: unknown[]) => unknown;

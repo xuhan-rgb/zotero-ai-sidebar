@@ -1,4 +1,5 @@
-import { uiText } from "../utils/ui-locale";
+import { getUiLocale, uiText } from "../utils/ui-locale";
+import type { SyncAccount } from "../sync/account";
 import { config } from "../../package.json";
 import type { ModelPreset } from "../settings/types";
 
@@ -78,6 +79,56 @@ export function setPreferenceSaveBarVisible(
 ): void {
   if (visible) bar.removeAttribute("hidden");
   else bar.setAttribute("hidden", "hidden");
+}
+
+export function bindSyncHelpDialog(doc: Document): void {
+  const trigger = doc.getElementById(
+    "zai-sync-guide-open",
+  ) as HTMLButtonElement | null;
+  const dialog = doc.getElementById(
+    "zai-sync-guide-dialog",
+  ) as HTMLDialogElement | null;
+  const close = doc.getElementById("zai-sync-guide-close");
+  if (!trigger || !dialog || !close) return;
+  trigger.addEventListener("click", () => {
+    if (!dialog.open) dialog.showModal();
+  });
+  close.addEventListener("click", () => dialog.close());
+  dialog.addEventListener("cancel", (event) => {
+    event.preventDefault();
+    dialog.close();
+  });
+  dialog.addEventListener("close", () => trigger.focus());
+}
+
+export function formatSyncSummary(account: SyncAccount): string {
+  const records = [
+    {
+      time: Date.parse(account.lastPushAt),
+      label: uiText("最近上传", "Last upload"),
+    },
+    {
+      time: Date.parse(account.lastPullAt),
+      label: uiText("最近下载", "Last download"),
+    },
+    {
+      time: Date.parse(account.lastAutoSyncAt),
+      label: uiText("最近自动同步", "Last auto-sync"),
+    },
+  ]
+    .filter((record) => Number.isFinite(record.time))
+    .sort((a, b) => b.time - a.time);
+  const latest = records[0];
+  if (!latest) return uiText("尚无同步记录", "No sync history yet");
+  const date = new Intl.DateTimeFormat(getUiLocale(), {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date(latest.time));
+  return `${latest.label}${uiText("：", ": ")}${date}`;
 }
 
 export async function registerPreferences(): Promise<void> {

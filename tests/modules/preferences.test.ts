@@ -6,6 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 
 import {
   dispatchPreferenceChange,
+  bindSyncHelpDialog,
+  formatSyncSummary,
   formatPreferenceSaveSections,
   hasUnsavedPresetChanges,
   resolveTestModel,
@@ -16,6 +18,8 @@ import {
   getUiLocale,
   normalizeUiLanguage,
 } from "../../src/utils/ui-locale";
+
+import { DEFAULT_SYNC_ACCOUNT } from "../../src/sync/account";
 
 const originalEvent = globalThis.Event;
 const preferenceMarkup = readFileSync(
@@ -151,10 +155,12 @@ describe("preference save controls", () => {
 
     const saved = new Map<string, string>([[UI_LANGUAGE_PREF, "en-US"]]);
     vi.stubGlobal("Zotero", {
-      Prefs: { get: (key: string, global: boolean) => {
-        expect(global).toBe(true);
-        return saved.get(key);
-      } },
+      Prefs: {
+        get: (key: string, global: boolean) => {
+          expect(global).toBe(true);
+          return saved.get(key);
+        },
+      },
       locale: "zh-CN",
     });
     expect(normalizeUiLanguage(saved.get(UI_LANGUAGE_PREF))).toBe("en-US");
@@ -205,7 +211,7 @@ describe("preference save controls", () => {
       preferenceMarkup.matchAll(/data-save-section="([^"]+)"/g),
       (match) => match[1],
     );
-    expect(sections).toEqual(["presets", "prompts", "mcp", "sync"]);
+    expect(sections).toEqual(["sync", "presets", "prompts", "mcp"]);
   });
 
   it("does not duplicate preference control IDs", () => {
@@ -221,12 +227,16 @@ describe("preference save controls", () => {
     expect(preferenceMarkup).toContain(
       '<html:option value="classic" data-zai-l10n="Classic (default)">原始排版（默认）</html:option>',
     );
-    expect(preferenceMarkup).toContain('value="compact" data-zai-l10n="Focus mode">专注模式');
+    expect(preferenceMarkup).toContain(
+      'value="compact" data-zai-l10n="Focus mode">专注模式',
+    );
     expect(preferenceMarkup).toContain('id="zai-ui-sidebar-display"');
     expect(preferenceMarkup).toContain(
       '<html:option value="embedded" data-zai-l10n="Reader sidebar (default)">阅读器侧栏（默认）</html:option>',
     );
-    expect(preferenceMarkup).toContain('value="docked" data-zai-l10n="Side by side on the right (same window)">右侧并排（同一主窗口）');
+    expect(preferenceMarkup).toContain(
+      'value="docked" data-zai-l10n="Side by side on the right (same window)">右侧并排（同一主窗口）',
+    );
     expect(preferenceMarkup).not.toContain('value="companion"');
     expect(preferenceMarkup).toContain(
       'id="zai-ui-confirm-conversation-deletion"',
@@ -234,8 +244,8 @@ describe("preference save controls", () => {
     expect(preferenceMarkup).toContain(
       'id="zai-ui-max-parallel-conversations"',
     );
-    expect(preferenceMarkup).toContain('同时回答的对话数');
-    expect(preferenceMarkup).toContain('删除对话前显示确认');
+    expect(preferenceMarkup).toContain("同时回答的对话数");
+    expect(preferenceMarkup).toContain("删除对话前显示确认");
   });
 
   it("uses a flat account picker instead of an account select", () => {
@@ -249,7 +259,7 @@ describe("preference save controls", () => {
     expect(preferenceMarkup).toContain('id="zai-ui-signature-add"');
     expect(preferenceMarkup).toContain('id="zai-ui-signature-enabled"');
     expect(preferenceMarkup).toContain('id="zai-ui-signature-count"');
-    expect(preferenceMarkup).toContain('旧版分号内容会自动拆分');
+    expect(preferenceMarkup).toContain("旧版分号内容会自动拆分");
   });
 
   it("groups settings in their editing workflow order", () => {
@@ -260,24 +270,52 @@ describe("preference save controls", () => {
       (match) => match[1],
     );
     expect(sectionTitles).toEqual([
+      "云账号",
       "常用设置",
       "PDF 工具",
       "扩展能力",
-      "数据管理",
     ]);
 
     const positions = [
+      ">云账号与同步（WebDAV）</html:div>",
+      ">本地配置与对话备份</html:div>",
       ">账号与模型</html:div>",
       ">沉浸阅读</html:div>",
       ">快捷提示词</html:div>",
       ">显示设置</html:div>",
       ">PDF 工具</html:div>",
       ">联网与 MCP</html:div>",
-      ">云同步（WebDAV）</html:div>",
-      ">配置备份</html:div>",
     ].map((marker) => preferenceMarkup.indexOf(marker));
     expect(positions.every((position) => position >= 0)).toBe(true);
     expect(positions).toEqual([...positions].sort((a, b) => a - b));
+  });
+
+  it("keeps local file backup visible and manual JSON tools collapsed", () => {
+    const doc = new Window().document;
+    doc.body.innerHTML = preferenceMarkup.replaceAll("html:", "");
+    const advanced = doc.getElementById("zai-config-advanced")!;
+    expect(advanced.hasAttribute("open")).toBe(false);
+    expect(advanced.querySelector("summary")?.textContent).toBe(
+      "高级：手动导入/导出 JSON",
+    );
+    for (const id of [
+      "zai-config-json",
+      "zai-config-generate",
+      "zai-config-copy",
+      "zai-config-import-text",
+      "zai-config-clear",
+    ]) {
+      expect(advanced.querySelector(`#${id}`)).not.toBeNull();
+    }
+    const card = advanced.closest(".zai-pref-card")!;
+    for (const id of ["zai-config-export-file", "zai-config-import-file"]) {
+      expect(card.querySelector(`#${id}`)).not.toBeNull();
+      expect(advanced.querySelector(`#${id}`)).toBeNull();
+    }
+    expect(card.textContent).toContain("不含 PDF 原文件、文献条目及笔记正文");
+    expect(card.textContent).toContain("MinerU 配置");
+    expect(card.textContent).toContain("备份包含 API Key 和私人对话内容");
+    expect(card.textContent).toContain("AI 对话、草稿与附带图片");
   });
 
   it("keeps PDF tools in one compact card", () => {
@@ -330,6 +368,82 @@ describe("preference save controls", () => {
     );
   });
 
+  it("explains the cloud payload, exclusions, credentials, and storage location", () => {
+    const syncCard = preferenceMarkup.slice(
+      preferenceMarkup.indexOf('data-save-section="sync"'),
+      preferenceMarkup.indexOf('data-zai-l10n="General settings"'),
+    );
+    expect(syncCard).toContain('id="zai-sync-scope" class="zai-sync-scope"');
+    for (const content of [
+      "API Key",
+      "快捷提示词",
+      "AI 对话及草稿",
+      "对话中附带的图片",
+      "翻译缓存",
+      "论文全文总览",
+      "PDF 注释",
+      "阅读位置",
+      "网络图工作区",
+      "不含 PDF 原文件",
+      "WebDAV 登录密码不写入同步文件",
+      "state.json",
+      "插件不额外加密",
+    ]) {
+      expect(syncCard).toContain(content);
+    }
+  });
+
+  it("collapses explanatory content while keeping account fields and main actions visible", () => {
+    const doc = new Window().document;
+    doc.body.innerHTML = preferenceMarkup.replaceAll("html:", "");
+    for (const id of [
+      "zai-sync-scope",
+      "zai-backup-scope",
+      "zai-sync-records",
+      "zai-config-advanced",
+    ]) {
+      expect(doc.getElementById(id)?.tagName).toBe("DETAILS");
+      expect(doc.getElementById(id)?.hasAttribute("open")).toBe(false);
+    }
+    for (const id of [
+      "zai-sync-url",
+      "zai-sync-username",
+      "zai-sync-password",
+      "zai-sync-folder",
+      "zai-sync-test",
+      "zai-sync-push",
+      "zai-sync-pull",
+      "zai-config-export-file",
+      "zai-config-import-file",
+    ]) {
+      expect(doc.getElementById(id)).not.toBeNull();
+      expect(doc.getElementById(id)?.closest("details, dialog")).toBeNull();
+    }
+    expect(doc.getElementById("zai-sync-meta")?.closest("details")?.id).toBe(
+      "zai-sync-records",
+    );
+    expect(
+      doc.getElementById("zai-sync-guide-dialog")?.hasAttribute("open"),
+    ).toBe(false);
+  });
+
+  it("opens account setup help in a dialog and closes it with the button or Escape", () => {
+    const win = new Window();
+    const doc = win.document;
+    doc.body.innerHTML = preferenceMarkup.replaceAll("html:", "");
+    bindSyncHelpDialog(doc as unknown as Document);
+    const trigger = doc.getElementById("zai-sync-guide-open")!;
+    const dialog = doc.getElementById("zai-sync-guide-dialog")!;
+    trigger.click();
+    expect(dialog.hasAttribute("open")).toBe(true);
+    expect(dialog.textContent).toContain("第三方应用管理");
+    doc.getElementById("zai-sync-guide-close")!.click();
+    expect(dialog.hasAttribute("open")).toBe(false);
+    trigger.click();
+    dialog.dispatchEvent(new win.Event("cancel", { cancelable: true }));
+    expect(dialog.hasAttribute("open")).toBe(false);
+  });
+
   it("orders WebDAV controls around the setup workflow", () => {
     const syncCard = preferenceMarkup.slice(
       preferenceMarkup.indexOf('data-save-section="sync"'),
@@ -354,9 +468,9 @@ describe("preference save controls", () => {
     expect(preferenceMarkup).toContain("全文翻译首次使用时从这里继承");
     expect(preferenceMarkup).toContain("MinerU 文档解析");
     expect(preferenceMarkup).toContain("zai-mineru-token");
-    expect(preferenceMarkup.indexOf(">MinerU 文档解析</html:div>")).toBeGreaterThan(
-      preferenceMarkup.indexOf(">账号与模型</html:div>"),
-    );
+    expect(
+      preferenceMarkup.indexOf(">MinerU 文档解析</html:div>"),
+    ).toBeGreaterThan(preferenceMarkup.indexOf(">账号与模型</html:div>"));
     expect(preferenceMarkup.indexOf('id="zai-mineru-token"')).toBeLessThan(
       preferenceMarkup.indexOf(">沉浸阅读</html:div>"),
     );
@@ -406,5 +520,29 @@ describe("preference save controls", () => {
     ]) {
       expect(legacyControls).toContain(`id="${id}"`);
     }
+  });
+});
+
+describe("compact sync record summary", () => {
+  it("shows the latest event in a readable local date format", () => {
+    vi.stubGlobal("Zotero", { locale: "zh-CN", Prefs: { get: () => "zh-CN" } });
+    const summary = formatSyncSummary({
+      ...DEFAULT_SYNC_ACCOUNT,
+      lastPushAt: "2026-10-24T01:00:00Z",
+      lastPullAt: "2026-10-24T02:00:00Z",
+      lastAutoSyncAt: "2026-10-23T12:00:00Z",
+    });
+    expect(summary).toMatch(/^最近下载：/);
+    expect(summary).toContain("2026");
+    expect(summary).not.toContain("T02:00:00Z");
+    expect(summary).not.toContain("上次上传");
+  });
+
+  it("handles an account without valid sync records", () => {
+    vi.stubGlobal("Zotero", { locale: "en-US", Prefs: { get: () => "en-US" } });
+    expect(formatSyncSummary(DEFAULT_SYNC_ACCOUNT)).toBe("No sync history yet");
+    expect(
+      formatSyncSummary({ ...DEFAULT_SYNC_ACCOUNT, lastPushAt: "invalid" }),
+    ).toBe("No sync history yet");
   });
 });

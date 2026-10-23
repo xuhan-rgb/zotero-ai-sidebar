@@ -19,6 +19,8 @@ import { createZToolkit } from "./utils/ztoolkit";
 import { zoteroContextSource } from "./context/zotero-source";
 import {
   refreshSidebarPreferences,
+  hasRunningSidebarTasks,
+  reloadSidebarConversations,
   getActiveSidebarPresetId,
   tryFocusPendingPreference,
   registerSidebar,
@@ -38,6 +40,8 @@ import {
 } from "./modules/preset-utils";
 import {
   dispatchPreferenceChange,
+  bindSyncHelpDialog,
+  formatSyncSummary,
   formatPreferenceSaveSections,
   hasUnsavedPresetChanges,
   PREFERENCE_SAVE_SECTIONS,
@@ -148,6 +152,13 @@ import {
   type LocalUiSettings,
 } from "./settings/local-ui-settings";
 import { pullFromCloud, pushToCloud, testSyncConnection } from "./sync";
+import {
+  applySyncSnapshot,
+  buildSyncSnapshot,
+  parseSyncSnapshot,
+  SYNC_SCHEMA,
+  type SyncSnapshot,
+} from "./sync/state";
 import {
   loadSyncAccount,
   saveSyncAccount,
@@ -605,7 +616,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
   byID<HTMLButtonElement>(doc, "zai-config-generate")?.addEventListener(
     "click",
     () => {
-      generateConfigBackupJson(doc);
+      void generateConfigBackupJson(doc);
     },
   );
   byID<HTMLButtonElement>(doc, "zai-config-copy")?.addEventListener(
@@ -617,7 +628,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
   byID<HTMLButtonElement>(doc, "zai-config-import-text")?.addEventListener(
     "click",
     () => {
-      importConfigBackupFromText(doc);
+      void importConfigBackupFromText(doc);
     },
   );
   byID<HTMLButtonElement>(doc, "zai-config-clear")?.addEventListener(
@@ -628,6 +639,7 @@ function setupPreferencesPane(win: Window, forceRender = false): void {
       setStatus(doc, "zai-config-status", uiText("手动备份文本已清空。", "Manual backup text cleared."));
     },
   );
+  bindSyncHelpDialog(doc);
   byID<HTMLButtonElement>(doc, "zai-sync-test")?.addEventListener(
     "click",
     () => {
@@ -1036,20 +1048,14 @@ async function runAutoSync(doc?: Document): Promise<void> {
   }
 }
 
-const CONFIG_BACKUP_SCHEMA = "zotero-ai-sidebar.config.v1";
-
-interface ConfigBackup {
-  schema: typeof CONFIG_BACKUP_SCHEMA;
-  exportedAt: string;
-  presets: ModelPreset[];
-  uiSettings: UiSettings;
-  quickPrompts: QuickPromptSettings;
-  toolSettings: ToolSettings;
-  translateSettings: TranslateSettings;
+interface ConfigBackup extends SyncSnapshot {
   mineruSettings: MineruSettings;
+  localUiSettings: LocalUiSettings;
 }
 
 interface ParsedConfigBackup {
+  snapshot?: SyncSnapshot;
+  localUiSettings?: LocalUiSettings;
   presets?: ModelPreset[];
   uiSettings?: UiSettings;
   quickPrompts?: QuickPromptSettings;
@@ -1059,39 +1065,39 @@ interface ParsedConfigBackup {
   sections: string[];
 }
 
-function buildConfigBackup(): ConfigBackup {
+async function buildConfigBackup(): Promise<ConfigBackup> {
+  const prefs = zoteroPrefs();
   return {
-    schema: CONFIG_BACKUP_SCHEMA,
-    exportedAt: new Date().toISOString(),
-    presets: loadPresets(zoteroPrefs()),
-    uiSettings: loadUiSettings(zoteroPrefs()),
-    quickPrompts: loadQuickPromptSettings(zoteroPrefs()),
-    toolSettings: loadToolSettings(zoteroPrefs()),
-    translateSettings: loadTranslateSettings(zoteroPrefs()),
-    mineruSettings: loadMineruSettings(zoteroPrefs()),
+    ...(await buildSyncSnapshot(prefs)),
+    mineruSettings: loadMineruSettings(prefs),
+    localUiSettings: loadLocalUiSettings(prefs),
   };
 }
 
-function configBackupJson(): string {
-  return JSON.stringify(buildConfigBackup(), null, 2);
+async function configBackupJson(): Promise<string> {
+  return JSON.stringify(await buildConfigBackup(), null, 2);
 }
 
 function configBackupFileName(): string {
-  return `zotero-ai-sidebar-config-${new Date().toISOString().slice(0, 10)}.json`;
+  return `zotero-ai-sidebar-backup-${new Date().toISOString().slice(0, 10)}.json`;
 }
 
 async function exportConfigBackupFile(doc: Document): Promise<void> {
   try {
     const path = await pickConfigBackupFile(doc, "save");
     if (!path) {
-      setStatus(doc, "zai-config-status", uiText("已取消导出。", "Export cancelled."));
+      setStatus(
+        doc,
+        "zai-config-status",
+        uiText("已取消导出。", "Export cancelled."),
+      );
       return;
     }
-    await Zotero.File.putContentsAsync(path, configBackupJson());
+    await Zotero.File.putContentsAsync(path, await configBackupJson());
     setStatus(
       doc,
       "zai-config-status",
-      `${uiText("配置备份已保存", "Configuration backup saved")}: ${path}`,
+      `${uiText("配置与对话备份已保存", "Settings and conversation backup saved")}: ${path}`,
     );
     flashButton(
       byID<HTMLButtonElement>(doc, "zai-config-export-file"),
@@ -1111,13 +1117,25 @@ async function importConfigBackupFile(doc: Document): Promise<void> {
   try {
     const path = await pickConfigBackupFile(doc, "open");
     if (!path) {
-      setStatus(doc, "zai-config-status", uiText("已取消导入。", "Import cancelled."));
+      setStatus(
+        doc,
+        "zai-config-status",
+        uiText("已取消导入。", "Import cancelled."),
+      );
       return;
     }
     const contents = await Zotero.File.getContentsAsync(path, "utf-8");
-    if (typeof contents !== "string") throw new Error(uiText("配置文件不是文本内容", "The configuration file is not text."));
+    if (typeof contents !== "string")
+      throw new Error(
+        uiText("配置文件不是文本内容", "The configuration file is not text."),
+      );
     const raw = contents;
-    importConfigBackupRaw(doc, raw, uiText("配置文件", "configuration file"), "zai-config-import-file");
+    await importConfigBackupRaw(
+      doc,
+      raw,
+      uiText("备份文件", "backup file"),
+      "zai-config-import-file",
+    );
   } catch (err) {
     setStatus(
       doc,
@@ -1128,77 +1146,136 @@ async function importConfigBackupFile(doc: Document): Promise<void> {
   }
 }
 
-function generateConfigBackupJson(doc: Document): void {
+async function generateConfigBackupJson(doc: Document): Promise<boolean> {
   const area = byID<HTMLTextAreaElement>(doc, "zai-config-json");
-  if (!area) return;
-  const backup = buildConfigBackup();
-  area.value = JSON.stringify(backup, null, 2);
-  area.focus();
-  area.select();
-  setStatus(
-    doc,
-    "zai-config-status",
-    uiText(
-      `已生成配置 JSON：账号 ${backup.presets.length} 个，自定义按钮 ${backup.quickPrompts.customButtons.length} 个，含翻译设置。内容可能包含 API Key。`,
-      `Configuration JSON generated: ${backup.presets.length} accounts, ${backup.quickPrompts.customButtons.length} custom buttons, and translation settings. It may contain API keys.`,
-    ),
-  );
-  flashButton(byID<HTMLButtonElement>(doc, "zai-config-generate"), uiText("已生成", "Generated"));
+  if (!area) return false;
+  try {
+    const backup = await buildConfigBackup();
+    area.value = JSON.stringify(backup, null, 2);
+    area.focus();
+    area.select();
+    setStatus(
+      doc,
+      "zai-config-status",
+      uiText(
+        `已生成备份 JSON：账号 ${backup.presets.length} 个、AI 对话 ${backup.threads?.length ?? 0} 个，包含翻译缓存和阅读数据。内容包含 API Key 和对话内容。`,
+        `Backup JSON generated: ${backup.presets.length} accounts and ${backup.threads?.length ?? 0} AI conversations, including translation caches and reading data. Contains API keys and conversation content.`,
+      ),
+    );
+    flashButton(
+      byID<HTMLButtonElement>(doc, "zai-config-generate"),
+      uiText("已生成", "Generated"),
+    );
+    return true;
+  } catch (err) {
+    setStatus(
+      doc,
+      "zai-config-status",
+      fileErrorMessage(uiText("生成备份失败", "Backup generation failed"), err),
+      true,
+    );
+    return false;
+  }
 }
 
 async function copyConfigBackupJson(doc: Document): Promise<void> {
   const area = byID<HTMLTextAreaElement>(doc, "zai-config-json");
   if (!area) return;
-  if (!area.value.trim()) generateConfigBackupJson(doc);
+  if (!area.value.trim() && !(await generateConfigBackupJson(doc))) return;
   await writeTextToClipboard(doc, area.value);
   setStatus(
     doc,
     "zai-config-status",
-    uiText("配置 JSON 已复制。内容可能包含 API Key。", "Configuration JSON copied. It may contain API keys."),
+    uiText(
+      "备份 JSON 已复制，包含 API Key 和对话内容。",
+      "Backup JSON copied. Contains API keys and conversation content.",
+    ),
   );
-  flashButton(byID<HTMLButtonElement>(doc, "zai-config-copy"), uiText("已复制", "Copied"));
+  flashButton(
+    byID<HTMLButtonElement>(doc, "zai-config-copy"),
+    uiText("已复制", "Copied"),
+  );
 }
 
-function importConfigBackupFromText(doc: Document): void {
+async function importConfigBackupFromText(doc: Document): Promise<void> {
   const area = byID<HTMLTextAreaElement>(doc, "zai-config-json");
   const raw = area?.value.trim() ?? "";
   if (!raw) {
-    setStatus(doc, "zai-config-status", uiText("请先粘贴配置 JSON。", "Paste configuration JSON first."), true);
+    setStatus(
+      doc,
+      "zai-config-status",
+      uiText("请先粘贴配置 JSON。", "Paste configuration JSON first."),
+      true,
+    );
     return;
   }
-  importConfigBackupRaw(doc, raw, uiText("文本", "text"), "zai-config-import-text");
+  try {
+    await importConfigBackupRaw(
+      doc,
+      raw,
+      uiText("文本", "text"),
+      "zai-config-import-text",
+    );
+  } catch (err) {
+    setStatus(
+      doc,
+      "zai-config-status",
+      fileErrorMessage(uiText("导入失败", "Import failed"), err),
+      true,
+    );
+  }
 }
 
-function importConfigBackupRaw(
+async function importConfigBackupRaw(
   doc: Document,
   raw: string,
   source: string,
   buttonID?: string,
-): void {
+): Promise<void> {
   const parsed = parseConfigBackup(raw);
   if (typeof parsed === "string") {
     setStatus(doc, "zai-config-status", parsed, true);
     return;
   }
+  if (parsed.snapshot && hasRunningSidebarTasks()) {
+    throw new Error(
+      uiText(
+        "请先停止正在生成的 AI 回答，再导入对话备份。",
+        "Stop active AI responses before importing a conversation backup.",
+      ),
+    );
+  }
   const sectionSeparator = uiText("、", ", ");
   const ok =
     doc.defaultView?.confirm(
       uiText(
-        `导入会覆盖当前已保存的 ${parsed.sections.join("、")} 配置，确定继续？`,
-        `Importing will overwrite the saved ${parsed.sections.join(sectionSeparator)} settings. Continue?`,
+        parsed.snapshot
+          ? "导入将覆盖插件设置，并合并 AI 对话、翻译缓存、PDF 注释和阅读数据，不会清空其它已有对话。文献需先通过 Zotero 同步。继续？"
+          : `导入会覆盖当前已保存的 ${parsed.sections.join("、")} 配置，确定继续？`,
+        parsed.snapshot
+          ? "Import will overwrite plugin settings and merge AI conversations, translation caches, PDF annotations, and reading data without clearing other conversations. Sync the library with Zotero first. Continue?"
+          : `Importing will overwrite the saved ${parsed.sections.join(sectionSeparator)} settings. Continue?`,
       ),
     ) ?? true;
   if (!ok) return;
 
-  if (parsed.presets) savePresets(zoteroPrefs(), parsed.presets);
-  if (parsed.uiSettings) saveUiSettings(zoteroPrefs(), parsed.uiSettings);
-  if (parsed.quickPrompts) {
-    saveQuickPromptSettings(zoteroPrefs(), parsed.quickPrompts);
+  const applied = parsed.snapshot
+    ? await applySyncSnapshot(zoteroPrefs(), parsed.snapshot)
+    : null;
+  if (!parsed.snapshot) {
+    if (parsed.presets) savePresets(zoteroPrefs(), parsed.presets);
+    if (parsed.uiSettings) saveUiSettings(zoteroPrefs(), parsed.uiSettings);
+    if (parsed.quickPrompts) {
+      saveQuickPromptSettings(zoteroPrefs(), parsed.quickPrompts);
+    }
+    if (parsed.toolSettings)
+      saveToolSettings(zoteroPrefs(), parsed.toolSettings);
+    if (parsed.translateSettings) {
+      saveTranslateSettings(zoteroPrefs(), parsed.translateSettings);
+    }
   }
-  if (parsed.toolSettings) saveToolSettings(zoteroPrefs(), parsed.toolSettings);
-  if (parsed.translateSettings) {
-    saveTranslateSettings(zoteroPrefs(), parsed.translateSettings);
-  }
+  if (parsed.localUiSettings)
+    saveLocalUiSettings(zoteroPrefs(), parsed.localUiSettings);
   if (parsed.mineruSettings) {
     saveMineruSettings(zoteroPrefs(), parsed.mineruSettings);
   }
@@ -1210,6 +1287,7 @@ function importConfigBackupRaw(
   if (parsed.quickPrompts) renderPromptSettings(doc);
   if (parsed.toolSettings) renderToolSettings(doc);
   refreshAllPreferenceDirtySections(doc);
+  if (parsed.snapshot) await reloadSidebarConversations();
   refreshSidebarPreferences();
   setStatus(
     doc,
@@ -1219,7 +1297,23 @@ function importConfigBackupRaw(
       `Imported ${parsed.sections.join(sectionSeparator)} from ${source}. Sidebar refreshed.`,
     ),
   );
-  if (buttonID) flashButton(byID<HTMLButtonElement>(doc, buttonID), uiText("已导入", "Imported"));
+  if (applied) {
+    const unresolved =
+      applied.threads.unresolved + applied.annotations.unresolved;
+    setStatus(
+      doc,
+      "zai-config-status",
+      uiText(
+        `备份已导入：AI 对话 ${applied.threads.imported} 个，未变化 ${applied.threads.unchanged} 个；未匹配文献或 PDF ${unresolved} 项。${unresolved ? "请先完成 Zotero 文献同步，再导入同一备份。" : ""}`,
+        `Backup imported: ${applied.threads.imported} AI conversations, ${applied.threads.unchanged} unchanged; ${unresolved} unmatched library/PDF entries.${unresolved ? " Sync the Zotero library, then import the same backup again." : ""}`,
+      ),
+    );
+  }
+  if (buttonID)
+    flashButton(
+      byID<HTMLButtonElement>(doc, buttonID),
+      uiText("已导入", "Imported"),
+    );
 }
 
 async function pickConfigBackupFile(
@@ -1241,11 +1335,11 @@ async function pickConfigBackupFile(
   picker.init(
     win.browsingContext,
     mode === "save"
-      ? uiText("导出配置文件", "Export configuration file")
-      : uiText("导入配置文件", "Import configuration file"),
+      ? uiText("导出备份文件", "Export backup file")
+      : uiText("导入备份文件", "Import backup file"),
     mode === "save" ? nsFilePicker.modeSave : nsFilePicker.modeOpen,
   );
-  picker.appendFilter(uiText("JSON 配置文件", "JSON configuration files"), "*.json");
+  picker.appendFilter(uiText("JSON 备份文件", "JSON backup files"), "*.json");
   picker.appendFilters(nsFilePicker.filterAll ?? 1);
   picker.defaultExtension = "json";
   if (mode === "save") picker.defaultString = configBackupFileName();
@@ -1298,37 +1392,61 @@ function parseConfigBackup(raw: string): ParsedConfigBackup | string {
   try {
     parsed = JSON.parse(raw);
   } catch {
-    return uiText("配置 JSON 解析失败，请检查是否完整复制。", "Could not parse configuration JSON. Check that it was copied completely.");
+    return uiText(
+      "配置 JSON 解析失败，请检查是否完整复制。",
+      "Could not parse configuration JSON. Check that it was copied completely.",
+    );
   }
-  if (!isRecord(parsed)) return uiText("配置 JSON 顶层必须是对象。", "The top level of the configuration JSON must be an object.");
+  if (!isRecord(parsed))
+    return uiText(
+      "配置 JSON 顶层必须是对象。",
+      "The top level of the configuration JSON must be an object.",
+    );
 
   const sections: string[] = [];
   const result: ParsedConfigBackup = { sections };
   if (hasOwn(parsed, "presets")) {
-    if (!Array.isArray(parsed.presets)) return uiText("配置里的 presets 必须是数组。", "The presets field must be an array.");
+    if (!Array.isArray(parsed.presets))
+      return uiText(
+        "配置里的 presets 必须是数组。",
+        "The presets field must be an array.",
+      );
     result.presets = normalizePresetList(parsed.presets);
     sections.push(uiText("账号", "Accounts"));
   }
   if (hasOwn(parsed, "uiSettings")) {
-    if (!isRecord(parsed.uiSettings)) return uiText("配置里的 uiSettings 必须是对象。", "The uiSettings field must be an object.");
+    if (!isRecord(parsed.uiSettings))
+      return uiText(
+        "配置里的 uiSettings 必须是对象。",
+        "The uiSettings field must be an object.",
+      );
     result.uiSettings = normalizeUiSettings(parsed.uiSettings);
     sections.push(uiText("显示", "Display"));
   }
   if (hasOwn(parsed, "quickPrompts")) {
     if (!isRecord(parsed.quickPrompts))
-      return uiText("配置里的 quickPrompts 必须是对象。", "The quickPrompts field must be an object.");
+      return uiText(
+        "配置里的 quickPrompts 必须是对象。",
+        "The quickPrompts field must be an object.",
+      );
     result.quickPrompts = normalizeQuickPromptSettings(parsed.quickPrompts);
     sections.push(uiText("提示词", "Prompts"));
   }
   if (hasOwn(parsed, "toolSettings")) {
     if (!isRecord(parsed.toolSettings))
-      return uiText("配置里的 toolSettings 必须是对象。", "The toolSettings field must be an object.");
+      return uiText(
+        "配置里的 toolSettings 必须是对象。",
+        "The toolSettings field must be an object.",
+      );
     result.toolSettings = normalizeToolSettings(parsed.toolSettings);
     sections.push(uiText("联网/MCP", "Web/MCP"));
   }
   if (hasOwn(parsed, "translateSettings")) {
     if (!isRecord(parsed.translateSettings)) {
-      return uiText("配置里的 translateSettings 必须是对象。", "The translateSettings field must be an object.");
+      return uiText(
+        "配置里的 translateSettings 必须是对象。",
+        "The translateSettings field must be an object.",
+      );
     }
     result.translateSettings = normalizeTranslateSettings(
       parsed.translateSettings,
@@ -1337,13 +1455,46 @@ function parseConfigBackup(raw: string): ParsedConfigBackup | string {
   }
   if (hasOwn(parsed, "mineruSettings")) {
     if (!isRecord(parsed.mineruSettings)) {
-      return uiText("配置里的 mineruSettings 必须是对象。", "The mineruSettings field must be an object.");
+      return uiText(
+        "配置里的 mineruSettings 必须是对象。",
+        "The mineruSettings field must be an object.",
+      );
     }
     result.mineruSettings = normalizeMineruSettings(parsed.mineruSettings);
     sections.push("MinerU");
   }
+  if (hasOwn(parsed, "localUiSettings")) {
+    if (!isRecord(parsed.localUiSettings))
+      return uiText(
+        "localUiSettings 必须是对象。",
+        "localUiSettings must be an object.",
+      );
+    result.localUiSettings = normalizeLocalUiSettings(parsed.localUiSettings);
+    sections.push(uiText("本机界面", "Local interface"));
+  }
+  if (parsed.schema === SYNC_SCHEMA) {
+    try {
+      result.snapshot = parseSyncSnapshot(raw);
+    } catch (err) {
+      return fileErrorMessage(
+        uiText("备份解析失败", "Backup parse failed"),
+        err,
+      );
+    }
+    sections.push(
+      uiText("AI 对话与阅读数据", "AI conversations and reading data"),
+    );
+  } else if (hasOwn(parsed, "threads")) {
+    return uiText(
+      "不支持此对话备份格式，未导入任何内容。",
+      "Unsupported conversation backup format. Nothing was imported.",
+    );
+  }
   if (sections.length === 0) {
-    return uiText("没有找到可导入的配置段：presets / uiSettings / quickPrompts / toolSettings / translateSettings / mineruSettings。", "No importable settings found. Expected one or more of: presets / uiSettings / quickPrompts / toolSettings / translateSettings / mineruSettings.");
+    return uiText(
+      "没有找到可导入的配置段：presets / uiSettings / quickPrompts / toolSettings / translateSettings / mineruSettings。",
+      "No importable settings found. Expected one or more of: presets / uiSettings / quickPrompts / toolSettings / translateSettings / mineruSettings.",
+    );
   }
   return result;
 }
@@ -1915,6 +2066,8 @@ function renderSyncAccountState(doc: Document, account: SyncAccount): void {
       ? uiText("已开启：启动时和每 10 分钟自动从云端下载合并，再上传到云端", "On: downloads and merges from cloud at startup and every 10 minutes, then uploads.")
       : uiText("已关闭：点击后开启自动下载合并 + 上传", "Off: click to enable automatic download, merge, and upload");
   }
+  const summary = byID<HTMLElement>(doc, "zai-sync-summary");
+  if (summary) summary.textContent = formatSyncSummary(account);
   const meta = byID<HTMLElement>(doc, "zai-sync-meta");
   if (meta) meta.textContent = formatSyncMeta(account);
 }

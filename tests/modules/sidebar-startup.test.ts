@@ -206,6 +206,8 @@ describe("sidebar startup", () => {
         compilerOptions: { target: ts.ScriptTarget.ES2022 },
       }).outputText;
       const enterDocked = vi.fn();
+      const resize = vi.fn();
+      (win as any).resizeBy = resize;
       const toggle = new Function(
         "states",
         "enterDockedSidebarLayout",
@@ -213,11 +215,19 @@ describe("sidebar startup", () => {
         "updateToggleButton",
         "renderWindowSidebar",
         "closeSidebarNoteColumn",
+        "isColumnCollapsed",
+        "loadReaderLayoutPrefs",
+        "DOCKED_AI_SPLITTER_WIDTH",
+        "preserveMessagesScrollOnToggle",
         `${toggleJs}; return setColumnCollapsed;`,
-      )(states, enterDocked, vi.fn(), vi.fn(), vi.fn(), vi.fn());
+      )(states, enterDocked, vi.fn(), vi.fn(), vi.fn(), vi.fn(),
+        () => sidebar.column.hasAttribute("collapsed"),
+        () => ({ dockedAiWidth: 480 }), 4,
+        (_mount: unknown, _collapsed: boolean, mutate: () => void) => mutate());
       toggle(win, sidebar, false);
       if (mode === "docked") {
         expect(enterDocked).toHaveBeenCalledWith(win, sidebar);
+        expect(resize).toHaveBeenCalledWith(484, 0);
       } else {
         expect(sidebar.column.hasAttribute("collapsed")).toBe(false);
         expect(sidebar.splitter.hasAttribute("hidden")).toBe(false);

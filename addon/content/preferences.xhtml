@@ -115,19 +115,20 @@
       } #zotero-ai-sidebar-tool-settings .zai-sync-mode-desc { color: #666;
       font-size: 12px; line-height: 1.35; } #zotero-ai-sidebar-tool-settings
       .zai-sync-scope { margin: -2px 0 10px; } #zotero-ai-sidebar-tool-settings
-      .zai-sync-scope > summary, #zotero-ai-sidebar-tool-settings
-      .zai-sync-guide > summary { cursor: pointer; color: #315f43; font-weight:
-      700; } #zotero-ai-sidebar-tool-settings .zai-sync-scope .zai-pref-help {
-      margin: 6px 0 0; font-size: 12px; } #zotero-ai-sidebar-tool-settings
-      .zai-sync-guide { grid-column: 2; margin: -2px 0 2px; }
-      #zotero-ai-sidebar-tool-settings .zai-sync-guide[open] > summary {
-      margin-bottom: 8px; } #zotero-ai-sidebar-tool-settings .zai-sync-guide ol
-      { margin: 8px 0 6px; padding-left: 24px; color: #555; line-height: 1.55; }
-      #zotero-ai-sidebar-tool-settings .zai-sync-guide-note { margin: 6px 0;
-      padding: 7px 9px; border-left: 3px solid rgba(176,117,24,0.65);
-      background: rgba(176,117,24,0.08); color: #725018; font-size: 12px;
-      line-height: 1.45; } #zotero-ai-sidebar-tool-settings .zai-sync-guide a {
-      color: #2f7046; } #zotero-ai-sidebar-tool-settings #zai-sync-test {
+      .zai-sync-scope > summary { cursor: pointer; color: #315f43; font-weight: 700; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-scope .zai-pref-help { margin: 6px 0 0; font-size: 12px; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-guide { grid-column: 2; justify-self: start; padding: 0; border: 0; background: transparent; color: #315f43; cursor: pointer; }
+      #zotero-ai-sidebar-tool-settings .zai-pref-help-dialog { width: 520px; max-width: calc(100vw - 48px); max-height: calc(100vh - 48px); box-sizing: border-box; overflow: auto; padding: 20px; border: 1px solid rgba(80,70,55,0.22); border-radius: 12px; background: var(--material-background, #fff); color: var(--fill-primary, #222); box-shadow: 0 12px 40px rgba(0,0,0,0.2); }
+      #zotero-ai-sidebar-tool-settings .zai-pref-help-dialog::backdrop { background: rgba(0,0,0,0.25); }
+      #zotero-ai-sidebar-tool-settings .zai-pref-help-dialog h3 { margin: 0 0 12px; }
+      #zotero-ai-sidebar-tool-settings .zai-pref-help-dialog ol { margin: 8px 0 12px; padding-left: 24px; line-height: 1.6; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-guide-note { margin: 8px 0; font-size: 12px; line-height: 1.45; }
+      #zotero-ai-sidebar-tool-settings .zai-pref-help-dialog a { color: #2f7046; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-records { margin-top: 8px; font-size: 12px; color: #666; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-records > summary { cursor: pointer; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-records-action { margin-inline-start: 10px; color: #315f43; }
+      #zotero-ai-sidebar-tool-settings .zai-sync-records .zai-pref-help { margin: 6px 0 0; overflow-wrap: anywhere; }
+      #zotero-ai-sidebar-tool-settings #zai-sync-test {
       background: #3f8458; border-color: #3f8458; color: #fff; font-weight: 700;
       } #zotero-ai-sidebar-tool-settings .zai-switch { position: relative; flex:
       0 0 auto; min-width: 76px; border: 0; border-radius: 999px; padding: 3px;
@@ -396,6 +397,162 @@
         <html:button id="zai-save-discard" type="button" data-zai-l10n="Discard">撤销</html:button>
         <html:button id="zai-save-commit" type="button" data-zai-l10n="Save changes">保存更改</html:button>
       </html:div>
+    </html:div>
+
+    <html:div class="zai-page-section-title" data-zai-l10n="Cloud account">云账号</html:div>
+    <html:div class="zai-pref-card" data-save-section="sync">
+      <html:div class="zai-pref-title" data-zai-l10n="Cloud account and sync (WebDAV)">云账号与同步（WebDAV）</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Sync settings, AI conversations, and reading data across devices. PDF files are not included.">
+        跨设备同步配置、AI 对话和阅读数据，不含 PDF 原文件。
+      </html:p>
+      <html:details id="zai-sync-scope" class="zai-sync-scope">
+        <html:summary class="zai-pref-subtitle" data-zai-l10n="Sync scope and storage details">同步范围与存储说明</html:summary>
+        <html:ul class="zai-pref-help">
+          <html:li data-zai-l10n="Settings: AI provider accounts and API keys, model settings, quick prompts, interface settings, web/MCP, and translation/reading settings.">设置：AI 服务账号与 API Key、模型配置、快捷提示词、界面设置、联网/MCP 及翻译与阅读设置。</html:li>
+          <html:li data-zai-l10n="Conversations and caches: AI conversations and drafts, images attached to conversations, translation caches, and paper overviews.">对话与缓存：AI 对话及草稿、对话中附带的图片、翻译缓存和论文全文总览。</html:li>
+          <html:li data-zai-l10n="Reading data: PDF annotations, reading positions, and network diagram workspaces, including revisions, evidence pointers, and their conversations.">阅读数据：PDF 注释、阅读位置、网络图工作区（含版本、证据引用及其对话）。</html:li>
+        </html:ul>
+        <html:p class="zai-pref-help" data-zai-l10n="PDF files, bibliographic records, and note contents continue to use Zotero's own sync. The WebDAV login password is not included in the sync file.">
+          PDF 原文件、文献条目及元数据、笔记正文继续由 Zotero 自带同步处理；WebDAV 登录密码不写入同步文件。
+        </html:p>
+        <html:p class="zai-pref-help" data-zai-l10n="The sync file is state.json inside the cloud folder below. It contains API keys and is not additionally encrypted by the plugin; use trusted cloud storage. Auto-sync is off by default.">
+          同步文件保存在下方云端目录中的 state.json，包含 API Key，插件不额外加密，请使用可信云盘。自动同步默认关闭。
+        </html:p>
+      </html:details>
+      <html:div class="zai-pref-grid">
+        <html:label for="zai-sync-url">WebDAV URL</html:label>
+        <html:input
+          id="zai-sync-url"
+          type="text"
+          value="https://dav.jianguoyun.com/dav/"
+          placeholder="例如：https://dav.jianguoyun.com/dav/" data-zai-l10n-placeholder="For example: https://dav.jianguoyun.com/dav/"
+        />
+        <html:label for="zai-sync-username" data-zai-l10n="Username">用户名</html:label>
+        <html:input
+          id="zai-sync-username"
+          type="text"
+          placeholder="坚果云：你的注册邮箱" data-zai-l10n-placeholder="Nutstore: your registered email"
+        />
+        <html:label for="zai-sync-password" data-zai-l10n="Password / app password">密码 / 应用密码</html:label>
+        <html:input
+          id="zai-sync-password"
+          type="password"
+          placeholder="坚果云需在网页端「安全选项」生成应用密码" data-zai-l10n-placeholder="Create an app password under “Security options” on the Nutstore website"
+        />
+        <html:button id="zai-sync-guide-open" class="zai-sync-guide" type="button" aria-haspopup="dialog" aria-controls="zai-sync-guide-dialog" data-zai-l10n="How to set up?">如何配置？</html:button>
+        <html:dialog id="zai-sync-guide-dialog" class="zai-pref-help-dialog" aria-labelledby="zai-sync-guide-title">
+          <html:h3 id="zai-sync-guide-title" data-zai-l10n="How do I find my Nutstore email and app password?">如何获取坚果云邮箱和应用密码？</html:h3>
+          <html:ol>
+            <html:li data-zai-l10n="Sign in to Nutstore on the web and open “Account information → Security options”.">登录坚果云网页版，进入“账户信息 → 安全选项”。</html:li>
+            <html:li data-zai-l10n="Enter your Nutstore registration email as the username.">用户名填写坚果云注册邮箱。</html:li>
+            <html:li
+               data-zai-l10n="Add an app password under “Third-party app management”. You can name it “Zotero AI Sidebar”; enter it in the password field above.">在“第三方应用管理”中添加应用密码，名称可填写“Zotero AI
+              Sidebar”，生成后填入上方密码框。</html:li
+            >
+          </html:ol>
+          <html:p class="zai-sync-guide-note" data-zai-l10n="Use the newly generated app password, not your Nutstore login password. Delete and regenerate it immediately if it is exposed.">
+            请使用新生成的应用密码，不要填写坚果云登录密码。应用密码泄露后应立即删除并重新生成。
+          </html:p>
+          <html:a
+            id="zai-sync-nutstore-help"
+            href="https://help.jianguoyun.com/?p=2064"
+            target="_blank"
+            rel="noreferrer"
+             data-zai-l10n="View Nutstore’s official WebDAV guide">查看坚果云官方 WebDAV 教程</html:a
+          >
+          <html:div class="zai-pref-actions zai-actions-end">
+            <html:button id="zai-sync-guide-close" type="button" autofocus="autofocus" data-zai-l10n="Close">关闭</html:button>
+          </html:div>
+        </html:dialog>
+        <html:label for="zai-sync-folder" data-zai-l10n="Remote folder">云端目录</html:label>
+        <html:input
+          id="zai-sync-folder"
+          type="text"
+          value="zotero-ai-sidebar"
+          placeholder="zotero-ai-sidebar"
+        />
+      </html:div>
+      <html:div class="zai-pref-actions">
+        <html:button id="zai-sync-test" type="button" data-zai-l10n="Test connection">测试连接</html:button>
+        <html:button id="zai-sync-push" type="button" data-zai-l10n="Upload to cloud">上传到云端</html:button>
+        <html:button id="zai-sync-pull" type="button" data-zai-l10n="Download from cloud">从云端下载</html:button>
+        <html:span id="zai-sync-status" class="zai-pref-status"></html:span>
+      </html:div>
+      <html:div class="zai-sync-mode">
+        <html:div class="zai-sync-mode-text">
+          <html:div class="zai-sync-mode-title" data-zai-l10n="Auto-sync">自动同步</html:div>
+          <html:div class="zai-sync-mode-desc"
+             data-zai-l10n="Off by default. Syncs at startup and every 10 minutes when enabled.">默认关闭；开启后启动时及每 10 分钟同步。</html:div
+          >
+        </html:div>
+        <html:button
+          id="zai-sync-auto"
+          class="zai-switch"
+          type="button"
+          aria-pressed="false"
+          data-enabled="false"
+        >
+          <html:span class="zai-switch-label" data-zai-l10n="Off">关闭</html:span></html:button
+        >
+      </html:div>
+      <html:details id="zai-sync-records" class="zai-sync-records">
+        <html:summary><html:span id="zai-sync-summary"></html:span><html:span class="zai-sync-records-action" data-zai-l10n="Details">详情</html:span></html:summary>
+        <html:p id="zai-sync-meta" class="zai-pref-help"> </html:p>
+      </html:details>
+    </html:div>
+
+    <html:div class="zai-pref-card">
+      <html:div class="zai-pref-title" data-zai-l10n="Local settings and conversation backup">本地配置与对话备份</html:div>
+      <html:p class="zai-pref-help" data-zai-l10n="Back up settings, AI conversations, and reading data. PDF files are not included.">
+        备份配置、AI 对话及阅读数据，不含 PDF 原文件。
+      </html:p>
+      <html:p class="zai-pref-help" data-zai-l10n="When cloud sync is enabled and working, routine local exports are optional. Use local backup when you need an offline copy or an additional backup.">
+        已开启并正常使用云端同步时，日常无需重复导出本地备份；需要离线留存或额外备份时再使用。
+      </html:p>
+      <html:details id="zai-backup-scope" class="zai-sync-scope">
+        <html:summary class="zai-pref-subtitle" data-zai-l10n="Backup details">备份说明</html:summary>
+        <html:p class="zai-pref-help" data-zai-l10n="Export plugin settings and AI conversations to a local JSON backup. Includes accounts/API keys, model and interface settings, prompts, web/MCP, translation/reading and MinerU settings, AI conversations and drafts with images, translation caches, paper overviews, PDF annotations, reading positions, and network diagram workspaces.">
+          将插件配置和 AI 对话导出为本地 JSON 备份。包含账号/API Key、模型与界面设置、提示词、联网/MCP、翻译与阅读及 MinerU 配置，以及 AI 对话、草稿与附带图片、翻译缓存、全文总览、PDF 注释、阅读位置和网络图工作区。
+        </html:p>
+        <html:p class="zai-pref-help" data-zai-l10n="PDF files, bibliographic records, and note contents are not included; use Zotero's own sync or backup. Import merges conversations and reading data and also accepts older settings-only backups. Sync the Zotero library first so conversations can match their items.">
+          不含 PDF 原文件、文献条目及笔记正文，请使用 Zotero 自带同步或备份。导入会合并对话与阅读数据，也兼容旧版仅配置备份；请先同步 Zotero 文献，以便匹配对应对话。
+        </html:p>
+        <html:p class="zai-pref-help" data-zai-l10n="The backup contains API keys and private conversation content without additional encryption. Store it somewhere trusted.">
+          备份包含 API Key 和私人对话内容，插件不额外加密，请保存在可信位置。
+        </html:p>
+      </html:details>
+      <html:div class="zai-pref-actions">
+        <html:button id="zai-config-export-file" type="button"
+           data-zai-l10n="Export backup file">导出备份文件</html:button
+        >
+        <html:button id="zai-config-import-file" type="button"
+           data-zai-l10n="Import backup file">导入备份文件</html:button
+        >
+        <html:span id="zai-config-status" class="zai-pref-status"></html:span>
+      </html:div>
+      <html:details id="zai-config-advanced" class="zai-inline-details">
+        <html:summary class="zai-pref-subtitle" data-zai-l10n="Advanced: manually import/export JSON">高级：手动导入/导出 JSON</html:summary>
+        <html:p class="zai-pref-help" data-zai-l10n="Copy, inspect, or paste backup JSON containing settings and conversations. File export/import is recommended for large backups. Contains API keys and private conversations; do not share publicly.">
+          用于手动复制、检查或粘贴配置与对话备份 JSON；数据较多时建议使用文件导出/导入。包含 API Key 和私人对话，请勿公开分享。
+        </html:p>
+        <html:textarea
+          id="zai-config-json"
+          class="zai-config-json"
+          placeholder="点击“生成备份 JSON”后复制；需要手动恢复时，把备份 JSON 粘贴到这里再导入。"
+        ></html:textarea>
+        <html:div class="zai-pref-actions">
+          <html:button id="zai-config-generate" type="button"
+             data-zai-l10n="Generate backup JSON">生成备份 JSON</html:button
+          >
+          <html:button id="zai-config-copy" type="button"
+             data-zai-l10n="Copy backup JSON">复制备份 JSON</html:button
+          >
+          <html:button id="zai-config-import-text" type="button"
+             data-zai-l10n="Import from text">从文本导入</html:button
+          >
+          <html:button id="zai-config-clear" type="button" data-zai-l10n="Clear">清空</html:button>
+        </html:div>
+      </html:details>
     </html:div>
 
     <html:div class="zai-page-section-title" data-zai-l10n="General settings">常用设置</html:div>
@@ -867,135 +1024,7 @@
       </html:div>
     </html:div>
 
-    <html:div class="zai-page-section-title" data-zai-l10n="Data management">数据管理</html:div>
-    <html:div class="zai-pref-card" data-save-section="sync">
-      <html:div class="zai-pref-title" data-zai-l10n="Cloud sync (WebDAV)">云同步（WebDAV）</html:div>
-      <html:p class="zai-pref-help" data-zai-l10n="Sync AI Sidebar accounts, prompts, interface settings, and conversation cache across devices.">
-        在多台设备间同步 AI Sidebar 的账号、提示词、界面设置和对话缓存。
-      </html:p>
-      <html:details class="zai-sync-scope">
-        <html:summary class="zai-pref-subtitle" data-zai-l10n="What gets synced">同步内容说明</html:summary>
-        <html:p class="zai-pref-help" data-zai-l10n="Web/MCP and translation/reading settings are included. Zotero continues to sync PDF files and metadata. Auto-sync is off by default; when enabled, it runs at startup and every 10 minutes.">
-          还包括联网/MCP 和翻译与阅读设置。论文 PDF 和元数据继续使用 Zotero
-          自带同步；自动同步默认关闭，开启后会在启动时及每 10 分钟运行。
-        </html:p>
-      </html:details>
-      <html:div class="zai-pref-grid">
-        <html:label for="zai-sync-url">WebDAV URL</html:label>
-        <html:input
-          id="zai-sync-url"
-          type="text"
-          value="https://dav.jianguoyun.com/dav/"
-          placeholder="例如：https://dav.jianguoyun.com/dav/" data-zai-l10n-placeholder="For example: https://dav.jianguoyun.com/dav/"
-        />
-        <html:label for="zai-sync-username" data-zai-l10n="Username">用户名</html:label>
-        <html:input
-          id="zai-sync-username"
-          type="text"
-          placeholder="坚果云：你的注册邮箱" data-zai-l10n-placeholder="Nutstore: your registered email"
-        />
-        <html:label for="zai-sync-password" data-zai-l10n="Password / app password">密码 / 应用密码</html:label>
-        <html:input
-          id="zai-sync-password"
-          type="password"
-          placeholder="坚果云需在网页端「安全选项」生成应用密码" data-zai-l10n-placeholder="Create an app password under “Security options” on the Nutstore website"
-        />
-        <html:details class="zai-sync-guide">
-          <html:summary data-zai-l10n="How do I find my Nutstore email and app password?">如何获取坚果云邮箱和应用密码？</html:summary>
-          <html:ol>
-            <html:li data-zai-l10n="Sign in to Nutstore on the web and open “Account information → Security options”.">登录坚果云网页版，进入“账户信息 → 安全选项”。</html:li>
-            <html:li data-zai-l10n="Enter your Nutstore registration email as the username.">用户名填写坚果云注册邮箱。</html:li>
-            <html:li
-               data-zai-l10n="Add an app password under “Third-party app management”. You can name it “Zotero AI Sidebar”; enter it in the password field above.">在“第三方应用管理”中添加应用密码，名称可填写“Zotero AI
-              Sidebar”，生成后填入上方密码框。</html:li
-            >
-          </html:ol>
-          <html:p class="zai-sync-guide-note" data-zai-l10n="Use the newly generated app password, not your Nutstore login password. Delete and regenerate it immediately if it is exposed.">
-            请使用新生成的应用密码，不要填写坚果云登录密码。应用密码泄露后应立即删除并重新生成。
-          </html:p>
-          <html:a
-            id="zai-sync-nutstore-help"
-            href="https://help.jianguoyun.com/?p=2064"
-            target="_blank"
-            rel="noreferrer"
-             data-zai-l10n="View Nutstore’s official WebDAV guide">查看坚果云官方 WebDAV 教程</html:a
-          >
-        </html:details>
-        <html:label for="zai-sync-folder" data-zai-l10n="Remote folder">云端目录</html:label>
-        <html:input
-          id="zai-sync-folder"
-          type="text"
-          value="zotero-ai-sidebar"
-          placeholder="zotero-ai-sidebar"
-        />
-      </html:div>
-      <html:div class="zai-pref-actions">
-        <html:button id="zai-sync-test" type="button" data-zai-l10n="Test connection">测试连接</html:button>
-        <html:button id="zai-sync-push" type="button" data-zai-l10n="Upload to cloud">上传到云端</html:button>
-        <html:button id="zai-sync-pull" type="button" data-zai-l10n="Download from cloud">从云端下载</html:button>
-        <html:span id="zai-sync-status" class="zai-pref-status"></html:span>
-      </html:div>
-      <html:div class="zai-sync-mode">
-        <html:div class="zai-sync-mode-text">
-          <html:div class="zai-sync-mode-title" data-zai-l10n="Auto-sync">自动同步</html:div>
-          <html:div class="zai-sync-mode-desc"
-             data-zai-l10n="Off by default. When enabled, downloads and merges at startup and every 10 minutes, then uploads to the cloud.">默认关闭。开启后启动时和每 10
-            分钟自动下载合并，再上传到云端。</html:div
-          >
-        </html:div>
-        <html:button
-          id="zai-sync-auto"
-          class="zai-switch"
-          type="button"
-          aria-pressed="false"
-          data-enabled="false"
-        >
-          <html:span class="zai-switch-label" data-zai-l10n="Off">关闭</html:span></html:button
-        >
-      </html:div>
-      <html:p id="zai-sync-meta" class="zai-pref-help"> </html:p>
-    </html:div>
 
-    <html:div class="zai-pref-card">
-      <html:div class="zai-pref-title" data-zai-l10n="Configuration backup">配置备份</html:div>
-      <html:p class="zai-pref-help" data-zai-l10n="Back up or restore accounts, quick prompts, web/MCP, and translation/reading settings. Backups may contain API keys; store them somewhere trusted.">
-        备份/恢复账号、快捷提示词、联网/MCP 和翻译与阅读配置。备份文件可能包含
-        API Key，请保存在可信位置。
-      </html:p>
-      <html:div class="zai-pref-actions">
-        <html:button id="zai-config-export-file" type="button"
-           data-zai-l10n="Export configuration file">导出配置文件</html:button
-        >
-        <html:button id="zai-config-import-file" type="button"
-           data-zai-l10n="Import configuration file">导入配置文件</html:button
-        >
-        <html:span id="zai-config-status" class="zai-pref-status"></html:span>
-      </html:div>
-      <html:details class="zai-inline-details">
-        <html:summary class="zai-pref-subtitle" data-zai-l10n="Manual backup/restore">手动备份/恢复</html:summary>
-        <html:p class="zai-pref-help" data-zai-l10n="Use this to copy, inspect, or paste configuration JSON manually. It may contain API keys; do not share it publicly.">
-          用于手动复制、检查或粘贴配置 JSON。内容可能包含 API
-          Key，请勿公开分享。
-        </html:p>
-        <html:textarea
-          id="zai-config-json"
-          class="zai-config-json"
-          placeholder="点击“生成配置 JSON”后复制；需要手动恢复时，把备份 JSON 粘贴到这里再导入。"
-        ></html:textarea>
-        <html:div class="zai-pref-actions">
-          <html:button id="zai-config-generate" type="button"
-             data-zai-l10n="Generate configuration JSON">生成配置 JSON</html:button
-          >
-          <html:button id="zai-config-copy" type="button"
-             data-zai-l10n="Copy configuration JSON">复制配置 JSON</html:button
-          >
-          <html:button id="zai-config-import-text" type="button"
-             data-zai-l10n="Import from text">从文本导入</html:button
-          >
-          <html:button id="zai-config-clear" type="button" data-zai-l10n="Clear">清空</html:button>
-        </html:div>
-      </html:details>
-    </html:div>
   </html:div>
 </groupbox>
 <vbox>

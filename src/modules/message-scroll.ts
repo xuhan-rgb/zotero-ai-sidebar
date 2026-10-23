@@ -26,6 +26,7 @@ export function resetMessagesScrollForConversation(state: PanelState) {
   state.skipNextMessagesScrollCapture = true;
   state.messagesScrollLock = undefined;
   pendingRebuilds.delete(state);
+  collapsedSnapshots.delete(state);
 }
 
 const scrollUpdates = new WeakMap<HTMLElement, object>();
@@ -75,6 +76,60 @@ function captureMessagesScrollSnapshot(
     top: messages.scrollTop,
     atBottom: isMessagesElementNearBottom(messages),
   };
+}
+
+const collapsedSnapshots = new WeakMap<
+  PanelState,
+  {
+    conversationID: string;
+    networkTarget: PanelState["networkDiagramTarget"];
+    snapshot: MessagesScrollSnapshot;
+  }
+>();
+
+// Moving/hiding the column can reset scrollTop and emit scroll events. Keep a
+// separate snapshot for the entire hidden interval, then restore after layout.
+export function preserveMessagesScrollOnToggle(
+  mount: HTMLElement,
+  collapsed: boolean,
+  changeVisibility: () => void,
+) {
+  const state = states.get(mount);
+  if (!state) return changeVisibility();
+  const saved = collapsedSnapshots.get(state);
+  const sameConversation =
+    saved?.conversationID === state.activeConversationID &&
+    saved?.networkTarget === state.networkDiagramTarget;
+  if (collapsed) {
+    if (!sameConversation) {
+      const snapshot =
+        activeMessagesScrollLock(state) ?? captureMessagesScrollSnapshot(mount);
+      if (snapshot)
+        collapsedSnapshots.set(state, {
+          conversationID: state.activeConversationID,
+          networkTarget: state.networkDiagramTarget,
+          snapshot,
+        });
+    }
+    changeVisibility();
+    return;
+  }
+  collapsedSnapshots.delete(state);
+  const snapshot = sameConversation
+    ? saved!.snapshot
+    : state.networkDiagramTarget
+      ? {
+          top: state.networkDiagramMessagesScrollTop ?? 0,
+          atBottom: state.networkDiagramAutoFollowMessages !== false,
+        }
+      : {
+          top: state.messagesScrollTop,
+          atBottom:
+            !!state.scrollToBottom || state.autoFollowMessages !== false,
+        };
+  lockMessagesScroll(mount, snapshot, 300);
+  changeVisibility();
+  scheduleMessagesScrollRestore(mount, snapshot);
 }
 
 // A new message container starts at zero. Keep the pre-rebuild position until
@@ -151,8 +206,13 @@ function restoreMessagesScrollSnapshot(
     : Math.min(snapshot.top, maxTop);
   const state = states.get(mount);
   if (state) {
-    state.messagesScrollTop = messages.scrollTop;
-    state.autoFollowMessages = snapshot.atBottom;
+    if (messages.dataset.conversationKind === "network") {
+      state.networkDiagramMessagesScrollTop = messages.scrollTop;
+      state.networkDiagramAutoFollowMessages = snapshot.atBottom;
+    } else {
+      state.messagesScrollTop = messages.scrollTop;
+      state.autoFollowMessages = snapshot.atBottom;
+    }
   }
 }
 

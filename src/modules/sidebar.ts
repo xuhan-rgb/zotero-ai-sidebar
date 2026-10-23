@@ -571,6 +571,7 @@ import {
   isMessagesNearBottom,
   lockMessagesScroll,
   preserveMessagesScroll,
+  preserveMessagesScrollOnToggle,
   preserveStreamingMessagesScroll,
   preserveThinkingScroll,
   prepareMessagesScrollRestore,
@@ -1380,10 +1381,10 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   settings.addEventListener("click", () => {
     openAddonPreferences(doc);
   });
-  // Panel chrome (collapse this column) lives at the header's top-right corner,
-  // not among the content-action buttons.
+  // Retain the close-control implementation, but use the AI entry in the UI.
   const collapse = buttonEl(doc, "»");
   collapse.className = "zai-collapse-btn";
+  collapse.hidden = true;
   collapse.title = uiText("隐藏 AI 对话列（收起面板）", "Hide the AI chat column");
   collapse.addEventListener("click", () => hideCurrentSidebar(mount));
   const noteWindowOpen = isNoteWindowOpenForMount(mount);
@@ -2063,6 +2064,25 @@ export function refreshSidebarPreferences(): void {
     renderPanel(sidebar.mount, state);
     refreshNoteHeaderLanguage(sidebar);
     void processNextQueuedChatTask(sidebar.mount, state);
+  }
+}
+
+/** Prevent a restore from racing with an in-flight conversation save. */
+export function hasRunningSidebarTasks(): boolean {
+  return Array.from(mountedWindows).some((win) => {
+    const sidebar = windowSidebars.get(win);
+    return !!(sidebar && states.get(sidebar.mount)?.sending);
+  });
+}
+
+/** Replace idle panels' in-memory history with the merged imported history. */
+export async function reloadSidebarConversations(): Promise<void> {
+  for (const win of mountedWindows) {
+    const sidebar = windowSidebars.get(win);
+    const state = sidebar && states.get(sidebar.mount);
+    if (!sidebar || !state || state.sending) continue;
+    state.historyLoaded = false;
+    await loadPersistedMessages(sidebar.mount, state);
   }
 }
 
@@ -9080,6 +9100,7 @@ function unregisterReaderSelectionCapture() {
 function startSelectionMonitor(win: Window, sidebar: WindowSidebarState) {
   if (sidebar.selectionMonitorID != null) return;
   sidebar.selectionMonitorID = win.setInterval(() => {
+    installFloatingToggle(win, sidebar);
     const itemID = safeSelectedItemID(win);
     const panelState = states.get(sidebar.mount);
     // Reader tab selection does not call ZoteroPane.itemSelected. Reuse the
@@ -15593,6 +15614,7 @@ export function unregisterSidebarForWindow(win: Window) {
   state.initialRefreshCleanup = undefined;
   state.noteColumn.remove();
   state.toggleButton?.remove();
+  state.floatingToggleCleanup?.();
   state.floatingButton?.remove();
   stopSelectionMonitor(win, state);
   mountedWindows.delete(win);
@@ -15728,31 +15750,111 @@ function installToggleButton(win: Window, state: WindowSidebarState) {
 }
 
 function installFloatingToggle(win: Window, state: WindowSidebarState) {
-  const doc = win.document;
-  const stack = doc.getElementById("zotero-pane-stack") ?? doc.documentElement;
-  if (!stack) return;
-  doc.getElementById(FLOATING_TOGGLE_ID)?.remove();
-
-  const button = doc.createElementNS(XHTML_NS, "button") as HTMLButtonElement;
-  button.id = FLOATING_TOGGLE_ID;
-  button.className = "zai-floating-toggle";
-  button.type = "button";
-  button.title = uiText("打开/隐藏 AI 对话", "Show/hide AI chat");
-
-  const icon = doc.createElementNS(XHTML_NS, "img") as HTMLImageElement;
-  icon.src = `chrome://${addon.data.config.addonRef}/content/icons/ai-chat.svg`;
-  icon.alt = "";
-  const label = doc.createElementNS(XHTML_NS, "span");
-  label.textContent = "AI";
-  button.append(icon, label);
-
-  button.addEventListener("click", () => {
-    setColumnCollapsed(win, state, !isColumnCollapsed(state));
-  });
-
-  stack.append(button);
+  // Use a real slot in the reader toolbar, never screen coordinates. Recheck
+  // from the existing reader monitor because tabs and React rebuild this DOM.
+  const reader = getActiveReader(win);
+  const toolbarEnd = activeReaderWindows(reader)
+    .map((readerWin) => readerWin.document.querySelector(".toolbar > .end"))
+    .find(Boolean) as HTMLElement | undefined;
+  if (state.floatingToolbar === toolbarEnd && state.floatingButton?.isConnected)
+    return;
+  state.floatingToggleCleanup?.();
+  state.floatingToggleCleanup = undefined;
+  state.floatingButton?.remove();
+  state.floatingButton = undefined;
+  state.floatingToolbar = toolbarEnd;
+  if (!toolbarEnd) {
+    updateToggleButton(state);
+    return;
+  }
+  const doc = toolbarEnd.ownerDocument!;
+  const createButton = (doc: Document): HTMLButtonElement => {
+    const button = doc.createElementNS(XHTML_NS, "button") as HTMLButtonElement;
+    button.id = FLOATING_TOGGLE_ID;
+    button.className = "zai-reader-chat-toggle";
+    button.type = "button";
+    button.title = uiText("打开/隐藏 AI 对话", "Show/hide AI chat");
+    // Draw the letters as paths so their paint does not depend on inherited
+    // toolbar font rules. Each target document gets its own button and glyph.
+    const svgNS = "http://www.w3.org/2000/svg";
+    const label = doc.createElementNS(svgNS, "svg");
+    label.setAttribute("viewBox", "5.5 5.5 9 7");
+    label.setAttribute("width", "18");
+    label.setAttribute("height", "14");
+    label.setAttribute("aria-hidden", "true");
+    label.setAttribute(
+      "style",
+      "display: block; flex: 0 0 18px; width: 18px; height: 14px; pointer-events: none;",
+    );
+    const title = doc.createElementNS(svgNS, "title");
+    title.textContent = "AI";
+    const glyph = doc.createElementNS(svgNS, "path");
+    glyph.setAttribute("fill", "#a94e25");
+    glyph.setAttribute(
+      "d",
+      "M7.2 11.8h-1l2.1-5.6h1.1l2.1 5.6h-1l-.5-1.4H7.7l-.5 1.4Zm.8-2.2h1.7l-.8-2.3h-.1L8 9.6Zm5.5 2.2h-1V6.2h1v5.6Z",
+    );
+    label.append(title, glyph);
+    button.append(label);
+    button.style.cssText =
+      "position: static; -moz-window-dragging: no-drag; appearance: none; padding: 0; flex: 0 0 36px; width: 36px; height: 28px; box-sizing: border-box; display: inline-flex; align-items: center; justify-content: center; cursor: pointer; background: rgba(255, 253, 248, 0.94); border: 1px solid rgba(192, 103, 61, 0.42); border-radius: 999px;";
+    button.addEventListener("click", () => {
+      setColumnCollapsed(win, state, !isColumnCollapsed(state));
+    });
+    return button;
+  };
+  let button = createButton(doc);
+  toolbarEnd.prepend(button);
   state.floatingButton = button;
   updateToggleButton(state);
+
+  const toolbar = toolbarEnd.parentElement!;
+  const readerWin = doc.defaultView!;
+  const fallbackToolbar = win.document.getElementById("zotero-tabs-toolbar");
+  const fit = () => {
+    const available = toolbar.clientWidth;
+    if (!available) return;
+    const style = readerWin.getComputedStyle(toolbar)!;
+    const endGap =
+      parseFloat(readerWin.getComputedStyle(toolbarEnd)!.columnGap) || 0;
+    // Reserve the native groups' full content widths. If the reader is too
+    // narrow, render the entry in a normal slot in the upper tab toolbar.
+    const nativeWidth =
+      Array.from(toolbar.children).reduce(
+        (sum, group) =>
+          sum +
+          Math.max(group.getBoundingClientRect().width, group.scrollWidth),
+        0,
+      ) - (button.parentElement === toolbarEnd ? 36 + endGap : 0);
+    const padding =
+      (parseFloat(style.paddingLeft) || 0) +
+      (parseFloat(style.paddingRight) || 0);
+    const target =
+      nativeWidth + padding + 36 + endGap + 8 > available && fallbackToolbar
+        ? fallbackToolbar
+        : toolbarEnd;
+    if (button.parentElement !== target) {
+      // Gecko forbids moving nodes between the reader and chrome docgroups.
+      // Construct the replacement in its destination document before removing
+      // the old control, so both the label and click handler remain intact.
+      const replacement = createButton(target.ownerDocument!);
+      target.prepend(replacement);
+      button.remove();
+      button = replacement;
+      state.floatingButton = button;
+    }
+    updateToggleButton(state);
+  };
+  const ResizeObserverClass = (readerWin as any).ResizeObserver as
+    | typeof ResizeObserver
+    | undefined;
+  if (ResizeObserverClass) {
+    const observer = new ResizeObserverClass(fit);
+    observer.observe(toolbar);
+    for (const group of Array.from(toolbar.children)) observer.observe(group);
+    state.floatingToggleCleanup = () => observer.disconnect();
+  }
+  fit();
 }
 
 function setColumnCollapsed(
@@ -15760,11 +15862,48 @@ function setColumnCollapsed(
   state: WindowSidebarState,
   collapsed: boolean,
 ) {
+  preserveMessagesScrollOnToggle(state.mount, collapsed, () => {
+    applyColumnCollapsed(win, state, collapsed);
+  });
+}
+
+function applyColumnCollapsed(
+  win: Window,
+  state: WindowSidebarState,
+  collapsed: boolean,
+) {
   const panelState = states.get(state.mount);
   if (panelState?.localUiSettings.sidebarDisplayMode === "docked") {
     if (collapsed) {
+      const entry = dockedSidebarLayouts.get(state);
+      const aiWidth =
+        entry && !isColumnCollapsed(state)
+          ? (measuredElementWidth(state.column) ?? entry.dockedColumnWidth) +
+            DOCKED_AI_SPLITTER_WIDTH
+          : 0;
+      // Closing also hides the optional note column. Remove the entire occupied
+      // workspace, but remember only the AI width because notes stay closed.
+      const workspaceWidth = aiWidth
+        ? parseFloat(
+            (
+              win.document.documentElement as HTMLElement | null
+            )?.style.getPropertyValue("--zai-docked-total-width") ?? "",
+          ) || aiWidth
+        : 0;
       leaveDockedSidebarLayout(state, false);
+      if (workspaceWidth) {
+        state.collapsedDockedWidth = aiWidth;
+        win.resizeBy(-workspaceWidth, 0);
+      }
     } else {
+      if (isColumnCollapsed(state)) {
+        const width =
+          state.collapsedDockedWidth ??
+          (loadReaderLayoutPrefs().dockedAiWidth ?? 480) +
+            DOCKED_AI_SPLITTER_WIDTH;
+        state.collapsedDockedWidth = undefined;
+        win.resizeBy(width, 0);
+      }
       enterDockedSidebarLayout(win, state);
     }
     updateToggleButton(state);
@@ -15824,16 +15963,22 @@ function updateToggleButton(state: WindowSidebarState) {
   const collapsed = isColumnCollapsed(state);
   for (const button of [state.toggleButton, state.floatingButton]) {
     if (!button) continue;
-  const tooltip = collapsed ? uiText("打开 AI 对话", "Show AI chat") : uiText("隐藏 AI 对话", "Hide AI chat");
+    const tooltip = collapsed
+      ? uiText("打开 AI 对话", "Show AI chat")
+      : uiText("隐藏 AI 对话", "Hide AI chat");
     button.setAttribute("tooltiptext", tooltip);
     button.setAttribute("title", tooltip);
+    button.setAttribute("aria-label", tooltip);
     button.setAttribute("aria-pressed", collapsed ? "false" : "true");
     button.toggleAttribute("checked", !collapsed);
     button.classList.toggle("is-open", !collapsed);
     if (button === state.floatingButton) {
-      button.toggleAttribute("hidden", !collapsed);
+      button.removeAttribute("hidden");
     }
   }
+  const collapse =
+    state.mount.querySelector<HTMLButtonElement>(".zai-collapse-btn");
+  if (collapse) collapse.hidden = true;
 }
 
 // Monkey-patches `ZoteroPane.itemSelected` so we re-render after the user
