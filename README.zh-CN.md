@@ -1,328 +1,236 @@
 # Zotero AI Sidebar
 
-[English](README.md) | [中文](README.zh-CN.md)
+[English](README.md) | 中文
 
-一个住在 Zotero 里的 AI 论文助手。对正在读的论文问任何问题，侧边栏会自己读 PDF（或者 arXiv 论文的 LaTeX 源），展示推理过程，并把答案写回笔记。
+Zotero 内的 AI 论文助手。结合 PDF 原文、arXiv LaTeX 源、批注和图片讨论论文，边读边翻译，并将有用的回答保存到 Zotero 笔记。
 
-> 👀 **[图解使用教程 →](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)**（纯 HTML 按当前界面结构重绘：界面总览 · 配置模型 · 对话 · Quick Ask · 沉浸/全文翻译 · 笔记与总览 · 快捷键）
+[下载安装](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/latest) · [图解教程](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html) · [使用指南](docs/USAGE.zh-CN.md) · [更新记录](CHANGELOG.zh-CN.md) · [反馈问题](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new/choose)
 
-📖 [完整使用指南](docs/USAGE.zh-CN.md) ([English](docs/USAGE.md)) —— 上手、常用场景、功能手册、故障排查。
+## 主要功能
 
-可在「设置 → 显示设置 → 界面语言」选择「跟随系统 / 中文 / English」。默认跟随系统：中文系统显示中文，英文及其他未支持的系统语言回退到英文。无法读取系统语言时，使用 Zotero 的界面语言作为备用。内置默认提示词随界面语言提供中文或英文版本，已保存的内置默认版本也会随之切换，用户编辑过的提示词保留原文。AI 回复语言仍由实际发送的提示词控制，可在「设置 → 快捷提示词」中检查和修改。
+- **论文对话**：围绕当前论文或选区提问。API 模式下，模型通过 Zotero 工具按需读取上下文，展示工具调用过程，并在有定位信息时提供原文跳转。
+- **API 与 WEB 两种模式**：连接 Anthropic、OpenAI 或 OpenAI 兼容端点，也可通过本地 Web Agent 使用 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 和自定义 ChatGPT-like 网页。
+- **论文素材与多篇引用**：通过 `@` 附加图片、表格、公式或其他 Zotero 论文，在一条问题中比较多篇文章，或用参考论文分析本篇。
+- **阅读与翻译**：在原文旁逐句翻译、追问并保存译文批注；全文阅读可使用 arXiv LaTeX 源或 MinerU 解析后的 PDF。
+- **笔记、阅读路线与总览**：在论文旁编辑 Zotero 富文本笔记，生成阅读路线或章节总览，跳回原文，并将这些视图导出为 PDF。
+- **Quick Ask 临时对话**：默认按 `Alt+Q` 打开，支持连续追问和转入论文研究对话；关闭窗口后丢弃临时对话。
+- **可配置的阅读工作区**：切换界面语言、编辑快捷提示词、选择模型与推理强度、调整对话布局。同一对话内消息顺序执行，不同对话可并行回答。
+- **备份与同步**：本地保存设置和阅读数据，导出 JSON 备份，或同步到自行配置的 WebDAV 端点。发送与存储范围见[数据与隐私](#数据与隐私)。
 
-提交问题时，可在 [新建 Issue](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new/choose) 页面选择 **[中文]** 或 **[English]** 的 Bug、功能建议或使用求助表单；表单顶部也提供另一语言的切换链接。
+## 快速开始
 
-## 能做什么
+### 1. 安装插件
 
-- **对正在读的论文随便问** —— _"帮我总结"_、_"核心贡献是什么"_、_"和 X 比较"_。模型自动取它需要的 PDF 内容，并在工具 trace 里把过程显式展示。
-- **每个对话可选 API 或 WEB** —— API 直接使用本地配置的模型预设；WEB 通过本机 Web Agent 对接 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 或自定义 ChatGPT-like 网页，保留网页当前的模型/搜索/思考状态，并把分阶段进度和持续增长的回答同步显示在 Zotero 中。
-- **一条问题引用多篇 Zotero 论文** —— 连续用 `@` 选择其他文章，可以比较它们与本篇的差异，也可以用它们分析本篇；具体任务由问题决定，不需要切换“对比模式”。
-- **随时打开 Quick Ask 连续追问** —— 默认按 `Alt+Q` 在 Zotero 任意页面打开临时对话；本窗口内会保留上下文，关闭即销毁，也可把整段问答显式转入当前论文的研究对话。
-- **arXiv 论文公式不破** —— 公式和插图从 LaTeX 源码取，不再是 PDF 文本层里的乱码。_"解释 Eq. (3)"_ 和 _"讲一下 Figure 2"_ 都能精确命中。
-- **PDF 沉浸式翻译** —— 开启沉浸模式后点句子即在原文旁出译文卡；`Enter` / `Shift+Enter` 在句子间穿行，`/` 把光标移进追问框，`Esc` 关卡后该句仍标为「在读高亮」可继续切句。
-- **写回 Zotero** —— 把回答追加到论文笔记，或者让模型给 PDF 加按颜色分类的高亮（按预设的权限模式开关）。
-- **想用什么模型用什么** —— Anthropic、OpenAI 或任意 OpenAI 兼容端点，全部在 Zotero 偏好里本地配置。
-- **本地优先，同步目标由你掌握** —— 设置、聊天历史和缓存保存在本机；使用 API / WEB 时，提问及相关论文材料会发送给所选模型服务，使用 MinerU 解析时会上传 PDF。可选 WebDAV 同步把设置、模型预设（含 API key）、聊天历史、PDF 批注和翻译缓存打包为单个 `state.json`，推送到*你自己的*端点。
+插件清单声明兼容 **Zotero 7–10**，可在 Windows、Linux 和 macOS 上使用。
 
-## 安装
+1. 从 [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/latest) 下载 `zotero-ai-sidebar.xpi`。
+2. 在 Zotero 中打开 **工具 → 插件**。
+3. 点击齿轮图标，选择 **从文件安装插件…**，选中下载的 `.xpi`。
+4. 按提示重启 Zotero，选择一篇文献或打开其 PDF，再打开 **AI** 侧边栏。
 
-1. 从 [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases/latest) 下载最新的 `zotero-ai-sidebar.xpi`。
-2. 打开 Zotero 7、8、9 或 10。
-3. 进入 `工具` → `插件`。
-4. 点击齿轮图标，选择 `从文件安装插件…`。
-5. 选择刚下载的 `.xpi` 文件，按提示重启 Zotero。
+已安装的插件可通过 Zotero 插件更新机制接收更新。WEB 用户升级后请按账号窗口提示检查配套 Web Agent 运行包。
 
-已安装的插件也会自动更新：每次发布都会把 `update.json` / `update-beta.json` 发布到固定的 `release` Release，插件的 `update_url` 会检查它，因此正式版与预览版安装都能就地收到新版本提示。
+### 2. 选择对话模式
 
-### v0.8.19 更新内容
+|            | API                                | WEB                                                |
+| ---------- | ---------------------------------- | -------------------------------------------------- |
+| 连接方式   | 已配置的模型端点                   | 通过本地 Web Agent 访问 AI 网页                    |
+| 配置要求   | API Key、Base URL、模型 ID         | Node.js 20+、支持的浏览器，按网站要求登录          |
+| 模型来源   | Anthropic、OpenAI、OpenAI 兼容服务 | ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi、自定义网页 |
+| 论文上下文 | Zotero 工具与显式附加的上下文      | 以附件上传论文材料和参考文献                       |
+| 控制项     | 插件中的模型、推理强度和工具设置   | 网页自身的模型、搜索和思考设置                     |
 
-- **WEB 支持 Firefox**：除 Chrome 和 Edge 外，可选择 Firefox；原生与 Snap 安装分别保留登录配置，附件暂存适配 Snap 可访问目录。
-- **Node.js 配置更方便**：从桌面启动 Zotero 时也能检测 NVM 安装；账号窗口始终提供 Node 路径设置，支持选择可执行文件或安装目录，验证通过后再保存。
-- **Web Agent 配置更稳定**：健康检查、运行包下载与启动等待使用 Zotero 沙箱可用的 Gecko 定时器。
-- **浏览器管理与文档**：支持移除手动添加的浏览器条目并保留登录资料；中英文配置说明补齐 Firefox 和 Node 检测流程。
-- **升级方法**：安装新版 XPI 后重启 Zotero；WEB 用户按账号窗口提示检查配套运行包，已有设置和浏览器登录资料会保留。
+API 模式无需 Node.js、浏览器或 Web Agent。在输入框底栏选择 `API` 或 `WEB` 即可切换。
 
-历史更新见 [CHANGELOG.zh-CN.md](CHANGELOG.zh-CN.md)。
+### 3. 问第一个问题
 
-## 配置
+完成下方对应的 [API](#api-配置) 或 [WEB](#web-配置) 配置后，可以试着提问：
 
-在 Zotero 中打开 AI Sidebar 设置，至少配置一个模型预设：
+> 总结这篇论文的核心贡献，解释它的方法，并指出主要局限。
 
-- 提供商：`anthropic` 或 `openai`
-- API Key：保存在本地 Zotero 偏好中
-- Base URL：官方端点或任何 OpenAI 兼容端点
-- 模型：该端点支持的任意模型 ID
-- Max tokens / 工具循环上限：本地的安全与输出长度控制
-- 推理强度（按模型）：配置详情中为每个模型单独选择，也可在 API 对话底栏点击 `Medium` / `High` 等档位快速修改；按账号预设和模型保存到本地，切换回来自动恢复。未配置时优先采用均衡档位，已有设置保留；可选范围随模型变化，未知模型使用服务商默认。详见[强度配置教程](docs/USAGE.zh-CN.md#推理强度按模型保存)。
+先划选 PDF 原文可将选区带入提问，也可用 `@` 添加素材与参考论文。API 模式下可展开工具调用记录，检查模型读取了哪些内容。将有用的回答保存到论文笔记，或选中回答片段后使用 **导入笔记**。
 
-对话栏支持记忆手动调整后的宽度，阅读器侧栏和右侧并排布局分别保存。调窄输入区时，底栏优先隐藏账号后的 `(openai)` / `(anthropic)`，悬停或展开列表仍可查看完整名称；空间不足时允许换行。
+## API 配置
 
-PDF 翻译可在插件设置的“沉浸阅读”区域调整：
+打开 **AI Sidebar 设置**，新增模型预设并填写：
 
-- 默认翻译模型：沉浸阅读始终使用这里的账号、模型和思考程度；arXiv 全文翻译首次使用时从这里继承，之后可在全文翻译顶部独立修改并记忆
-- 结果位置（句上、句下）/ 翻译框大小：用于沉浸翻译卡
-- 结合上下句：翻译时带上前后各一句作上下文，更准
-- 重点词对应：译文里高亮原文 ↔ 中文的关键词对，悬停互相点亮
-- 切句快捷键（默认 `Enter` / `Shift+Enter`）、选区快捷翻译键（默认空格）、聚焦追问键（默认 `/`）、收起工具栏键（默认 `h`）均可改
+| 字段     | 内容                                             |
+| -------- | ------------------------------------------------ |
+| 提供商   | `anthropic` 或 `openai`；OpenAI 兼容服务选择后者 |
+| API Key  | 所选端点的访问凭据                               |
+| Base URL | 服务商端点或兼容服务地址                         |
+| 模型     | 该端点支持的模型 ID                              |
 
-Quick Ask 默认用 `Alt+Q` 打开。首次使用时采用当前 AI 对话模型，之后会独立记住窗口内选择的账号、模型和思考程度；这些选择不会反向修改研究对话或默认翻译模型。
+点击 **测试连接**，保存预设，再从对话底栏选用。
 
-请勿在本仓库中硬编码个人 API Key、Base URL 或私有模型 ID。
+可按需设置输出 Token 上限、工具循环上限和各模型的推理强度。推理强度按账号预设和模型分别保存，可选档位取决于模型支持情况。详见[模型预设说明](docs/USAGE.zh-CN.md#31-模型预设)。
 
-### 可选 WEB 模式（Windows / Linux / macOS）
+## WEB 配置
 
-WEB 模式使用一个本地伴随进程和独立的浏览器配置目录。支持自动检测 Chrome、Microsoft Edge 和 Firefox，也可配置其他兼容 Chromium 的浏览器程序路径。Firefox 使用独立的 WebDriver BiDi 连接。API 模式不依赖这些组件；未安装 Web Agent 时，普通 API 对话不受影响。
+WEB 模式使用本地伴随进程和独立浏览器配置目录。可自动检测 **Chrome、Microsoft Edge 和 Firefox**，也可添加兼容 Chromium 的浏览器。
 
-> 从旧版升级时，请安装新版 XPI，并按账号窗口提示安装或更新其配套 Web Agent ZIP。
+环境要求：
 
-需要 Node.js 20 或更高版本，以及 Web Agent 支持的浏览器（自动检测 Chrome / Edge / Firefox，或自定义兼容浏览器）；Linux 还需要 `xclip`：
+- **Node.js 20 或更高版本**，使用 Firefox 时也需要。
+- 本机已安装受支持的浏览器。
+- Linux 需要 **`xclip`**。Debian/Ubuntu 可运行 `sudo apt install xclip`，其他发行版请使用对应包管理器。
 
-```bash
-sudo apt install xclip
-```
+配置步骤：
 
-**检测和指定 Node.js 路径**
+1. 选择 **WEB** 和目标网站，点击 **账号**。
+2. 按环境检查结果补齐依赖。窗口提供下载链接或安装说明，插件不会代为安装 Node.js 或浏览器。
+3. 按提示点击 **安装 / 修复 / 升级 Web Agent**。插件下载与 XPI 配套的预构建运行包，并校验大小与 SHA-256；普通用户无需运行 npm。
+4. 在专用浏览器中登录网站。**对话时在后台隐藏浏览器** 默认开启。
+5. 返回 Zotero 发送问题，侧边栏会显示任务进度并同步网页回答。
 
-插件优先使用已验证并保存的 Node 路径，再检查进程 PATH 和标准安装位置。如果仍未找到 Node.js 20+，会扫描 `~/.nvm`、`~/.config/nvm`、`NVM_DIR` 和 `XDG_CONFIG_HOME/nvm` 下的版本目录，并验证程序的实际版本。因此，从桌面启动 Zotero、未继承终端 NVM 环境时，也能查找已有安装。已保存且可用的 Node 不会被自动替换为更新版本。
+下载失败时，可通过账号窗口提供的 Release 链接下载与当前 XPI 配套的 `zai-web-agent-runtime.zip`，再使用本地 ZIP 选择入口安装。
+
+<details>
+<summary>Node.js 检测与手动路径</summary>
+
+检测优先复用已验证的路径，再检查进程 PATH 和常见安装位置；仍未找到 Node.js 20+ 时，会扫描 `~/.nvm`、`~/.config/nvm`、`NVM_DIR` 和 `XDG_CONFIG_HOME/nvm` 下的版本目录，并验证程序实际版本。即使从桌面启动 Zotero 时没有继承终端的 NVM 环境，也可检测这些位置。已保存且可用的 Node 不会被自动替换为新版本。
 
 账号窗口始终显示**Node.js 路径设置**，默认展开，可按需收起。检测到 Node 后，输入框会显示其路径；缺少 Node 时，该区域会重新展开。可以粘贴 `node` / `node.exe` 的完整路径、包含该程序的目录，或包含 `bin/node` 的安装目录，也可以点击**选择 Node 程序…**填入路径。点击**验证并使用**或按 Enter 后，插件才会验证、保存路径并重新检查环境；仅选择文件不会保存。`install.sh` 等安装脚本不能作为 Node 程序使用，插件也不会自动执行安装脚本。运行中或排队的 WEB 任务结束前，不能更换 Node 路径。
 
-**选择和配置浏览器**
+</details>
 
-点击「账号」旁的小箭头打开浏览器配置。网页服务菜单用于选择 AI 网站，账号菜单用于选择运行网站的浏览器；「账号」主按钮仍会直接打开当前网站。
+<details>
+<summary>浏览器选择与登录配置</summary>
 
-- **Chrome / Edge / Firefox**：从下拉框选择浏览器，核对检测到或已保存的程序路径，再点击「应用浏览器选择」保存。
-- **自定义路径**：编辑完整路径，或点击「选择程序文件…」。Windows 选择 `chrome.exe` / `msedge.exe`，Linux 选择浏览器启动程序，macOS 选择应用内 `Contents/MacOS/` 下的可执行文件。
-- **重新检测**：Chrome / Edge / Firefox 路径不正确时，点击「重新检测」搜索标准安装位置和 PATH，核对后再应用；检测本身不会保存或启动浏览器。
-- **添加浏览器**：选择「＋ 添加其他浏览器…」，填写名称和程序路径后点击「保存并使用」。自定义浏览器须支持 Chromium 远程调试连接，保存路径不会验证兼容性。
-- **移除浏览器**：选中手动添加的条目后，点击「移除此浏览器」。浏览器程序和登录资料会保留；移除当前条目前会先切换到其他可用浏览器。存在运行中或排队的 WEB 任务，或没有可替代浏览器时，不能移除当前条目；内置浏览器条目不能移除。
+点击 **账号 ▾** 的小箭头选择浏览器；网站菜单负责选择 AI 服务，主 **账号** 按钮仍直接打开已选网站。账号窗口内也提供浏览器选择入口。
 
-浏览器选择由所有 WEB 服务共用，每个浏览器配置独立保留登录资料。切换前需等待运行中及排队的 WEB 任务结束；点击配置菜单外部可关闭菜单而不应用修改。旧版 Chrome 配置会保留，新安装仅检测到 Edge 时会自动选择 Edge。
+- **Chrome / Edge / Firefox**：从原生下拉框选择，查看检测到或已保存的程序路径，再点击 **应用浏览器选择** 保存。单纯选中选项不会关闭配置菜单。
+- **自定义安装路径**：编辑完整路径或点击 **选择程序文件…**。Windows 选择浏览器 `.exe`，Linux 选择启动程序，macOS 选择应用 `Contents/MacOS/` 内的可执行文件，不要选择文档或快捷方式。
+- **修正错误路径**：对内置浏览器点击 **重新检测**，忽略旧路径并搜索常见安装位置和 PATH；确认结果后再应用。检测本身不会保存或启动浏览器。
+- **添加其他浏览器**：选择 **＋ 添加其他浏览器…**，填写名称、选择程序，再点击 **保存并使用**。自定义浏览器需兼容现有 Chromium 远程调试连接；保存路径并不代表已验证兼容性或支持新的浏览器内核。
+- **移除手动添加的浏览器**：选中后点击 **移除此浏览器**，仅删除配置入口，保留程序和登录资料。移除当前入口前会先切换到其他可用浏览器；没有替代项或有 WEB 任务运行、排队时不能移除。内置入口不能删除。
 
-Firefox 使用持久化的独立配置，支持可见窗口登录和无界面对话。检测使用当前电脑的 PATH、用户目录和系统安装位置；保存的程序路径失效时，环境检查会重新查找本机安装，并将来自其他电脑且已失效的配置目录替换为当前 Zotero 配置下的目录。已有有效登录配置会保留。
+点击菜单外部可关闭而不应用更改。浏览器选择由所有 WEB 服务共用，不影响 API 模式；各入口保存独立登录配置，切换回来可复用。切换浏览器前需等待运行与排队任务结束。已有 Chrome 配置保留；全新配置若只检测到 Edge，会自动选择 Edge。
 
-Firefox 登录和对话会复用已有服务页面。相同程序从自定义 Firefox 条目切换到内置条目时，如果目标没有保存的配置，会沿用当前登录配置。插件控制的 Firefox 重启前会在配置目录中保存会话 Cookie，并在启动时恢复一次；网站主动退出或登录过期仍可能要求重新登录。
+</details>
 
-Linux 同时支持原生和 Snap Firefox，自动检测时优先选择原生安装，也会查找当前用户的 `~/.local/opt/firefox/firefox`。Snap Firefox 的独立配置保存在 `~/snap/firefox/common/zotero-ai-sidebar/` 下，按 Zotero 配置分别存放；原生与 Snap 登录配置分别记录，切换回来时可复用。附件上传和下载使用 Snap 可访问的暂存目录，任务清理仅删除暂存副本，保留原始文件。插件不会自动安装浏览器。Firefox 不支持通过 Chrome CDP 自动最小化窗口；ChatGLM 和 Z.ai 等保留可见会话的服务可能需要手动最小化。
+<details>
+<summary>Firefox 会话与 Linux Snap 安装</summary>
 
-安装 XPI 后，在输入框底部选择 `WEB`，选择 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 或自定义服务，再点击**账号**。窗口会自动检查环境：缺少 Node.js 或浏览器时提供官方下载按钮，Linux 缺少 `xclip` 时提供可复制的安装说明；插件不会自动运行安装程序或系统命令。环境满足后，按状态点击**安装 / 修复 / 升级 Web Agent**，插件会从同版本 GitHub Release 下载预构建运行包，校验大小与 SHA-256，并在健康检查通过后打开登录网页；用户电脑不执行 npm。自动下载失败时，窗口会提供 Release 页面、直接下载链接和本地 ZIP 选择入口。在所选专用浏览器中完成所选网站的登录；“对话时在后台隐藏浏览器”默认勾选，可按需取消。
+Firefox 使用独立的 WebDriver BiDi 连接，支持可见窗口登录和无界面对话，并持久保存配置。检测使用当前电脑的 PATH、主目录及系统安装位置；已保存程序丢失时，环境检查会重新检测，并将来自其他电脑且已失效的配置路径改为当前 Zotero 配置目录下的路径。有效的现有登录配置会保留。
 
-**智谱网页**：服务菜单分别提供 `ChatGLM（chatglm.cn）` 和 `Z.ai（chat.z.ai）`，ChatGLM 已移除固定的“风控受限”标记。Z.ai 支持游客文字聊天，上传附件需要登录。保持所选浏览器打开即可自动检测 Z.ai 登录状态，随后点击**完成并隐藏**或**完成并保持显示**。账号窗口上方状态框动态更新，下方说明文字固定显示；浏览器头像不代表网站登录状态。详细操作见 [WEB 使用教程](docs/USAGE.zh-CN.md#212-通过-web-模式使用内置网页模型)。
+账号配置复用启动页，对话复用已有服务页；配套浏览器驱动接管 Firefox 初始窗口，避免额外创建窗口。同一 Firefox 程序从自定义入口切换到内置入口时，若目标还没有配置目录，会复用当前登录配置。插件控制的重启前会在该配置目录中私下保存会话 Cookie，启动时恢复一次；Firefox 自身持久化的 Cookie 和本地存储仍留在原目录中。网站主动退出或会话过期后仍可能需要重新登录。
 
-Web Agent 不单独发布版本，只使用当前 XPI 配套的 ZIP。安装和手动更新时，插件校验 ZIP 的大小与内置 SHA-256，并记录安装摘要；XPI 更新后仅比较一次安装记录，摘要相同则继续使用。正常启动、打开 WEB 和发送消息不会下载运行包、扫描文件或重新计算摘要，只做必要的本机健康检查。旧安装没有摘要记录时，需要安装一次当前配套运行包。更新失败保留原有文件与登录配置，但不会启用不匹配的旧包。
+Linux 同时检测原生和 Snap Firefox，自动检测时优先原生版本；也会检测当前用户的 `~/.local/opt/firefox/firefox`。Snap 使用 `~/snap/firefox/common/zotero-ai-sidebar/` 下按 Zotero 配置区分的专用目录。原生与 Snap 登录资料分别保存，切换回来可复用。
 
-ChatGLM 和 Z.ai 的“隐藏”采用最小化并保留浏览器会话；其他服务在完成配置后关闭可见窗口，后台任务按需启动无界面浏览器。网页仍使用独立配置运行，不读取日常浏览器的登录资料。插件不会切换网页的快速/深度思考/智能搜索开关。服务下拉菜单末尾提供**管理第三方网页…**，打开管理窗口不会改变当前服务。当前兼容边界见 [Web Agent 排障文档](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)。
+Snap 的 PDF、文本和图片附件会先复制到可访问的任务暂存目录，再上传或用于文件剪贴板回退；任务清理只删除暂存副本，保留原件，浏览器下载也使用该区域。插件不会自动安装浏览器。Firefox 无法使用 Chrome CDP 的自动最小化接口，因此 ChatGLM、Z.ai 等保留可见会话的服务可能需要手动最小化。
 
-WEB 模式会在论文阅读任务中自动附加论文材料。输入框里的“联网”和“原文”属于 API 模式开关，因此在 WEB 下禁用；联网状态以网页自身设置为准，论文材料则由 WEB 附件流程提供。
+</details>
 
-通过 `@` 引用其他 Zotero 论文时，WEB 会为每篇参考论文单独上传文本附件，与本篇论文材料、前序对话附件分开；提示词会逐一写明标题和文件名。API 和 WEB 都不会在插件内截断参考论文的可读原文，但模型或网站仍可能限制上下文或附件大小；Z.ai 上传附件需要登录。
+<details>
+<summary>运行包更新与网站行为</summary>
 
-## 功能特性
+Web Agent 没有独立发布版本，只使用当前 XPI 配套的 ZIP。安装和手动更新会校验大小与 XPI 内置的 SHA-256，并记录安装摘要；XPI 升级后比较一次记录，相同则复用。正常启动、进入 WEB 和发送消息只做本机健康检查，不会下载运行包、扫描文件或重算摘要。没有摘要记录的旧安装需安装一次配套包；更新失败保留原文件与登录配置，但不会启用不匹配的旧包。
 
-### 对话与界面
+ChatGLM 和 Z.ai 隐藏时仍保留可见浏览器会话；其他服务会关闭配置窗口，并按需启动无界面浏览器。Firefox 对保留可见窗口的服务可能需要手动最小化。专用配置不会读取日常浏览器的登录资料。
 
-- **Zotero 内置 AI 对话**：直接在专属侧边栏与当前论文对话，无需离开 Zotero。
-- **稳定的网页 WEB 对话**：通过带本地令牌认证的伴随进程连接 ChatGPT、DeepSeek、ChatGLM、Z.ai、Kimi 或自定义 ChatGPT-like 网页；账号从 Zotero 内配置，专用浏览器在对话时默认隐藏，侧边栏持续显示分阶段进度和增量回答。
-- **Quick Ask 临时连续对话**：默认按 `Alt+Q` 快速打开；可在同一窗口连续追问、复制最后回答或把全部轮次转入研究对话。它不读取研究对话历史，关闭后也不会保存。
-- **多提供商可配置**：通过 Zotero 本地偏好支持 Anthropic、OpenAI 以及任何 OpenAI 兼容端点。账号预设支持连通性测试与「缓存测试」（对某个预设跑一次提示缓存自检，直接看命中 / 未命中与命中率），可为每个预设配置独立的模型列表并通过底部切换器快速切换。
-- **快捷提示词与 Slash 命令**：在输入框旁边可自定义提示词按钮，并内置 `/arxiv-search`、`/web-search` 等 slash 命令，这些命令会被展开成给模型的明确指令。
-- **Markdown 输出**：渲染标题、列表、代码块、引用、链接、思考/上下文块，以及工具调用轨迹。
-- **选区上下文条**：PDF 有选中文本时，输入框上方会显示下一轮是 `只看选区` 还是 `选区 + 全文`，并提供本轮全文覆盖和选区预览。
-- **可定制聊天界面**：用户和 AI 的昵称、头像（emoji 或图片 URL）均可自定义；空对话中央还可显示有序的多条 AI 个性签名，支持增删、排序、悬停关闭。每条消息的操作按钮位置和布局、对话排版（原始排版 / 专注模式）、侧栏显示方式（阅读器侧栏 / 右侧并排）以及删除对话前是否确认也可配置。
-- **排队与并行对话**：开启「回复进行中允许排队新消息」后，AI 回答时提交的消息会在当前回复结束后按提交顺序逐条执行，PDF 选区以入队时为准；「同时回答的对话数」（默认 2，可设 1–8）决定几个对话可以并行，同一对话内始终按顺序。
-- **每条回复的 Token 用量**：回复底部显示这一轮的缓存命中 / 未命中输入、输出与缓存命中率，悬停可看到 `Input raw`、`Token total` 与统计口径；仅供核对，不作为计价汇总，WEB 模式不增加统计。
-- **干净 / 调试两种复制模式**：将对话以 Markdown 复制时，普通导出包含论文介绍、对话和当轮 PDF 选区；调试模式额外附带工具上下文、PDF 片段、模型输入顺序和思考过程。
+Z.ai 支持游客文字聊天，上传附件需要登录。保持浏览器打开，等待账号窗口检测到网站会话后，再选择 **完成并隐藏** 或 **完成并保持显示**。浏览器头像不代表网站登录状态。
 
-### 全文总览
+插件沿用网页当前的模型、搜索和思考设置。输入框的 **联网** 与 **原文** 开关仅用于 API，在 WEB 模式下禁用。论文阅读任务会自动附加可用材料；文本中仅以路径引用的插图不会作为图片上传，需要看图时请使用 `@` 或图片附件。
 
-- **整篇论文一眼看清的「全文总览」**：在对话与 Reader 之间的中间列里，给出核心摘要叙述、按阶段（动机 / 方法 / 验证）分组的章节骨架（每节一句话主旨、`创新` / `效果锚点` 强调）、可折叠的子章节，以及一张折叠的结构流程图。通过模型工具循环按需生成（`zotero_outline_pdf` → `render_paper_overview`），不会自动整篇上传 PDF。
-- **点击跳转 + 吸顶头部**：点击章节即跳到 PDF 对应位置（优先用 PDF 自带目录，精确滚到章节顶部；没有目录时回退到文本匹配）。头部带 ↶ 返回栈、↩ 回到`在读`、以及 🔒 锁定（锁定后可浏览其它章节而不移动在读锚点）。
-- **导出与保存**：可用 `↗ 浏览器` 把总览作为独立 HTML 在系统浏览器打开；生成时还会自动作为子 HTML 附件保存到条目上，随 Zotero 自身同步。
-- **记住并同步阅读位置**：每篇论文的`在读`锚点跨重启保留，并随 `state.json` 同步。
-- 注意：章节跳转依赖 PDF 目录 / 文本匹配（无 SyncTeX），对于不在 PDF 自带目录里的章节，落点可能是近似位置。
+通过 `@` 引用的每篇 Zotero 论文会单独上传为文本附件，与本篇材料和前序对话附件分开。插件不会在 API 或 WEB 模式中截断参考论文的可读正文，但模型上下文和网站上传限制仍然适用。
 
-### PDF 与论文研究工具
+在服务菜单中选择 **管理第三方网页…** 可配置自定义网站。更多说明见 [WEB 使用教程](docs/USAGE.zh-CN.md#212-通过-web-模式使用内置网页模型)和 [Web Agent 排障文档](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)。
 
-- **由模型驱动的 Zotero 工具**：使用 Codex 风格的工具循环；不靠本地关键词/正则的意图判定来决定该把哪些 PDF 内容塞给模型。
-- **PDF 上下文工具**：当前条目元信息、批注、PDF 全文检索、PDF 区间阅读、PDF 全文阅读，以及划选文本作为上下文。
-- **选区原文溯源**：选中的 PDF 原文会保留在对话气泡和 Markdown 导出中；当 Zotero 提供定位信息时，可一键跳回 PDF 原选区。
-- **图像上下文**：可以附带截图或图片，让模型分析图表、界面状态或 PDF 截图。工具栏截图按钮在 Linux 和 Windows 上都能截取 Reader 区域。
-- **可自定义注释颜色规则**：可编辑模型写入 PDF 注释时使用的自然语言色彩规则，默认把 Zotero 的六种预设 hex 颜色映射到论文阅读常用类别（背景、问题、方法、数据集、结果等）。
-- **arXiv 论文工具**：内置 `paper_search_arxiv` 和 `paper_fetch_arxiv_fulltext`，模型可按需检索 arXiv 并抓取全文。
-- **注释颜色与新增文字**：颜色 rubric 可改写，也可一键恢复默认；「🅣 新增文字」的默认字号可设为 8–48 PDF 点。
-- **转为 PDF**：笔记、阅读路线或全文总览可从面板 `⋯` 菜单选 `▣ 转为 PDF`，导出为 PDF 文件。
+</details>
 
-### 论文素材
+## 阅读与日常操作
 
-- **`@` 素材列表**：输入 `@` 打开这篇论文的图片、表格和公式，顶部固定一排 **本页 / 全部 / 图片 / 表格 / 公式** 范围标签；悬停某一行会显示该素材在 PDF 上的位置。选图片会作为图片发送，选表格或公式只插入 `[表 #1]` / `[公式 #2]` 短标签，发送时才展开成完整 LaTeX 源码，输入框不会被表格代码占满。MinerU 解析出的表格以 LaTeX（`tabular`）随消息发送，而不是页面截图。
-- **`@` 引用参考论文**：在 `@` 列表切换到 Zotero 文章，默认显示本篇所在目录的论文，也可搜索整个文库。同一条问题可以选多篇，例如 `@[论文 A] @[论文 B] 比较它们与本篇的区别`；删掉标记就不再引用该篇。API 模式会分别提供各篇题录及可读原文，并允许模型通过引用论文工具继续读取；没有可读正文时使用题录及现有摘要。对话气泡和上下文状态会把多篇引用分行显示，不改动原始提问文本。
-- **在 PDF 上点选**：点「素材」（或按默认 `Ctrl+Shift+M`）在左侧页面进入取点——点到图片、表格或公式即附加，再选同类会叠加，绿色虚线框标出本轮用到的引用。取点期间整页文字锁住（十字准星光标、拖不出选区），不会顺手把正文划成引用；取点前已选好的文字不受影响。
-- **页码与来源如实说明**：页码由阅读器打印的页文本反查，只能确定在相邻素材之间时显示 `第 N–M 页·推测`；页文本还没就绪时列表直接说明，且不会把这次结果写进缓存。LaTeX 源论文在 PDF 上点不出素材，点击会提示回列表挑选。
-- **使用须知**：输入行 `原文` 右边的浅灰标签讲清材料来源（LaTeX 源 / MinerU 解析稿 / 都没就绪）、API 与 WEB 各怎么发送，以及在哪里改「素材」快捷键。
+| 任务                 | 操作入口                                                                                                 |
+| -------------------- | -------------------------------------------------------------------------------------------------------- |
+| 解读一段原文         | 划选 PDF 文字后在侧边栏提问，发送前检查选区上下文。                                                      |
+| 附加图片、表格或公式 | 输入 `@`，或点击 **素材**（默认 `Ctrl+Shift+M`）。图片作为图像发送，表格和公式标记在发送时展开为源文本。 |
+| 比较多篇论文         | 用 `@` 选择多篇 Zotero 文章，再在问题中说明比较目标。                                                    |
+| 翻译一句话           | 在 PDF 阅读器工具栏开启 **沉浸**，点击句子或使用快捷翻译键（默认空格）。                                 |
+| 阅读全文翻译         | 使用可用的 LaTeX 源打开全文翻译，或配置 MinerU Token 解析普通 PDF。                                      |
+| 生成阅读指引         | 打开笔记列并切换到 **路线** 或 **总览**，首次生成后按需手动更新。                                        |
+| 保存阅读成果         | 保存回答到笔记、导入回答片段，或从 `⋯` 菜单导出笔记、阅读路线与总览。                                    |
 
-### 笔记
+普通 PDF 的全文阅读页支持逐段对照、按句换行与原始 PDF 对照。素材可用性取决于 LaTeX 源或 MinerU 解析结果。PDF 直接点选需要解析得到的页面位置；只有 LaTeX 源时可从列表选择。总览跳转依赖 PDF 目录或文本匹配，部分落点可能近似。
 
-- **统一的笔记列导航**：一个分段切换器（笔记 · 路线 · 总览）在 AI 笔记、阅读路线、全文总览之间切换——切换只导航、绝不触发生成。可生成的视图在为空时显示居中的「生成」按钮、生成后在头部显示 `↻ 更新`，路线与总览行为一致。笔记视图的 `⋯` 菜单里有「对话总结」，把沉浸阅读的就地问答汇总进笔记，并原地替换旧的总结而非堆叠重复。
-- **面板内笔记编辑器**：在对话旁打开笔记列，直接就地编辑 Zotero 的富文本笔记，并提供 assistant 写入笔记的工具。
-- **模型主动写入笔记**：模型也可以自行调用 `zotero_append_to_note`，把助手输出追加到当前条目的子笔记中，没有子笔记时会自动创建。
-- **按当前光标导入片段**：选中一段助手回答后右键 `导入笔记`，会优先插入到当前 Zotero 笔记光标处，而不是固定追加到末尾。
-- **稳定恢复笔记位置**：写入笔记后会恢复原来的滚动位置 / 鼠标锚点 / 光标位置，避免跳回笔记最开头。
-- **返回 PDF 原选区**：写入笔记的块和助手上下文标签会带 `查看原选区` 跳转，方便从笔记或对话回到触发回答的 PDF 原文。
+**模型默认值：** 沉浸阅读使用设置中指定的默认翻译模型；全文翻译首次继承该配置，之后独立记住模型选择。Quick Ask 首次采用当前对话模型，之后独立记住账号、模型与推理强度。
 
-### 翻译
+**语言与布局：** 在 **设置 → 显示设置 → 界面语言** 中选择 **跟随系统 / 中文 / English**。中文系统使用中文，其他系统语言回退为英文；读取不到系统语言时使用 Zotero 界面语言。内置提示词及已保存的默认版本随界面语言切换，用户编辑过的提示词保留原文。AI 回复语言由实际发送的提示词控制，可在 **快捷提示词** 中修改。阅读器侧栏与右侧并排布局分别记住调整后的宽度。
 
-- **PDF 沉浸式翻译**：在 PDF Reader 工具栏开启 `沉浸`，点句子即在原文旁出译文卡（原文 + 译，最省 token）；卡内可切换「逐句对照」（一行英文一行中文）、「重点词对应」、「结合上下句」、「自适应宽度」，底部还能继续「追问」让 AI 解释 / 举例。
-- **普通 PDF 全文翻译**：没有 arXiv LaTeX 源时，可配置 mineru.net Token，通过 MinerU 精准解析 PDF 后使用全文对照阅读页；支持逐段、按句换行及原始 PDF 对照。解析会把 PDF 上传到 MinerU。
-- **arXiv 全文翻译**：有 `LaTeX 源` 徽章时可打开全文翻译阅读页，按中英 / 中文 / 英文及左右 / 逐段方式阅读；顶部模型名称可展开账号、模型和思考强度设置。首次从默认翻译模型继承，修改后由全文翻译独立记忆。
-- **保存与复用译文**：可把译文卡的翻译保存为 Zotero 高亮批注（💾）；若该句已有批注，卡片会直接显示已存的笔记而不重新翻译，保存时按 key upsert，不会产生重复高亮。沉浸模式开启时会隐藏 Zotero 原生选区菜单，让译文卡成为唯一交互面。
-- **切句、选区快译与追问**：`Enter` / `Shift+Enter` 翻到下一句 / 上一句；选中（或悬停）某句后按快捷键（默认空格）直接翻这一句；按 `/` 把光标移进卡底「追问」框（Enter 已用于切句）；`Esc` 关掉卡片后该句仍标为「在读高亮」，可继续切句；按收起工具栏键（默认 `h`）可把卡片的信息栏和底栏折叠到只剩输入框。快捷键都可在设置里改。
+**默认快捷键**（可在设置中修改）：
 
-### 同步与配置
+| 使用场景 | 快捷键                  | 操作                     |
+| -------- | ----------------------- | ------------------------ |
+| Zotero   | `Alt+Q`                 | 打开 Quick Ask           |
+| PDF 素材 | `Ctrl+Shift+M`          | 点选素材                 |
+| 沉浸阅读 | `Enter` / `Shift+Enter` | 下一句 / 上一句          |
+| 沉浸阅读 | `Space`                 | 快速翻译选中或悬停的句子 |
+| 沉浸阅读 | `/`                     | 聚焦追问输入框           |
+| 沉浸阅读 | `Esc`                   | 关闭译文卡，保留在读高亮 |
+| 沉浸阅读 | `h`                     | 收起卡片工具栏           |
 
-- **快捷提示词落在数据目录**：内置模板、自定义按钮和「普通选区提问后生成建议注释」开关保存在 `zotero-ai-sidebar-quick-prompts.json`，与聊天记录一样放在 Zotero 数据目录，不写入 `prefs.js`。
-- **配置备份与恢复**：把模型预设（含 API key）、显示设置、快捷提示词、联网/MCP 设置和翻译设置打包为一个 JSON 文件，可导出 / 导入，方便换机迁移。该文件含密钥，请妥善保管、不要公开分享。
-- **WebDAV 云同步**：通过单个 `state.json` 快照在任意 WebDAV 端点（如坚果云）推送 / 拉取——包含模型预设（含 API key）、显示设置、快捷提示词、联网/MCP 设置、翻译设置、AI 对话历史、逐句翻译缓存、完整 PDF 批注（高亮 / 下划线 / 笔记 / 墨迹）、逐条目全文总览，以及阅读位置（`在读`锚点）。
-- **自动同步**：默认关闭；开启后启动时和每 10 分钟先从云端下载，合并本地对话 / 缓存数据，再上传合并后的状态。
-- **非破坏式对话同步**：云端有、本地没有的对话消息会追加进来；本地已有的对话不会被下载操作删除。
-- **由你掌控的敏感信息**：API Key、Base URL、模型 ID 保存在 Zotero 偏好里，绝不硬编码进源码，也绝不发给 zotero.org / 插件作者 / 任何第三方。但它们*会*随你自己的 `state.json`（WebDAV 同步）和配置导出文件一起走——这两者都是你掌控的私有文件，请像对待任何含凭据的文件一样保管。WebDAV 账号口令本身不会写进快照。
+批注权限、快捷提示词、任务队列、Token 用量和具体操作见[完整使用指南](docs/USAGE.zh-CN.md)。
 
-## 总体架构
+## 数据与隐私
 
-```mermaid
-flowchart TB
-    User([你])
+设置、聊天记录、提示词和阅读缓存保存在本地。**本地存储不代表 AI 处理离线进行：** API 请求会把问题与所用上下文发往已配置的模型端点，并使用 API Key 鉴权；WEB 请求会把消息和附件发送到所选网站。使用 MinerU 解析时，PDF 会上传到该服务。
 
-    subgraph UI[Zotero 主窗口]
-        direction LR
-        Side[AI 侧边栏]
-        PDF[PDF Reader]
-        Note[笔记编辑器]
-        Side --> PDF
-        Side --> Note
-    end
+- **可选 WebDAV 同步**：将 `state.json` 快照发送到自行配置的端点，包含模型预设、显示与工具设置、提示词、对话、批注、翻译缓存、总览、阅读位置和网络图工作区数据。
+- **快照和配置备份包含 API Key**：密钥随模型预设导出，请妥善保管这些文件。WebDAV 账号口令不写入 `state.json`，但会用于向所配置的 WebDAV 服务鉴权。
+- **自动同步默认关闭**：开启后在启动时及每 10 分钟执行拉取、合并和推送；对话合并保留本地独有消息。
+- **与 Zotero 同步分开**：Zotero 负责文库元数据及其配置的附件同步，插件 WebDAV 负责插件状态，不能替代附件备份或 Zotero 文库同步。
 
-    subgraph Local[本地数据边界]
-        direction LR
-        Core[(Zotero 库<br/>题录 + Zotero 注释)]
-        Files[(PDF 附件文件<br/>storage/*)]
-        PluginState[(插件同步状态<br/>预设 + API Key / 显示 / 提示词 / 工具+MCP<br/>对话 / 翻译缓存 / PDF 批注)]
-        Secrets[(仅本地<br/>WebDAV 账号口令)]
-    end
+配置另一台设备前，请阅读[同步指南](docs/USAGE.zh-CN.md#28-跨设备同步聊天和配置webdav)。
 
-    subgraph Runtime[运行时集成]
-        direction LR
-        Provider[LLM 提供商 API<br/>OpenAI / Anthropic / 兼容端点]
-        WebAgent[本地 Web Agent<br/>localhost 令牌 + 任务队列]
-        Browser[独立浏览器配置<br/>Chrome / Edge / Firefox / 自定义 Chromium 兼容浏览器]
-        Tools[本地 AgentTool<br/>可选自动化]
-    end
+## 文档导航
 
-    subgraph Cloud[云端同步目标]
-        direction LR
-        ZoteroOrg[(zotero.org<br/>元数据同步)]
-        FileDAV[(WebDAV<br/>Zotero File Sync)]
-        PluginDAV[(插件 WebDAV<br/>state.json)]
-        WebApps[(AI 网页<br/>ChatGPT / DeepSeek / ChatGLM / Z.ai / Kimi / 自定义)]
-    end
-
-    User -->|提问 / 选区 / 截图| Side
-    Side <-->|HTTPS| Provider
-    Side <-->|localhost| WebAgent
-    WebAgent --> Browser
-    Browser <-->|HTTPS| WebApps
-    Side -->|工具| Tools
-    Tools --> Core
-    Side --> Secrets
-    Side --> PluginState
-    Core --- Files
-
-    Core -.题录 + Zotero 注释.-> ZoteroOrg
-    Files -.附件同步.-> FileDAV
-    PluginState -.推送 / 拉取.-> PluginDAV
-
-    classDef actor fill:#fff7ed,stroke:#fb923c,color:#7c2d12,stroke-width:1px;
-    classDef zotero fill:#eef2ff,stroke:#818cf8,color:#312e81,stroke-width:1px;
-    classDef local fill:#ecfeff,stroke:#06b6d4,color:#164e63,stroke-width:1px;
-    classDef runtime fill:#f5f3ff,stroke:#a78bfa,color:#4c1d95,stroke-width:1px;
-    classDef cloud fill:#f0fdf4,stroke:#22c55e,color:#14532d,stroke-width:1px;
-    class User actor;
-    class Side,PDF,Note zotero;
-    class Core,Files,PluginState,Secrets local;
-    class Provider,WebAgent,Browser,Tools runtime;
-    class ZoteroOrg,FileDAV,PluginDAV,WebApps cloud;
-    style UI fill:#f8fafc,stroke:#c7d2fe,stroke-width:1px
-    style Local fill:#ecfeff,stroke:#67e8f9,stroke-width:1px
-    style Runtime fill:#faf5ff,stroke:#d8b4fe,stroke-width:1px
-    style Cloud fill:#f0fdf4,stroke:#86efac,stroke-width:1px
-```
-
-### 三层云同步分工
-
-```mermaid
-flowchart LR
-    subgraph Local[本机]
-        direction TB
-        Lib[(Zotero 库元数据<br/>题录 + Zotero 注释)]
-        Storage[Zotero 附件文件<br/>storage/*]
-        Plugin[插件同步状态<br/>预设 + API Key / 设置 / 提示词<br/>对话历史 / 翻译缓存 / 完整 PDF 批注]
-        Secrets[仅本地<br/>WebDAV 账号口令]
-    end
-    subgraph Cloud[云端]
-        direction TB
-        ZS[zotero.org<br/>元数据同步]
-        WD1[坚果云 WebDAV<br/>Zotero File Sync 写入]
-        WD2[插件 WebDAV 命名空间<br/>插件状态快照]
-        NoCloud[口令不进 state.json]
-    end
-    Lib <-->|元数据同步| ZS
-    Storage <-->|文件同步| WD1
-    Plugin <-->|推送 / 拉取| WD2
-    Secrets -.从不上传.-> NoCloud
-
-    classDef local fill:#ecfeff,stroke:#06b6d4,color:#164e63,stroke-width:1px;
-    classDef cloud fill:#f0fdf4,stroke:#22c55e,color:#14532d,stroke-width:1px;
-    classDef blocked fill:#fff1f2,stroke:#fb7185,color:#881337,stroke-width:1px,stroke-dasharray:4 3;
-    class Lib,Storage,Plugin,Secrets local;
-    class ZS,WD1,WD2 cloud;
-    class NoCloud blocked;
-    style Local fill:#ecfeff,stroke:#67e8f9,stroke-width:1px
-    style Cloud fill:#f8fafc,stroke:#cbd5e1,stroke-width:1px
-```
+| 文档                                                                                 | 内容                                                                                            |
+| ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------- |
+| [图解教程](https://xuhan-rgb.github.io/zotero-ai-sidebar/quick-start.html)           | 界面总览与常用流程                                                                              |
+| [使用指南](docs/USAGE.zh-CN.md) / [English](docs/USAGE.md)                           | 配置、功能手册与故障排查                                                                        |
+| [Web Agent 排障](docs/WEB_AGENT_TROUBLESHOOTING.zh-CN.md)                            | 网站行为与兼容边界                                                                              |
+| [工具与 MCP](docs/TOOLS_AND_MCP.md)                                                  | 本地工具、联网搜索与 MCP 的职责边界                                                             |
+| [Harness 设计](docs/HARNESS_ENGINEERING.md) / [上下文协议](docs/CONTEXT_PROTOCOL.md) | 工具执行与上下文组织                                                                            |
+| [更新记录](CHANGELOG.zh-CN.md) / [English](CHANGELOG.md)                             | 版本历史；发布产物见 [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases) |
 
 ## 开发
 
-安装开发依赖（普通用户不需要运行 npm）：
+在仓库根目录运行：
 
 ```bash
-npm install
-```
-
-运行测试：
-
-```bash
+npm ci
 npm test
-```
-
-本地构建 XPI：
-
-```bash
 npm run build
 ```
 
-构建会在 `.scaffold/build/` 同时生成 `zotero-ai-sidebar.xpi` 和独立的 `zai-web-agent-runtime.zip`。本地发布产物已被 `.gitignore` 忽略，不要提交。
+测试和构建脚本会自动准备 Web Agent 依赖。构建在 `.scaffold/build/` 下生成两个配套产物：
 
-### 代码结构
+- `zotero-ai-sidebar.xpi`：Zotero 插件。
+- `zai-web-agent-runtime.zip`：Web Agent 运行包。
 
-Zotero 面板侧边栏入口是 `src/modules/sidebar.ts`，它保留核心对话编排（面板渲染、send/stream、reader 选区、笔记窗口编排），并把聚焦的职责拆到同级模块——`sidebar-state`（共享状态/类型）、`reader-access` → `pdf-navigation` → `note-pdf-render`（reader / PDF 跳转 / 引用子系统），以及 `pdf-geometry`、`client-rect-geometry`、`message-scroll`、`selected-text-format`、`prompt-cache-debug`、`reading-route-note`、`overview-attachment` 等。完整文件地图见 [`CLAUDE.md`](CLAUDE.md) 里的 **Code Reference Map**。
+请勿提交生成的产物或个人凭据。
 
-## 发布
+| 路径                                                        | 职责                                           |
+| ----------------------------------------------------------- | ---------------------------------------------- |
+| [`src/modules/`](src/modules/)                              | 侧边栏、阅读器集成、笔记窗口、Web Agent 客户端 |
+| [`src/providers/`](src/providers/)                          | 模型适配、流式输出与工具执行                   |
+| [`src/context/`](src/context/)                              | Zotero 工具、论文上下文、检索与阅读状态        |
+| [`src/translate/`](src/translate/)                          | 沉浸翻译与全文翻译                             |
+| [`src/settings/`](src/settings/) / [`src/sync/`](src/sync/) | 偏好、持久化、备份与 WebDAV 同步               |
+| [`addon/`](addon/)                                          | 插件清单、样式、设置界面与本地化               |
+| [`web-agent/`](web-agent/)                                  | 浏览器自动化运行时与网站适配                   |
+| [`tests/`](tests/)                                          | 自动化测试                                     |
 
-`/auto-commit` 完成版本号更新后，运行 `npm run release:xpi` 即可一步完成打 tag、推送、GitHub Actions 构建并发布 Release。`--republish`、显式 tag 等参数及校验细节见 [`docs/RELEASE.md`](docs/RELEASE.md)。
+项目约定与详细代码地图见 [CLAUDE.md](CLAUDE.md)。
 
-## 设计原则
+### 发布版本
 
-项目特定的修改指引（Codex 风格 agent、Claudian 风格对话 UI、Better Notes 风格笔记编辑、不可触碰的红线）都在 [`CLAUDE.md`](CLAUDE.md)。本地工具 / Web Search / MCP 的使用边界见 [`docs/TOOLS_AND_MCP.md`](docs/TOOLS_AND_MCP.md)。
+更新并提交 `package.json` 中的版本号后，在干净工作区运行 `npm run release:xpi`。脚本会运行测试和本地构建、打标签并推送，再等待 GitHub Actions 发布 XPI 与配套运行包。前置要求和重新发布参数见[发布指南](docs/RELEASE.md)。
+
+## 反馈
+
+通过 [Issues](https://github.com/xuhan-rgb/zotero-ai-sidebar/issues/new/choose) 提交 Bug、功能建议或使用问题，提供中文与英文表单。请附上插件与 Zotero 版本、操作系统、API / WEB 模式、复现步骤和相关错误；分享日志前移除凭据。
 
 ## 许可证
 
-AGPL-3.0-or-later。
+[AGPL-3.0-or-later](LICENSE)。

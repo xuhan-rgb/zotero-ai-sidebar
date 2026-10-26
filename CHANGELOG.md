@@ -1,6 +1,14 @@
 # Changelog
 
-Release notes for earlier versions. The newest release is described in [README.md](README.md); [中文](CHANGELOG.zh-CN.md).
+Version history. For published builds and release details, see [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases); [中文](CHANGELOG.zh-CN.md).
+
+## v0.8.19
+
+- **Firefox in WEB mode**: choose Firefox alongside Chrome and Edge. Native and Snap installations keep separate login profiles, and attachment staging supports Snap's accessible directories.
+- **Node.js setup**: detect NVM installations even when Zotero starts from the desktop, or choose a Node executable or installation directory in the account dialog. Path settings stay available and validate before saving.
+- **More reliable Web Agent setup**: health checks, runtime downloads, and startup waits use Gecko timers in Zotero's sandbox.
+- **Browser management and documentation**: remove manually added browser entries while preserving their login data; Chinese and English setup instructions cover Firefox and Node detection.
+- **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime; existing settings and browser login profiles are preserved.
 
 ## v0.8.18
 
@@ -23,6 +31,16 @@ Release notes for earlier versions. The newest release is described in [README.m
 - **Multiple referenced papers in one question**: use `@` to pick several Zotero papers, then compare them or use them to analyze the current paper. API sends each paper's available original text with a reading tool; WEB uploads each as a separate text attachment.
 - **Complete reference text**: the plugin no longer truncates the readable original text of `@`-referenced papers in API or WEB mode. Model context and website upload limits may still apply.
 - **Clearer reference display**: multiple references appear on separate lines in the conversation and context status without changing the question text.
+
+## v0.8.12
+
+- **`@` picks the paper's material**: typing `@` in the composer lists the paper's pictures, tables, and formulas. For a MinerU-parsed PDF — including the PDF opened next to a LaTeX paper — material on the page you are reading is listed first and marked 本页, and the chips at the top switch between 本页 / 全部 / 图片 / 表格 / 公式. A picked picture is sent as an image; a picked table or formula stays a short `[表 #1]` marker in the composer and expands to its LaTeX source when you send.
+- **`@` works for LaTeX-only papers**: arXiv figure files that are PDF or EPS are rasterised into pictures on the fly, and `\input` / `\include` files are expanded first, so papers whose sections live in separate `.tex` files no longer show an empty list.
+- **WEB images are really uploaded**: pictures attached in the composer, including the ones picked with `@`, now travel with the message instead of being silently dropped.
+- **Pick on the PDF, not just in the list**: the 素材 chip left of the composer arms click-to-pick (the default `Ctrl+Shift+M` does the same) — click a picture, table, or formula on the page to attach it, pick the same kind again to stack, and a green dashed box marks the current round's references. The page's text is locked while picking, so prose cannot be grabbed into a quote by accident; closing the list with the chip or `Esc` also deletes the half-typed `@`.
+- **Straight answers about pages and sources**: material pages are resolved from the page text the reader prints (第 N–M 页·推测 when only the neighbours bound them), a list opened before that text is ready says so and is never cached, and on a LaTeX-only paper a click on the PDF points back to the list instead of pretending there is nothing to pick.
+- **A usage notice**: the low-contrast 使用须知 chip right of 原文 in the input row now opens with where the paper's material comes from (LaTeX source / MinerU parse / neither yet) and how material is used (`@` list, picking on the PDF, `[表 #1]` markers, definite pages vs 推测 ranges), then what differs between API and WEB mode — above all that WEB sends no figures by default — and records the 素材 shortcut (default `Ctrl+Shift+M`). The paper card no longer repeats that warning.
+- **Upgrade**: install the 0.8.12 XPI and restart Zotero. Existing settings, prompt edits, and WEB logins are kept.
 
 ## v0.8.11
 
