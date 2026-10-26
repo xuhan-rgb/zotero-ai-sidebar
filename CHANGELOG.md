@@ -2,6 +2,14 @@
 
 Version history. For published builds and release details, see [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases); [中文](CHANGELOG.zh-CN.md).
 
+## v0.8.20
+
+- **Stable sidebar toggles**: preserve the PDF reader width and chat reading position when hiding or reopening the AI sidebar. Create controls in their destination document to avoid Gecko document-adoption errors.
+- **Settings and conversation backups**: local JSON backups include conversations, drafts, images, translation caches, annotations, and reading data alongside settings. Imports merge conversations, retain support for legacy settings-only backups, and stop while AI responses are running.
+- **Clearer sync settings**: compact cloud-storage settings and help explain what Zotero sync, attachment storage, and plugin WebDAV sync each handle.
+- **Reorganized documentation**: Chinese and English READMEs put installation and API / WEB setup first, keep advanced environment instructions expandable, and clarify data handling. Version history is consolidated here.
+- **Upgrade**: install the new XPI and restart Zotero. WEB users should follow the account dialog to check the paired runtime. Backup JSON contains API keys and conversation content; keep it private.
+
 ## v0.8.19
 
 - **Firefox in WEB mode**: choose Firefox alongside Chrome and Edge. Native and Snap installations keep separate login profiles, and attachment staging supports Snap's accessible directories.
