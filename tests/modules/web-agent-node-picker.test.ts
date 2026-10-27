@@ -17,6 +17,24 @@ describe("manual Node path controls", () => {
     root.open = false;
     expect(root.open).toBe(false);
   });
+  it("creates working HTML controls inside a Zotero XUL document", () => {
+    const xulDoc = new DOMParser().parseFromString(
+      '<window xmlns="http://www.mozilla.org/keymaster/gatekeeper/there.is.only.xul"/>',
+      "application/xml",
+    );
+    // Gecko's XUL documents do not create HTML elements by default.
+    vi.spyOn(xulDoc, "createElement").mockImplementation((tag) =>
+      xulDoc.createElementNS(xulDoc.documentElement.namespaceURI, tag) as HTMLElement,
+    );
+    const root = renderWebAgentNodePicker(xulDoc, vi.fn(), vi.fn());
+    const htmlNamespace = "http://www.w3.org/1999/xhtml";
+    expect(root.namespaceURI).toBe(htmlNamespace);
+    expect(root.open).toBe(true);
+    for (const element of root.querySelectorAll("*")) {
+      expect(element.namespaceURI).toBe(htmlNamespace);
+    }
+    expect(root.querySelector("input")!.type).toBe("text");
+  });
   it("accepts a pasted directory and rechecks the environment after validation", async () => {
     const onSaved = vi.fn(async () => {});
     vi.mocked(selectWebAgentNode).mockResolvedValueOnce({

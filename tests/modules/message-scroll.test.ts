@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import {
   prepareMessagesScrollRestore,
+  preserveMessagesScrollOnToggle,
   resetMessagesScrollForConversation,
   preserveStreamingMessagesScroll,
   preserveThinkingScroll,
@@ -298,5 +299,70 @@ it('restores the network conversation without overwriting normal chat scroll', (
     vi.runAllTimers();
   } finally {
     vi.useRealTimers();
+  }
+});
+
+
+it('shows the latest message when reopening the AI sidebar instead of its saved reading position', () => {
+  vi.useFakeTimers();
+  try {
+    const mount = document.createElement('div');
+    const messages = document.createElement('div'); messages.className = 'messages';
+    Object.defineProperties(messages, { scrollHeight: { value: 1600 }, clientHeight: { value: 400 } });
+    mount.append(messages);
+    const state = { activeConversationID: 'a', messagesScrollTop: 200, autoFollowMessages: false } as PanelState;
+    states.set(mount, state);
+    messages.scrollTop = 200;
+    preserveMessagesScrollOnToggle(mount, true, () => { messages.scrollTop = 0; });
+    preserveMessagesScrollOnToggle(mount, false, () => {}, true);
+    vi.advanceTimersByTime(400);
+    expect(messages.scrollTop).toBe(1200);
+    expect(state.messagesScrollTop).toBe(1200);
+    expect(state.autoFollowMessages).toBe(true);
+    messages.scrollTop = 300;
+    state.autoFollowMessages = false;
+    preserveStreamingMessagesScroll(mount, false, () => {});
+    vi.advanceTimersByTime(400);
+    expect(messages.scrollTop).toBe(300);
+  } finally { vi.useRealTimers(); }
+});
+
+it.each([false, true])('waits for the first visible history layout and respects manual scrolling (cancel=%s)', (cancel) => {
+  vi.useFakeTimers();
+  const callbacks: Array<() => void> = [];
+  const disconnect = vi.fn();
+  vi.stubGlobal('ResizeObserver', class {
+    constructor(callback: () => void) { callbacks.push(callback); }
+    observe() {}
+    disconnect = disconnect;
+  });
+  const mount = document.createElement('div');
+  const messages = document.createElement('div');
+  messages.className = 'messages';
+  messages.innerHTML = '<div class="bubble">Restored history</div>';
+  mount.append(messages);
+  document.body.append(mount);
+  let height = 0, client = 0;
+  Object.defineProperties(messages, {
+    scrollHeight: { get: () => height }, clientHeight: { get: () => client },
+  });
+  const state = { activeConversationID: 'a' } as PanelState;
+  states.set(mount, state);
+  try {
+    resetMessagesScrollForConversation(state);
+    prepareMessagesScrollRestore(state)(mount, true);
+    vi.advanceTimersByTime(1000); // History stays hidden beyond all fixed retries.
+    if (cancel) messages.dispatchEvent(new WheelEvent('wheel', { deltaY: -100 }));
+    height = 3000; client = 400;
+    if (cancel) messages.scrollTop = 300;
+    callbacks.forEach(callback => callback());
+    expect(messages.scrollTop).toBe(cancel ? 300 : 2600);
+    if (!cancel) expect(state.autoFollowMessages).toBe(true);
+    expect(disconnect).toHaveBeenCalled();
+  } finally {
+    mount.remove();
+    vi.clearAllTimers();
+    vi.useRealTimers();
+    vi.unstubAllGlobals();
   }
 });

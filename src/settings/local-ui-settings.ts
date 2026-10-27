@@ -7,10 +7,15 @@ export interface LocalUiSettings {
   webPromptProvider: WebPromptProvider;
   hideWebBrowser: boolean;
   alwaysSendPdf: boolean;
+  chatWindowPinned: boolean;
+  noteWindowPinned: boolean;
   chatgptWeb: ChatGPTWebSettings;
   deepseekWeb: DeepSeekWebSettings;
   customWebProviders: CustomWebProvider[];
   sidebarDisplayMode: SidebarDisplayMode;
+  noteWindowMode: NoteWindowMode;
+  dockedTightLayout: boolean;
+  floatingPanels: FloatingPanelLayout;
   fullTranslationReading: FullTranslationReadingSettings;
 }
 
@@ -51,7 +56,25 @@ export interface DeepSeekWebSettings {
   deepThinking: boolean;
   webSearch: boolean;
 }
-export type SidebarDisplayMode = "embedded" | "docked";
+export type SidebarDisplayMode = "embedded" | "docked" | "floating";
+export type NoteWindowMode = "inline" | "window";
+
+export interface FloatingPanelRect {
+  x: number | null;
+  y: number | null;
+  width: number;
+  height: number;
+}
+
+export interface FloatingPanelLayout {
+  composer: FloatingPanelRect;
+  answer: FloatingPanelRect;
+}
+
+export const DEFAULT_FLOATING_PANEL_LAYOUT: FloatingPanelLayout = {
+  composer: { x: null, y: null, width: 460, height: 340 },
+  answer: { x: null, y: null, width: 500, height: 560 },
+};
 
 export type FullTranslationLanguageMode =
   | "bilingual"
@@ -106,6 +129,8 @@ export const DEFAULT_LOCAL_UI_SETTINGS: LocalUiSettings = {
   webPromptProvider: "chatgpt",
   hideWebBrowser: true,
   alwaysSendPdf: false,
+  chatWindowPinned: true,
+  noteWindowPinned: false,
   chatgptWeb: {
     reasoningEffort: "medium",
   },
@@ -116,6 +141,9 @@ export const DEFAULT_LOCAL_UI_SETTINGS: LocalUiSettings = {
   },
   customWebProviders: [],
   sidebarDisplayMode: "embedded",
+  noteWindowMode: "inline",
+  dockedTightLayout: false,
+  floatingPanels: DEFAULT_FLOATING_PANEL_LAYOUT,
   fullTranslationReading: DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
 };
 
@@ -187,14 +215,39 @@ export function normalizeLocalUiSettings(value: unknown): LocalUiSettings {
         ? input.hideWebBrowser
         : DEFAULT_LOCAL_UI_SETTINGS.hideWebBrowser,
     alwaysSendPdf: input.alwaysSendPdf === true,
+    chatWindowPinned:
+      typeof input.chatWindowPinned === "boolean"
+        ? input.chatWindowPinned
+        : DEFAULT_LOCAL_UI_SETTINGS.chatWindowPinned,
+    noteWindowPinned:
+      typeof input.noteWindowPinned === "boolean"
+        ? input.noteWindowPinned
+        : DEFAULT_LOCAL_UI_SETTINGS.noteWindowPinned,
     chatgptWeb: normalizeChatGPTWebSettings(input.chatgptWeb),
     deepseekWeb: normalizeDeepSeekWebSettings(input.deepseekWeb),
     customWebProviders,
     sidebarDisplayMode: normalizeSidebarDisplayMode(input.sidebarDisplayMode),
+    noteWindowMode: input.noteWindowMode === "window" ? "window" : "inline",
+    dockedTightLayout:
+      typeof input.dockedTightLayout === "boolean"
+        ? input.dockedTightLayout
+        : DEFAULT_LOCAL_UI_SETTINGS.dockedTightLayout,
+    floatingPanels: normalizeFloatingPanelLayout(input.floatingPanels),
     fullTranslationReading: normalizeFullTranslationReadingSettings(
       input.fullTranslationReading,
     ),
   };
+}
+
+export function usesNativeNoteWindow(
+  settings:
+    | Pick<LocalUiSettings, "sidebarDisplayMode" | "noteWindowMode">
+    | undefined,
+): boolean {
+  return (
+    settings?.sidebarDisplayMode === "floating" ||
+    settings?.noteWindowMode === "window"
+  );
 }
 
 function normalizeWebPromptProvider(
@@ -402,7 +455,61 @@ function normalizeDeepSeekWebSettings(value: unknown): DeepSeekWebSettings {
 
 function normalizeSidebarDisplayMode(value: unknown): SidebarDisplayMode {
   if (value === "docked" || value === "companion") return "docked";
+  if (value === "floating") return "floating";
   return DEFAULT_LOCAL_UI_SETTINGS.sidebarDisplayMode;
+}
+
+export function normalizeFloatingPanelLayout(
+  value: unknown,
+): FloatingPanelLayout {
+  const input =
+    value && typeof value === "object"
+      ? (value as Partial<FloatingPanelLayout>)
+      : {};
+  return {
+    composer: normalizeFloatingPanelRect(
+      input.composer,
+      DEFAULT_FLOATING_PANEL_LAYOUT.composer,
+    ),
+    answer: normalizeFloatingPanelRect(
+      input.answer,
+      DEFAULT_FLOATING_PANEL_LAYOUT.answer,
+    ),
+  };
+}
+
+function normalizeFloatingPanelRect(
+  value: unknown,
+  defaults: FloatingPanelRect,
+): FloatingPanelRect {
+  const input =
+    value && typeof value === "object"
+      ? (value as Partial<FloatingPanelRect>)
+      : {};
+  return {
+    x: normalizePanelPosition(input.x),
+    y: normalizePanelPosition(input.y),
+    width:
+      typeof input.width === "number" &&
+      Number.isFinite(input.width) &&
+      input.width >= 320 &&
+      input.width <= 1600
+        ? input.width
+        : defaults.width,
+    height:
+      typeof input.height === "number" &&
+      Number.isFinite(input.height) &&
+      input.height >= 180 &&
+      input.height <= 1400
+        ? input.height
+        : defaults.height,
+  };
+}
+
+function normalizePanelPosition(value: unknown): number | null {
+  return typeof value === "number" && Number.isFinite(value)
+    ? value
+    : null;
 }
 
 export function normalizeFullTranslationReadingSettings(

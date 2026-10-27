@@ -144,8 +144,8 @@ describe("optional docked sidebar layout", () => {
     expect(sidebarSource).toContain('["embedded", uiText("阅读器侧栏", "Reader sidebar")]');
     expect(sidebarSource).toContain('["docked", uiText("右侧并排", "Docked right")]');
     expect(sidebarSource).toContain('control.toggleAttribute("open", opening)');
-    expect(sidebarSource).toContain(
-      'option.addEventListener("click", () => onSelect(value))',
+    expect(sidebarSource).toMatch(
+      /option\.addEventListener\("click", \(\) => \{[\s\S]*?onSelect\(value\);/,
     );
     expect(sidebarSource).toContain("function applySidebarDisplayMode(");
     expect(sidebarSource).toContain("state.localUiSettings = next");

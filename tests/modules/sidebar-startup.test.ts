@@ -219,11 +219,12 @@ describe("sidebar startup", () => {
         "loadReaderLayoutPrefs",
         "DOCKED_AI_SPLITTER_WIDTH",
         "preserveMessagesScrollOnToggle",
+        "syncReadingTightLayout",
         `${toggleJs}; return setColumnCollapsed;`,
       )(states, enterDocked, vi.fn(), vi.fn(), vi.fn(), vi.fn(),
         () => sidebar.column.hasAttribute("collapsed"),
         () => ({ dockedAiWidth: 480 }), 4,
-        (_mount: unknown, _collapsed: boolean, mutate: () => void) => mutate());
+        (_mount: unknown, _collapsed: boolean, mutate: () => void) => mutate(), vi.fn());
       toggle(win, sidebar, false);
       if (mode === "docked") {
         expect(enterDocked).toHaveBeenCalledWith(win, sidebar);

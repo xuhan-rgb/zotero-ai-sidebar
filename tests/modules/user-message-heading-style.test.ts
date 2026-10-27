@@ -39,3 +39,19 @@ describe('user message heading typography', () => {
     expect(style.marginBottom).toBe('8px');
   });
 });
+
+
+describe('user message alignment', () => {
+  it.each(['', 'zai-reading-tight'])('keeps user bubbles on the right in %s layout', (layout) => {
+    const style = document.createElement('style');
+    style.textContent = css;
+    document.head.append(style);
+    document.body.innerHTML = `<div id="zai-root" class="${layout}"><div class="messages"><div class="bubble bubble-user">hello</div><div class="bubble bubble-assistant">answer</div></div></div>`;
+    const user = getComputedStyle(document.querySelector('.bubble-user')!);
+    const assistant = getComputedStyle(document.querySelector('.bubble-assistant')!);
+    expect(user.marginLeft).toBe('auto');
+    expect(user.marginRight).toBe('0px');
+    expect(assistant.width).toBe('100%');
+    expect(assistant.marginLeft).toBe('0px');
+  });
+});

@@ -14,6 +14,7 @@ An AI research assistant inside Zotero. Discuss papers using PDF text, arXiv LaT
 - **Translation while reading** — translate sentences in place, ask follow-up questions, and save translations as annotations. Full-document reading uses available arXiv LaTeX source or a MinerU-parsed PDF.
 - **Notes, reading routes, and overviews** — edit Zotero rich-text notes beside the paper, generate a reading route or section overview, jump back to the source, and export these views to PDF.
 - **Quick Ask** — open a temporary multi-turn conversation with `Alt+Q`. Transfer it to the paper's research chat when needed; closing the popup discards its temporary conversation.
+- **Floating desktop workspace** — move the AI conversation into a separate window, pin chat and note windows, remember their geometry, and minimize them with Zotero. The **View** menu brings placement, PDF margin adjustment, font size, and language controls together.
 - **Configurable workspace** — switch interface language, edit quick prompts, choose model presets and reasoning effort, and adjust chat layout. Queued messages stay sequential within a chat; separate chats can run in parallel.
 - **Backup and sync** — keep settings and reading data locally, export a JSON backup, or sync plugin state to a WebDAV endpoint you configure. See [Data and privacy](#data-and-privacy) for what is sent and stored.
 

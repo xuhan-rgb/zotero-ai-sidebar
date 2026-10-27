@@ -1,3 +1,15 @@
+import { createAdaptiveChatLayout } from "./adaptive-chat-layout";
+import { captureViewPopover, positionViewPopover, restoreViewPopover, syncViewDragGuard } from "./view-popover";
+import { linkWindowMinimization, clearWindowMinimization } from "./window-minimize-group";
+import { createPdfRightMargin } from "./pdf-right-margin";
+import { createFloatingPdfAlignment } from "./floating-pdf-alignment";
+import { installNoteWindowPin, removeNoteWindowPin, clearNoteWindowPins } from "./native-window-pin";
+import { bindSidebarMount, resolveSidebarMount } from "./sidebar-mount";
+import { createFloatingDesktopWorkspace } from "./floating-desktop-workspace";
+import {
+  createFloatingWorkspace,
+  type FloatingWorkspace,
+} from "./floating-workspace";
 import { promptText } from "../utils/prompt-locale";
 import { effectiveReasoningEffort, withModelPreservingReasoningEffort } from "../settings/reasoning";
 import { uiText, UI_LANGUAGE_PREF, normalizeUiLanguage } from "../utils/ui-locale";
@@ -97,6 +109,7 @@ import {
   DEFAULT_LOCAL_UI_SETTINGS,
   loadLocalUiSettings,
   normalizeLocalUiSettings,
+  usesNativeNoteWindow,
   saveLocalUiSettings,
   type CustomWebProvider,
   type FullTranslationReadingSettings,
@@ -567,6 +580,7 @@ import {
 } from "./pdf-geometry";
 import {
   activeMessagesScrollLock,
+  cancelMessagesScrollRestore,
   isMessagesElementNearBottom,
   isMessagesNearBottom,
   lockMessagesScroll,
@@ -760,6 +774,14 @@ const dockedSidebarLayouts = new WeakMap<
   WindowSidebarState,
   DockedSidebarLayout
 >();
+const floatingSidebarLayouts = new WeakMap<WindowSidebarState, FloatingWorkspace>();
+const readingTightLayouts = new WeakMap<WindowSidebarState, {
+  alignment: ReturnType<typeof createFloatingPdfAlignment>;
+  margin: ReturnType<typeof createPdfRightMargin>;
+  adaptive: ReturnType<typeof createAdaptiveChatLayout>;
+  originalWidth: number;
+  restoreWidth?: number;
+}>();
 const DOCKED_AI_SPLITTER_WIDTH = 4;
 const DOCKED_NOTE_SPLITTER_WIDTH = 4;
 const MIN_ZOTERO_DOCKED_CONTENT_WIDTH = 720;
@@ -796,8 +818,10 @@ function hostWindowForMount(mount: HTMLElement): Window | null {
 //     unsaved form changes; reloading prefs would resurrect the last saved
 //     model list during background sidebar refreshes.
 function renderMount(mount: HTMLElement, itemID: number | null) {
+  mount = resolveSidebarMount(mount);
   let state = states.get(mount);
   if (!state || state.itemID !== itemID) {
+    if (state) rememberMessagesReadingPosition(mount);
     const presets = loadPresets(zoteroPrefs());
     state = {
       itemID,
@@ -862,7 +886,9 @@ function renderMount(mount: HTMLElement, itemID: number | null) {
 }
 
 function renderPanel(mount: HTMLElement, state: PanelState) {
+  mount = resolveSidebarMount(mount);
   const doc = mount.ownerDocument!;
+  const viewSnapshot = captureViewPopover(mount);
   for (const picker of mount.querySelectorAll(".composer-browser-picker")) {
     traceBrowserPicker("renderPanel:will-rebuild", picker);
   }
@@ -912,7 +938,9 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
       error: errorMessage(err),
       itemID: state.itemID,
     });
-    mount.replaceChildren(renderPanelRecovery(doc, mount, state, err));
+    const recovery = renderPanelRecovery(doc, mount, state, err);
+    mount.replaceChildren(recovery);
+    if (sidebar) floatingSidebarLayouts.get(sidebar)?.arrange(recovery);
     schedulePanelRecovery(mount, state);
     return;
   }
@@ -927,6 +955,11 @@ function renderPanel(mount: HTMLElement, state: PanelState) {
   disposeComposerPicker(mount);
   mount.replaceChildren();
   mount.append(panel);
+  if (sidebar) {
+    floatingSidebarLayouts.get(sidebar)?.arrange(panel);
+    syncReadingTightLayout(sidebar);
+  }
+  restoreViewPopover(mount, viewSnapshot);
   const shouldScroll = state.scrollToBottom;
   const shouldFocus = state.focusInput;
   state.scrollToBottom = false;
@@ -1022,6 +1055,7 @@ function applyChatAppearance(
 // state.draftText). Without this flag, capture would copy the still-
 // rendered old text back into state, undoing the clear.
 function capturePanelState(mount: HTMLElement, state: PanelState) {
+  mount = resolveSidebarMount(mount);
   if (!state.skipNextDraftCapture) {
     const input = mount.querySelector(
       ".input-row textarea",
@@ -1100,28 +1134,38 @@ function installCompactMenuOutsideClick(doc: Document): void {
   doc.addEventListener(
     "click",
     (event) => {
-      const target = event.target as Node | null;
-      const path = event.composedPath?.() ?? [];
-      const menus = Array.from(
-        doc.querySelectorAll("details.zai-compact-menu[open]"),
-      ) as HTMLElement[];
-      const insideMenu = menus.some(
-        (menu) =>
-          path.includes(menu) || (target != null && menu.contains(target)),
-      );
+      const menus = Array.from(doc.querySelectorAll("details.zai-compact-menu[open]")) as HTMLElement[];
+      const insideMenu = menus.some(menu => inside(event, menu));
       if (insideMenu) return;
 
-      for (const menu of menus) {
-        for (const choice of menu.querySelectorAll(
-          ".header-layout-choice[open]",
-        )) {
-          choice.removeAttribute("open");
-        }
-        menu.removeAttribute("open");
-      }
+      for (const menu of menus) closeCompactMenu(menu);
     },
     true,
   );
+  doc.addEventListener("keydown", event => handleViewMenuEscape(event as KeyboardEvent, doc), true);
+  doc.defaultView?.addEventListener("resize", () => {
+    const menus = Array.from(doc.querySelectorAll("details.header-view-menu[open]")) as HTMLElement[];
+    for (const menu of menus) positionViewPopover(menu);
+  });
+}
+
+function closeCompactMenu(menu: Element): void {
+  for (const choice of menu.querySelectorAll(".header-layout-choice[open]")) {
+    choice.removeAttribute("open");
+    choice.querySelector(".header-layout-choice-trigger")?.setAttribute("aria-expanded", "false");
+  }
+  menu.removeAttribute("open");
+  syncViewDragGuard(menu.ownerDocument);
+}
+
+function handleViewMenuEscape(event: KeyboardEvent, doc: Document): boolean {
+  if (event.key !== "Escape" || event.isComposing) return false;
+  const menus = Array.from(doc.querySelectorAll("details.header-view-menu[open]")) as Element[];
+  if (!menus.length) return false;
+  for (const menu of menus) closeCompactMenu(menu);
+  event.preventDefault();
+  event.stopImmediatePropagation();
+  return true;
 }
 
 function compactMenu(
@@ -1142,29 +1186,10 @@ function compactMenu(
     // Zotero's mixed XUL/XHTML documents do not consistently perform the
     // native <summary> toggle, so control the open state explicitly.
     event.preventDefault();
-    if (menu.hasAttribute("open")) {
-      for (const choice of menu.querySelectorAll(
-        ".header-layout-choice[open]",
-      )) {
-        choice.removeAttribute("open");
-      }
-    }
-    menu.toggleAttribute("open");
-    if (menu.classList.contains("header-layout-menu")) {
-      if (menu.hasAttribute("open")) {
-        const rect = summary.getBoundingClientRect();
-        const viewportWidth = doc.defaultView?.innerWidth ?? rect.right + 210;
-        const menuWidth = 210;
-        const left = Math.min(
-          Math.max(6, rect.left),
-          Math.max(6, viewportWidth - menuWidth - 6),
-        );
-        content.style.top = `${rect.bottom + 6}px`;
-        content.style.left = `${left}px`;
-      } else {
-        content.style.top = "";
-        content.style.left = "";
-      }
+    if (menu.hasAttribute("open")) closeCompactMenu(menu);
+    else {
+      menu.setAttribute("open", "");
+      if (menu.classList.contains("header-view-menu")) positionViewPopover(menu);
     }
   });
   const content = el(doc, "div", "zai-compact-menu-content");
@@ -1195,6 +1220,8 @@ function applySidebarDisplayMode(
   state: PanelState,
   selectedMode: unknown,
 ): void {
+  capturePanelState(mount, state);
+  const scroll = lockMessagesScroll(mount, undefined, 300);
   const previousMode = state.localUiSettings.sidebarDisplayMode;
   const next = normalizeLocalUiSettings({
     ...state.localUiSettings,
@@ -1209,6 +1236,7 @@ function applySidebarDisplayMode(
     reconcileSidebarDisplayMode(hostWindow, sidebar, next, previousMode);
   }
   renderPanelPreservingOpenMenus(mount, state);
+  scheduleMessagesScrollRestore(mount, scroll);
 }
 
 function renderLayoutChoice(
@@ -1226,7 +1254,7 @@ function renderLayoutChoice(
   trigger.setAttribute("aria-expanded", "false");
   trigger.addEventListener("click", () => {
     const opening = !control.hasAttribute("open");
-    for (const sibling of control.parentElement?.querySelectorAll(
+    for (const sibling of (control.closest(".header-view-menu") ?? control.parentElement)?.querySelectorAll(
       ".header-layout-choice[open]",
     ) ?? []) {
       sibling.removeAttribute("open");
@@ -1236,6 +1264,16 @@ function renderLayoutChoice(
     }
     control.toggleAttribute("open", opening);
     trigger.setAttribute("aria-expanded", opening ? "true" : "false");
+    if (opening) {
+      const popup = control.closest(".zai-compact-menu-content");
+      const bounds = popup?.getBoundingClientRect();
+      const anchor = trigger.getBoundingClientRect();
+      const above = bounds ? anchor.top - bounds.top : 0;
+      const below = bounds ? bounds.bottom - anchor.bottom : 0;
+      const upward = below < Math.min(210, options.scrollHeight) && above > below;
+      options.style.top = upward ? "auto" : "calc(100% + 3px)";
+      options.style.bottom = upward ? "calc(100% + 3px)" : "auto";
+    }
   });
 
   const options = el(doc, "div", "header-layout-choice-options");
@@ -1249,7 +1287,17 @@ function renderLayoutChoice(
       value === selectedValue ? "true" : "false",
     );
     option.classList.toggle("active", value === selectedValue);
-    option.addEventListener("click", () => onSelect(value));
+    option.addEventListener("click", () => {
+      control.removeAttribute("open");
+      trigger.setAttribute("aria-expanded", "false");
+      trigger.textContent = label;
+      for (const item of options.querySelectorAll(".header-layout-choice-option")) {
+        const selected = item === option;
+        item.setAttribute("aria-selected", String(selected));
+        item.classList.toggle("active", selected);
+      }
+      onSelect(value);
+    });
     options.append(option);
   }
   control.append(trigger, options);
@@ -1264,9 +1312,16 @@ function renderLayoutMenu(
   const { menu, content } = compactMenu(
     doc,
     "header-layout-menu",
-    uiText("模式", "Layout"),
-    uiText("切换对话排版和侧栏显示方式", "Change chat layout and sidebar display"),
+    uiText("视图", "View"),
+    uiText("调整阅读布局和界面显示", "Adjust reading layout and appearance"),
   );
+  menu.classList.add("header-view-menu");
+  const layoutGroup = el(doc, "section", "header-view-section");
+  layoutGroup.setAttribute("aria-label", uiText("布局", "Layout"));
+  layoutGroup.append(el(doc, "h4", "header-view-section-title", uiText("布局", "Layout")));
+  const displayGroup = el(doc, "section", "header-view-section");
+  displayGroup.setAttribute("aria-label", uiText("显示", "Appearance"));
+  displayGroup.append(el(doc, "h4", "header-view-section-title", uiText("显示", "Appearance")));
   const layoutField = el(doc, "div", "header-layout-field");
   layoutField.append(el(doc, "span", "", uiText("对话排版", "Chat layout")));
   layoutField.append(
@@ -1290,7 +1345,7 @@ function renderLayoutMenu(
   );
 
   const displayField = el(doc, "div", "header-layout-field");
-  displayField.append(el(doc, "span", "", uiText("显示方式", "Display")));
+  displayField.append(el(doc, "span", "", uiText("对话位置", "Chat position")));
   displayField.append(
     renderLayoutChoice(
       doc,
@@ -1298,11 +1353,50 @@ function renderLayoutMenu(
       [
         ["embedded", uiText("阅读器侧栏", "Reader sidebar")],
         ["docked", uiText("右侧并排", "Docked right")],
+        ["floating", uiText("浮动模式", "Floating panels")],
       ],
       (value) => applySidebarDisplayMode(mount, state, value),
     ),
   );
-  content.append(layoutField, displayField);
+  displayGroup.append(layoutField);
+  displayGroup.append(el(doc, "small", "header-view-help", uiText("专注模式将低频操作收进“…”菜单", "Focus layout moves less-used actions into the … menu")));
+  layoutGroup.append(displayField);
+  const sidebar = findSidebarStateByMount(mount);
+  if (state.localUiSettings.sidebarDisplayMode !== "floating") {
+    const noteField = el(doc, "div", "header-layout-field");
+    noteField.title = uiText("下次打开笔记时生效；已打开的笔记可先关闭再打开", "Applies next time you open a note; close an open note before reopening it");
+    noteField.append(el(doc, "span", "", uiText("笔记打开位置", "Open notes in")));
+    noteField.append(renderLayoutChoice(doc, state.localUiSettings.noteWindowMode,
+      [["inline", uiText("当前窗口", "Current window")], ["window", uiText("独立窗口", "Separate window")]],
+      value => {
+        state.localUiSettings = normalizeLocalUiSettings({ ...state.localUiSettings, noteWindowMode: value });
+        saveLocalUiSettings(zoteroPrefs(), { ...loadLocalUiSettings(zoteroPrefs()), noteWindowMode: state.localUiSettings.noteWindowMode });
+        renderPanelPreservingOpenMenus(mount, state);
+      },
+    ));
+    layoutGroup.append(noteField);
+    layoutGroup.append(el(doc, "small", "header-view-help", uiText("笔记位置在下次打开时生效", "Note location applies the next time you open it")));
+  }
+  if (state.localUiSettings.sidebarDisplayMode !== "floating") {
+    const option = el(doc, "label", "header-layout-spacing");
+    const toggle = el(doc, "input", "zai-docked-tight-toggle") as HTMLInputElement;
+    toggle.type = "checkbox";
+    toggle.checked = state.localUiSettings.dockedTightLayout;
+    const label = uiText("自动调整 PDF 页边距", "Automatically adjust PDF margins");
+    toggle.setAttribute("aria-label", label);
+    const text = el(doc, "span", "header-layout-spacing-text");
+    text.append(el(doc, "span", "", label), el(doc, "small", "", uiText("保持侧栏宽度，窗口随 PDF 缩放自动变宽或收窄", "Keep sidebar width; resize the window with PDF zoom")));
+    toggle.addEventListener("change", () => {
+      const enabled = toggle.checked;
+      state.localUiSettings = { ...state.localUiSettings, dockedTightLayout: enabled };
+      saveLocalUiSettings(zoteroPrefs(), { ...loadLocalUiSettings(zoteroPrefs()), dockedTightLayout: enabled });
+      if (sidebar) preserveMessagesScroll(mount, () => syncReadingTightLayout(sidebar));
+    });
+    option.append(toggle, text);
+    layoutGroup.append(option);
+  }
+  displayGroup.append(renderChatFontSizeControl(doc, mount, state), renderChatLanguageControl(doc));
+  content.append(layoutGroup, displayGroup);
   return menu;
 }
 
@@ -1321,7 +1415,6 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     "preset-switcher-row preset-switcher-bottom",
   );
   const layoutMenu = renderLayoutMenu(doc, mount, state);
-
   if (toolbarPresets.length === 0) {
     topRow.append(el(doc, "span", "", uiText("未配置模型", "No model configured")));
     const button = buttonEl(doc, uiText("添加模型", "Add model"));
@@ -1387,10 +1480,15 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   collapse.hidden = true;
   collapse.title = uiText("隐藏 AI 对话列（收起面板）", "Hide the AI chat column");
   collapse.addEventListener("click", () => hideCurrentSidebar(mount));
+  const nativeNoteWindow = usesNativeNoteWindow(state.localUiSettings) || !!(sidebar?.nativeNoteIDs?.size && nativeNoteWindowForSidebar(sidebar));
   const noteWindowOpen = isNoteWindowOpenForMount(mount);
   const openNote = buttonEl(doc, noteWindowOpen ? uiText("关闭笔记", "Close note") : uiText("打开笔记", "Open note"));
   openNote.className = "open-note-button";
-  openNote.title = noteWindowOpen
+  openNote.title = nativeNoteWindow
+    ? noteWindowOpen
+      ? uiText("关闭独立笔记窗口", "Close the separate note window")
+      : uiText("在 Zotero 独立窗口打开当前文献的笔记", "Open this paper's note in a separate Zotero window")
+    : noteWindowOpen
     ? uiText("关闭笔记列", "Close note column")
     : uiText("在当前 Zotero 窗口打开当前条目的子笔记", "Open the current item's child note in this Zotero window");
   openNote.disabled = !noteWindowOpen && state.itemID == null;
@@ -1416,9 +1514,40 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
   askBtn.addEventListener("click", () => {
     void toggleAskMode(win, askBtn);
   });
-  // Content actions, then 设置 (opens full preferences), the 字号 menu (🎚 icon
-  // → font-size popup) and the 调试 (copy-debug context) toggle.
+  // View owns layout/appearance; Settings opens the full preferences.
   settings.title = uiText("打开 AI 对话完整设置", "Open full AI chat settings");
+  const desktopWindow = sidebar ? floatingSidebarLayouts.get(sidebar) : undefined;
+  const pinChat = state.localUiSettings.sidebarDisplayMode === "floating" && desktopWindow?.setPinned
+    ? buttonEl(doc, "") : null;
+  if (pinChat) {
+    pinChat.className = "zai-chat-window-pin";
+    pinChat.style.marginLeft = "auto";
+    const paintPin = () => {
+      const pinned = state.localUiSettings.chatWindowPinned;
+      pinChat.textContent = pinned ? uiText("取消置顶", "Unpin window") : uiText("置顶窗口", "Pin window");
+      pinChat.title = pinChat.textContent;
+      pinChat.setAttribute("aria-pressed", String(pinned));
+    };
+    paintPin();
+    pinChat.addEventListener("click", async () => {
+      const pinned = !state.localUiSettings.chatWindowPinned;
+      pinChat.disabled = true;
+      try {
+        await desktopWindow!.setPinned!(pinned);
+        const next = { ...loadLocalUiSettings(zoteroPrefs()), chatWindowPinned: pinned };
+        saveLocalUiSettings(zoteroPrefs(), next);
+        state.localUiSettings = { ...state.localUiSettings, chatWindowPinned: pinned };
+        const active = sidebar && states.get(sidebar.mount);
+        if (active) active.localUiSettings = { ...active.localUiSettings, chatWindowPinned: pinned };
+        paintPin();
+      } catch (error) {
+        pinChat.title = errorMessage(error);
+        Zotero.debug(`[zai] chat-window-pin: ${errorMessage(error)}`);
+      } finally {
+        pinChat.disabled = false;
+      }
+    });
+  }
   if (state.localUiSettings.chatLayout === "compact") {
     const { menu, content: menuContent } = compactMenu(
       doc,
@@ -1430,7 +1559,6 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
       copyAll,
       clear,
       settings,
-      renderFontIconMenu(doc, mount, state),
       renderCopyDebugToggle(doc, mount, state),
     );
     // 「译」独立快捷翻译按钮暂时隐藏（功能代码保留）。
@@ -1443,7 +1571,6 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
       layoutMenu,
       askBtn,
       settings,
-      renderFontIconMenu(doc, mount, state),
       renderCopyDebugToggle(doc, mount, state),
       collapse,
     );
@@ -1451,6 +1578,7 @@ function renderToolbar(doc: Document, mount: HTMLElement, state: PanelState) {
     // bottomRow.append(translateBtn);
     bar.append(bottomRow);
   }
+  if (pinChat) bottomRow.append(pinChat);
   return bar;
 }
 
@@ -1716,6 +1844,7 @@ function switchConversation(
   if (!state.historyLoaded || conversationID === state.activeConversationID) {
     return;
   }
+  rememberMessagesReadingPosition(mount);
   capturePanelState(mount, state);
   captureActiveConversation(state);
   const conversation = state.conversations.find(
@@ -1731,6 +1860,7 @@ function switchConversation(
 
 function addConversation(mount: HTMLElement, state: PanelState): void {
   if (!state.historyLoaded) return;
+  rememberMessagesReadingPosition(mount);
   capturePanelState(mount, state);
   captureActiveConversation(state);
   const now = new Date().toISOString();
@@ -1757,6 +1887,7 @@ function branchConversationFromMessage(
     !state.historyLoaded
   )
     return;
+  rememberMessagesReadingPosition(mount);
   capturePanelState(mount, state);
   captureActiveConversation(state);
   const source = activeConversation(state);
@@ -1821,6 +1952,28 @@ function activeConversation(state: PanelState): ChatConversation | null {
   );
 }
 
+function messagesReadingPositionKey(state: PanelState): string {
+  return JSON.stringify([state.itemID, state.activeConversationID]);
+}
+
+function rememberMessagesReadingPosition(mount: HTMLElement): void {
+  mount = resolveSidebarMount(mount);
+  const state = states.get(mount);
+  const messages = mount.querySelector<HTMLElement>(".messages");
+  // Never let an empty/hidden loading frame overwrite a real reading position.
+  if (!state?.historyLoaded || state.networkDiagramTarget || !messages || messages.clientHeight <= 0)
+    return;
+  const snapshot = activeMessagesScrollLock(state) ?? {
+    top: messages.scrollTop,
+    atBottom: isMessagesElementNearBottom(messages),
+  };
+  const positions = loadReaderLayoutPrefs().messageScrollPositions ?? {};
+  saveReaderLayoutPrefs({ messageScrollPositions: {
+    ...positions,
+    [messagesReadingPositionKey(state)]: snapshot,
+  } });
+}
+
 function captureActiveConversation(state: PanelState): void {
   const current = activeConversation(state);
   if (!current) return;
@@ -1860,6 +2013,13 @@ function applyConversation(
   state.draftImages = [];
   state.draftMaterials = [];
   resetMessagesScrollForConversation(state);
+  const savedScroll = loadReaderLayoutPrefs().messageScrollPositions?.[messagesReadingPositionKey(state)];
+  if (savedScroll) {
+    state.messagesScrollTop = savedScroll.top;
+    state.autoFollowMessages = savedScroll.atBottom;
+    state.scrollToBottom = savedScroll.atBottom;
+    state.messagesScrollLock = { snapshot: savedScroll, until: Date.now() + 300 };
+  }
   state.queueOpen = false;
   resetComposerPromptHistory(state);
 }
@@ -1893,123 +2053,37 @@ function scheduleDraftConversationSave(
 
 const ZAI_SVG_NS = "http://www.w3.org/2000/svg";
 
-// 字号 collapsed behind a slider (🎚) icon button: clicking opens a small popup
-// with font-size and interface-language selectors, keeping the toolbar compact.
-function renderFontIconMenu(
-  doc: Document,
-  mount: HTMLElement,
-  state: PanelState,
-): HTMLElement {
-  const wrap = el(doc, "span", "zai-icon-menu");
-  const btn = buttonEl(doc, "");
-  btn.className = "zai-icon-btn";
-  btn.title = uiText("字号", "Font size");
-  btn.append(sliderIcon(doc));
-  const panel = el(doc, "div", "zai-icon-menu-panel");
-  panel.style.display = "none";
-  panel.append(renderChatFontSizeControl(doc, mount, state), renderChatLanguageControl(doc));
-  wrap.append(btn, panel);
-  let isOpen = false;
-  btn.addEventListener("click", (e) => {
-    e.stopPropagation();
-    if (isOpen) {
-      isOpen = false;
-      panel.style.display = "none";
-      return;
-    }
-    isOpen = true;
-    const w = doc.defaultView;
-    const rect = btn.getBoundingClientRect();
-    const vw = w?.innerWidth ?? rect.right;
-    panel.style.top = `${Math.round(rect.bottom + 4)}px`;
-    panel.style.left = `${Math.round(Math.max(8, Math.min(rect.left, vw - 220)))}px`;
-    panel.style.display = "block";
-  });
-  return wrap;
-}
-
-// Two-row slider glyph (matches the toolbar's accent color via currentColor).
-function sliderIcon(doc: Document): Element {
-  const svg = doc.createElementNS(ZAI_SVG_NS, "svg");
-  svg.setAttribute("width", "15");
-  svg.setAttribute("height", "15");
-  svg.setAttribute("viewBox", "0 0 24 24");
-  svg.setAttribute("fill", "none");
-  svg.setAttribute("stroke", "currentColor");
-  svg.setAttribute("stroke-width", "2");
-  svg.setAttribute("stroke-linecap", "round");
-  const line = (x1: string, y: string, x2: string): void => {
-    const node = doc.createElementNS(ZAI_SVG_NS, "line");
-    node.setAttribute("x1", x1);
-    node.setAttribute("y1", y);
-    node.setAttribute("x2", x2);
-    node.setAttribute("y2", y);
-    svg.append(node);
-  };
-  const knob = (cx: string, cy: string): void => {
-    const node = doc.createElementNS(ZAI_SVG_NS, "circle");
-    node.setAttribute("cx", cx);
-    node.setAttribute("cy", cy);
-    node.setAttribute("r", "2.4");
-    node.setAttribute("fill", "var(--zai-panel, #fffdf8)");
-    svg.append(node);
-  };
-  line("4", "7", "20");
-  knob("9", "7");
-  line("4", "14", "20");
-  knob("15", "14");
-  return svg;
-}
-
 function renderChatFontSizeControl(
   doc: Document,
   mount: HTMLElement,
   state: PanelState,
 ): HTMLElement {
-  const wrap = el(doc, "label", "chat-font-size-control");
-  wrap.title = uiText("仅保存在本机，不参与 WebDAV 云同步", "Stored locally; not synced via WebDAV");
-  wrap.append(doc.createTextNode(uiText("字号", "Font size")));
-  const select = doc.createElement("select");
-  for (const size of [11, 12, 13, 14, 15, 16, 18, 20, 22]) {
-    const option = doc.createElement("option");
-    option.value = String(size);
-    option.textContent =
-      size === DEFAULT_LOCAL_UI_SETTINGS.chatFontSizePx
-        ? uiText(`${size}px 默认`, `${size}px default`)
-        : `${size}px`;
-    select.append(option);
-  }
-  select.value = String(state.localUiSettings.chatFontSizePx);
-  select.addEventListener("change", () => {
-    const next = normalizeLocalUiSettings({
-      ...state.localUiSettings,
-      chatFontSizePx: select.value,
-    });
+  const wrap = el(doc, "div", "chat-font-size-control");
+  wrap.title = uiText("仅调整对话文字，不影响 PDF 正文字号", "Changes chat text only, not the PDF text");
+  wrap.append(el(doc, "span", "", uiText("对话字号", "Chat font size")));
+  const choices = [11, 12, 13, 14, 15, 16, 18, 20, 22].map(size => [String(size),
+    size === DEFAULT_LOCAL_UI_SETTINGS.chatFontSizePx
+      ? uiText(`${size}px 默认`, `${size}px default`) : `${size}px`,
+  ] as const);
+  wrap.append(renderLayoutChoice(doc, String(state.localUiSettings.chatFontSizePx), choices, value => {
+    const next = normalizeLocalUiSettings({ ...state.localUiSettings, chatFontSizePx: value });
     state.localUiSettings = next;
     saveLocalUiSettings(zoteroPrefs(), next);
-    renderPanel(mount, state);
-  });
-  wrap.append(select);
+    const panel = resolveSidebarMount(mount).querySelector<HTMLElement>(".zai-app");
+    if (panel) applyChatAppearance(panel, state.uiSettings, next);
+  }));
   return wrap;
 }
 
 function renderChatLanguageControl(doc: Document): HTMLElement {
-  const wrap = el(doc, "label", "chat-language-control");
-  wrap.append(doc.createTextNode(uiText("语言", "Language")));
-  const select = doc.createElement("select");
-  select.setAttribute("aria-label", uiText("界面语言", "Interface language"));
-  for (const [value, label] of [["auto", "Auto"], ["zh-CN", "中文"], ["en-US", "English"]]) {
-    const option = doc.createElement("option");
-    option.value = value;
-    option.textContent = label;
-    select.append(option);
-  }
-  select.value = normalizeUiLanguage(zoteroPrefs().get(UI_LANGUAGE_PREF));
-  select.addEventListener("change", () => {
-    zoteroPrefs().set(UI_LANGUAGE_PREF, normalizeUiLanguage(select.value));
-    refreshSidebarPreferences();
-  });
-  wrap.append(select);
+  const wrap = el(doc, "div", "chat-language-control");
+  wrap.append(el(doc, "span", "", uiText("界面语言", "Interface language")));
+  wrap.append(renderLayoutChoice(doc, normalizeUiLanguage(zoteroPrefs().get(UI_LANGUAGE_PREF)),
+    [["auto", "Auto"], ["zh-CN", "中文"], ["en-US", "English"]], value => {
+      zoteroPrefs().set(UI_LANGUAGE_PREF, normalizeUiLanguage(value));
+      refreshSidebarPreferences();
+    },
+  ));
   return wrap;
 }
 
@@ -2952,6 +3026,11 @@ function renderMessages(doc: Document, mount: HTMLElement, state: PanelState) {
   messages.dataset.conversationKind = state.networkDiagramTarget
     ? "network"
     : "normal";
+  for (const event of ["wheel", "touchstart", "mousedown", "keydown"])
+    messages.addEventListener(event, () => {
+      if (mount.querySelector(".messages") === messages)
+        cancelMessagesScrollRestore(mount);
+    }, true);
   messages.addEventListener("scroll", () => {
     if (mount.querySelector(".messages") !== messages) return;
     if (state.networkDiagramTarget) {
@@ -3678,12 +3757,25 @@ function composerMessageContent(raw: string, state: PanelState): string {
   return expandSlashCommandMessage(expandPasteMarkers(raw, state));
 }
 
+function revealFloatingAnswerForRequest(
+  mount: HTMLElement,
+  state: PanelState,
+): void {
+  if (state.localUiSettings.sidebarDisplayMode !== "floating") return;
+  const sidebar = findSidebarStateByMount(mount);
+  if (sidebar && floatingSidebarLayouts.get(sidebar)?.showAnswer()) {
+    // A new request follows the latest answer, not an old hidden-panel snapshot.
+    resetMessagesScrollForConversation(state);
+  }
+}
+
 async function sendComposerMessage(
   mount: HTMLElement,
   state: PanelState,
   text: string,
 ): Promise<void> {
   if (!state.networkDiagramTarget) {
+    if (text.trim()) revealFloatingAnswerForRequest(mount, state);
     if (state.localUiSettings.chatSendMode === "web") {
       await sendWebPromptMessage(
         mount,
@@ -3699,6 +3791,7 @@ async function sendComposerMessage(
   const instruction = text.trim();
   const sidebar = findSidebarStateByMount(mount);
   if (!instruction || !sidebar || sidebar.networkDiagramBusy) return;
+  revealFloatingAnswerForRequest(mount, state);
 
   state.draftText = "";
   state.draftSelectionStart = 0;
@@ -4366,6 +4459,7 @@ async function sendWebPromptMessage(
   state.webPromptBusyTaskID = taskID;
   userMessage.task!.id = taskID;
   assistantMessage.task!.id = taskID;
+  revealFloatingAnswerForRequest(mount, state);
   state.messages.push(userMessage, assistantMessage);
   state.draftText = "";
   state.draftSelectionStart = 0;
@@ -6745,6 +6839,7 @@ async function sendMessage(
     conversationIsSending(state, state.activeConversationID) ||
     activeConversationTaskCount(state) >=
       state.uiSettings.maxParallelConversations;
+  revealFloatingAnswerForRequest(mount, state);
   state.messages.push(userMessage);
   state.draftText = "";
   state.draftSelectionStart = 0;
@@ -9101,6 +9196,8 @@ function startSelectionMonitor(win: Window, sidebar: WindowSidebarState) {
   if (sidebar.selectionMonitorID != null) return;
   sidebar.selectionMonitorID = win.setInterval(() => {
     installFloatingToggle(win, sidebar);
+    floatingSidebarLayouts.get(sidebar)?.refreshReaderAlignment();
+    syncReadingTightLayout(sidebar);
     const itemID = safeSelectedItemID(win);
     const panelState = states.get(sidebar.mount);
     // Reader tab selection does not call ZoteroPane.itemSelected. Reuse the
@@ -9108,6 +9205,11 @@ function startSelectionMonitor(win: Window, sidebar: WindowSidebarState) {
     // updates the paper without requiring a click inside the PDF.
     if (panelState && panelState.itemID !== itemID && !panelState.sending) {
       renderWindowSidebar(win);
+    }
+    if (usesNativeNoteWindow(states.get(sidebar.mount)?.localUiSettings) || sidebar.nativeNoteIDs?.size) {
+      const noteButton = sidebar.mount.querySelector<HTMLButtonElement>(".open-note-button");
+      // Keep the pending/error indicator until the open operation settles.
+      if (noteButton && !noteButton.disabled) updateOpenNoteButton(sidebar);
     }
     const before = getStoredSelectedText(itemID);
     const focusInSidebar =
@@ -9128,6 +9230,7 @@ function stopSelectionMonitor(win: Window, sidebar: WindowSidebarState) {
 }
 
 function updateSelectionIndicators(mount: HTMLElement, _itemID: number | null) {
+  mount = resolveSidebarMount(mount);
   // INVARIANT: only composer-area DOM is replaced here; messages-list scroll
   // must NOT shift. The wrap defends against the same scroll-collapse seen
   // on annotation-save (focused descendants in a sibling re-rendered subtree).
@@ -9478,6 +9581,7 @@ function ensureThinkingBody(
 }
 
 function afterRender(mount: HTMLElement, callback: () => void) {
+  mount = resolveSidebarMount(mount);
   const win = mount.ownerDocument?.defaultView;
   if (win?.requestAnimationFrame) {
     win.requestAnimationFrame(() => callback());
@@ -9493,6 +9597,7 @@ function restoreChatInput(
   state: PanelState,
   forceFocus: boolean,
 ) {
+  mount = resolveSidebarMount(mount);
   const input = mount.querySelector(
     ".input-row textarea",
   ) as HTMLTextAreaElement | null;
@@ -9705,9 +9810,6 @@ function bubble(
     renderMarkdownInto(thinkingBody, message.thinking);
     details.append(thinkingBody);
     root.append(details);
-  }
-  if (webProvider && message.task?.completedAt) {
-    root.append(el(doc, "div", "bubble-answer-label", uiText("回答", "Answer")));
   }
   const body = el(doc, "div", "bubble-body");
   renderMarkdownInto(
@@ -10022,6 +10124,15 @@ async function openCurrentItemNote(
     const { note, created } = await resolveTargetNote(itemID);
     await showNoteWindow(doc, note);
     opened = true;
+    const sidebar = findSidebarStateByDocument(doc);
+    if (
+      sidebar &&
+      usesNativeNoteWindow(states.get(sidebar.mount)?.localUiSettings)
+    ) {
+      button.disabled = false;
+      updateOpenNoteButton(sidebar);
+      return;
+    }
     button.textContent = created ? "已新建并打开" : "已打开";
     button.title = `目标笔记 #${note.id}`;
     button.disabled = true;
@@ -10042,6 +10153,35 @@ async function openCurrentItemNote(
 async function showNoteWindow(doc: Document, note: Zotero.Item) {
   const sidebar = findSidebarStateByDocument(doc);
   if (!sidebar) throw new Error("无法找到 AI 侧栏");
+
+  if (
+    usesNativeNoteWindow(states.get(sidebar.mount)?.localUiSettings)
+  ) {
+    const itemID =
+      typeof note.parentID === "number"
+        ? note.parentID
+        : (states.get(sidebar.mount)?.itemID ?? null);
+    await saveVisibleNoteBeforeSwitch(sidebar);
+    const pane = (hostWindowForSidebar(sidebar) as any)?.ZoteroPane;
+    if (typeof pane?.openNote === "function") {
+      await pane.openNote(note.id, { openInWindow: true });
+    } else if (typeof pane?.openNoteWindow === "function") {
+      await pane.openNoteWindow(note.id);
+    } else {
+      throw new Error(
+        uiText(
+          "当前 Zotero 窗口未提供独立笔记接口",
+          "The current Zotero window cannot open a separate note window",
+        ),
+      );
+    }
+    sidebar.nativeNoteIDs ??= new Map();
+    sidebar.nativeNoteIDs.set(itemID, note.id);
+    sidebar.overviewActive = false;
+    closeSidebarNoteColumn(sidebar);
+    updateOpenNoteButton(sidebar);
+    return;
+  }
 
   sidebar.noteItemID = note.id;
   setNoteColumnVisible(sidebar, true);
@@ -12788,7 +12928,7 @@ async function closeNoteWindow(
 function findSidebarStateByDocument(doc: Document): WindowSidebarState | null {
   for (const win of mountedWindows) {
     const state = windowSidebars.get(win);
-    if (state?.mount.ownerDocument === doc) return state;
+    if (state?.mount.ownerDocument === doc || state?.column.ownerDocument === doc) return state;
   }
   return null;
 }
@@ -12798,14 +12938,33 @@ function findSidebarStateByMount(
 ): WindowSidebarState | null {
   for (const win of mountedWindows) {
     const state = windowSidebars.get(win);
-    if (state?.mount === mount) return state;
+    if (state?.mount === resolveSidebarMount(mount)) return state;
   }
   return null;
+}
+
+function nativeNoteWindowForSidebar(
+  sidebar: WindowSidebarState,
+): Window | null {
+  const itemID = states.get(sidebar.mount)?.itemID ?? null;
+  const noteID =
+    sidebar.nativeNoteIDs?.get(itemID) ?? findExistingNoteForItem(itemID)?.id;
+  if (noteID == null) return null;
+  const pane = (hostWindowForSidebar(sidebar) as any)?.ZoteroPane;
+  const noteWindow = pane?.findNoteWindow?.(noteID) as
+    | Window
+    | null
+    | undefined;
+  return noteWindow && !noteWindow.closed ? noteWindow : null;
 }
 
 function isNoteWindowOpenForMount(mount: HTMLElement): boolean {
   const sidebar = findSidebarStateByMount(mount);
   if (!sidebar) return false;
+  if (sidebar.nativeNoteIDs?.size && nativeNoteWindowForSidebar(sidebar)) return true;
+  if (usesNativeNoteWindow(states.get(mount)?.localUiSettings)) {
+    return !!nativeNoteWindowForSidebar(sidebar);
+  }
   // Auto-repair: if the note column is hidden/collapsed (e.g. user dragged the
   // splitter closed instead of clicking the Close button), clear the stale state.
   const col = sidebar.noteColumn as Element & {
@@ -12831,17 +12990,60 @@ function updateOpenNoteButton(state: WindowSidebarState) {
     ".open-note-button",
   ) as HTMLButtonElement | null;
   if (!button) return;
-  const opened = isNoteColumnVisible(state);
-  button.textContent = opened ? uiText("关闭笔记", "Close note") : uiText("打开笔记", "Open note");
-  button.title = opened
-    ? uiText("关闭笔记列", "Close note column")
-    : uiText("在当前 Zotero 窗口打开当前条目的子笔记", "Open the current item's child note in this Zotero window");
+  const localSettings = states.get(state.mount)?.localUiSettings;
+  const nativeTarget = usesNativeNoteWindow(localSettings);
+  const noteWindow = nativeTarget || state.nativeNoteIDs?.size ? nativeNoteWindowForSidebar(state) : null;
+  const nativeNoteWindow = nativeTarget || !!noteWindow;
+  const opened = nativeNoteWindow ? !!noteWindow : isNoteColumnVisible(state);
+  if (noteWindow?.document) {
+    const host = hostWindowForSidebar(state);
+    if (localSettings?.sidebarDisplayMode === "floating") {
+      const settings = loadLocalUiSettings(zoteroPrefs());
+      installNoteWindowPin(noteWindow, {
+        host: host ?? undefined,
+        pinned: settings.noteWindowPinned,
+        onChange(pinned) {
+          const next = { ...loadLocalUiSettings(zoteroPrefs()), noteWindowPinned: pinned };
+          saveLocalUiSettings(zoteroPrefs(), next);
+          const current = states.get(state.mount);
+          if (current) current.localUiSettings = { ...current.localUiSettings, noteWindowPinned: pinned };
+        },
+      });
+    } else {
+      removeNoteWindowPin(noteWindow);
+      if (host) linkWindowMinimization(host, noteWindow);
+    }
+  }
+  button.textContent = opened
+    ? uiText("关闭笔记", "Close note")
+    : uiText("打开笔记", "Open note");
+  button.title = nativeNoteWindow
+    ? opened
+      ? uiText("关闭独立笔记窗口", "Close the separate note window")
+      : uiText(
+          "在 Zotero 独立窗口打开当前文献的笔记",
+          "Open this paper's note in a separate Zotero window",
+        )
+    : opened
+      ? uiText("关闭笔记列", "Close note column")
+      : uiText(
+          "在当前 Zotero 窗口打开当前条目的子笔记",
+          "Open the current item's child note in this Zotero window",
+        );
   button.disabled = false;
 }
 
 function closeCurrentNoteWindow(mount: HTMLElement): void {
   const sidebar = findSidebarStateByMount(mount);
   if (!sidebar) return;
+  const nativeWindow = (sidebar.nativeNoteIDs?.size || usesNativeNoteWindow(states.get(mount)?.localUiSettings))
+    ? nativeNoteWindowForSidebar(sidebar) : null;
+  if (nativeWindow) {
+    // Native unload saves the editor before closing the note.
+    nativeWindow.close();
+    updateOpenNoteButton(sidebar);
+    return;
+  }
   sidebar.overviewActive = false;
   const editor = findActiveNoteEditor(sidebar);
   const closeBtn = sidebar.noteMount.querySelector(
@@ -13768,7 +13970,12 @@ function fitDockedWorkspaceToWindow(
         Math.max(MIN_NOTE_COLUMN_WIDTH, availableWorkspaceWidth - dockedWidth),
       )
     : 0;
-  setDockedColumnWidth(entry, sidebar, dockedWidth, false);
+  if (states.get(sidebar.mount)?.localUiSettings.dockedTightLayout) {
+    // Automatic width consumes remaining space; do not reapply manual width limits.
+    syncDockedWorkspaceLayout(sidebar);
+  } else {
+    setDockedColumnWidth(entry, sidebar, dockedWidth, false);
+  }
   if (noteVisible) {
     setDockedNoteColumnWidth(entry, sidebar, dockedNoteWidth, false);
   }
@@ -13780,12 +13987,15 @@ function setDockedColumnWidth(
   width: number,
   remember = true,
 ): void {
+  const maxWidth = states.get(sidebar.mount)?.localUiSettings.dockedTightLayout
+    ? Math.max(MAX_AI_COLUMN_WIDTH, width)
+    : MAX_AI_COLUMN_WIDTH;
   const clamped = Math.max(
     MIN_AI_COLUMN_WIDTH,
-    Math.min(MAX_AI_COLUMN_WIDTH, Math.round(width)),
+    Math.min(maxWidth, Math.round(width)),
   );
   if (remember) entry.dockedColumnWidth = clamped;
-  setAiColumnWidth(sidebar, clamped);
+  setAiColumnWidth(sidebar, clamped, maxWidth);
   syncDockedWorkspaceLayout(sidebar);
 }
 
@@ -13809,8 +14019,10 @@ function syncDockedWorkspaceLayout(sidebar: WindowSidebarState): void {
   if (!entry) return;
   const root = entry.mainWindow.document.documentElement as HTMLElement | null;
   if (!root) return;
+  // Keep the splitter at the requested width while Gecko's layout catches up.
   const aiWidth =
-    measuredElementWidth(sidebar.column) ?? entry.dockedColumnWidth;
+    Number(sidebar.column.getAttribute("width")) ||
+    measuredElementWidth(sidebar.column) || entry.dockedColumnWidth;
   const noteVisible = isNoteColumnVisible(sidebar);
   const noteWidth = noteVisible
     ? (measuredElementWidth(sidebar.noteColumn) ?? entry.dockedNoteColumnWidth)
@@ -13826,6 +14038,15 @@ function syncDockedWorkspaceLayout(sidebar: WindowSidebarState): void {
   root.style.setProperty("--zai-docked-total-width", `${totalWidth}px`);
 }
 
+function captureSplitterMouse(splitter: Element): () => void {
+  const target = splitter as Element & {
+    setCapture?(retargetToElement?: boolean): void;
+    releaseCapture?(): void;
+  };
+  target.setCapture?.(true);
+  return () => target.releaseCapture?.();
+}
+
 function installDockedSplitterDrag(
   entry: DockedSidebarLayout,
   sidebar: WindowSidebarState,
@@ -13837,18 +14058,26 @@ function installDockedSplitterDrag(
     if (mouseEvent.button !== 0) return;
     mouseEvent.preventDefault();
     mouseEvent.stopPropagation();
+    removeActiveDrag?.();
+    const automatic = !!states.get(sidebar.mount)?.localUiSettings.dockedTightLayout;
+    const startWidth = Number(sidebar.column.getAttribute("width")) || measuredElementWidth(sidebar.column) || DEFAULT_AI_COLUMN_WIDTH;
+    // Screen deltas stay stable when the pointer crosses reader frame boundaries.
+    const startScreenX = mouseEvent.screenX;
+    const releaseCapture = captureSplitterMouse(sidebar.splitter);
 
     const onMouseMove = (moveEvent: Event) => {
       const pointer = moveEvent as MouseEvent;
       setDockedColumnWidth(
         entry,
         sidebar,
-        mainWindow.innerWidth - pointer.clientX,
+        automatic ? startWidth + startScreenX - pointer.screenX : mainWindow.innerWidth - pointer.clientX,
       );
       fitDockedWorkspaceToWindow(entry, sidebar);
+      syncReadingTightLayout(sidebar, true);
     };
     const onMouseUp = () => removeActiveDrag?.();
     removeActiveDrag = () => {
+      releaseCapture();
       mainWindow.removeEventListener("mousemove", onMouseMove, true);
       mainWindow.removeEventListener("mouseup", onMouseUp, true);
       removeActiveDrag = undefined;
@@ -14082,17 +14311,65 @@ function expandEmbeddedSidebar(sidebar: WindowSidebarState): void {
   }
 }
 
-function setAiColumnWidth(sidebar: WindowSidebarState, width: number): void {
+function setAiColumnWidth(sidebar: WindowSidebarState, width: number, maxWidth = MAX_AI_COLUMN_WIDTH): void {
   const clamped = Math.max(
     MIN_AI_COLUMN_WIDTH,
-    Math.min(MAX_AI_COLUMN_WIDTH, Math.round(width)),
+    Math.min(maxWidth, Math.round(width)),
   );
   const column = sidebar.column as HTMLElement;
   column.removeAttribute("flex");
   column.setAttribute("width", String(clamped));
   column.style.width = `${clamped}px`;
   column.style.minWidth = `${MIN_AI_COLUMN_WIDTH}px`;
-  column.style.maxWidth = `${MAX_AI_COLUMN_WIDTH}px`;
+  column.style.maxWidth = `${maxWidth}px`;
+  column.setAttribute("maxwidth", String(maxWidth));
+}
+
+function syncReadingTightLayout(sidebar: WindowSidebarState, fitPdfToSidebar = false): void {
+  const host = hostWindowForSidebar(sidebar);
+  const settings = states.get(sidebar.mount)?.localUiSettings;
+  const enabled = !!host && settings?.sidebarDisplayMode !== "floating" && settings?.dockedTightLayout && !isColumnCollapsed(sidebar);
+  sidebar.mount.classList.toggle("zai-reading-tight", !!enabled);
+  let layout = readingTightLayouts.get(sidebar);
+  if (!enabled) {
+    if (layout) {
+      layout.adaptive.destroy();
+      layout.margin.destroy();
+      layout.alignment.destroy();
+      setAiColumnWidth(sidebar, layout.originalWidth);
+      syncDockedWorkspaceLayout(sidebar);
+      readingTightLayouts.delete(sidebar);
+    }
+    return;
+  }
+  if (!layout) {
+    layout = {
+      alignment: createFloatingPdfAlignment(),
+      margin: createPdfRightMargin({ preserveZoom: true }),
+      originalWidth: measuredElementWidth(sidebar.column) ?? DEFAULT_AI_COLUMN_WIDTH,
+      restoreWidth: settings?.sidebarDisplayMode === "docked"
+        ? loadReaderLayoutPrefs().dockedAiWidth
+        : loadReaderLayoutPrefs().aiWidth,
+      adaptive: createAdaptiveChatLayout(host!, width => {
+        const current = Number(sidebar.column.getAttribute("width")) || measuredElementWidth(sidebar.column) || 0;
+        if (Math.abs(current - width) <= 2) return;
+        setAiColumnWidth(sidebar, width, Math.max(MAX_AI_COLUMN_WIDTH, width));
+        syncDockedWorkspaceLayout(sidebar);
+      }, () => syncReadingTightLayout(sidebar)),
+    };
+    readingTightLayouts.set(sidebar, layout);
+  }
+  const readers = activeReaderWindows(getActiveReader(host!));
+  layout.adaptive.prepare(readers);
+  layout.alignment.sync(readers, "left");
+  const noteVisible = isNoteColumnVisible(sidebar);
+  const columns = [sidebar.column, ...(noteVisible ? [sidebar.noteColumn] : [])];
+  const edges = columns.map(column => column.getBoundingClientRect()).filter(rect => rect.width > 0 && rect.left >= 0).map(rect => rect.left);
+  const right = Math.min(host!.innerWidth, ...edges);
+  const metrics = layout.margin.sync(readers, true, { hostWindow: host!, right });
+  const noteWidth = noteVisible ? (measuredElementWidth(sidebar.noteColumn) ?? DEFAULT_NOTE_COLUMN_WIDTH) : 0;
+  layout.adaptive.update(metrics, noteWidth, DOCKED_AI_SPLITTER_WIDTH + (noteVisible ? DOCKED_NOTE_SPLITTER_WIDTH : 0), layout.restoreWidth ?? (Number(sidebar.column.getAttribute("width")) || measuredElementWidth(sidebar.column) || undefined), fitPdfToSidebar || layout.restoreWidth != null);
+  if (metrics.length) layout.restoreWidth = undefined;
 }
 
 function leaveDockedSidebarLayout(
@@ -14129,6 +14406,7 @@ function leaveDockedSidebarLayout(
   }
   if (showEmbedded) expandEmbeddedSidebar(sidebar);
   else collapseEmbeddedSidebar(sidebar);
+  syncReadingTightLayout(sidebar);
   updateToggleButton(sidebar);
 }
 
@@ -14142,6 +14420,7 @@ function enterDockedSidebarLayout(
     mountDockedColumn(existing, sidebar);
     alignDockedColumnToWindow(existing, sidebar);
     fitDockedWorkspaceToWindow(existing, sidebar);
+    syncReadingTightLayout(sidebar);
     mainWindow.focus();
     return;
   }
@@ -14175,6 +14454,92 @@ function enterDockedSidebarLayout(
   entry.titleCleanup = installDockedWindowTitle(entry);
   alignDockedColumnToWindow(entry, sidebar);
   fitDockedWorkspaceToWindow(entry, sidebar);
+  syncReadingTightLayout(sidebar);
+  updateToggleButton(sidebar);
+}
+
+function leaveFloatingSidebarLayout(sidebar: WindowSidebarState): void {
+  const floating = floatingSidebarLayouts.get(sidebar);
+  if (!floating) return;
+  floatingSidebarLayouts.delete(sidebar);
+  floating.destroy();
+}
+
+function enterFloatingSidebarLayout(
+  mainWindow: Window,
+  sidebar: WindowSidebarState,
+): void {
+  const panelState = states.get(sidebar.mount);
+  const settings =
+    panelState?.localUiSettings ?? loadLocalUiSettings(zoteroPrefs());
+  const existing = floatingSidebarLayouts.get(sidebar);
+  if (existing) {
+    existing.refresh(settings.floatingPanels);
+    return;
+  }
+  if (dockedSidebarLayouts.has(sidebar))
+    leaveDockedSidebarLayout(sidebar, true);
+  // Only the AI column is replaced by the overlay; existing note content stays.
+  (sidebar.column as Element & { collapsed?: boolean }).collapsed = true;
+  sidebar.column.setAttribute("collapsed", "true");
+  (sidebar.splitter as Element & { hidden?: boolean }).hidden = true;
+  sidebar.splitter.setAttribute("hidden", "true");
+  sidebar.collapsedDockedWidth = undefined;
+  const homeMount = sidebar.mount;
+  const createWorkspace = typeof mainWindow.openDialog === "function"
+    ? createFloatingDesktopWorkspace
+    : createFloatingWorkspace;
+  const floating = createWorkspace(mainWindow, homeMount, {
+    windowURL: `chrome://${addon.data.config.addonRef}/content/floating-window.xhtml`,
+    pinned: settings.chatWindowPinned,
+    onMountChange(nextMount: HTMLElement) {
+      const previous = sidebar.mount;
+      const viewSnapshot = captureViewPopover(previous);
+      const current = states.get(previous);
+      if (current) capturePanelState(previous, current);
+      sidebar.copyHandlerCleanup?.();
+      sidebar.selectionMenuCleanup?.();
+      disposeComposerPicker(previous);
+      bindSidebarMount(homeMount, nextMount);
+      sidebar.mount = nextMount;
+      previous.replaceChildren();
+      // Build all nodes in the destination document. Never adopt chrome DOM nodes.
+      if (current) renderPanel(nextMount, current);
+      restoreViewPopover(nextMount, viewSnapshot);
+      syncViewDragGuard(previous.ownerDocument);
+      if (viewSnapshot) nextMount.ownerDocument?.defaultView?.requestAnimationFrame(() => {
+        if (sidebar.mount !== nextMount) return;
+        const menu = nextMount.querySelector<HTMLElement>(".header-view-menu[open]");
+        if (menu) positionViewPopover(menu);
+      });
+      installSidebarCopyHandler(mainWindow, sidebar);
+      installSidebarSelectionMenu(nextMount.ownerDocument?.defaultView ?? mainWindow, sidebar);
+    },
+    readerWindows: () => activeReaderWindows(getActiveReader(mainWindow)),
+    layout: settings.floatingPanels,
+    onLayoutChange(floatingPanels) {
+      const next = normalizeLocalUiSettings({
+        ...loadLocalUiSettings(zoteroPrefs()),
+        floatingPanels,
+      });
+      saveLocalUiSettings(zoteroPrefs(), next);
+      const current = states.get(sidebar.mount);
+      if (current)
+        current.localUiSettings = {
+          ...current.localUiSettings,
+          floatingPanels: next.floatingPanels,
+        };
+    },
+    onVisibilityChange() {
+      updateToggleButton(sidebar);
+    },
+    onPanelToggle(id, visible, apply) {
+      if (id === "answer")
+        preserveMessagesScrollOnToggle(sidebar.mount, !visible, apply);
+      else apply();
+    },
+  });
+  floatingSidebarLayouts.set(sidebar, floating);
   updateToggleButton(sidebar);
 }
 
@@ -14184,7 +14549,19 @@ function reconcileSidebarDisplayMode(
   localSettings: LocalUiSettings,
   previousMode?: LocalUiSettings["sidebarDisplayMode"],
 ): void {
-  if (isColumnCollapsed(sidebar)) return;
+  const wasCollapsed = isColumnCollapsed(sidebar);
+  if (
+    localSettings.sidebarDisplayMode !== "floating" &&
+    floatingSidebarLayouts.has(sidebar)
+  ) {
+    leaveFloatingSidebarLayout(sidebar);
+    if (!wasCollapsed) expandEmbeddedSidebar(sidebar);
+  }
+  if (wasCollapsed) return;
+  if (localSettings.sidebarDisplayMode === "floating") {
+    enterFloatingSidebarLayout(mainWindow, sidebar);
+    return;
+  }
   if (localSettings.sidebarDisplayMode === "docked") {
     enterDockedSidebarLayout(mainWindow, sidebar);
     return;
@@ -14361,8 +14738,12 @@ function installReaderLayoutMemory(
   state: WindowSidebarState,
 ): void {
   let aiDragging = false;
+  let removeAiDrag: (() => void) | undefined;
   let aiSaveTimer: number | undefined;
   const rememberAi = () => {
+    removeAiDrag?.();
+    removeAiDrag = undefined;
+    if (aiDragging) syncReadingTightLayout(state, true);
     aiDragging = false;
     if (aiSaveTimer != null) win.clearTimeout(aiSaveTimer);
     aiSaveTimer = undefined;
@@ -14377,13 +14758,34 @@ function installReaderLayoutMemory(
     remember();
   };
   const startAiDrag = (event: Event) => {
-    if ((event as MouseEvent).button === 0) aiDragging = true;
+    if ((event as MouseEvent).button !== 0) return;
+    aiDragging = true;
+    if (dockedSidebarLayouts.has(state) || !states.get(state.mount)?.localUiSettings.dockedTightLayout) return;
+    event.preventDefault();
+    event.stopPropagation();
+    removeAiDrag?.();
+    const startWidth = Number(state.column.getAttribute("width")) || measuredElementWidth(state.column) || DEFAULT_AI_COLUMN_WIDTH;
+    const startScreenX = (event as MouseEvent).screenX;
+    const releaseCapture = captureSplitterMouse(state.splitter);
+    const move = (moveEvent: Event) => {
+      const width = startWidth + startScreenX - (moveEvent as MouseEvent).screenX;
+      setAiColumnWidth(state, width, Math.max(MAX_AI_COLUMN_WIDTH, width));
+      syncReadingTightLayout(state, true);
+    };
+    win.addEventListener("mousemove", move, true);
+    removeAiDrag = () => {
+      releaseCapture();
+      win.removeEventListener("mousemove", move, true);
+    };
   };
   const scheduleAiRemember = () => {
     if (aiSaveTimer != null) win.clearTimeout(aiSaveTimer);
     aiSaveTimer = win.setTimeout(rememberAi, 0);
   };
-  const syncTranslation = () => syncFullTranslationHostLayout(state);
+  const syncTranslation = () => {
+    syncFullTranslationHostLayout(state);
+    syncReadingTightLayout(state, aiDragging);
+  };
   const scheduleRemember = () => {
     if (state.layoutSaveTimer != null) win.clearTimeout(state.layoutSaveTimer);
     state.layoutSaveTimer = win.setTimeout(() => {
@@ -14459,7 +14861,10 @@ function rememberLastAiWidth(state: WindowSidebarState): void {
   if (isColumnCollapsed(state)) return;
   const docked = dockedSidebarLayouts.get(state);
   // Keep the user's requested docked width, not a temporary window-size clamp.
-  const width = docked?.dockedColumnWidth ?? measuredElementWidth(state.column);
+  const automatic = states.get(state.mount)?.localUiSettings.dockedTightLayout;
+  const width = automatic
+    ? Number(state.column.getAttribute("width")) || measuredElementWidth(state.column)
+    : docked?.dockedColumnWidth ?? measuredElementWidth(state.column);
   if (width == null) return;
   saveReaderLayoutPrefs(docked ? { dockedAiWidth: width } : { aiWidth: width });
 }
@@ -14528,13 +14933,20 @@ function normalizeReaderLayoutPrefs(value: unknown): ReaderLayoutPrefs {
     ...(typeof input.aiOpen === "boolean" ? { aiOpen: input.aiOpen } : {}),
     ...(typeof input.aiWidth === "number" && Number.isFinite(input.aiWidth)
       ? {
-          aiWidth: clampWidth(input.aiWidth, MIN_AI_COLUMN_WIDTH, MAX_AI_COLUMN_WIDTH),
+          aiWidth: Math.max(MIN_AI_COLUMN_WIDTH, Math.round(input.aiWidth)),
         }
       : {}),
     ...(typeof input.dockedAiWidth === "number" && Number.isFinite(input.dockedAiWidth)
       ? {
-          dockedAiWidth: clampWidth(input.dockedAiWidth, MIN_AI_COLUMN_WIDTH, MAX_AI_COLUMN_WIDTH),
+          dockedAiWidth: Math.max(MIN_AI_COLUMN_WIDTH, Math.round(input.dockedAiWidth)),
         }
+      : {}),
+    ...(input.messageScrollPositions && typeof input.messageScrollPositions === "object" && !Array.isArray(input.messageScrollPositions)
+      ? { messageScrollPositions: Object.fromEntries(
+          Object.entries(input.messageScrollPositions).filter(([, position]) =>
+            position && Number.isFinite(position.top) && position.top >= 0 && typeof position.atBottom === "boolean",
+          ),
+        ) }
       : {}),
     ...(typeof input.noteWidth === "number"
       ? {
@@ -14578,6 +14990,7 @@ function installReaderPromptShortcutHandler(
     if (!targetWin || installedWindows.has(targetWin)) return;
     installedWindows.add(targetWin);
     const handler = (event: KeyboardEvent) => {
+      if (handleViewMenuEscape(event, targetWin.document)) return;
       if (handleImmersiveModeShortcut(win, event)) return;
       if (handleQuickAskShortcut(win, sidebar, event)) return;
       if (handleMaterialPickShortcut(sidebar, event)) return;
@@ -14591,6 +15004,7 @@ function installReaderPromptShortcutHandler(
   };
   const installLikelyReaderWindows = () => {
     addWindow(win);
+    addWindow(sidebar.mount.ownerDocument?.defaultView);
     const reader = getActiveReader(win) as any;
     for (const readerWin of activeReaderWindows(reader)) addWindow(readerWin);
   };
@@ -14858,14 +15272,15 @@ function installSidebarCopyHandler(
   };
   const cleanupCallbacks: Array<() => void> = [];
   const cacheSelection = () => {
-    const sel = win.getSelection();
-    if (!selectionBelongsToSidebar(sel, sidebar)) return;
+    const sel = sidebar.mount.ownerDocument?.defaultView?.getSelection();
+    if (!sel || !selectionBelongsToSidebar(sel, sidebar)) return;
     const text = serializeSidebarSelectionForClipboard(sel);
     if (!text) return;
     cacheSidebarSelection(sidebar, text, "selection-cache");
   };
   const installLikelyFrameWindows = () => {
     addWindow(win);
+    addWindow(sidebar.mount.ownerDocument?.defaultView);
     installDescendantFrameCopyHandlers(win, addWindow);
     const reader = getActiveReader(win) as any;
     addWindow(reader?._internalReader?._primaryView?._iframeWindow);
@@ -14877,15 +15292,16 @@ function installSidebarCopyHandler(
   installLikelyFrameWindows();
   const frameMonitorID = win.setInterval(installLikelyFrameWindows, 500);
   doc.addEventListener("selectionchange", cacheSelection, true);
-  sidebar.column.addEventListener("mouseup", cacheSelection, true);
-  sidebar.column.addEventListener("keyup", cacheSelection, true);
+  const copyMount = sidebar.mount;
+  copyMount.addEventListener("mouseup", cacheSelection, true);
+  copyMount.addEventListener("keyup", cacheSelection, true);
   sidebar.noteColumn.addEventListener("mouseup", cacheSelection, true);
   sidebar.noteColumn.addEventListener("keyup", cacheSelection, true);
   cleanupCallbacks.push(() => {
     win.clearInterval(frameMonitorID);
     doc.removeEventListener("selectionchange", cacheSelection, true);
-    sidebar.column.removeEventListener("mouseup", cacheSelection, true);
-    sidebar.column.removeEventListener("keyup", cacheSelection, true);
+    copyMount.removeEventListener("mouseup", cacheSelection, true);
+    copyMount.removeEventListener("keyup", cacheSelection, true);
     sidebar.noteColumn.removeEventListener("mouseup", cacheSelection, true);
     sidebar.noteColumn.removeEventListener("keyup", cacheSelection, true);
   });
@@ -14901,6 +15317,7 @@ function handleSidebarCopyEvent(
   sidebar: WindowSidebarState,
   event: ClipboardEvent,
 ): void {
+  if (sourceWin === sidebar.mount.ownerDocument?.defaultView) doc = sourceWin.document;
   const pendingSidebarCopy = getPendingSidebarCopy();
   if (pendingSidebarCopy) {
     if (!event.clipboardData) return;
@@ -14920,7 +15337,9 @@ function handleSidebarCopyEvent(
     return;
   }
   if (isProgrammaticClipboardWrite()) return;
-  const sel = topWin.getSelection();
+  const sourceSelection = sourceWin.getSelection();
+  const sel = selectionBelongsToSidebar(sourceSelection, sidebar)
+    ? sourceSelection : topWin.getSelection();
   if (!selectionBelongsToSidebar(sel, sidebar)) return;
   if (editableTargetHasOwnSelection(event.target, sel)) return;
   const text = serializeSidebarSelection(sel, "copy-event");
@@ -14964,10 +15383,11 @@ function copySidebarSelectionFromEvent(
   event: Event,
   label: string,
 ): boolean {
+  if (sourceWin === sidebar.mount.ownerDocument?.defaultView) doc = sourceWin.document;
   const selectionResult = sidebarClipboardText(topWin, sourceWin, sidebar);
   if (!selectionResult) return false;
   const { text, fromCache } = selectionResult;
-  if (editableTargetHasOwnSelection(event.target, topWin.getSelection())) {
+  if (editableTargetHasOwnSelection(event.target, sourceWin.getSelection())) {
     return false;
   }
 
@@ -15010,7 +15430,9 @@ function sidebarClipboardText(
   sourceWin: Window,
   sidebar: WindowSidebarState,
 ): { text: string; fromCache: boolean } | null {
-  const topSelection = topWin.getSelection();
+  const sourceSelection = sourceWin.getSelection();
+  const topSelection = selectionBelongsToSidebar(sourceSelection, sidebar)
+    ? sourceSelection : topWin.getSelection();
   if (selectionBelongsToSidebar(topSelection, sidebar)) {
     const text = serializeSidebarSelection(
       topSelection,
@@ -15103,10 +15525,10 @@ function selectionBelongsToSidebar(
   const focus = selection.focusNode;
   return Boolean(
     (anchor &&
-      (sidebar.column.contains(anchor) ||
+      (sidebar.mount.contains(anchor) ||
         sidebar.noteColumn.contains(anchor))) ||
     (focus &&
-      (sidebar.column.contains(focus) || sidebar.noteColumn.contains(focus))),
+      (sidebar.mount.contains(focus) || sidebar.noteColumn.contains(focus))),
   );
 }
 
@@ -15360,11 +15782,15 @@ function installSidebarSelectionMenu(
         state.focusInput = true;
         state.draftHadFocus = true;
         dismiss();
+        floatingSidebarLayouts.get(sidebar)?.setVisible(true);
         renderPanel(sidebar.mount, state);
       });
       menu.append(askBtn);
     }
-    sidebar.column.append(menu);
+    if (floatingSidebarLayouts.has(sidebar)) {
+      menu.style.pointerEvents = "auto";
+      sidebar.mount.append(menu);
+    } else sidebar.column.append(menu);
     activeMenu = menu;
     win.setTimeout(() => {
       if (activeMenu !== menu) return;
@@ -15471,7 +15897,7 @@ function sidebarSelectionMenuText(
   const node = target as Node | null;
   if (
     !node ||
-    (!sidebar.column.contains(node) && !sidebar.noteColumn.contains(node))
+    (!sidebar.mount.contains(node) && !sidebar.noteColumn.contains(node))
   ) {
     return "";
   }
@@ -15578,9 +16004,12 @@ export function unregisterSidebarForWindow(win: Window) {
   const state = windowSidebars.get(win);
   if (!state) return;
 
+  rememberMessagesReadingPosition(state.mount);
   // Flush an unfinished drag before the docked layout is dismantled.
   state.layoutCleanup?.();
   state.layoutCleanup = undefined;
+  leaveFloatingSidebarLayout(state);
+  clearWindowMinimization(win);
   leaveDockedSidebarLayout(state, false);
   closeQuickAsk(state);
   state.fullTranslationAbort?.abort();
@@ -15601,6 +16030,7 @@ export function unregisterSidebarForWindow(win: Window) {
 
   state.splitter.remove();
   state.column.remove();
+  syncViewDragGuard(win.document);
   state.noteSplitter.remove();
   state.noteEditorCleanup?.();
   state.noteEditorCleanup = undefined;
@@ -15622,6 +16052,7 @@ export function unregisterSidebarForWindow(win: Window) {
 }
 
 export function unregisterSidebar() {
+  clearNoteWindowPins();
   registered = false;
   unregisterReaderSelectionCapture();
   for (const win of Array.from(mountedWindows)) {
@@ -15862,6 +16293,7 @@ function setColumnCollapsed(
   state: WindowSidebarState,
   collapsed: boolean,
 ) {
+  if (collapsed) rememberMessagesReadingPosition(state.mount);
   preserveMessagesScrollOnToggle(state.mount, collapsed, () => {
     applyColumnCollapsed(win, state, collapsed);
   });
@@ -15873,6 +16305,15 @@ function applyColumnCollapsed(
   collapsed: boolean,
 ) {
   const panelState = states.get(state.mount);
+  if (panelState?.localUiSettings.sidebarDisplayMode === "floating") {
+    if (collapsed) floatingSidebarLayouts.get(state)?.setVisible(false);
+    else {
+      enterFloatingSidebarLayout(win, state);
+      floatingSidebarLayouts.get(state)?.setVisible(true);
+    }
+    updateToggleButton(state);
+    return;
+  }
   if (panelState?.localUiSettings.sidebarDisplayMode === "docked") {
     if (collapsed) {
       const entry = dockedSidebarLayouts.get(state);
@@ -15932,6 +16373,7 @@ function applyColumnCollapsed(
     }
     renderWindowSidebar(win);
   }
+  syncReadingTightLayout(state);
   updateToggleButton(state);
 }
 
@@ -15946,6 +16388,8 @@ function hideCurrentSidebar(mount: HTMLElement) {
 }
 
 function isColumnCollapsed(state: WindowSidebarState): boolean {
+  const floating = floatingSidebarLayouts.get(state);
+  if (floating) return floating.isHidden();
   const column = state.column as Element & {
     collapsed?: boolean;
     hidden?: boolean;

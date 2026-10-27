@@ -319,7 +319,7 @@ describe("AI dialog toolbar", () => {
     expect(messagesSource).toContain('"YOU · 网络图指令"');
   });
 
-  it("keeps a visible mode menu in both toolbar layouts", () => {
+  it("keeps a visible view menu in both toolbar layouts", () => {
     expect(toolbarSource).toContain(
       "const layoutMenu = renderLayoutMenu(doc, mount, state)",
     );
@@ -330,7 +330,7 @@ describe("AI dialog toolbar", () => {
       "layoutMenu,\n      askBtn,\n      settings,",
     );
     expect(sidebarSource).toContain('"header-layout-menu"');
-    expect(sidebarSource).toContain('"模式"');
+    expect(sidebarSource).toContain('uiText("视图", "View")');
   });
 
   it("keeps note and immersive controls beside mode in compact layout", () => {
@@ -360,7 +360,8 @@ describe("AI dialog toolbar", () => {
       'summary.addEventListener("click", (event) =>',
     );
     expect(sidebarSource).toContain("event.preventDefault()");
-    expect(sidebarSource).toContain('menu.toggleAttribute("open")');
+    expect(compactMenuSource).toContain('if (menu.hasAttribute("open")) closeCompactMenu(menu)');
+    expect(compactMenuSource).toContain('menu.setAttribute("open", "")');
   });
 
   it("closes menus only when the click is outside the popup DOM", () => {

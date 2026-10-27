@@ -1356,7 +1356,6 @@
   text-align: left;
 }
 
-.header-actions-menu .zai-icon-menu,
 .header-actions-menu .copy-debug-toggle {
   min-height: 31px;
   padding: 4px 8px;
@@ -1364,9 +1363,7 @@
   border-radius: 8px;
 }
 
-.header-actions-menu .zai-icon-btn {
-  width: 100%;
-}
+
 
 .header-layout-menu > summary {
   width: auto;
@@ -1376,14 +1373,15 @@
 
 .header-layout-menu .zai-compact-menu-content {
   grid-template-columns: 1fr;
-  width: 210px;
+  width: 250px;
+  max-width: calc(100vw - 24px);
   position: fixed;
   z-index: 2147483646;
 }
 
 .header-layout-field {
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr);
+  grid-template-columns: 84px minmax(0, 1fr);
   align-items: center;
   gap: 7px;
   color: var(--zai-muted);
@@ -1678,17 +1676,7 @@
   white-space: nowrap;
 }
 
-.chat-font-size-control select,
-.chat-language-control select {
-  width: auto;
-  min-width: 72px;
-  border: 1px solid var(--zai-border);
-  border-radius: 8px;
-  background: var(--zai-panel-strong);
-  color: var(--zai-text);
-  padding: 3px 6px;
-  font: inherit;
-}
+
 
 .chat-language-control {
   display: flex;
@@ -8618,32 +8606,6 @@ div.math-fallback {
   display: none;
 }
 
-/* 字号 icon button (🎚) + its font-size popup in the AI 对话 header */
-.zai-icon-menu {
-  position: relative;
-  display: inline-flex;
-}
-.zai-icon-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--zai-accent);
-}
-.zai-icon-menu-panel {
-  /* fixed (positioned via JS from the button rect): the toolbar row's
-     overflow-x:auto would clip an absolutely-positioned dropdown. */
-  position: fixed;
-  min-width: 170px;
-  max-height: 320px;
-  overflow-y: auto;
-  background: var(--zai-bg, #fffdf8);
-  border: 1px solid var(--zai-border, #e3d8c8);
-  border-radius: 8px;
-  box-shadow: 0 6px 22px rgba(60, 40, 20, 0.18);
-  z-index: 9999;
-  padding: 8px;
-}
-
 /* In-place reference details in the full-document reader. */
 .zai-ft-citation-link,
 .zai-ft-object-link {
@@ -9143,4 +9105,287 @@ div.math-fallback {
 
 .zai-web-notice-actions button:hover {
   background: #fff;
+}
+
+/* Floating panels share the existing mount/state inside the host document. */
+#zai-root.zai-root-floating {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: block;
+  width: auto;
+  height: auto;
+  background: transparent;
+  pointer-events: none;
+  overflow: visible;
+}
+#zai-root.zai-root-floating > .zai-app {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  background: transparent;
+  pointer-events: none;
+}
+.zai-floating-module {
+  position: absolute;
+  display: flex;
+  flex-direction: column;
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  border: 1px solid var(--zai-border-strong);
+  border-radius: 12px;
+  background: var(--zai-bg);
+  color: var(--zai-text);
+  box-shadow: 0 12px 36px rgba(56, 41, 24, 0.2);
+  pointer-events: auto;
+  -moz-window-dragging: no-drag;
+}
+.zai-floating-module[hidden] {
+  display: none;
+}
+.zai-floating-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 36px;
+  box-sizing: border-box;
+  padding: 3px 9px;
+  border-bottom: 1px solid var(--zai-border);
+  border-radius: 12px 12px 0 0;
+  background: var(--zai-accent-soft);
+  font: 12px/1.4 var(--zai-font);
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -moz-window-dragging: no-drag;
+}
+.zai-floating-grip {
+  color: var(--zai-muted);
+  font-size: 17px;
+}
+.zai-floating-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: auto;
+}
+.zai-floating-action {
+  border: 0;
+  border-radius: 5px;
+  padding: 4px 7px;
+  background: transparent;
+  color: var(--zai-accent-strong);
+  font: inherit;
+  cursor: pointer;
+}
+.zai-floating-action:hover {
+  background: rgba(192, 103, 61, 0.12);
+}
+.zai-floating-content {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  border-radius: 0 0 12px 12px;
+}
+.zai-floating-window {
+  overflow: hidden;
+}
+.zai-floating-window > [hidden] {
+  display: none;
+}
+.zai-floating-window > .zai-floating-header {
+  flex-basis: 28px;
+  flex-shrink: 0;
+}
+.zai-floating-answer {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow: hidden;
+  border-radius: 0;
+}
+.zai-floating-answer > .preset-switcher,
+.zai-floating-answer > .context-card {
+  flex-shrink: 0;
+}
+.zai-floating-answer .messages {
+  flex: 1 1 0;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  border-radius: 0;
+}
+.zai-floating-composer {
+  flex: 0 1 auto;
+  min-height: 0;
+  max-height: 50%;
+  overflow: auto;
+  scrollbar-width: thin;
+}
+.zai-floating-composer .composer {
+  min-height: 0;
+  border-top: 1px solid var(--zai-border);
+  border-radius: 0 0 12px 12px;
+}
+.zai-floating-composer .input-row textarea {
+  min-height: 40px;
+}
+.zai-floating-compact .zai-floating-composer {
+  max-height: none;
+}
+.zai-floating-compact .composer {
+  border-top: 0;
+}
+.zai-floating-resize {
+  position: absolute;
+  right: 1px;
+  bottom: 1px;
+  width: 18px;
+  height: 18px;
+  padding: 0;
+  border: 0;
+  border-radius: 0 0 10px 0;
+  background: linear-gradient(
+    135deg,
+    transparent 55%,
+    #a58d7060 56%,
+    #a58d7060 63%,
+    transparent 64%,
+    transparent 75%,
+    #a58d7060 76%,
+    #a58d7060 83%,
+    transparent 84%
+  );
+  cursor: nwse-resize;
+  touch-action: none;
+}
+.zai-floating-header:focus-visible,
+.zai-floating-action:focus-visible,
+.zai-floating-resize:focus-visible {
+  outline: 2px solid var(--zai-accent);
+  outline-offset: 2px;
+}
+/* Keep pointer events in the host while dragging across embedded PDF frames. */
+#zai-root.zai-root-floating.zai-floating-gesturing {
+  pointer-events: auto;
+  cursor: grabbing;
+}
+.zai-floating-gesturing,
+.zai-floating-gesturing * {
+  user-select: none !important;
+}
+
+
+/* A desktop chrome window uses the OS title bar and window edges. */
+#zai-root.zai-root-desktop-floating .zai-floating-window {
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  max-height: none !important;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+#zai-root.zai-root-desktop-floating .zai-floating-resize {
+  display: none;
+}
+
+/* Both sidebar modes share the same tight reading layout. */
+#zai-root.zai-reading-tight .messages {
+  padding-left: 4px;
+  padding-right: 8px;
+}
+#zai-root.zai-reading-tight .preset-switcher,
+#zai-root.zai-reading-tight .context-card,
+#zai-root.zai-reading-tight .composer {
+  padding-left: 6px;
+  padding-right: 6px;
+}
+.header-layout-spacing {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 9px 2px 2px;
+  border-top: 1px solid var(--zai-border);
+  color: var(--zai-text);
+  font: 13px/1.45 var(--zai-font);
+  cursor: pointer;
+}
+.header-layout-spacing .zai-docked-tight-toggle {
+  flex-shrink: 0;
+  width: auto;
+  margin: 3px 0 0;
+  accent-color: var(--zai-accent);
+}
+.header-layout-spacing-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.header-layout-spacing-text small {
+  color: var(--zai-muted);
+  font-size: 11px;
+}
+
+
+/* One anchored popover for reading layout and chat appearance. */
+.header-view-menu .zai-compact-menu-content {
+  box-sizing: border-box;
+  width: 320px;
+  gap: 12px;
+  padding: 12px;
+  overscroll-behavior: contain;
+}
+.header-view-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+.header-view-section + .header-view-section {
+  border-top: 1px solid var(--zai-border);
+  padding-top: 12px;
+}
+.header-view-section-title {
+  margin: 0 0 2px;
+  color: var(--zai-text);
+  font: 700 12px/1.4 var(--zai-font);
+}
+.header-view-help {
+  color: var(--zai-muted);
+  font: 11px/1.5 var(--zai-font);
+}
+.header-view-menu .chat-font-size-control,
+.header-view-menu .chat-language-control {
+  display: grid;
+  grid-template-columns: 84px minmax(0, 1fr);
+  gap: 7px;
+  margin: 0;
+  font: 600 12px/1.35 var(--zai-font);
+}
+
+.header-view-menu .header-layout-spacing {
+  border-top: 0;
+  padding-top: 2px;
+}
+
+/* Popup labels and gaps must never inherit the docked toolbar's drag region. */
+.header-view-menu > .zai-compact-menu-content,
+.header-view-menu > .zai-compact-menu-content * {
+  -moz-window-dragging: no-drag !important;
+}
+
+/* Disable the parent toolbar drag region for the entire lifetime of View. */
+:root.zai-docked-window.zai-view-menu-open .zai-root-docked .preset-switcher-top,
+:root.zai-docked-window.zai-view-menu-open .zai-root-docked .preset-switcher-bottom {
+  -moz-window-dragging: no-drag !important;
+}
+
+.header-view-menu .header-layout-choice-options {
+  max-height: 210px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }

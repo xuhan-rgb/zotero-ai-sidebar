@@ -94,10 +94,10 @@ describe("sidebar selected-text menu", () => {
     expect(renderer).toContain("!isWebPromptUserMessage(sourceUser)");
   });
 
-  it("labels WEB context, reasoning, answer, and citation source separately", () => {
+  it("labels WEB context, reasoning, and citation source without a redundant answer label", () => {
     expect(sidebarSource).toMatch(/webContext\s*\? uiText\("发送上下文", "Sent context"\)/);
     expect(sidebarSource).toContain('webProvider === "deepseek" ? uiText("DeepSeek 已思考", "DeepSeek reasoning")');
-    expect(sidebarSource).toContain('"bubble-answer-label", uiText("回答", "Answer")');
+    expect(sidebarSource).not.toContain('"bubble-answer-label"');
     expect(sidebarSource).toContain("sourceAssistantOrdinal");
     expect(sidebarSource).toContain("sourceQuestionPreview");
     expect(sidebarSource).toContain("来源回答“");

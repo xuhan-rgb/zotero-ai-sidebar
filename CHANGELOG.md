@@ -4,6 +4,12 @@ Version history. For published builds and release details, see [GitHub Releases]
 
 ## v0.8.20
 
+This release has been rebuilt to include the previously unpublished workspace changes below. If you installed the earlier v0.8.20 package, download the replacement XPI and install it manually, then restart Zotero.
+
+- **Floating desktop workspace**: open the AI conversation in a separate native window, pin chat and note windows, remember window geometry, and link minimization with Zotero. Notes can also open in a separate window.
+- **Unified view settings and PDF layout**: choose reader-sidebar, docked, or floating placement from one view menu. Optional PDF margin adjustment keeps the sidebar width while adapting the window to PDF zoom; the view menu preserves its open state and position while settings change.
+- **Reading state across layouts**: retain per-paper chat positions across tab switches, reopening, and window moves; wait for a visible layout before restoring scroll, and respect manual scrolling. Up recalls prior questions and Down clears a recalled question.
+- **Node controls in Zotero windows**: create the account dialog's path controls in the HTML namespace so they work inside Zotero's XUL documents.
 - **Stable sidebar toggles**: preserve the PDF reader width and chat reading position when hiding or reopening the AI sidebar. Create controls in their destination document to avoid Gecko document-adoption errors.
 - **Settings and conversation backups**: local JSON backups include conversations, drafts, images, translation caches, annotations, and reading data alongside settings. Imports merge conversations, retain support for legacy settings-only backups, and stop while AI responses are running.
 - **Clearer sync settings**: compact cloud-storage settings and help explain what Zotero sync, attachment storage, and plugin WebDAV sync each handle.

@@ -25,18 +25,25 @@ describe("composer prompt history", () => {
     });
   });
 
-  it("walks backward and forward through recalled prompts", () => {
+  it("clears any recalled prompt and leaves history on ArrowDown", () => {
     const s = state();
-
     const latest = navigateComposerPromptHistory(s, "", "previous");
     const older = navigateComposerPromptHistory(s, latest.value, "previous");
-    const newer = navigateComposerPromptHistory(s, older.value, "next");
-    const empty = navigateComposerPromptHistory(s, newer.value, "next");
-
+    const empty = navigateComposerPromptHistory(s, older.value, "next");
     expect(older.value).toBe("first question");
-    expect(newer.value).toBe("second question");
-    expect(empty.value).toBe("");
+    expect(empty).toEqual({ handled: true, value: "" });
     expect(s.promptHistoryCursor).toBeUndefined();
+    expect(navigateComposerPromptHistory(s, "", "previous").value).toBe(
+      "second question",
+    );
+  });
+
+  it("does not clear manually typed text when ArrowDown is pressed", () => {
+    const s = state();
+    expect(navigateComposerPromptHistory(s, "draft", "next")).toEqual({
+      handled: false,
+      value: "draft",
+    });
   });
 
   it("does not hijack arrow keys for a manually typed draft", () => {
@@ -55,6 +62,5 @@ describe("composer prompt history", () => {
     resetComposerPromptHistory(s);
 
     expect(s.promptHistoryCursor).toBeUndefined();
-    expect(s.promptHistoryDraft).toBeUndefined();
   });
 });

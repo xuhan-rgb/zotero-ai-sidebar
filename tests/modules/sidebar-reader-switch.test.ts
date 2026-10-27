@@ -1,3 +1,5 @@
+import { Window as TestWindow } from "happy-dom";
+import * as noteDedicated from "../../src/modules/note-dedicated";
 // @vitest-environment-options {"happyDOM":{"settings":{"disableCSSFileLoading":true}}}
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registerSidebar, unregisterSidebar, refreshSidebarPreferences } from "../../src/modules/sidebar";
@@ -14,7 +16,7 @@ import * as arxivSource from "../../src/context/arxiv-source";
 import * as contextBuilder from "../../src/context/builder";
 import * as providerFactory from "../../src/providers/factory";
 
-import { windowSidebars } from "../../src/modules/sidebar-state";
+import { windowSidebars, states } from "../../src/modules/sidebar-state";
 import * as overviewStore from "../../src/context/overview-store";
 
 import * as markdownRenderer from "../../src/modules/markdown-render";
@@ -212,19 +214,19 @@ describe("sidebar follows the active paper", () => {
 
   it("offers language below font size and saves changes without losing the draft", async () => {
     await vi.advanceTimersByTimeAsync(2000);
-    const language = document.querySelector<HTMLSelectElement>(".chat-language-control select")!;
+    const language = document.querySelector<HTMLElement>(".chat-language-control")!;
     expect(language).not.toBeNull();
-    expect(Array.from(language.options, (option) => option.textContent)).toEqual(["Auto", "中文", "English"]);
-    expect(language.closest(".zai-icon-menu-panel")!.firstElementChild!.classList.contains("chat-font-size-control")).toBe(true);
+    expect(Array.from(language.querySelectorAll(".header-layout-choice-option"), option => option.textContent)).toEqual(["Auto", "中文", "English"]);
+    expect(language.closest(".header-view-section")!.querySelector(".chat-font-size-control")).toBeTruthy();
+    expect(language.closest(".header-view-menu")).toBeTruthy();
     const draft = document.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
     draft.value = "保留草稿";
     draft.dispatchEvent(new Event("input"));
-    for (const value of ["en-US", "zh-CN", "auto"]) {
-      const select = document.querySelector<HTMLSelectElement>(".chat-language-control select")!;
-      select.value = value;
-      select.dispatchEvent(new Event("change"));
+    for (const [value, label] of [["en-US", "English"], ["zh-CN", "中文"], ["auto", "Auto"]]) {
+      const field = document.querySelector<HTMLElement>(".chat-language-control")!;
+      [...field.querySelectorAll<HTMLButtonElement>(".header-layout-choice-option")].find(option => option.textContent === label)!.click();
       expect(Zotero.Prefs.get("extensions.zotero-ai-sidebar.interfaceLanguage", true)).toBe(value);
-      expect(document.querySelector<HTMLSelectElement>(".chat-language-control select")!.value).toBe(value);
+      expect(document.querySelector(".chat-language-control .header-layout-choice-option.active")!.textContent).toBe(label);
       expect(document.querySelector<HTMLTextAreaElement>(".input-row textarea")!.value).toBe("保留草稿");
       expect(document.getElementById("zai-root")!.textContent).toContain(value === "en-US" ? "Summarize paper" : "总结论文");
       expect(document.getElementById("zai-root")!.textContent).toContain("Answer for paper A");
@@ -678,5 +680,974 @@ describe("width persistence boundaries", () => {
     window.dispatchEvent(new Event("resize"));
     await vi.advanceTimersByTimeAsync(200);
     expect(windowSidebars.get(window)!.column.getAttribute("width")).toBe("700");
+  });
+});
+
+describe("composer history keyboard navigation", () => {
+  it("recalls questions with Up and clears the recalled history with Down", () => {
+    const sidebar = windowSidebars.get(window)!;
+    const state = states.get(sidebar.mount)!;
+    state.messages = [
+      { role: "user", content: "first question" },
+      { role: "assistant", content: "first answer" },
+      { role: "user", content: "second question" },
+    ];
+    refreshSidebarPreferences();
+    const input = sidebar.mount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    const press = (key: string) => {
+      const event = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true });
+      input.dispatchEvent(event);
+      return event;
+    };
+    expect(press("ArrowUp").defaultPrevented).toBe(true);
+    expect(input.value).toBe("second question");
+    press("ArrowUp");
+    expect(input.value).toBe("first question");
+    expect(press("ArrowDown").defaultPrevented).toBe(true);
+    expect(input.value).toBe("");
+    expect(state.draftText).toBe("");
+    expect(state.promptHistoryCursor).toBeUndefined();
+    expect(press("ArrowDown").defaultPrevented).toBe(false);
+    press("ArrowUp");
+    expect(input.value).toBe("second question");
+    input.value = "a manually edited question";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    expect(press("ArrowDown").defaultPrevented).toBe(false);
+    expect(input.value).toBe("a manually edited question");
+  });
+});
+
+describe("unified view settings", () => {
+  const visibleSidebar = async () => {
+    unregisterSidebar();
+    const toolbar = document.createElement("div");
+    toolbar.id = "zotero-items-toolbar";
+    document.body.prepend(toolbar);
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    const sidebar = windowSidebars.get(window)!;
+    if (sidebar.column.getAttribute("collapsed") === "true") {
+      sidebar.toggleButton!.dispatchEvent(new Event("command"));
+      await vi.advanceTimersByTimeAsync(200);
+    }
+    return sidebar;
+  };
+  it("combines layout and display controls in a single entry and preserves the popover during changes", async () => {
+    const sidebar = windowSidebars.get(window)!;
+    const view = () => sidebar.mount.querySelector<HTMLElement>(".header-view-menu")!;
+    expect(view().querySelector("summary")!.textContent).toBe("视图");
+    expect(sidebar.mount.querySelectorAll(".header-view-menu")).toHaveLength(1);
+    expect(sidebar.mount.querySelector(".zai-icon-menu")).toBeNull();
+    expect([...view().querySelectorAll(".header-view-section-title")].map(n => n.textContent)).toEqual(["布局", "显示"]);
+    expect(view().textContent).toContain("笔记位置在下次打开时生效");
+    expect(view().textContent).toContain("保持侧栏宽度，窗口随 PDF 缩放自动变宽或收窄");
+    let draft = sidebar.mount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    draft.value = "draft while changing view";
+    draft.dispatchEvent(new Event("input", { bubbles: true }));
+    view().querySelector<HTMLElement>("summary")!.click();
+    expect(view().hasAttribute("open")).toBe(true);
+    expect(document.documentElement.classList.contains("zai-view-menu-open")).toBe(true);
+    view().querySelector<HTMLElement>(".zai-compact-menu-content")!.scrollTop = 25;
+    const choice = [...view().querySelectorAll<HTMLElement>(".header-layout-field")].find(n => n.firstElementChild?.textContent === "对话排版")!;
+    choice.querySelector<HTMLButtonElement>(".header-layout-choice-trigger")!.click();
+    expect(choice.querySelector(".header-layout-choice[open]")).toBeTruthy();
+    [...choice.querySelectorAll<HTMLButtonElement>(".header-layout-choice-option")].find(n => n.textContent === "专注模式")!.click();
+    expect(view().hasAttribute("open")).toBe(true);
+    expect(view().querySelector(".header-layout-choice[open]")).toBeNull();
+    expect(view().querySelector<HTMLElement>(".zai-compact-menu-content")!.scrollTop).toBe(25);
+    expect(view().querySelector("select")).toBeNull();
+    const font = view().querySelector<HTMLButtonElement>(".chat-font-size-control .header-layout-choice-trigger")!;
+    const beforeFontMenu = view();
+    const beforeFontMessages = sidebar.mount.querySelector(".messages");
+    font.click();
+    [...view().querySelectorAll<HTMLButtonElement>(".chat-font-size-control .header-layout-choice-option")].find(option => option.textContent === "18px")!.click();
+    expect(font.textContent).toBe("18px");
+    expect(view().hasAttribute("open")).toBe(true);
+    expect(sidebar.mount.querySelector<HTMLElement>(".zai-app")!.style.getPropertyValue("--zai-chat-font-size")).toBe("18px");
+    expect(view()).toBe(beforeFontMenu);
+    expect(view().querySelector(".chat-font-size-control .header-layout-choice-trigger")).toBe(font);
+    expect(sidebar.mount.querySelector(".messages")).toBe(beforeFontMessages);
+    view().querySelector<HTMLInputElement>(".zai-docked-tight-toggle")!.click();
+    expect(view().hasAttribute("open")).toBe(true);
+    [...view().querySelectorAll<HTMLButtonElement>(".chat-language-control .header-layout-choice-option")].find(option => option.textContent === "English")!.click();
+    expect(view().hasAttribute("open")).toBe(true);
+    expect(view().querySelector("summary")!.textContent).toBe("View");
+    draft = sidebar.mount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    expect(draft.value).toBe("draft while changing view");
+    expect(sidebar.mount.querySelector(".messages")!.textContent).toContain("Answer for paper A");
+    const escape = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true });
+    draft.dispatchEvent(escape);
+    expect(view().hasAttribute("open")).toBe(false);
+    expect(escape.defaultPrevented).toBe(true);
+    expect(document.documentElement.classList.contains("zai-view-menu-open")).toBe(false);
+    view().querySelector<HTMLElement>("summary")!.click();
+    document.body.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+    expect(view().hasAttribute("open")).toBe(false);
+    view().querySelector<HTMLElement>("summary")!.click();
+    view().querySelector<HTMLElement>("summary")!.click();
+    expect(view().hasAttribute("open")).toBe(false);
+  });
+
+  it("keeps View open after choosing any chat position", async () => {
+    const sidebar = await visibleSidebar();
+    const menu = () => sidebar.mount.querySelector<HTMLElement>(".header-view-menu")!;
+    menu().querySelector<HTMLElement>("summary")!.click();
+    for (const label of ["右侧并排", "阅读器侧栏", "浮动模式", "阅读器侧栏"]) {
+      expect(menu().hasAttribute("open")).toBe(true);
+      [...menu().querySelectorAll<HTMLButtonElement>(".header-layout-choice-option")].find(n => n.textContent === label)!.click();
+      expect(menu().hasAttribute("open")).toBe(true);
+      expect(document.documentElement.classList.contains("zai-view-menu-open")).toBe(true);
+    }
+  });
+
+  it("reopens View in the desktop window and keeps it open when returning", async () => {
+    const sidebar = await visibleSidebar();
+    const home = sidebar.mount;
+    const desktop = new TestWindow({ url: "chrome://zotero-ai-sidebar/content/floating-window.xhtml", settings: { disableCSSFileLoading: true } });
+    desktop.document.body.innerHTML = '<div id="zai-desktop-container"></div>';
+    desktop.focus = vi.fn(); desktop.moveTo = vi.fn(); desktop.resizeTo = vi.fn();
+    const originalOpen = host.openDialog;
+    host.openDialog = vi.fn(() => desktop);
+    const menu = () => sidebar.mount.querySelector<HTMLElement>(".header-view-menu")!;
+    const choose = (label: string) => [...menu().querySelectorAll<HTMLButtonElement>(".header-layout-choice-option")].find(n => n.textContent === label)!.click();
+    try {
+      menu().querySelector<HTMLElement>("summary")!.click();
+      menu().querySelector<HTMLElement>(".zai-compact-menu-content")!.scrollTop = 30;
+      choose("浮动模式");
+      desktop.dispatchEvent(new desktop.Event("load"));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(sidebar.mount.ownerDocument).toBe(desktop.document);
+      expect(menu().hasAttribute("open")).toBe(true);
+      expect(menu().querySelector<HTMLElement>(".zai-compact-menu-content")!.scrollTop).toBe(30);
+      expect(document.documentElement.classList.contains("zai-view-menu-open")).toBe(false);
+      expect(desktop.document.documentElement.classList.contains("zai-view-menu-open")).toBe(true);
+      choose("阅读器侧栏");
+      await vi.advanceTimersByTimeAsync(100);
+      expect(sidebar.mount).toBe(home);
+      expect(menu().hasAttribute("open")).toBe(true);
+      expect(menu().querySelector<HTMLElement>(".zai-compact-menu-content")!.scrollTop).toBe(30);
+      expect(document.documentElement.classList.contains("zai-view-menu-open")).toBe(true);
+    } finally {
+      unregisterSidebar();
+      host.openDialog = originalOpen;
+      desktop.close();
+    }
+  });
+
+  it("keeps View open while the model streams and preserves the next draft", async () => {
+    const sidebar = windowSidebars.get(window)!;
+    vi.spyOn(contextBuilder, "buildContext").mockResolvedValue({ systemPrompt: "test" } as Awaited<ReturnType<typeof contextBuilder.buildContext>>);
+    vi.spyOn(zoteroContextSource, "getFullText").mockResolvedValue("PDF");
+    let finish!: () => void;
+    const pending = new Promise<void>(resolve => { finish = resolve; });
+    vi.spyOn(providerFactory, "getProvider").mockReturnValue({ stream: async function* () {
+      yield { type: "text_delta" as const, text: "view-first " };
+      await pending;
+      yield { type: "text_delta" as const, text: "view-last" };
+    } });
+    const input = sidebar.mount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    input.value = "question";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.advanceTimersByTimeAsync(100);
+    const menu = () => sidebar.mount.querySelector<HTMLElement>(".header-view-menu")!;
+    menu().querySelector<HTMLElement>("summary")!.click();
+    const draft = sidebar.mount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    draft.value = "next unsent question";
+    draft.dispatchEvent(new Event("input", { bubbles: true }));
+    finish();
+    await vi.advanceTimersByTimeAsync(300);
+    expect(menu().hasAttribute("open")).toBe(true);
+    expect(sidebar.mount.querySelector("textarea")!.value).toBe("next unsent question");
+    expect(sidebar.mount.querySelector(".messages")!.textContent).toContain("view-first view-last");
+  });
+
+});
+
+describe("floating sidebar integration", () => {
+  const chooseMode = (label: string) => {
+    const sidebar = windowSidebars.get(window)!;
+    const option = Array.from(
+      sidebar.mount.querySelectorAll<HTMLButtonElement>(
+        ".header-layout-choice-option",
+      ),
+    ).find((button) => button.textContent === label);
+    expect(option).toBeTruthy();
+    option!.click();
+  };
+  const openSidebar = async () => {
+    unregisterSidebar();
+    const toolbar = document.createElement("div");
+    toolbar.id = "zotero-items-toolbar";
+    document.body.prepend(toolbar);
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    const sidebar = windowSidebars.get(window)!;
+    if (sidebar.column.getAttribute("collapsed") === "true") {
+      sidebar.toggleButton!.dispatchEvent(new Event("command"));
+      await vi.advanceTimersByTimeAsync(500);
+    }
+    return sidebar;
+  };
+
+  it("moves a streaming floating chat into a desktop window and back without losing drafts", async () => {
+    const sidebar = await openSidebar();
+    const homeMount = sidebar.mount;
+    vi.spyOn(contextBuilder, "buildContext").mockResolvedValue({ systemPrompt: "test" } as Awaited<ReturnType<typeof contextBuilder.buildContext>>);
+    vi.spyOn(zoteroContextSource, "getFullText").mockResolvedValue("PDF");
+    let finishReply!: () => void;
+    const pending = new Promise<void>(resolve => { finishReply = resolve; });
+    const stream = vi.fn(async function* () {
+      yield { type: "text_delta" as const, text: "before-desktop " };
+      await pending;
+      yield { type: "text_delta" as const, text: "after-desktop" };
+    });
+    vi.spyOn(providerFactory, "getProvider").mockReturnValue({ stream });
+    let input = homeMount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    input.value = "start streaming";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(new KeyboardEvent("keydown", { key: "Enter", bubbles: true }));
+    await vi.advanceTimersByTimeAsync(100);
+    input = homeMount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    input.value = "next unsent draft";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    const desktop = new TestWindow({ url: "chrome://zotero-ai-sidebar/content/floating-window.xhtml", settings: { disableCSSFileLoading: true } });
+    desktop.document.body.innerHTML = '<div id="zai-desktop-container"></div>';
+    Object.defineProperty(desktop.document, "execCommand", { value: vi.fn(() => false), configurable: true });
+    desktop.focus = vi.fn(); desktop.moveTo = vi.fn(); desktop.resizeTo = vi.fn();
+    const nativeClose = vi.spyOn(desktop, "close");
+    const originalOpenDialog = host.openDialog;
+    host.openDialog = vi.fn(() => desktop);
+    try {
+      chooseMode("浮动模式");
+      desktop.dispatchEvent(new desktop.Event("load"));
+      await vi.advanceTimersByTimeAsync(100);
+      expect(host.openDialog).toHaveBeenCalledOnce();
+      expect(sidebar.mount).not.toBe(homeMount);
+      expect(sidebar.mount.ownerDocument).toBe(desktop.document);
+      expect(homeMount.children).toHaveLength(0);
+      const pin = sidebar.mount.querySelector<HTMLButtonElement>(".zai-chat-window-pin")!;
+      expect(pin.getAttribute("aria-pressed")).toBe("true");
+      expect(pin.closest(".header-actions-menu, .header-window-menu")).toBeNull();
+      expect(pin.parentElement?.lastElementChild).toBe(pin);
+      expect(pin.style.marginLeft).toBe("auto");
+      (Zotero as any).isLinux = true;
+      const execPin = vi.fn(async () => true);
+      (Zotero as any).Utilities.Internal = { exec: execPin };
+      pin.click();
+      await new Promise<void>(resolve => desktop.setTimeout(resolve, 10));
+      await vi.advanceTimersByTimeAsync(50);
+      expect(execPin).toHaveBeenCalledWith("/usr/bin/wmctrl", expect.arrayContaining(["remove,above"]));
+      expect(pin.getAttribute("aria-pressed")).toBe("false");
+      expect(JSON.parse(String(Zotero.Prefs.get("extensions.zotero-ai-sidebar.localUiSettings", true))).chatWindowPinned).toBe(false);
+      expect(sidebar.mount.querySelector("textarea")!.value).toBe("next unsent draft");
+      finishReply();
+      await vi.advanceTimersByTimeAsync(400);
+      expect(sidebar.mount.querySelector(".messages")!.textContent).toContain("before-desktop after-desktop");
+      expect(sidebar.mount.querySelector("textarea")!.value).toBe("next unsent draft");
+      const paragraph = [...sidebar.mount.querySelectorAll(".bubble-assistant p")].find(p => p.textContent?.includes("before-desktop after-desktop"))!;
+      const selection = desktop.getSelection()!;
+      const range = desktop.document.createRange();
+      range.selectNodeContents(paragraph as any);
+      selection.addRange(range);
+      const copied = vi.fn();
+      const copy = new desktop.Event("copy", { bubbles: true, cancelable: true });
+      Object.defineProperty(copy, "clipboardData", { value: { setData: copied } });
+      paragraph.dispatchEvent(copy as unknown as Event);
+      expect(copied).toHaveBeenCalledWith("text/plain", expect.stringContaining("before-desktop after-desktop"));
+      selection.removeAllRanges();
+      chooseMode("阅读器侧栏");
+      await vi.advanceTimersByTimeAsync(400);
+      expect(sidebar.mount).toBe(homeMount);
+      expect(sidebar.mount.querySelector("textarea")!.value).toBe("next unsent draft");
+      expect(sidebar.mount.querySelector(".messages")!.textContent).toContain("before-desktop after-desktop");
+      expect(nativeClose).toHaveBeenCalledOnce();
+    } finally {
+      finishReply();
+      unregisterSidebar();
+      host.openDialog = originalOpenDialog;
+      desktop.close();
+    }
+  });
+
+  it("opens restored history at the bottom after a delayed first visible layout", async () => {
+    unregisterSidebar();
+    const observations: Array<{ callback: () => void; targets: Element[] }> = [];
+    vi.stubGlobal("ResizeObserver", class {
+      entry: { callback: () => void; targets: Element[] };
+      constructor(callback: () => void) {
+        this.entry = { callback, targets: [] };
+        observations.push(this.entry);
+      }
+      observe(target: Element) { this.entry.targets.push(target); }
+      disconnect() {}
+    });
+    const prefs = (globalThis as any).Zotero.Prefs;
+    prefs.set("extensions.zotero-ai-sidebar.readerLayout", JSON.stringify({ aiOpen: true }));
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(1500);
+    const sidebar = windowSidebars.get(window)!;
+    const messages = sidebar.mount.querySelector<HTMLElement>(".messages")!;
+    expect(messages.textContent).toContain("Answer for paper A");
+    expect(messages.scrollTop).toBe(0);
+    Object.defineProperties(messages, {
+      scrollHeight: { configurable: true, value: 3000 },
+      clientHeight: { configurable: true, value: 400 },
+    });
+    for (const entry of observations)
+      if (entry.targets.includes(messages)) entry.callback();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(messages.scrollTop).toBe(2600);
+    expect(states.get(sidebar.mount)!.autoFollowMessages).toBe(true);
+  });
+
+  it.each(["阅读器侧栏", "右侧并排", "浮动模式"])("restores the saved reading position when reopening %s", async display => {
+    vi.spyOn(window, "resizeBy").mockImplementation(() => {});
+    const sidebar = await openSidebar();
+    chooseMode(display);
+    const state = states.get(sidebar.mount)!;
+    const messages = sidebar.mount.querySelector<HTMLElement>(".messages")!;
+    Object.defineProperties(messages, {
+      scrollHeight: { configurable: true, value: 3000 },
+      clientHeight: { configurable: true, value: 400 },
+    });
+    messages.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+    messages.scrollTop = 140;
+    messages.dispatchEvent(new Event("scroll"));
+    state.messagesScrollTop = 140; state.autoFollowMessages = false;
+    sidebar.toggleButton!.dispatchEvent(new Event("command"));
+    sidebar.toggleButton!.dispatchEvent(new Event("command"));
+    const reopened = sidebar.mount.querySelector<HTMLElement>(".messages")!;
+    Object.defineProperties(reopened, {
+      scrollHeight: { configurable: true, value: 3000 },
+      clientHeight: { configurable: true, value: 400 },
+    });
+    await vi.advanceTimersByTimeAsync(400);
+    expect(reopened.scrollTop).toBe(140);
+    expect(state.autoFollowMessages).toBe(false);
+    expect(reopened.textContent).toContain("Answer for paper A");
+  });
+
+  it("remembers separate article scroll positions across tab switches and sidebar registration", async () => {
+    let sidebar = await openSidebar();
+    const observations: Array<{ callback: () => void; targets: Element[] }> = [];
+    vi.stubGlobal("ResizeObserver", class {
+      entry: { callback: () => void; targets: Element[] };
+      constructor(callback: () => void) { this.entry = { callback, targets: [] }; observations.push(this.entry); }
+      observe(target: Element) { this.entry.targets.push(target); }
+      disconnect() {}
+    });
+    const reveal = async () => {
+      const messages = sidebar.mount.querySelector<HTMLElement>(".messages")!;
+      Object.defineProperties(messages, {
+        scrollHeight: { configurable: true, value: 3000 },
+        clientHeight: { configurable: true, value: 400 },
+      });
+      for (const entry of [...observations]) if (entry.targets.includes(messages)) entry.callback();
+      await vi.advanceTimersByTimeAsync(50);
+      return messages;
+    };
+    const readAt = (messages: HTMLElement, top: number) => {
+      messages.dispatchEvent(new WheelEvent("wheel", { deltaY: -100 }));
+      messages.scrollTop = top;
+      messages.dispatchEvent(new Event("scroll"));
+    };
+    readAt(await reveal(), 640);
+    host.Zotero_Tabs.selectedID = "pdf-b";
+    await vi.advanceTimersByTimeAsync(120);
+    expect((await reveal()).scrollTop).toBe(2600); // No record: latest message.
+    readAt(sidebar.mount.querySelector<HTMLElement>(".messages")!, 320);
+    host.Zotero_Tabs.selectedID = "pdf-a";
+    await vi.advanceTimersByTimeAsync(120);
+    expect((await reveal()).scrollTop).toBe(640);
+    host.Zotero_Tabs.selectedID = "pdf-b";
+    await vi.advanceTimersByTimeAsync(120);
+    expect((await reveal()).scrollTop).toBe(320);
+    unregisterSidebar();
+    registerSidebar();
+    sidebar = windowSidebars.get(window)!;
+    await vi.advanceTimersByTimeAsync(1500);
+    expect((await reveal()).scrollTop).toBe(320);
+  });
+
+  it.each(["右侧并排", "阅读器侧栏"])("preserves chat width on PDF zoom and fits PDF scale when dragging the splitter in %s", async (mode) => {
+    let hostWidth = 1600;
+    vi.spyOn(window, "innerWidth", "get").mockImplementation(() => hostWidth);
+    let sidebar = await openSidebar();
+    chooseMode(mode);
+    const chatWidth = () => Number(sidebar.column.getAttribute("width"));
+    let measuredWidth: number | undefined;
+    sidebar.column.getBoundingClientRect = () => new DOMRect(hostWidth - (measuredWidth ?? chatWidth()), 0, measuredWidth ?? chatWidth(), 800);
+    const iframe = document.createElement("iframe"); document.body.append(iframe);
+    const readerWidth = () => hostWidth - chatWidth() - 100;
+    Object.defineProperty(iframe, "offsetWidth", { configurable: true, get: readerWidth });
+    Object.defineProperty(iframe, "offsetHeight", { configurable: true, value: 600 });
+    iframe.getBoundingClientRect = () => new DOMRect(100, 100, readerWidth(), 600);
+    const pdf = iframe.contentWindow!;
+    Object.defineProperty(pdf, "innerWidth", { configurable: true, get: readerWidth });
+    pdf.document.body.innerHTML = '<div id="viewerContainer"><div class="pdfViewer"><div class="page" data-page-number="1"><canvas width="1000" height="50"></canvas></div></div></div>';
+    const container = pdf.document.getElementById("viewerContainer")!;
+    Object.defineProperty(container, "clientWidth", { configurable: true, get: readerWidth });
+    Object.defineProperty(container, "offsetWidth", { configurable: true, get: readerWidth });
+    container.getBoundingClientRect = () => new DOMRect(0, 0, readerWidth(), 600);
+    let scale = 1, value: string | number = "page-width";
+    const viewer = { currentScale: 1, currentPageNumber: 1,
+      get currentScaleValue() { return value; }, set currentScaleValue(next: string | number) { value = next; scale = typeof next === "number" ? next : 1; this.currentScale = scale; },
+    };
+    const listeners = new Map<string, () => void>();
+    (pdf as any).wrappedJSObject = { PDFViewerApplication: { pdfViewer: viewer, eventBus: { on: (name: string, cb: () => void) => listeners.set(name, cb), off: (name: string) => listeners.delete(name) } } };
+    const canvas = pdf.document.querySelector("canvas")!;
+    canvas.getBoundingClientRect = () => new DOMRect(0, 0, 1000 * scale, 50 * scale);
+    Object.defineProperty(canvas, "getContext", { value: () => ({ getImageData: (x: number, _y: number, width: number, height: number) => {
+      const data = new Uint8ClampedArray(width * height * 4).fill(255), at = (x === 0 ? 50 : width - 101) * 4;
+      data[at] = data[at + 1] = data[at + 2] = 0;
+      return { data };
+    } }) });
+    (readers.get("pdf-a") as any)._iframeWindow = pdf;
+    sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")!.click();
+    expect(viewer.currentScale).toBe(1);
+    const initialWidth = chatWidth();
+    viewer.currentScaleValue = 1.1;
+    listeners.get("scalechanging")!();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(chatWidth()).toBe(initialWidth);
+    expect(viewer.currentScale).toBe(1.1);
+    const enlargedWidth = chatWidth();
+    viewer.currentScaleValue = 0.9;
+    listeners.get("scalechanging")!();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(chatWidth()).toBe(initialWidth);
+    expect(viewer.currentScale).toBe(0.9);
+    expect(enlargedWidth).toBeGreaterThanOrEqual(320);
+    hostWidth = 2000;
+    window.dispatchEvent(new Event("resize"));
+    listeners.get("pagerendered")!();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(chatWidth()).toBe(initialWidth);
+    expect(parseFloat((sidebar.column as HTMLElement).style.maxWidth)).toBeGreaterThanOrEqual(chatWidth());
+    expect(viewer.currentScale).toBe(0.9);
+    // Automatic layout can legitimately create a column wider than the old 760px manual cap.
+    sidebar.column.setAttribute("width", "900");
+    (sidebar.column as HTMLElement).style.width = "900px";
+    (sidebar.column as HTMLElement).style.maxWidth = "900px";
+    const capture = vi.fn(), release = vi.fn();
+    Object.defineProperties(sidebar.splitter, {
+      setCapture: { configurable: true, value: capture },
+      releaseCapture: { configurable: true, value: release },
+    });
+    measuredWidth = chatWidth(); // Real chrome layout may lag width attributes during mousemove.
+    const startWidth = chatWidth();
+    const startClientX = hostWidth - startWidth - 2; // Grab within the splitter, not the column edge.
+    const startScreenX = startClientX + 80;
+    sidebar.splitter.dispatchEvent(new MouseEvent("mousedown", { button: 0, clientX: startClientX, screenX: startScreenX, bubbles: true }));
+    for (const [index, width] of [900, 898, 880, 900, 600, 580, 560, 580, 900].entries()) {
+      // Reader iframe and chrome can report different local coordinates.
+      window.dispatchEvent(new MouseEvent("mousemove", {
+        clientX: index % 2 ? hostWidth - width : 20,
+        screenX: startScreenX + startWidth - width,
+      }));
+      expect(chatWidth()).toBe(width);
+      listeners.get("pagerendered")!();
+      await vi.advanceTimersByTimeAsync(50);
+      expect(chatWidth()).toBe(width);
+      expect(viewer.currentScale).toBeCloseTo((hostWidth - 100 - width - 24) / 1000);
+    }
+    expect(chatWidth()).toBe(900);
+    expect(viewer.currentScale).toBeCloseTo((hostWidth - 100 - 900 - 24) / 1000);
+    listeners.get("pagerendered")!();
+    await vi.advanceTimersByTimeAsync(50);
+    expect(chatWidth()).toBe(900);
+    expect(viewer.currentScale).toBeCloseTo((hostWidth - 100 - 900 - 24) / 1000);
+    if (mode === "右侧并排")
+      expect(document.documentElement.style.getPropertyValue("--zai-docked-width")).toBe("900px");
+    measuredWidth = undefined;
+    window.dispatchEvent(new MouseEvent("mouseup"));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(capture).toHaveBeenCalledExactlyOnceWith(true);
+    expect(release).toHaveBeenCalledOnce();
+    expect(chatWidth()).toBe(900);
+    expect(viewer.currentScale).toBeCloseTo((hostWidth - 100 - 900 - 24) / 1000);
+    expect(Math.abs(readerWidth() - (1000 * viewer.currentScale + 24))).toBeLessThanOrEqual(1);
+    const fittedScale = viewer.currentScale;
+    window.dispatchEvent(new MouseEvent("mousemove", { clientX: hostWidth - 500 }));
+    expect(chatWidth()).toBe(900);
+    expect(viewer.currentScale).toBe(fittedScale);
+    expect(sidebar.mount.querySelector(".messages")?.textContent).toContain("Answer for paper A");
+    const prefs = (globalThis as any).Zotero.Prefs;
+    const widthKey = mode === "右侧并排" ? "dockedAiWidth" : "aiWidth";
+    expect(JSON.parse(prefs.get("extensions.zotero-ai-sidebar.readerLayout"))[widthKey]).toBe(900);
+    const columnRect = sidebar.column.getBoundingClientRect;
+    unregisterSidebar();
+    registerSidebar();
+    sidebar = windowSidebars.get(window)!;
+    sidebar.column.getBoundingClientRect = columnRect;
+    await vi.advanceTimersByTimeAsync(2000);
+    expect(chatWidth()).toBe(900);
+    vi.spyOn(window, "resizeBy").mockImplementation(() => {});
+    sidebar.toggleButton!.dispatchEvent(new Event("command"));
+    await vi.advanceTimersByTimeAsync(50);
+    sidebar.toggleButton!.dispatchEvent(new Event("command"));
+    await vi.advanceTimersByTimeAsync(50);
+    expect(chatWidth()).toBe(900);
+    expect(sidebar.mount.querySelector(".messages")?.textContent).toContain("Answer for paper A");
+  });
+
+  it("toggles a clearly labeled spacing checkbox in Layout without losing the draft or conversation", async () => {
+    const sidebar = await openSidebar();
+    expect(sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")?.checked).toBe(false);
+    const iframe = document.createElement("iframe");
+    document.body.append(iframe);
+    const pdf = iframe.contentWindow!;
+    pdf.document.body.innerHTML = '<div class="pdfViewer"><div class="page">PDF</div></div>';
+    (readers.get("pdf-a") as any)._iframeWindow = pdf;
+    chooseMode("右侧并排");
+    const toggle = sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")!;
+    expect(toggle).toBeTruthy();
+    expect(toggle.closest(".header-layout-menu")).toBeTruthy();
+    expect(toggle.type).toBe("checkbox");
+    expect(toggle.parentElement?.tagName.toLowerCase()).toBe("label");
+    const label = toggle.parentElement?.textContent;
+    expect(label).toContain("自动调整 PDF 页边距");
+    expect(label).toContain("保持侧栏宽度，窗口随 PDF 缩放自动变宽或收窄");
+    expect(toggle.closest(".preset-switcher-row")?.querySelector(":scope > .zai-docked-tight-toggle")).toBeNull();
+    expect(toggle.checked).toBe(false);
+    const input = sidebar.mount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    input.value = "draft while comparing";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    const messages = sidebar.mount.querySelector<HTMLElement>(".messages")!;
+    messages.scrollTop = 80;
+    toggle.click();
+    expect(toggle.checked).toBe(true);
+    expect(sidebar.mount.classList.contains("zai-reading-tight")).toBe(true);
+    expect(pdf.document.getElementById("zai-floating-pdf-align")?.textContent).toContain("flex-start");
+    expect(pdf.document.querySelector(".zai-floating-reader-space")).toBeNull();
+    expect(sidebar.mount.querySelector("textarea")).toBe(input);
+    expect(input.value).toBe("draft while comparing");
+    expect(sidebar.mount.querySelector(".messages")).toBe(messages);
+    expect(messages.textContent).toContain("Answer for paper A");
+    toggle.click();
+    expect(sidebar.mount.classList.contains("zai-reading-tight")).toBe(false);
+    expect(pdf.document.getElementById("zai-floating-pdf-align")).toBeNull();
+    toggle.click();
+    chooseMode("阅读器侧栏");
+    expect(sidebar.mount.classList.contains("zai-reading-tight")).toBe(true);
+    expect(sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")?.checked).toBe(true);
+    expect(pdf.document.getElementById("zai-floating-pdf-align")).not.toBeNull();
+    sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")!.click();
+    expect(sidebar.mount.classList.contains("zai-reading-tight")).toBe(false);
+    expect(pdf.document.getElementById("zai-floating-pdf-align")).toBeNull();
+    chooseMode("右侧并排");
+    expect(sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")?.checked).toBe(false);
+    expect(sidebar.mount.querySelector(".zai-docked-tight-toggle")?.parentElement?.textContent).toBe(label);
+    chooseMode("浮动模式");
+    expect(sidebar.mount.querySelector(".zai-docked-tight-toggle")).toBeNull();
+    expect(sidebar.mount.classList.contains("zai-reading-tight")).toBe(false);
+  });
+
+  it("remembers the shared PDF margin checkbox after sidebar registration", async () => {
+    let sidebar = await openSidebar();
+    chooseMode("阅读器侧栏");
+    sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")!.click();
+    expect(JSON.parse(String(Zotero.Prefs.get("extensions.zotero-ai-sidebar.localUiSettings", true))).dockedTightLayout).toBe(true);
+    unregisterSidebar();
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    sidebar = windowSidebars.get(window)!;
+    expect(sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")?.checked).toBe(true);
+    chooseMode("右侧并排");
+    expect(sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")?.checked).toBe(true);
+    sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")!.click();
+    chooseMode("阅读器侧栏");
+    expect(sidebar.mount.querySelector<HTMLInputElement>(".zai-docked-tight-toggle")?.checked).toBe(false);
+  });
+
+  it.each(["阅读器侧栏", "右侧并排"])("offers separate native notes in %s through the Mode menu", async display => {
+    const sidebar = await openSidebar();
+    chooseMode(display);
+    const draft = sidebar.mount.querySelector<HTMLTextAreaElement>(".input-row textarea")!;
+    draft.value = "draft before note location changes";
+    draft.dispatchEvent(new Event("input", { bubbles: true }));
+    const option = [...sidebar.mount.querySelectorAll<HTMLButtonElement>(".header-layout-choice-option")].find(b => b.textContent === "独立窗口")!;
+    expect(option.closest(".header-layout-menu")).toBeTruthy();
+    option.click();
+    const native = { closed: true, close: vi.fn(() => { native.closed = true; }) };
+    host.ZoteroPane.openNote = vi.fn(async () => { native.closed = false; });
+    host.ZoteroPane.findNoteWindow = vi.fn(() => native.closed ? null : native);
+    vi.spyOn(noteDedicated, "resolveTargetNote").mockResolvedValue({ note: { id: 901, parentID: 101 } as Zotero.Item, created: false });
+    sidebar.mount.querySelector<HTMLButtonElement>(".open-note-button")!.click();
+    await vi.advanceTimersByTimeAsync(200);
+    expect(host.ZoteroPane.openNote).toHaveBeenCalledExactlyOnceWith(901, { openInWindow: true });
+    expect(sidebar.mount.querySelector(".open-note-button")?.textContent).toBe("关闭笔记");
+    expect(sidebar.mount.querySelector("textarea")!.value).toBe("draft before note location changes");
+    expect(sidebar.mount.querySelector(".messages")?.textContent).toContain("Answer for paper A");
+    chooseMode("当前窗口");
+    expect(sidebar.mount.querySelector(".open-note-button")?.textContent).toBe("关闭笔记");
+    sidebar.mount.querySelector<HTMLButtonElement>(".open-note-button")!.click();
+    expect(native.close).toHaveBeenCalledOnce();
+    expect(sidebar.mount.querySelector(".open-note-button")?.textContent).toBe("打开笔记");
+    expect(JSON.parse(String(Zotero.Prefs.get("extensions.zotero-ai-sidebar.localUiSettings", true))).noteWindowMode).toBe("inline");
+    chooseMode("浮动模式");
+    expect([...sidebar.mount.querySelectorAll(".header-layout-choice-option")].find(b => b.textContent === "当前窗口")).toBeUndefined();
+  });
+
+  it("aligns PDF pages only while the floating answer is visible", async () => {
+    await openSidebar();
+    const iframe = document.createElement("iframe");
+    document.body.append(iframe);
+    const pdfWindow = iframe.contentWindow!;
+    pdfWindow.document.body.innerHTML =
+      '<div class="pdfViewer"><div class="page">PDF</div></div>';
+    (readers.get("pdf-a") as any)._iframeWindow = pdfWindow;
+    chooseMode("浮动模式");
+    expect(
+      pdfWindow.document.getElementById("zai-floating-pdf-align"),
+    ).not.toBeNull();
+    chooseMode("右侧并排");
+    expect(
+      pdfWindow.document.getElementById("zai-floating-pdf-align"),
+    ).toBeNull();
+    chooseMode("浮动模式");
+    expect(
+      pdfWindow.document.getElementById("zai-floating-pdf-align"),
+    ).not.toBeNull();
+    chooseMode("阅读器侧栏");
+    expect(
+      pdfWindow.document.getElementById("zai-floating-pdf-align"),
+    ).toBeNull();
+  });
+
+  it("preserves the draft and conversation across all three display modes", async () => {
+    const sidebar = await openSidebar();
+    const input = sidebar.mount.querySelector<HTMLTextAreaElement>(
+      ".input-row textarea",
+    )!;
+    input.value = "draft across display modes";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    chooseMode("浮动模式");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(sidebar.mount.parentElement).toBe(document.documentElement);
+    expect(
+      sidebar.mount.querySelectorAll("[data-zai-floating-panel]"),
+    ).toHaveLength(2);
+    expect(
+      sidebar.mount.querySelector(
+        '[data-zai-floating-panel="composer"] .input-row textarea',
+      )?.value,
+    ).toBe("draft across display modes");
+    expect(
+      sidebar.mount.querySelector(
+        '[data-zai-floating-panel="answer"] .messages',
+      )?.textContent,
+    ).toContain("Answer for paper A");
+    chooseMode("右侧并排");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(
+      document.documentElement.classList.contains("zai-docked-window"),
+    ).toBe(true);
+    expect(sidebar.mount.parentElement).toBe(sidebar.column);
+    expect(sidebar.mount.querySelector("[data-zai-floating-panel]")).toBeNull();
+    expect(sidebar.mount.querySelector(".zai-chat-window-pin")).toBeNull();
+    expect(
+      sidebar.mount.querySelector<HTMLTextAreaElement>("textarea")?.value,
+    ).toBe("draft across display modes");
+    chooseMode("阅读器侧栏");
+    await vi.advanceTimersByTimeAsync(400);
+    expect(
+      document.documentElement.classList.contains("zai-docked-window"),
+    ).toBe(false);
+    expect(sidebar.mount.parentElement).toBe(sidebar.column);
+    expect(sidebar.mount.textContent).toContain("Answer for paper A");
+  });
+
+  it("restores floating mode and saved geometry after window registration", async () => {
+    const sidebar = await openSidebar();
+    chooseMode("浮动模式");
+    const pointer = (type: string, x: number, y: number) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      for (const [key, value] of Object.entries({
+        button: 0,
+        pointerId: 12,
+        clientX: x,
+        clientY: y,
+      }))
+        Object.defineProperty(event, key, { value });
+      return event;
+    };
+    sidebar.mount
+      .querySelector('[data-zai-float-drag="answer"]')!
+      .dispatchEvent(pointer("pointerdown", 200, 200));
+    window.dispatchEvent(pointer("pointermove", 100, 240));
+    window.dispatchEvent(pointer("pointerup", 100, 240));
+    const left = sidebar.mount.querySelector<HTMLElement>(
+      '[data-zai-floating-window]',
+    )!.style.left;
+    const settings = JSON.parse(
+      String(
+        Zotero.Prefs.get("extensions.zotero-ai-sidebar.localUiSettings", true),
+      ),
+    );
+    expect(settings.sidebarDisplayMode).toBe("floating");
+    expect(settings.floatingPanels.answer.x).toBe(parseFloat(left));
+    unregisterSidebar();
+    registerSidebar();
+    await vi.advanceTimersByTimeAsync(2000);
+    const restored = windowSidebars.get(window)!;
+    expect(restored.mount.parentElement).toBe(document.documentElement);
+    expect(
+      restored.mount.querySelector<HTMLElement>(
+        '[data-zai-floating-window]',
+      )!.style.left,
+    ).toBe(left);
+    expect(
+      restored.mount.querySelectorAll("[data-zai-floating-panel]"),
+    ).toHaveLength(2);
+  });
+
+  it("keeps selected-answer copy and its context menu inside floating panels", async () => {
+    const sidebar = await openSidebar();
+    chooseMode("浮动模式");
+    const paragraph = sidebar.mount.querySelector(
+      '[data-zai-floating-panel="answer"] .bubble-assistant .bubble-body p',
+    )!;
+    expect(paragraph).toBeTruthy();
+    const selection = window.getSelection()!;
+    const range = document.createRange();
+    range.selectNodeContents(paragraph);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const copied = vi.fn();
+    const copy = new Event("copy", { bubbles: true, cancelable: true });
+    Object.defineProperty(copy, "clipboardData", {
+      value: { setData: copied },
+    });
+    paragraph.dispatchEvent(copy);
+    expect(copied).toHaveBeenCalledWith(
+      "text/plain",
+      expect.stringContaining("Answer for paper A"),
+    );
+    paragraph.dispatchEvent(
+      new MouseEvent("mousedown", {
+        bubbles: true,
+        cancelable: true,
+        button: 2,
+        clientX: 400,
+        clientY: 200,
+      }),
+    );
+    expect(
+      sidebar.mount.querySelector(".zai-selection-menu")?.parentElement,
+    ).toBe(sidebar.mount);
+    selection.removeAllRanges();
+  });
+
+  it("continues one streaming response across mode changes and preserves the next draft", async () => {
+    const sidebar = await openSidebar();
+    chooseMode("浮动模式");
+    sidebar.mount
+      .querySelector<HTMLButtonElement>(
+        '[data-zai-float-action="hide"]',
+      )!
+      .click();
+    expect(
+      sidebar.mount.querySelector<HTMLElement>(
+        '[data-zai-floating-panel="answer"]',
+      )!.hidden,
+    ).toBe(true);
+    vi.spyOn(contextBuilder, "buildContext").mockResolvedValue({
+      systemPrompt: "test",
+    } as Awaited<ReturnType<typeof contextBuilder.buildContext>>);
+    vi.spyOn(zoteroContextSource, "getFullText").mockResolvedValue("PDF");
+    let finishReply!: () => void;
+    const pending = new Promise<void>((resolve) => {
+      finishReply = resolve;
+    });
+    const stream = vi.fn(async function* () {
+      yield { type: "text_delta" as const, text: "floating-first " };
+      await pending;
+      yield { type: "text_delta" as const, text: "floating-last" };
+    });
+    vi.spyOn(providerFactory, "getProvider").mockReturnValue({ stream });
+    let input = sidebar.mount.querySelector<HTMLTextAreaElement>(
+      ".input-row textarea",
+    )!;
+    input.value = "floating question";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    input.dispatchEvent(
+      new KeyboardEvent("keydown", { key: "Enter", bubbles: true }),
+    );
+    await vi.advanceTimersByTimeAsync(100);
+    expect(
+      sidebar.mount.querySelector<HTMLElement>(
+        '[data-zai-floating-panel="answer"]',
+      )!.hidden,
+    ).toBe(false);
+    expect(
+      sidebar.mount.querySelector('[data-zai-floating-panel="answer"]')
+        ?.textContent,
+    ).toContain("floating-first");
+    input = sidebar.mount.querySelector<HTMLTextAreaElement>(
+      ".input-row textarea",
+    )!;
+    input.value = "next unsent question";
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+    chooseMode("阅读器侧栏");
+    chooseMode("浮动模式");
+    finishReply();
+    await vi.advanceTimersByTimeAsync(500);
+    expect(stream).toHaveBeenCalledOnce();
+    expect(
+      sidebar.mount.querySelector(
+        '[data-zai-floating-panel="answer"] .messages',
+      )?.textContent,
+    ).toContain("floating-first floating-last");
+    expect(
+      sidebar.mount.querySelector<HTMLTextAreaElement>(".input-row textarea")
+        ?.value,
+    ).toBe("next unsent question");
+    expect(
+      sidebar.mount.querySelectorAll("[data-zai-floating-panel]"),
+    ).toHaveLength(2);
+  });
+
+  it("tracks native note opening, button close, and closing the window itself", async () => {
+    const sidebar = await openSidebar();
+    chooseMode("浮动模式");
+    vi.spyOn(noteDedicated, "resolveTargetNote").mockResolvedValue({
+      note: { id: 901, parentID: 101 } as Zotero.Item,
+      created: false,
+    });
+    let nativeWindow: { closed: boolean; close: ReturnType<typeof vi.fn> };
+    const open = vi.fn(async () => {
+      nativeWindow = {
+        closed: false,
+        close: vi.fn(() => {
+          nativeWindow.closed = true;
+        }),
+      };
+    });
+    host.ZoteroPane.openNote = open;
+    host.ZoteroPane.findNoteWindow = vi.fn((id: number) =>
+      id === 901 && nativeWindow && !nativeWindow.closed ? nativeWindow : null,
+    );
+    const button = () =>
+      sidebar.mount.querySelector<HTMLButtonElement>(".open-note-button")!;
+    button().click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(open).toHaveBeenCalledWith(901, { openInWindow: true });
+    expect(button().disabled).toBe(false);
+    expect(button().textContent).toBe("关闭笔记");
+    expect(sidebar.noteColumn.getAttribute("collapsed")).toBe("true");
+    expect(sidebar.noteMount.childElementCount).toBe(0);
+    button().click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(nativeWindow!.close).toHaveBeenCalledOnce();
+    expect(open).toHaveBeenCalledOnce();
+    expect(button().textContent).toBe("打开笔记");
+    button().click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(open).toHaveBeenCalledTimes(2);
+    expect(button().textContent).toBe("关闭笔记");
+    nativeWindow!.close();
+    await vi.advanceTimersByTimeAsync(600);
+    expect(button().textContent).toBe("打开笔记");
+  });
+
+  it("keeps the note button pending until the native window has finished opening", async () => {
+    const sidebar = await openSidebar();
+    chooseMode("浮动模式");
+    vi.spyOn(noteDedicated, "resolveTargetNote").mockResolvedValue({
+      note: { id: 901, parentID: 101 } as Zotero.Item,
+      created: false,
+    });
+    let finishOpen!: () => void;
+    let nativeWindow: {
+      closed: boolean;
+      close: ReturnType<typeof vi.fn>;
+    } | null = null;
+    host.ZoteroPane.openNote = vi.fn(
+      () =>
+        new Promise<void>((resolve) => {
+          finishOpen = resolve;
+        }),
+    );
+    host.ZoteroPane.findNoteWindow = vi.fn(() => nativeWindow);
+    const button =
+      sidebar.mount.querySelector<HTMLButtonElement>(".open-note-button")!;
+    button.click();
+    await vi.advanceTimersByTimeAsync(1100);
+    expect(button.disabled).toBe(true);
+    expect(button.textContent).toBe("打开中...");
+    expect(host.ZoteroPane.openNote).toHaveBeenCalledOnce();
+    nativeWindow = { closed: false, close: vi.fn() };
+    finishOpen();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(button.disabled).toBe(false);
+    expect(button.textContent).toBe("关闭笔记");
+  });
+
+  it("does not confuse a different paper's native note with the current one", async () => {
+    const sidebar = await openSidebar();
+    chooseMode("浮动模式");
+    vi.spyOn(noteDedicated, "resolveTargetNote").mockResolvedValue({
+      note: { id: 901, parentID: 101 } as Zotero.Item,
+      created: false,
+    });
+    const nativeWindow = { closed: false, close: vi.fn() };
+    host.ZoteroPane.openNote = vi.fn(async () => undefined);
+    host.ZoteroPane.findNoteWindow = vi.fn((id: number) =>
+      id === 901 ? nativeWindow : null,
+    );
+    sidebar.mount
+      .querySelector<HTMLButtonElement>(".open-note-button")!
+      .click();
+    await vi.advanceTimersByTimeAsync(10);
+    expect(sidebar.mount.querySelector(".open-note-button")!.textContent).toBe(
+      "关闭笔记",
+    );
+    host.Zotero_Tabs.selectedID = "pdf-b";
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(sidebar.mount.querySelector(".open-note-button")!.textContent).toBe(
+      "打开笔记",
+    );
+    host.Zotero_Tabs.selectedID = "pdf-a";
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(sidebar.mount.querySelector(".open-note-button")!.textContent).toBe(
+      "关闭笔记",
+    );
+    expect(nativeWindow.close).not.toHaveBeenCalled();
+  });
+
+  it("keeps floating panels available through hide/show and switches their paper context", async () => {
+    const sidebar = await openSidebar();
+    chooseMode("浮动模式");
+    sidebar.toggleButton!.dispatchEvent(new Event("command"));
+    expect(
+      Array.from(
+        sidebar.mount.querySelectorAll<HTMLElement>(
+          "[data-zai-floating-panel]",
+        ),
+      ).every((panel) => panel.hidden),
+    ).toBe(true);
+    expect(sidebar.toggleButton!.getAttribute("aria-pressed")).toBe("false");
+    sidebar.toggleButton!.dispatchEvent(new Event("command"));
+    expect(
+      Array.from(
+        sidebar.mount.querySelectorAll<HTMLElement>(
+          "[data-zai-floating-panel]",
+        ),
+      ).every((panel) => !panel.hidden),
+    ).toBe(true);
+    expect(sidebar.toggleButton!.getAttribute("aria-pressed")).toBe("true");
+    host.Zotero_Tabs.selectedID = "pdf-b";
+    await vi.advanceTimersByTimeAsync(1200);
+    expect(
+      sidebar.mount.querySelectorAll("[data-zai-floating-panel]"),
+    ).toHaveLength(2);
+    expect(sidebar.mount.textContent).toContain("Answer for paper B");
+    expect(sidebar.mount.textContent).not.toContain("Answer for paper A");
+    const mount = sidebar.mount;
+    unregisterSidebar();
+    expect(document.querySelector(".zai-root-floating")).toBeNull();
+    expect(mount.isConnected).toBe(false);
   });
 });

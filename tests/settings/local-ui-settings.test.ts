@@ -2,10 +2,13 @@ import { describe, expect, it } from "vitest";
 import type { PrefsStore } from "../../src/settings/storage";
 import {
   DEFAULT_FULL_TRANSLATION_READING_SETTINGS,
+  DEFAULT_FLOATING_PANEL_LAYOUT,
   DEFAULT_LOCAL_UI_SETTINGS,
   normalizeLocalUiSettings,
+  normalizeFloatingPanelLayout,
   loadLocalUiSettings,
   saveLocalUiSettings,
+  usesNativeNoteWindow,
 } from "../../src/settings/local-ui-settings";
 
 function memPrefs(): PrefsStore {
@@ -17,13 +20,52 @@ function memPrefs(): PrefsStore {
 }
 
 describe("local UI settings storage", () => {
+  it("defaults and persists the note window mode", () => {
+    const prefs = memPrefs();
+    expect(loadLocalUiSettings(prefs).noteWindowMode).toBe("inline");
+    expect(normalizeLocalUiSettings({ noteWindowMode: "invalid" }).noteWindowMode).toBe("inline");
+
+    saveLocalUiSettings(prefs, {
+      ...DEFAULT_LOCAL_UI_SETTINGS,
+      noteWindowMode: "window",
+    });
+    expect(loadLocalUiSettings(prefs).noteWindowMode).toBe("window");
+  });
+
+  it("uses a native note window for floating mode or the window target", () => {
+    for (const sidebarDisplayMode of ["embedded", "docked", "floating"] as const) {
+      for (const noteWindowMode of ["inline", "window"] as const) {
+        expect(usesNativeNoteWindow({ sidebarDisplayMode, noteWindowMode })).toBe(
+          sidebarDisplayMode === "floating" || noteWindowMode === "window",
+        );
+      }
+    }
+    expect(usesNativeNoteWindow(undefined)).toBe(false);
+  });
+
+  it("defaults and persists docked tight comparison setting", () => {
+    const prefs = memPrefs();
+    expect(loadLocalUiSettings(prefs).dockedTightLayout).toBe(false);
+    expect(normalizeLocalUiSettings({ dockedTightLayout: "true" }).dockedTightLayout).toBe(false);
+    saveLocalUiSettings(prefs, {
+      ...DEFAULT_LOCAL_UI_SETTINGS,
+      dockedTightLayout: true,
+    });
+    expect(loadLocalUiSettings(prefs).dockedTightLayout).toBe(true);
+  });
+
   it("defaults to automatic paper material and persists the PDF override", () => {
     const prefs = memPrefs();
     expect(loadLocalUiSettings(prefs).alwaysSendPdf).toBe(false);
     expect(normalizeLocalUiSettings({}).alwaysSendPdf).toBe(false);
-    expect(normalizeLocalUiSettings({ alwaysSendPdf: "true" }).alwaysSendPdf).toBe(false);
+    expect(
+      normalizeLocalUiSettings({ alwaysSendPdf: "true" }).alwaysSendPdf,
+    ).toBe(false);
     for (const alwaysSendPdf of [true, false]) {
-      saveLocalUiSettings(prefs, { ...DEFAULT_LOCAL_UI_SETTINGS, alwaysSendPdf });
+      saveLocalUiSettings(prefs, {
+        ...DEFAULT_LOCAL_UI_SETTINGS,
+        alwaysSendPdf,
+      });
       expect(loadLocalUiSettings(prefs).alwaysSendPdf).toBe(alwaysSendPdf);
     }
   });
@@ -78,8 +120,7 @@ describe("local UI settings storage", () => {
     expect(settings.webPromptProvider).toBe("kimi");
     expect(settings.customWebProviders).toEqual([]);
     expect(
-      normalizeLocalUiSettings({ webPromptProvider: "kimi" })
-        .webPromptProvider,
+      normalizeLocalUiSettings({ webPromptProvider: "kimi" }).webPromptProvider,
     ).toBe("kimi");
   });
 
@@ -88,6 +129,40 @@ describe("local UI settings storage", () => {
     const prefs = memPrefs();
     prefs.set("extensions.zotero-ai-sidebar.localUiSettings", "{bad");
     expect(loadLocalUiSettings(prefs)).toEqual(DEFAULT_LOCAL_UI_SETTINGS);
+  });
+
+  it("defaults legacy window pin settings and persists each pin independently", () => {
+    const prefs = memPrefs();
+    prefs.set(
+      "extensions.zotero-ai-sidebar.localUiSettings",
+      JSON.stringify({ chatFontSizePx: 14 }),
+    );
+    expect(loadLocalUiSettings(prefs)).toMatchObject({
+      chatWindowPinned: true,
+      noteWindowPinned: false,
+    });
+
+    saveLocalUiSettings(prefs, {
+      ...DEFAULT_LOCAL_UI_SETTINGS,
+      chatWindowPinned: false,
+      noteWindowPinned: true,
+    });
+    expect(loadLocalUiSettings(prefs)).toMatchObject({
+      chatWindowPinned: false,
+      noteWindowPinned: true,
+    });
+    expect(
+      normalizeLocalUiSettings({
+        chatWindowPinned: "false",
+        noteWindowPinned: 1,
+      }),
+    ).toMatchObject({ chatWindowPinned: true, noteWindowPinned: false });
+    expect(
+      normalizeLocalUiSettings({
+        chatWindowPinned: false,
+        noteWindowPinned: true,
+      }),
+    ).toMatchObject({ chatWindowPinned: false, noteWindowPinned: true });
   });
 
   it("round trips and clamps chat font size", () => {
@@ -138,12 +213,58 @@ describe("local UI settings storage", () => {
       "extensions.zotero-ai-sidebar.localUiSettings",
       JSON.stringify({
         chatLayout: "unknown",
-        sidebarDisplayMode: "floating",
+        sidebarDisplayMode: "unknown-mode",
       }),
     );
     expect(loadLocalUiSettings(prefs)).toMatchObject({
       chatLayout: "classic",
       sidebarDisplayMode: "embedded",
+    });
+  });
+
+  it("persists floating sidebar mode and panel geometry", () => {
+    const prefs = memPrefs();
+    const floatingPanels = {
+      composer: { x: 24, y: 48, width: 520, height: 400 },
+      answer: { x: 80, y: 96, width: 700, height: 800 },
+    };
+    saveLocalUiSettings(prefs, {
+      ...DEFAULT_LOCAL_UI_SETTINGS,
+      sidebarDisplayMode: "floating",
+      floatingPanels,
+    });
+    expect(loadLocalUiSettings(prefs)).toMatchObject({
+      sidebarDisplayMode: "floating",
+      floatingPanels,
+    });
+  });
+
+  it("preserves desktop positions on a monitor left of the main display", () => {
+    const prefs = memPrefs();
+    const floatingPanels = { ...DEFAULT_FLOATING_PANEL_LAYOUT,
+      answer: { x: -1400, y: -120, width: 600, height: 680 },
+    };
+    saveLocalUiSettings(prefs, { ...DEFAULT_LOCAL_UI_SETTINGS, sidebarDisplayMode: "floating", floatingPanels });
+    expect(loadLocalUiSettings(prefs).floatingPanels.answer).toEqual(floatingPanels.answer);
+  });
+
+  it("defaults and normalizes floating panel geometry", () => {
+    expect(normalizeLocalUiSettings({}).floatingPanels).toEqual(
+      DEFAULT_FLOATING_PANEL_LAYOUT,
+    );
+    expect(
+      normalizeFloatingPanelLayout({
+        composer: { x: NaN, y: Infinity, width: 319, height: 180 },
+        answer: { x: 0, y: 12.5, width: 1600, height: 1401 },
+      }),
+    ).toEqual({
+      composer: { ...DEFAULT_FLOATING_PANEL_LAYOUT.composer, height: 180 },
+      answer: {
+        x: 0,
+        y: 12.5,
+        width: 1600,
+        height: DEFAULT_FLOATING_PANEL_LAYOUT.answer.height,
+      },
     });
   });
 

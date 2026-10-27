@@ -1,19 +1,21 @@
 import { uiText } from "../utils/ui-locale";
 import { selectWebAgentNode } from "./web-agent-installer";
 
+const XHTML_NS = "http://www.w3.org/1999/xhtml";
+
 export function renderWebAgentNodePicker(
   doc: Document,
   chooseExecutable: () => Promise<string | null>,
   onSaved: () => Promise<void>,
 ): HTMLDetailsElement {
-  const root = doc.createElement("details");
+  const root = doc.createElementNS(XHTML_NS, "details") as HTMLDetailsElement;
   root.className = "zai-web-account-node-settings";
   root.open = true;
-  const summary = doc.createElement("summary");
+  const summary = doc.createElementNS(XHTML_NS, "summary") as HTMLElement;
   summary.textContent = uiText("Node.js 路径设置", "Node.js path settings");
-  const fields = doc.createElement("div");
+  const fields = doc.createElementNS(XHTML_NS, "div") as HTMLDivElement;
   fields.className = "zai-web-account-node-picker";
-  const input = doc.createElement("input");
+  const input = doc.createElementNS(XHTML_NS, "input") as HTMLInputElement;
   input.type = "text";
   input.setAttribute(
     "aria-label",
@@ -23,15 +25,15 @@ export function renderWebAgentNodePicker(
     "粘贴 node 程序或其所在目录的完整路径",
     "Paste the full path to Node or its directory",
   );
-  const actions = doc.createElement("div");
+  const actions = doc.createElementNS(XHTML_NS, "div") as HTMLDivElement;
   actions.className = "zai-web-account-node-actions";
-  const choose = doc.createElement("button");
+  const choose = doc.createElementNS(XHTML_NS, "button") as HTMLButtonElement;
   choose.type = "button";
   choose.textContent = uiText("选择 Node 程序…", "Choose Node executable…");
-  const save = doc.createElement("button");
+  const save = doc.createElementNS(XHTML_NS, "button") as HTMLButtonElement;
   save.type = "button";
   save.textContent = uiText("验证并使用", "Validate and use");
-  const status = doc.createElement("small");
+  const status = doc.createElementNS(XHTML_NS, "small") as HTMLElement;
   status.setAttribute("role", "status");
   actions.append(choose, save);
   fields.append(input, actions, status);

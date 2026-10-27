@@ -1,3 +1,4 @@
+import { SidebarMountStateMap } from "./sidebar-mount";
 import { promptText } from "../utils/prompt-locale";
 // Shared foundation for the sidebar module cluster: layout constants, the core
 // PanelState / WindowSidebarState types, and the module-level maps that track
@@ -126,6 +127,7 @@ export interface WindowSidebarState {
   noteSplitter: Element;
   noteMount: HTMLElement;
   noteItemID?: number;
+  nativeNoteIDs?: Map<number | null, number>;
   overviewActive?: boolean;
   fullTranslationActive?: boolean;
   fullTranslationLayout?: "parallel" | "interleaved";
@@ -173,6 +175,7 @@ export interface ReaderLayoutPrefs {
   aiOpen?: boolean;
   aiWidth?: number;
   dockedAiWidth?: number;
+  messageScrollPositions?: Record<string, MessagesScrollSnapshot>;
   noteWidth?: number;
   updatedAt?: number;
 }
@@ -232,7 +235,6 @@ export interface PanelState {
   draftSelectionEnd: number;
   draftHadFocus: boolean;
   promptHistoryCursor?: number;
-  promptHistoryDraft?: string;
   messagesScrollTop: number;
   autoFollowMessages: boolean;
   skipNextDraftCapture?: boolean;
@@ -325,4 +327,4 @@ export interface MessagesScrollLock {
 // (lost draft text + scroll position on every render) is paid by
 // `capturePanelState` (saves into `state` BEFORE replace) and then
 // `restoreMessagesScroll` + `restoreChatInput` (reapplied AFTER replace).
-export const states = new WeakMap<Element, PanelState>();
+export const states = new SidebarMountStateMap<PanelState>();

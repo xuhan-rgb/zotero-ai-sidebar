@@ -69,6 +69,7 @@ function setup(noteWidth = 0) {
   });
   const deps = {
     states,
+    rememberMessagesReadingPosition: vi.fn(),
     preserveMessagesScrollOnToggle: (messageScroll as any)
       .preserveMessagesScrollOnToggle,
     dockedSidebarLayouts: layouts,

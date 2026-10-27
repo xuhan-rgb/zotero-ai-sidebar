@@ -1,3 +1,4 @@
+import { resolveSidebarMount } from "./sidebar-mount";
 // Scroll preservation for the chat messages list.
 // =====================================================================
 // CLAUDE.md rule: streaming output should auto-scroll only when the user
@@ -30,16 +31,36 @@ export function resetMessagesScrollForConversation(state: PanelState) {
 }
 
 const scrollUpdates = new WeakMap<HTMLElement, object>();
+const pendingLayouts = new WeakMap<HTMLElement, () => void>();
+
+export function cancelMessagesScrollRestore(mount: HTMLElement) {
+  mount = resolveSidebarMount(mount);
+  pendingLayouts.get(mount)?.();
+  scrollUpdates.delete(mount);
+  const state = states.get(mount);
+  if (!state) return;
+  pendingRebuilds.delete(state);
+  state.messagesScrollLock = undefined;
+  state.scrollToBottom = false;
+  state.autoFollowMessages = false;
+  state.messagesScrollTop =
+    mount.querySelector<HTMLElement>(".messages")?.scrollTop ??
+    state.messagesScrollTop;
+}
 
 function beginScrollUpdate(mount: HTMLElement): () => boolean {
+  mount = resolveSidebarMount(mount);
+  pendingLayouts.get(mount)?.();
   const update = {};
   const messages = mount.querySelector(".messages");
   scrollUpdates.set(mount, update);
-  return () => scrollUpdates.get(mount) === update &&
+  return () =>
+    scrollUpdates.get(mount) === update &&
     mount.querySelector(".messages") === messages;
 }
 
 export function scrollMessagesToBottom(mount: HTMLElement) {
+  mount = resolveSidebarMount(mount);
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!messages) return;
   messages.scrollTop = messages.scrollHeight;
@@ -47,6 +68,7 @@ export function scrollMessagesToBottom(mount: HTMLElement) {
 }
 
 export function syncMessagesScrollState(mount: HTMLElement) {
+  mount = resolveSidebarMount(mount);
   const state = states.get(mount);
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (state && messages) {
@@ -70,6 +92,7 @@ export function syncMessagesScrollState(mount: HTMLElement) {
 function captureMessagesScrollSnapshot(
   mount: HTMLElement,
 ): MessagesScrollSnapshot | null {
+  mount = resolveSidebarMount(mount);
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!messages) return null;
   return {
@@ -93,7 +116,9 @@ export function preserveMessagesScrollOnToggle(
   mount: HTMLElement,
   collapsed: boolean,
   changeVisibility: () => void,
+  followLatest = false,
 ) {
+  mount = resolveSidebarMount(mount);
   const state = states.get(mount);
   if (!state) return changeVisibility();
   const saved = collapsedSnapshots.get(state);
@@ -115,18 +140,21 @@ export function preserveMessagesScrollOnToggle(
     return;
   }
   collapsedSnapshots.delete(state);
-  const snapshot = sameConversation
-    ? saved!.snapshot
-    : state.networkDiagramTarget
-      ? {
-          top: state.networkDiagramMessagesScrollTop ?? 0,
-          atBottom: state.networkDiagramAutoFollowMessages !== false,
-        }
-      : {
-          top: state.messagesScrollTop,
-          atBottom:
-            !!state.scrollToBottom || state.autoFollowMessages !== false,
-        };
+  if (followLatest) pendingRebuilds.delete(state);
+  const snapshot = followLatest
+    ? { top: 0, atBottom: true }
+    : sameConversation
+      ? saved!.snapshot
+      : state.networkDiagramTarget
+        ? {
+            top: state.networkDiagramMessagesScrollTop ?? 0,
+            atBottom: state.networkDiagramAutoFollowMessages !== false,
+          }
+        : {
+            top: state.messagesScrollTop,
+            atBottom:
+              !!state.scrollToBottom || state.autoFollowMessages !== false,
+          };
   lockMessagesScroll(mount, snapshot, 300);
   changeVisibility();
   scheduleMessagesScrollRestore(mount, snapshot);
@@ -134,10 +162,13 @@ export function preserveMessagesScrollOnToggle(
 
 // A new message container starts at zero. Keep the pre-rebuild position until
 // the latest render restores it, including when another render arrives first.
-const pendingRebuilds = new WeakMap<PanelState, {
-  conversationID: string;
-  snapshot: MessagesScrollSnapshot;
-}>();
+const pendingRebuilds = new WeakMap<
+  PanelState,
+  {
+    conversationID: string;
+    snapshot: MessagesScrollSnapshot;
+  }
+>();
 
 export function prepareMessagesScrollRestore(state: PanelState) {
   const snapshot = activeMessagesScrollLock(state) ?? {
@@ -147,12 +178,18 @@ export function prepareMessagesScrollRestore(state: PanelState) {
   const pending = { conversationID: state.activeConversationID, snapshot };
   pendingRebuilds.set(state, pending);
   return (mount: HTMLElement, scrollToBottom: boolean) => {
-    if (pendingRebuilds.get(state) !== pending ||
-        state.activeConversationID !== pending.conversationID) return;
+    if (
+      pendingRebuilds.get(state) !== pending ||
+      state.activeConversationID !== pending.conversationID
+    )
+      return;
     pendingRebuilds.delete(state);
     const locked = activeMessagesScrollLock(state);
     if (locked || scrollToBottom || snapshot.atBottom) {
-      scheduleMessagesScrollRestore(mount, locked ?? { ...snapshot, atBottom: true });
+      scheduleMessagesScrollRestore(
+        mount,
+        locked ?? { ...snapshot, atBottom: true },
+      );
     } else {
       restoreMessagesScrollSnapshot(mount, snapshot);
     }
@@ -181,6 +218,7 @@ export function lockMessagesScroll(
   ),
   durationMs = 3000,
 ): MessagesScrollSnapshot | null {
+  mount = resolveSidebarMount(mount);
   const state = states.get(mount);
   if (state && snapshot) {
     state.messagesScrollLock = {
@@ -197,6 +235,7 @@ function restoreMessagesScrollSnapshot(
   mount: HTMLElement,
   snapshot: MessagesScrollSnapshot | null,
 ) {
+  mount = resolveSidebarMount(mount);
   if (!snapshot) return;
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!messages) return;
@@ -216,10 +255,60 @@ function restoreMessagesScrollSnapshot(
   }
 }
 
+// A hidden/new chrome column can stay at zero height beyond the timed retries.
+// Retain the requested position until real layout arrives, unless the user intervenes.
+function waitForMessagesLayout(
+  mount: HTMLElement,
+  snapshot: MessagesScrollSnapshot | null,
+  isCurrent: () => boolean,
+) {
+  const messages = mount.querySelector<HTMLElement>(".messages");
+  const win = mount.ownerDocument?.defaultView;
+  const ResizeObserverClass = win?.ResizeObserver;
+  if (
+    !snapshot ||
+    !messages ||
+    messages.clientHeight > 0 ||
+    !ResizeObserverClass
+  )
+    return;
+  const state = states.get(mount);
+  const lock = { snapshot, until: Infinity };
+  if (state) state.messagesScrollLock = lock;
+  let stopped = false;
+  const events = ["wheel", "touchstart", "mousedown", "keydown"];
+  const stop = () => {
+    if (stopped) return;
+    stopped = true;
+    observer.disconnect();
+    for (const event of events)
+      messages.removeEventListener(event, cancel, true);
+    if (state?.messagesScrollLock === lock)
+      state.messagesScrollLock = undefined;
+    if (pendingLayouts.get(mount) === stop) pendingLayouts.delete(mount);
+  };
+  const cancel = () => {
+    if (isCurrent()) cancelMessagesScrollRestore(mount);
+    else stop();
+  };
+  const observer = new ResizeObserverClass(() => {
+    if (stopped) return;
+    if (!isCurrent() || !messages.isConnected) return stop();
+    if (messages.clientHeight <= 0 || messages.scrollHeight <= 0) return;
+    restoreMessagesScrollSnapshot(mount, snapshot);
+    stop();
+  });
+  pendingLayouts.set(mount, stop);
+  for (const event of events) messages.addEventListener(event, cancel, true);
+  observer.observe(messages);
+  for (const child of messages.children) observer.observe(child);
+}
+
 export function scheduleMessagesScrollRestore(
   mount: HTMLElement,
   snapshot: MessagesScrollSnapshot | null,
 ) {
+  mount = resolveSidebarMount(mount);
   const state = states.get(mount);
   const pending = state && pendingRebuilds.get(state);
   if (pending && pending.conversationID === state?.activeConversationID) return;
@@ -237,6 +326,7 @@ export function scheduleMessagesScrollRestore(
   win.setTimeout(restore, 0);
   win.setTimeout(restore, 80);
   win.setTimeout(restore, 250);
+  waitForMessagesLayout(mount, snapshot, isCurrent);
 }
 
 export function preserveMessagesScroll(
@@ -244,6 +334,7 @@ export function preserveMessagesScroll(
   mutate: () => void,
   snapshot = captureMessagesScrollSnapshot(mount),
 ) {
+  mount = resolveSidebarMount(mount);
   mutate();
   scheduleMessagesScrollRestore(mount, snapshot);
 }
@@ -259,6 +350,7 @@ export function preserveStreamingMessagesScroll(
   followBottom: boolean,
   mutate: () => void,
 ) {
+  mount = resolveSidebarMount(mount);
   beginScrollUpdate(mount);
   const snapshot = captureMessagesScrollSnapshot(mount);
   mutate();
@@ -279,6 +371,7 @@ export function preserveStreamingMessagesScroll(
 }
 
 export function isMessagesNearBottom(mount: HTMLElement): boolean {
+  mount = resolveSidebarMount(mount);
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!messages) return true;
   return isMessagesElementNearBottom(messages);
@@ -295,6 +388,7 @@ export function isMessagesElementNearBottom(messages: HTMLElement): boolean {
 }
 
 export function restoreSavedMessagesScroll(mount: HTMLElement) {
+  mount = resolveSidebarMount(mount);
   const state = states.get(mount);
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!state || !messages) return;
@@ -306,6 +400,7 @@ export function restoreMessagesScroll(
   state: PanelState,
   scrollToBottom: boolean,
 ) {
+  mount = resolveSidebarMount(mount);
   const messages = mount.querySelector(".messages") as HTMLElement | null;
   if (!messages) return;
   if (scrollToBottom) {
