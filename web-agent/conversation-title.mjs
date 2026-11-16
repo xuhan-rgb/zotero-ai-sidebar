@@ -34,23 +34,23 @@ export async function renameWebConversation(page, provider, boundURL, title) {
     await row.waitFor({ state: "visible", timeout: 2500 });
     if (!sameConversation() || (await row.count()) !== 1) return false;
     if (glm) {
-      await row.locator(".option").click({ timeout: 5000 });
+      await row.locator(".option").click({ timeout: 1500 });
       await row
         .locator(".operate-item")
         .filter({ hasText: /^重命名$/ })
-        .click({ timeout: 5000 });
+        .click({ timeout: 1500 });
       const dialog = page
         .locator(".changename_inner")
         .filter({ visible: true });
       editor = dialog.locator("textarea");
       cancel = () => dialog.locator(".cancel").click({ timeout: 500 });
     } else {
-      await row.dblclick({ timeout: 5000 });
+      await row.dblclick({ timeout: 1500 });
       editor = page.locator(`[id=${JSON.stringify(`chat-title-input-${id}`)}]`);
       cancel = () => editor.press("Escape", { timeout: 500 });
     }
     if (!sameConversation()) return false;
-    await editor.fill(title.trim(), { timeout: 5000 });
+    await editor.fill(title.trim(), { timeout: 1500 });
     if (!sameConversation()) return false;
     const endpoint = glm
       ? "/chatglm/mainchat-api/conversation/modify_title"
@@ -74,8 +74,8 @@ export async function renameWebConversation(page, provider, boundURL, title) {
     if (glm)
       await page
         .locator(".changename_inner:visible .sure")
-        .click({ timeout: 5000 });
-    else await editor.press("Enter", { timeout: 5000 });
+        .click({ timeout: 1500 });
+    else await editor.press("Enter", { timeout: 1500 });
     const response = await saved;
     if (!response?.ok() || (glm && (await response.json()).status !== 0))
       return false;
