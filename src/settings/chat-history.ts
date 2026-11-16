@@ -466,7 +466,7 @@ async function writeThreads(threads: StoredThreads): Promise<void> {
 // or a hand-edited file). flatMap+[] is the discard pattern: any malformed
 // entry is silently dropped rather than failing the whole load. WHY silent:
 // we'd rather lose one corrupt message than refuse to open the chat.
-function normalizeMessages(value: unknown): Message[] {
+export function normalizeMessages(value: unknown): Message[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((message) => {
     if (!message || typeof message !== 'object') return [];

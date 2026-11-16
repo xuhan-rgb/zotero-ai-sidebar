@@ -11,9 +11,39 @@ import {
 import { parseKeybinding } from "../translate/keybinding";
 
 const QUICK_ASK_SHORTCUT_PREF = "extensions.zotero-ai-sidebar.quickAskShortcut";
+const QUICK_ASK_FOLLOW_MOUSE_PREF =
+  "extensions.zotero-ai-sidebar.quickAskFollowMouse";
 const QUICK_ASK_MODEL_SELECTION_PREF =
   "extensions.zotero-ai-sidebar.quickAskModelSelection";
 export const DEFAULT_QUICK_ASK_SHORTCUT = "Alt+Q";
+
+export function getQuickAskFollowMouse(prefs: PrefsStore): boolean {
+  return prefs.get(QUICK_ASK_FOLLOW_MOUSE_PREF) === "true";
+}
+
+export function setQuickAskFollowMouse(
+  prefs: PrefsStore,
+  enabled: boolean,
+): void {
+  prefs.set(QUICK_ASK_FOLLOW_MOUSE_PREF, String(enabled));
+}
+
+export function quickAskMousePosition(
+  mouse: { x: number; y: number },
+  viewport: { width: number; height: number },
+  dialog: { width: number; height: number },
+): { x: number; y: number } {
+  return {
+    x: Math.max(
+      0,
+      Math.min(mouse.x + 12, Math.max(0, viewport.width - dialog.width)),
+    ),
+    y: Math.max(
+      0,
+      Math.min(mouse.y + 12, Math.max(0, viewport.height - dialog.height)),
+    ),
+  };
+}
 
 export type QuickAskReferenceKind = "pdf" | "translation" | "source";
 
@@ -42,6 +72,24 @@ export interface QuickAskState {
   usage?: MessageUsage;
   reference: QuickAskReference | null;
   modelSelection: QuickAskModelSelection;
+}
+
+// Consume the matching Alt release even if focus moved from the PDF iframe
+// to the dialog between keydown and keyup. Other uses of Alt stay native.
+export function createQuickAskAltReleaseGuard() {
+  let pending = false;
+  return {
+    arm(altKey: boolean): void {
+      pending = altKey;
+    },
+    handleKeyUp(event: KeyboardEvent): boolean {
+      if (!pending || event.key !== "Alt") return false;
+      pending = false;
+      event.preventDefault();
+      event.stopImmediatePropagation();
+      return true;
+    },
+  };
 }
 
 interface QuickAskShortcutEvent {

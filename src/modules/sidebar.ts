@@ -1,3 +1,8 @@
+import {
+  loadQuickAskHistory,
+  saveQuickAskHistory,
+  type QuickAskHistoryEntry,
+} from "../settings/quick-ask-history";
 import { createAdaptiveChatLayout } from "./adaptive-chat-layout";
 import { captureViewPopover, positionViewPopover, restoreViewPopover, syncViewDragGuard } from "./view-popover";
 import { linkWindowMinimization, clearWindowMinimization } from "./window-minimize-group";
@@ -218,18 +223,26 @@ import {
 import {
   buildQuickAskApiMessages,
   createQuickAskState,
+  createQuickAskAltReleaseGuard,
   createQuickAskUserMessage,
   getQuickAskShortcut,
+  getQuickAskFollowMouse,
   isQuickAskShortcut,
   loadQuickAskModelSelection,
   quickAskReadOnlyTools,
+  quickAskMousePosition,
   saveQuickAskModelSelection,
+  setQuickAskFollowMouse,
   type QuickAskReference,
   type QuickAskState,
 } from "./quick-ask";
 import {
+  disposeQuickAskDialog,
+  focusQuickAskInput,
   renderQuickAskDialog,
+  updateQuickAskReferenceView,
   type QuickAskModelOption,
+  type QuickAskDialogPosition,
 } from "./quick-ask-dialog";
 import {
   getMaterialPickShortcut,
@@ -741,9 +754,16 @@ const fullTranslationNoteVisibility = new WeakMap<
 >();
 
 interface QuickAskController {
+  sessionID: string;
+  createdAt: string;
+  history: QuickAskHistoryEntry[];
+  historyOpen: boolean;
+  archiveMessages: Message[];
+  lastSelectedText: string;
   root: HTMLElement;
   itemID: number | null;
   state: QuickAskState;
+  position: QuickAskDialogPosition;
   modelSettingsOpen: boolean;
   abort?: AbortController;
 }
@@ -7132,6 +7152,7 @@ function contentPreview(text: string, maxChars: number): string {
 async function openQuickAsk(
   win: Window,
   sidebar: WindowSidebarState | undefined,
+  mouse: { x: number; y: number } | null,
 ): Promise<void> {
   if (!sidebar) return;
   closeQuickAsk(sidebar);
@@ -7140,6 +7161,13 @@ async function openQuickAsk(
   quickAskOpenRequests.set(sidebar, request);
   const itemID = safeSelectedItemID(win);
   const reference = await captureQuickAskReference(sidebar, itemID);
+  let history: QuickAskHistoryEntry[] = [];
+  let historyError = "";
+  try {
+    history = await loadQuickAskHistory(itemID);
+  } catch (error) {
+    historyError = `历史记录读取失败：${errorMessage(error)}`;
+  }
   if (quickAskOpenRequests.get(sidebar) !== request) return;
   quickAskOpenRequests.delete(sidebar);
   const panelState = states.get(sidebar.mount);
@@ -7161,13 +7189,35 @@ async function openQuickAsk(
         };
 
   const controller: QuickAskController = {
+    sessionID: makeTaskID(),
+    createdAt: new Date().toISOString(),
+    history,
+    historyOpen: false,
+    archiveMessages: [],
+    lastSelectedText: reference?.sourceText ?? "",
     root: win.document.createElementNS(XHTML_NS, "div") as HTMLElement,
     itemID,
     state: createQuickAskState(reference, initialSelection),
+    position: { x: 0, y: 0 },
     modelSettingsOpen: false,
   };
+  controller.state.error = historyError;
   quickAskControllers.set(sidebar, controller);
   renderActiveQuickAsk(sidebar, controller, true);
+  if (mouse && getQuickAskFollowMouse(zoteroPrefs())) {
+    const dialog = controller.position.dialog;
+    if (dialog) {
+      const rect = dialog.getBoundingClientRect();
+      const { x, y } = quickAskMousePosition(
+        mouse,
+        { width: win.innerWidth, height: win.innerHeight },
+        rect,
+      );
+      controller.position.x = x - rect.left;
+      controller.position.y = y - rect.top;
+      dialog.style.transform = `translate(${controller.position.x}px, ${controller.position.y}px)`;
+    }
+  }
 }
 
 async function captureQuickAskReference(
@@ -7198,6 +7248,32 @@ async function captureQuickAskReference(
     displayText: selectedText,
     sourceText: selectedText,
   };
+}
+
+function syncQuickAskReference(
+  sidebar: WindowSidebarState,
+  itemID: number | null,
+  selectedText: string,
+): void {
+  const controller = quickAskControllers.get(sidebar);
+  if (!controller || controller.itemID !== itemID ||
+      controller.state.status === "sending" || controller.historyOpen) return;
+  if (controller.lastSelectedText === selectedText) return;
+  controller.lastSelectedText = selectedText;
+  // Returning to the composer may collapse the native selection; retain the
+  // attached quote until this turn is sent, without stealing keyboard focus.
+  if (!selectedText) return;
+  const session = fullTranslationSessions.get(sidebar);
+  const host = fullTranslationHosts.get(sidebar);
+  const translation = sidebar.fullTranslationActive && session && host?.root.isConnected
+    ? readFullTranslationSourceSelection(host.root, session.document.blocks)
+    : null;
+  controller.state.reference = translation ? {
+    kind: translation.origin,
+    displayText: translation.displayText,
+    sourceText: normalizeSelectedText(translation.selectedText),
+  } : { kind: "pdf", displayText: selectedText, sourceText: selectedText };
+  updateQuickAskReferenceView(controller.root, controller.state);
 }
 
 function renderActiveQuickAsk(
@@ -7266,10 +7342,6 @@ function renderActiveQuickAsk(
       onQuestionChange: (value) => {
         controller.state.question = value;
       },
-      onToggleModelSettings: () => {
-        controller.modelSettingsOpen = !controller.modelSettingsOpen;
-        renderActiveQuickAsk(sidebar, controller);
-      },
       onModelChange: (presetId, model) => {
         const preset = quickAskConfiguredPreset(panelState, presetId);
         controller.state.modelSelection = {
@@ -7298,11 +7370,16 @@ function renderActiveQuickAsk(
       onClose: () => closeQuickAsk(sidebar),
     },
     {
-      shortcutLabel: getQuickAskShortcut(zoteroPrefs())
-        .split("+")
-        .map((part) => part.trim())
-        .join(" + "),
+      history: controller.history,
+      historyOpen: controller.historyOpen,
+      onHistoryToggle: (open) => { controller.historyOpen = open; },
+      animateEntrance: !controller.root.isConnected,
+      position: controller.position,
       modelSettingsOpen: controller.modelSettingsOpen,
+      onModelSettingsChange: (open) => { controller.modelSettingsOpen = open; },
+      followMouse: getQuickAskFollowMouse(zoteroPrefs()),
+      onFollowMouseChange: (enabled) =>
+        setQuickAskFollowMouse(zoteroPrefs(), enabled),
       modelOptions,
       reasoningOptions,
       transferDisabled: !!panelState?.sending,
@@ -7331,9 +7408,7 @@ function renderActiveQuickAsk(
     // rectangle; focusing in the insertion tick reports (0, 0) on XUL pages.
     const focus = () => {
       if (quickAskControllers.get(sidebar) !== controller) return;
-      controller.root
-        .querySelector<HTMLTextAreaElement>(".zai-quick-ask-input")
-        ?.focus();
+      focusQuickAskInput(controller.root);
     };
     const requestFrame = doc.defaultView?.requestAnimationFrame.bind(
       doc.defaultView,
@@ -7376,12 +7451,28 @@ function quickAskReasoningEffort(
   return effectiveReasoningEffort(preset) ?? DEFAULT_REASONING_EFFORT;
 }
 
+function persistQuickAskSession(controller: QuickAskController): Promise<void> {
+  const messages = controller.archiveMessages;
+  return saveQuickAskHistory({
+    id: controller.sessionID,
+    itemID: controller.itemID,
+    createdAt: controller.createdAt,
+    updatedAt: new Date().toISOString(),
+    messages,
+    reference: controller.state.reference,
+  });
+}
+
 function closeQuickAsk(sidebar: WindowSidebarState): void {
   quickAskOpenRequests.delete(sidebar);
   const controller = quickAskControllers.get(sidebar);
   if (!controller) return;
+  void persistQuickAskSession(controller).catch((error) => {
+    controller.root.ownerDocument?.defaultView?.alert(`Quick Ask 历史记录保存失败：${errorMessage(error)}`);
+  });
   controller.abort?.abort();
   controller.abort = undefined;
+  disposeQuickAskDialog(controller.position);
   controller.root.remove();
   quickAskControllers.delete(sidebar);
 }
@@ -7443,19 +7534,19 @@ async function sendQuickAsk(
   };
   renderActiveQuickAsk(sidebar, controller);
 
-  const reference = controller.state.messages.length
-    ? null
-    : controller.state.reference;
+  const reference = controller.state.reference;
+  const userMessage = createQuickAskUserMessage(question, reference, {});
+  const assistantMessage: Message = { role: "assistant", content: "" };
+  controller.archiveMessages.push(userMessage, assistantMessage);
   const selectionPayload = reference
     ? await buildSelectionPromptContext(reference.sourceText, controller.itemID)
     : { selectedText: "", context: {} };
   if (quickAskControllers.get(sidebar) !== controller) return;
-  const userMessage = createQuickAskUserMessage(
+  Object.assign(userMessage, createQuickAskUserMessage(
     question,
     reference,
     selectionPayload.context,
-  );
-  const assistantMessage: Message = { role: "assistant", content: "" };
+  ));
   const conversation = [...controller.state.messages, userMessage];
 
   const win = hostWindowForSidebar(sidebar)!;
@@ -7480,7 +7571,7 @@ async function sendQuickAsk(
       conversation,
       contextPolicy,
     );
-    const systemPrompt = `${baseContext.systemPrompt}\n\n${promptText("快速提问模式：这是临时的内存对话。用前面的快速提问轮次回答追问；无法访问已保存的研究对话历史。需要当前论文时使用只读工具；不要声称记得此快速提问窗口之外的对话。", "Quick Ask mode: this is a temporary in-memory conversation. Use the preceding Quick Ask turns to answer follow-up questions. No saved research conversation history is available. Use read-only tools when the current paper is needed; do not claim to remember chats outside this Quick Ask window.")}`;
+    const systemPrompt = `${baseContext.systemPrompt}\n\n${promptText("快速提问模式：每次打开窗口都是独立的新对话。仅用当前窗口前面的快速提问轮次回答追问；归档的快速提问和研究对话历史均不提供给模型。需要当前论文时使用只读工具；不要声称记得此窗口之外的对话。", "Quick Ask mode: each newly opened window starts an independent conversation. Use only the preceding turns in this window for follow-up questions. Archived Quick Ask and research conversations are not provided to the model. Use read-only tools when the current paper is needed; do not claim to remember chats outside this window.")}`;
     const promptCacheKey = `${buildPromptCacheKey(preset, controller.itemID)}:quick-ask`;
 
     controller.state.statusText = uiText("正在等待模型回答……", "Waiting for the model…");
@@ -7555,13 +7646,21 @@ async function sendQuickAsk(
           assistantMessage.content = controller.state.answer;
         }
         controller.state.messages.push(userMessage, assistantMessage);
+        if (controller.state.reference === reference) controller.state.reference = null;
         controller.state.question = "";
         controller.state.answer = "";
         controller.state.thinking = "";
         controller.state.status = "answered";
-        controller.state.statusText = uiText(`临时会话 ${controller.state.messages.length / 2} 轮 · 关闭后销毁`, `Temporary chat · ${controller.state.messages.length / 2} turns · deleted when closed`);
+        controller.state.statusText = uiText(`当前会话 ${controller.state.messages.length / 2} 轮 · 关闭后保留历史`, `Current chat · ${controller.state.messages.length / 2} turns · history retained after closing`);
       }
-      renderActiveQuickAsk(sidebar, controller);
+      try {
+        await persistQuickAskSession(controller);
+      } catch (error) {
+        controller.state.error = `历史记录保存失败：${errorMessage(error)}`;
+      }
+      if (quickAskControllers.get(sidebar) === controller) {
+        renderActiveQuickAsk(sidebar, controller);
+      }
     }
   }
 }
@@ -7580,7 +7679,7 @@ async function copyQuickAskAnswer(
     markdownToClipboardHTML(doc, answer),
   );
   if (quickAskControllers.get(sidebar) !== controller) return;
-  controller.state.statusText = uiText("已复制；关闭后仍不会保存本次对话", "Copied; this chat still won't be saved when closed");
+  controller.state.statusText = uiText("已复制；关闭后对话保留在历史记录中", "Copied; this chat will remain in history after closing");
   renderActiveQuickAsk(sidebar, controller);
 }
 
@@ -9171,8 +9270,11 @@ function registerReaderSelectionCapture() {
     rememberReaderSelection(e.reader, null, text, annotation);
     for (const win of mountedWindows) {
       const sidebar = windowSidebars.get(win);
-      if (sidebar)
-        updateSelectionIndicators(sidebar.mount, safeSelectedItemID(win));
+      if (sidebar) {
+        const itemID = safeSelectedItemID(win);
+        updateSelectionIndicators(sidebar.mount, itemID);
+        syncQuickAskReference(sidebar, itemID, getStoredSelectedText(itemID));
+      }
     }
   };
   readerAPI.registerEventListener(
@@ -9212,14 +9314,17 @@ function startSelectionMonitor(win: Window, sidebar: WindowSidebarState) {
       if (noteButton && !noteButton.disabled) updateOpenNoteButton(sidebar);
     }
     const before = getStoredSelectedText(itemID);
+    const quickAskRoot = quickAskControllers.get(sidebar)?.root;
     const focusInSidebar =
-      isFocusInside(sidebar.mount) || isFocusInside(sidebar.noteMount);
+      isFocusInside(sidebar.mount) || isFocusInside(sidebar.noteMount) ||
+      !!(quickAskRoot && isFocusInside(quickAskRoot));
     const after = sidebar.fullTranslationActive
       ? refreshFullTranslationSelection(sidebar, itemID, !focusInSidebar)
       : refreshActiveReaderSelection(win, itemID, !focusInSidebar);
     if (before !== after) {
       updateSelectionIndicators(sidebar.mount, itemID);
     }
+    syncQuickAskReference(sidebar, itemID, after);
   }, SELECTION_MONITOR_MS);
 }
 
@@ -14986,20 +15091,48 @@ function installReaderPromptShortcutHandler(
 ): void {
   const installedWindows = new WeakSet<Window>();
   const cleanupCallbacks: Array<() => void> = [];
+  const altReleaseGuard = createQuickAskAltReleaseGuard();
+  let mouse: { x: number; y: number } | null = null;
   const addWindow = (targetWin: Window | null | undefined) => {
     if (!targetWin || installedWindows.has(targetWin)) return;
     installedWindows.add(targetWin);
     const handler = (event: KeyboardEvent) => {
       if (handleViewMenuEscape(event, targetWin.document)) return;
       if (handleImmersiveModeShortcut(win, event)) return;
-      if (handleQuickAskShortcut(win, sidebar, event)) return;
+      if (handleQuickAskShortcut(win, sidebar, event, mouse)) {
+        altReleaseGuard.arm(event.altKey);
+        return;
+      }
       if (handleMaterialPickShortcut(sidebar, event)) return;
       if (handleReaderTaskEscape(win, targetWin, sidebar, event)) return;
       void handleReaderPromptShortcut(win, targetWin, sidebar, event);
     };
     targetWin.addEventListener("keydown", handler, true);
+    const keyup = (event: KeyboardEvent) => {
+      if (!altReleaseGuard.handleKeyUp(event)) return;
+      const controller = quickAskControllers.get(sidebar);
+      if (controller && !controller.historyOpen) focusQuickAskInput(controller.root);
+    };
+    targetWin.addEventListener("keyup", keyup, true);
+    cleanupCallbacks.push(() => targetWin.removeEventListener("keyup", keyup, true));
+    const trackMouse = (event: MouseEvent) => {
+      const chromeWin = win as Window & {
+        mozInnerScreenX: number;
+        mozInnerScreenY: number;
+      };
+      if (Number.isFinite(chromeWin.mozInnerScreenX) && Number.isFinite(chromeWin.mozInnerScreenY)) {
+        mouse = {
+          x: event.screenX - chromeWin.mozInnerScreenX,
+          y: event.screenY - chromeWin.mozInnerScreenY,
+        };
+      }
+    };
+    targetWin.addEventListener("mousemove", trackMouse, true);
     cleanupCallbacks.push(() =>
       targetWin.removeEventListener("keydown", handler, true),
+    );
+    cleanupCallbacks.push(() =>
+      targetWin.removeEventListener("mousemove", trackMouse, true),
     );
   };
   const installLikelyReaderWindows = () => {
@@ -15042,6 +15175,7 @@ function handleQuickAskShortcut(
   win: Window,
   sidebar: WindowSidebarState,
   event: KeyboardEvent,
+  mouse: { x: number; y: number } | null,
 ): boolean {
   if (
     event.defaultPrevented ||
@@ -15052,7 +15186,7 @@ function handleQuickAskShortcut(
   }
   event.preventDefault();
   event.stopImmediatePropagation();
-  void openQuickAsk(win, sidebar);
+  void openQuickAsk(win, sidebar, mouse);
   return true;
 }
 

@@ -3,14 +3,18 @@ import { describe, expect, it } from "vitest";
 import {
   buildQuickAskApiMessages,
   createQuickAskState,
+  createQuickAskAltReleaseGuard,
   createQuickAskUserMessage,
   DEFAULT_QUICK_ASK_SHORTCUT,
   getQuickAskShortcut,
+  getQuickAskFollowMouse,
   isQuickAskShortcut,
   loadQuickAskModelSelection,
   quickAskReadOnlyTools,
+  quickAskMousePosition,
   saveQuickAskModelSelection,
   setQuickAskShortcut,
+  setQuickAskFollowMouse,
 } from "../../src/modules/quick-ask";
 import type { PrefsStore } from "../../src/settings/storage";
 
@@ -25,6 +29,66 @@ function memoryPrefs(initial?: string): PrefsStore {
 }
 
 describe("Quick Ask", () => {
+  it("sends a fresh selection with a follow-up question", () => {
+    const messages = buildQuickAskApiMessages([
+      { role: "user", content: "上一个问题" },
+      { role: "assistant", content: "上一个回答" },
+      createQuickAskUserMessage("解释新选区", {
+        kind: "pdf", displayText: "new passage", sourceText: "new passage",
+      }, {}),
+    ]);
+    expect(messages[2].content).toContain("new passage");
+    expect(messages[2].content).toContain("解释新选区");
+  });
+
+  it("consumes only the Alt release belonging to the Quick Ask shortcut", () => {
+    const guard = createQuickAskAltReleaseGuard();
+    const standalone = new KeyboardEvent("keyup", { key: "Alt", cancelable: true });
+    expect(guard.handleKeyUp(standalone)).toBe(false);
+    expect(standalone.defaultPrevented).toBe(false);
+    guard.arm(true);
+    const qRelease = new KeyboardEvent("keyup", { key: "q", altKey: true, cancelable: true });
+    expect(guard.handleKeyUp(qRelease)).toBe(false);
+    const altRelease = new KeyboardEvent("keyup", { key: "Alt", cancelable: true });
+    expect(guard.handleKeyUp(altRelease)).toBe(true);
+    expect(altRelease.defaultPrevented).toBe(true);
+    const nextAlt = new KeyboardEvent("keyup", { key: "Alt", cancelable: true });
+    expect(guard.handleKeyUp(nextAlt)).toBe(false);
+    expect(nextAlt.defaultPrevented).toBe(false);
+  });
+
+  it("prevents the menu activation handler from receiving shortcut Alt release", () => {
+    const guard = createQuickAskAltReleaseGuard();
+    const target = document.createElement("textarea");
+    let menuActivated = false;
+    target.addEventListener("keyup", (event) => guard.handleKeyUp(event));
+    target.addEventListener("keyup", () => { menuActivated = true; });
+    guard.arm(true);
+    target.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", cancelable: true }));
+    expect(menuActivated).toBe(false);
+    guard.arm(false);
+    target.dispatchEvent(new KeyboardEvent("keyup", { key: "Alt", cancelable: true }));
+    expect(menuActivated).toBe(true);
+  });
+
+  it("places the dialog near the mouse while keeping it in the viewport", () => {
+    const viewport = { width: 1000, height: 800 };
+    const dialog = { width: 400, height: 300 };
+    expect(quickAskMousePosition({ x: 100, y: 200 }, viewport, dialog)).toEqual(
+      { x: 112, y: 212 },
+    );
+    expect(quickAskMousePosition({ x: 990, y: 790 }, viewport, dialog)).toEqual(
+      { x: 600, y: 500 },
+    );
+  });
+  it("remembers whether Quick Ask opens near the mouse", () => {
+    const prefs = memoryPrefs();
+    expect(getQuickAskFollowMouse(prefs)).toBe(false);
+    setQuickAskFollowMouse(prefs, true);
+    expect(getQuickAskFollowMouse(prefs)).toBe(true);
+    setQuickAskFollowMouse(prefs, false);
+    expect(getQuickAskFollowMouse(prefs)).toBe(false);
+  });
   it("builds a multi-turn API request without accepting research chat history", () => {
     const firstUserMessage = createQuickAskUserMessage(
       "这句话是什么意思？",

@@ -31,6 +31,22 @@ harness enforcement.
   selection suppression and full-text budgets still apply. Reader text tools
   retain PDF.js text for coordinate-based annotations.
 
+## Quick Ask History
+
+Every newly opened Quick Ask window starts with an empty model conversation.
+Completed turns are saved locally, and closing the window also snapshots any
+in-progress question and partial answer. Each window has its own archive ID;
+updates to that window preserve all other sessions. Empty windows create no entry.
+Archives retain messages, reasoning, context/tool traces, image metadata and usage
+in `zotero-ai-sidebar-quick-ask-history.json` under the Zotero data directory
+(profile directory fallback). Writes are serialized.
+
+The history view shows all archived sessions for the current item (or the global
+scope when no item is selected), read-only. Viewing an archive does not restore it
+as the active conversation or add it to API context. Research chat persistence and
+explicit "transfer to research chat" remain separate. These local archives are
+not part of research-chat cloud sync.
+
 ## WEB Conversation Ownership (Development)
 
 The caller supplies a paper-scoped `sessionKey`; the Agent namespaces it by

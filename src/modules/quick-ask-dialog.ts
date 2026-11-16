@@ -1,3 +1,4 @@
+import type { QuickAskHistoryEntry } from "../settings/quick-ask-history";
 import type { QuickAskState } from "./quick-ask";
 import type { ReasoningEffort } from "../settings/types";
 import { renderMarkdownInto } from "./markdown-render";
@@ -6,9 +7,15 @@ import { renderMarkdownInto } from "./markdown-render";
 // to report the textarea caret rectangle correctly to Chinese input methods.
 const XHTML_NS = "http://www.w3.org/1999/xhtml";
 
+export function focusQuickAskInput(root: HTMLElement): void {
+  const input = root.querySelector<HTMLTextAreaElement>(".zai-quick-ask-input");
+  if (!input) return;
+  root.ownerDocument?.defaultView?.focus();
+  input.focus();
+}
+
 export interface QuickAskDialogActions {
   onQuestionChange(value: string): void;
-  onToggleModelSettings(): void;
   onModelChange(presetId: string, model: string): void;
   onReasoningChange(value: ReasoningEffort): void;
   onSend(value: string): void;
@@ -24,12 +31,33 @@ export interface QuickAskModelOption {
   model: string;
 }
 
+export interface QuickAskDialogPosition {
+  x: number;
+  y: number;
+  dialog?: HTMLElement;
+  stopDrag?: () => void;
+  stopWatchingSize?: () => void;
+}
+
+export function disposeQuickAskDialog(position: QuickAskDialogPosition): void {
+  position.stopDrag?.();
+  position.stopWatchingSize?.();
+  position.dialog = undefined;
+}
+
 export interface QuickAskDialogOptions {
-  shortcutLabel: string;
-  modelSettingsOpen?: boolean;
+  history?: QuickAskHistoryEntry[];
+  historyOpen?: boolean;
+  onHistoryToggle?: (open: boolean) => void;
   modelOptions?: QuickAskModelOption[];
   reasoningOptions?: Array<[ReasoningEffort, string]>;
   transferDisabled?: boolean;
+  animateEntrance?: boolean;
+  position?: QuickAskDialogPosition;
+  followMouse?: boolean;
+  onFollowMouseChange?: (enabled: boolean) => void;
+  modelSettingsOpen?: boolean;
+  onModelSettingsChange?: (open: boolean) => void;
 }
 
 export function renderQuickAskDialog(
@@ -40,50 +68,124 @@ export function renderQuickAskDialog(
 ): HTMLElement {
   const layer = el(doc, "div", "zai-quick-ask-layer");
   const dialog = el(doc, "section", "zai-quick-ask-dialog");
+  if (options.animateEntrance === false) {
+    layer.style.animation = "none";
+    dialog.style.animation = "none";
+  }
   dialog.setAttribute("role", "dialog");
-  dialog.setAttribute("aria-modal", "true");
+  dialog.setAttribute("aria-modal", "false");
   dialog.setAttribute("aria-label", "Quick Ask 临时问答");
 
   const head = el(doc, "header", "zai-quick-ask-head");
+  const position: QuickAskDialogPosition = options.position ?? { x: 0, y: 0 };
+  position.stopWatchingSize?.();
+  position.dialog = dialog;
+  dialog.style.transform = `translate(${position.x}px, ${position.y}px)`;
+  const win = doc.defaultView;
+  const constrainPosition = () => {
+    if (!win || !dialog.isConnected) return;
+    const rect = dialog.getBoundingClientRect();
+    position.x +=
+      Math.max(0, Math.min(rect.left, win.innerWidth - rect.width)) - rect.left;
+    position.y +=
+      Math.max(0, Math.min(rect.top, win.innerHeight - rect.height)) - rect.top;
+    dialog.style.transform = `translate(${position.x}px, ${position.y}px)`;
+  };
+  // The initial observer notification runs after mounting, including redraws.
+  const observer = win ? new win.ResizeObserver(constrainPosition) : undefined;
+  observer?.observe(dialog);
+  win?.addEventListener("resize", constrainPosition);
+  position.stopWatchingSize = () => {
+    observer?.disconnect();
+    win?.removeEventListener("resize", constrainPosition);
+    position.stopWatchingSize = undefined;
+  };
+  const closeDialog = () => {
+    disposeQuickAskDialog(position);
+    actions.onClose();
+  };
+  head.addEventListener("mousedown", (event: MouseEvent) => {
+    if (
+      event.button !== 0 ||
+      (event.target as Element).closest("button, label")
+    )
+      return;
+    event.preventDefault();
+    position.stopDrag?.();
+    const startX = event.clientX;
+    const startY = event.clientY;
+    const originX = position.x;
+    const originY = position.y;
+    const rect = dialog.getBoundingClientRect();
+    const win = doc.defaultView;
+    const move = (moveEvent: MouseEvent) => {
+      if (!win || !position.dialog?.isConnected) return;
+      position.x =
+        originX +
+        Math.max(
+          -rect.left,
+          Math.min(win.innerWidth - rect.right, moveEvent.clientX - startX),
+        );
+      position.y =
+        originY +
+        Math.max(
+          -rect.top,
+          Math.min(win.innerHeight - rect.bottom, moveEvent.clientY - startY),
+        );
+      position.dialog.style.transform = `translate(${position.x}px, ${position.y}px)`;
+    };
+    const stop = () => {
+      doc.removeEventListener("mousemove", move);
+      doc.removeEventListener("mouseup", stop);
+      position.stopDrag = undefined;
+    };
+    position.stopDrag = stop;
+    doc.addEventListener("mousemove", move);
+    doc.addEventListener("mouseup", stop);
+  });
   const mark = el(doc, "span", "zai-quick-ask-mark", "Q");
   const heading = el(doc, "div", "zai-quick-ask-heading");
-  heading.append(
-    el(doc, "strong", "zai-quick-ask-title", "Quick Ask"),
-    el(doc, "span", "zai-quick-ask-subtitle", "临时连续对话 · 不读取研究历史"),
-  );
-  const shortcut = el(
-    doc,
-    "kbd",
-    "zai-quick-ask-shortcut",
-    options.shortcutLabel,
-  );
+  heading.append(el(doc, "strong", "zai-quick-ask-title", "Quick Ask"));
   const close = buttonEl(doc, "×");
   close.className = "zai-quick-ask-close";
-  close.title = "关闭并销毁本次临时问答（Esc）";
-  close.addEventListener("click", actions.onClose);
-  head.append(mark, heading, shortcut, close);
+  close.title = "关闭并保存本次对话到历史记录（Esc）";
+  close.addEventListener("click", closeDialog);
+  const followLabel = el(doc, "label", "zai-quick-ask-follow-mouse");
+  const follow = doc.createElementNS(XHTML_NS, "input") as HTMLInputElement;
+  follow.type = "checkbox";
+  follow.checked = options.followMouse === true;
+  follow.addEventListener("change", () =>
+    options.onFollowMouseChange?.(follow.checked),
+  );
+  followLabel.append(follow, doc.createTextNode("跟随鼠标"));
+  head.append(mark, heading, followLabel);
+  if (options.modelOptions) {
+    const modelSettings = renderModelControls(
+      doc,
+      state,
+      actions,
+      options.modelOptions,
+      options.reasoningOptions ?? [],
+    );
+    const toggle = buttonEl(doc, "模型设置");
+    toggle.className = "zai-quick-ask-model-settings-toggle";
+    toggle.setAttribute(
+      "aria-expanded",
+      String(options.modelSettingsOpen === true),
+    );
+    modelSettings.hidden = options.modelSettingsOpen !== true;
+    toggle.addEventListener("click", () => {
+      modelSettings.hidden = !modelSettings.hidden;
+      toggle.setAttribute("aria-expanded", String(!modelSettings.hidden));
+      options.onModelSettingsChange?.(!modelSettings.hidden);
+    });
+    head.append(toggle, modelSettings);
+  }
+  const historyToggle = buttonEl(doc, "历史记录");
+  historyToggle.className = "zai-quick-ask-model-settings-toggle";
+  head.append(historyToggle, close);
 
   const scroll = el(doc, "div", "zai-quick-ask-scroll");
-  scroll.append(
-    el(
-      doc,
-      "div",
-      "zai-quick-ask-notice",
-      "本窗口可以连续追问，但不会读取或保存研究对话；关闭后全部销毁。",
-    ),
-  );
-  if (options.modelOptions) {
-    scroll.append(
-      renderModelControls(
-        doc,
-        state,
-        actions,
-        options.modelSettingsOpen === true,
-        options.modelOptions,
-        options.reasoningOptions ?? [],
-      ),
-    );
-  }
   if (state.reference) scroll.append(renderReference(doc, state));
 
   state.messages.forEach((message) => {
@@ -123,7 +225,11 @@ export function renderQuickAskDialog(
         actions.onSend(input.value);
       }
     });
-    composer.append(input);
+    const send = buttonEl(doc, state.messages.length ? "继续询问" : "询问");
+    send.className = "zai-quick-ask-primary";
+    send.disabled = !state.question.trim();
+    send.addEventListener("click", () => actions.onSend(input.value));
+    composer.append(input, send);
     scroll.append(composer);
   }
 
@@ -148,18 +254,12 @@ export function renderQuickAskDialog(
       doc,
       "span",
       "zai-quick-ask-hint",
-      "对话只保留在当前浮层中",
+      "关闭后保存到历史记录，新窗口开始新对话",
     );
     const stop = buttonEl(doc, "停止");
     stop.addEventListener("click", actions.onStop);
     foot.append(hint, stop);
   } else {
-    const hint = el(
-      doc,
-      "span",
-      "zai-quick-ask-hint",
-      "Enter 发送 · Shift+Enter 换行",
-    );
     const latestAnswer = latestAssistantAnswer(state);
     if (state.messages.length) {
       const copy = buttonEl(doc, "复制");
@@ -171,32 +271,66 @@ export function renderQuickAskDialog(
         ? "研究对话正在回答，请结束后再转入"
         : "把本窗口的全部问答显式保存到当前研究对话";
       transfer.addEventListener("click", actions.onTransfer);
-      foot.append(hint, copy, transfer);
-    } else {
-      foot.append(hint);
+      foot.append(copy, transfer);
     }
-    const send = buttonEl(doc, state.messages.length ? "继续询问" : "询问");
-    send.className = "zai-quick-ask-primary";
-    send.disabled = !state.question.trim();
-    send.addEventListener("click", () => {
-      const input = dialog.querySelector<HTMLTextAreaElement>(
-        ".zai-quick-ask-input",
-      );
-      actions.onSend(input?.value ?? state.question);
-    });
-    foot.append(send);
   }
 
-  dialog.append(head, scroll, foot);
-  layer.append(dialog);
-  layer.addEventListener("mousedown", (event) => {
-    if (event.target === layer) actions.onClose();
+  const history = el(doc, "div", "zai-quick-ask-scroll zai-quick-ask-history");
+  history.append(
+    el(
+      doc,
+      "p",
+      "zai-quick-ask-hint",
+      "历史记录仅供回看，不会加入当前对话上下文。",
+    ),
+  );
+  if (!options.history?.length) {
+    history.append(
+      el(doc, "p", "zai-quick-ask-hint", "当前论文暂无历史对话。"),
+    );
+  }
+  for (const entry of options.history ?? []) {
+    const details = doc.createElementNS(XHTML_NS, "details");
+    const firstQuestion =
+      entry.messages.find((message) => message.role === "user")?.content ??
+      "Quick Ask";
+    details.append(
+      el(
+        doc,
+        "summary",
+        "",
+        `${new Date(entry.createdAt).toLocaleString()} · ${firstQuestion.slice(0, 80)}`,
+      ),
+    );
+    if (entry.reference)
+      details.append(
+        renderReference(doc, { ...state, reference: entry.reference }),
+      );
+    for (const message of entry.messages)
+      details.append(renderConversationMessage(doc, message));
+    history.append(details);
+  }
+  const showHistory = (open: boolean) => {
+    history.hidden = !open;
+    scroll.hidden = open;
+    foot.hidden = open;
+    historyToggle.textContent = open ? "返回当前对话" : "历史记录";
+    historyToggle.setAttribute("aria-expanded", String(open));
+  };
+  showHistory(options.historyOpen === true);
+  historyToggle.addEventListener("click", () => {
+    const open = history.hidden === true;
+    showHistory(open);
+    options.onHistoryToggle?.(open);
   });
+  dialog.append(head, scroll, history);
+  if (state.status === "sending" || state.messages.length) dialog.append(foot);
+  layer.append(dialog);
   layer.addEventListener("keydown", (event: KeyboardEvent) => {
     if (event.key !== "Escape" || event.isComposing) return;
     event.preventDefault();
     event.stopPropagation();
-    actions.onClose();
+    closeDialog();
   });
   return layer;
 }
@@ -261,7 +395,6 @@ function renderModelControls(
   doc: Document,
   state: QuickAskState,
   actions: QuickAskDialogActions,
-  open: boolean,
   modelOptions: QuickAskModelOption[],
   reasoningOptions: Array<[ReasoningEffort, string]>,
 ): HTMLElement {
@@ -272,28 +405,7 @@ function renderModelControls(
         item.presetId === state.modelSelection.presetId &&
         item.model === state.modelSelection.model,
     ) ?? modelOptions[0];
-  const summary = el(doc, "div", "zai-quick-ask-model-settings-summary");
-  const copy = el(doc, "div", "zai-quick-ask-model-settings-copy");
-  copy.append(
-    el(doc, "strong", "", current?.model ?? "未配置可用模型"),
-    el(
-      doc,
-      "small",
-      "",
-      current
-        ? `${current.presetLabel} · ${quickAskReasoningLabel(state, reasoningOptions)}`
-        : "请先在设置中配置账号和模型",
-    ),
-  );
-  const toggle = buttonEl(doc, open ? "收起设置" : "模型设置");
-  toggle.className = "zai-quick-ask-model-settings-toggle";
-  toggle.setAttribute("aria-expanded", String(open));
-  toggle.disabled = state.status !== "idle" || modelOptions.length === 0;
-  toggle.addEventListener("click", actions.onToggleModelSettings);
-  summary.append(copy, toggle);
-
   const panel = el(doc, "div", "zai-quick-ask-model-settings-panel");
-  panel.hidden = !open;
   const presetOptions = modelOptions.filter(
     (item, index) =>
       modelOptions.findIndex(
@@ -338,7 +450,7 @@ function renderModelControls(
       onChange: (value) => actions.onReasoningChange(value as ReasoningEffort),
     }),
   );
-  root.append(summary, panel);
+  root.append(panel);
   return root;
 }
 
@@ -383,15 +495,17 @@ function quickAskSelect(
   return label;
 }
 
-function quickAskReasoningLabel(
-  state: QuickAskState,
-  reasoningOptions: Array<[ReasoningEffort, string]>,
-): string {
-  return (
-    reasoningOptions.find(
-      ([value]) => value === state.modelSelection.reasoningEffort,
-    )?.[1] ?? "当前账号不支持"
-  );
+export function updateQuickAskReferenceView(root: HTMLElement, state: QuickAskState): void {
+  const scroll = root.querySelector<HTMLElement>(".zai-quick-ask-scroll");
+  if (!scroll) return;
+  const previous = scroll.querySelector(":scope > .zai-quick-ask-reference");
+  if (!state.reference) {
+    previous?.remove();
+    return;
+  }
+  const next = renderReference(root.ownerDocument!, state);
+  if (previous) previous.replaceWith(next);
+  else scroll.prepend(next);
 }
 
 function renderReference(doc: Document, state: QuickAskState): HTMLElement {

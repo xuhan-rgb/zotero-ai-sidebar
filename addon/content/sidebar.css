@@ -7450,13 +7450,7 @@ div.math-fallback {
   align-items: flex-start;
   justify-content: center;
   padding: min(12vh, 108px) 24px 24px;
-  background:
-    radial-gradient(
-      circle at 50% 9%,
-      rgba(255, 235, 210, 0.18),
-      transparent 38%
-    ),
-    rgba(35, 31, 26, 0.42);
+  pointer-events: none;
   font-family: var(--zai-font);
   font-size: var(--zai-chat-font-size);
   -moz-user-select: text;
@@ -7465,10 +7459,10 @@ div.math-fallback {
 }
 
 .zai-quick-ask-dialog {
+  pointer-events: auto;
   display: grid;
   width: min(680px, calc(100vw - 48px));
   max-height: min(76vh, 760px);
-  min-height: 310px;
   grid-template-rows: auto minmax(0, 1fr) auto;
   overflow: hidden;
   border: 1px solid rgba(120, 88, 57, 0.32);
@@ -7484,20 +7478,24 @@ div.math-fallback {
 }
 
 .zai-quick-ask-head {
+  position: relative;
+  z-index: 1;
   display: flex;
-  min-height: 58px;
+  min-height: 42px;
   box-sizing: border-box;
   align-items: center;
   gap: 10px;
-  padding: 10px 12px 10px 14px;
+  padding: 4px 12px 4px 14px;
   border-bottom: 1px solid rgba(179, 145, 107, 0.22);
   background: rgba(255, 250, 242, 0.74);
+  cursor: move;
+  user-select: none;
 }
 
 .zai-quick-ask-mark {
   display: grid;
-  width: 31px;
-  height: 31px;
+  width: 27px;
+  height: 27px;
   flex: 0 0 auto;
   place-items: center;
   border-radius: 10px 4px 10px 4px;
@@ -7520,20 +7518,19 @@ div.math-fallback {
   letter-spacing: 0.01em;
 }
 
+.zai-quick-ask-follow-mouse {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--zai-muted);
+  font-size: 11px;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
 .zai-quick-ask-subtitle {
   color: var(--zai-muted);
   font-size: 10.5px;
-}
-
-.zai-quick-ask-shortcut {
-  padding: 4px 7px;
-  border: 1px solid rgba(151, 121, 87, 0.24);
-  border-bottom-color: rgba(116, 86, 56, 0.38);
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.74);
-  color: #756454;
-  font: 650 9.5px/1 var(--zai-mono);
-  white-space: nowrap;
 }
 
 .zai-quick-ask-close,
@@ -7568,13 +7565,30 @@ div.math-fallback {
 .zai-quick-ask-scroll {
   min-height: 0;
   overflow: auto;
-  padding: 10px 20px 16px;
+  padding: 4px 20px 16px;
   scrollbar-color: #d5c2ae transparent;
   scrollbar-width: thin;
 }
 
+/* Hidden history/current views must not consume dialog grid rows. */
+.zai-quick-ask-scroll[hidden],
+.zai-quick-ask-foot[hidden] {
+  display: none;
+}
+
+.zai-quick-ask-history details {
+  margin: 10px 0;
+  border-bottom: 1px solid rgba(179, 145, 107, 0.22);
+}
+
+.zai-quick-ask-history summary {
+  padding: 8px 0;
+  cursor: pointer;
+  overflow-wrap: anywhere;
+}
+
 .zai-quick-ask-notice {
-  margin-bottom: 7px;
+  margin-bottom: 3px;
   color: #807267;
   font-size: 10.5px;
   line-height: 1.3;
@@ -7582,7 +7596,16 @@ div.math-fallback {
 }
 
 .zai-quick-ask-model-settings {
-  margin-bottom: 10px;
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 12px;
+  width: min(650px, calc(100% - 24px));
+  border-radius: 12px;
+  box-shadow: 0 8px 24px rgba(43, 32, 21, 0.2);
+}
+
+.zai-quick-ask-model-settings[hidden] {
+  display: none;
 }
 
 .zai-quick-ask-model-settings-summary {
@@ -7590,7 +7613,7 @@ div.math-fallback {
   min-width: 0;
   align-items: center;
   gap: 10px;
-  padding: 6px 9px;
+  padding: 3px 9px;
   border: 1px solid rgba(151, 121, 87, 0.2);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.68);
@@ -7629,7 +7652,7 @@ div.math-fallback {
   flex: 0 0 auto;
   border: 1px solid rgba(151, 121, 87, 0.24);
   border-radius: 7px;
-  padding: 6px 9px;
+  padding: 3px 9px;
   background: #fff8f1;
   color: #6f5e4e;
   cursor: pointer;
@@ -7651,16 +7674,12 @@ div.math-fallback {
 
 .zai-quick-ask-model-settings-panel {
   display: grid;
-  grid-template-columns: minmax(110px, 0.9fr) minmax(150px, 1.3fr) minmax(
-      110px,
-      0.9fr
-    );
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.3fr) minmax(0, 0.9fr);
   gap: 10px;
-  margin-top: 7px;
-  padding: 9px 11px;
-  border: 1px solid rgba(151, 121, 87, 0.2);
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.68);
+  padding: 10px 12px;
+  border: 1px solid #e2d2c2;
+  border-radius: 12px;
+  background: #fffaf4;
 }
 
 .zai-quick-ask-model-settings-panel[hidden] {
@@ -7670,10 +7689,11 @@ div.math-fallback {
 .zai-quick-ask-model-setting {
   display: grid;
   min-width: 0;
-  gap: 4px;
+  gap: 5px;
   color: #6f5e4e;
   font-size: 11px;
   font-weight: 700;
+  white-space: nowrap;
 }
 
 .zai-quick-ask-preset-select,
@@ -7741,6 +7761,22 @@ div.math-fallback {
   box-shadow:
     0 0 0 3px rgba(192, 103, 61, 0.06),
     0 8px 24px rgba(83, 57, 34, 0.06);
+}
+
+.zai-quick-ask-composer .zai-quick-ask-primary {
+  display: block;
+  margin: 0 5px 5px auto;
+  padding: 6px 12px;
+  border: 1px solid #b85830;
+  border-radius: 8px;
+  background: #b85830;
+  color: #fff;
+  cursor: pointer;
+}
+
+.zai-quick-ask-composer .zai-quick-ask-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
 }
 
 .zai-quick-ask-input {
@@ -7968,16 +8004,8 @@ div.math-fallback {
     border-radius: 14px;
   }
 
-  .zai-quick-ask-shortcut {
-    display: none;
-  }
-
   .zai-quick-ask-scroll {
     padding: 14px;
-  }
-
-  .zai-quick-ask-model-settings-panel {
-    grid-template-columns: 1fr;
   }
 
   .zai-quick-ask-model-settings-copy {

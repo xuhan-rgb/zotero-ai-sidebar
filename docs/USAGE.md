@@ -262,10 +262,10 @@ Use this when you want to ask a few questions without switching or adding noise 
 1. Press `Alt+Q` by default. Remap it under `Settings → Immersive reading → Quick Ask`; the shortcut is ignored while focus is inside an editable field.
 2. If PDF text or full-translation source text was selected before opening, Quick Ask attaches it to the first turn. Without a selection, the model can still use read-only tools to inspect the current paper when needed.
 3. Ask the first question. After the answer, a compact **Continue asking** composer stays at the bottom. Later requests include the completed turns from this popup, so follow-ups such as “why?”, “give another example”, and “how could this claim be verified?” work directly.
-4. Click the model summary or **Model settings** to change the account, model, and reasoning effort. The first use follows the active AI-chat model; later Quick Ask remembers its own selection without changing the research chat or translation defaults.
+4. Click **Model settings** to change the account, model, and reasoning effort. The first use follows the active AI-chat model; later Quick Ask remembers its own selection without changing the research chat or translation defaults. Drag the title bar to move the window, or enable **Follow mouse** to open it near the pointer next time.
 5. **Copy** copies only the latest answer. **Transfer to research chat** writes every turn from this popup into the current paper's research chat, then closes Quick Ask.
 
-Quick Ask does not read saved research-chat history and exposes no write tools. Press `Esc`, use the close button, or click the backdrop to destroy the entire temporary conversation; reopening starts a new one.
+Quick Ask does not read saved research-chat history and exposes no write tools. Press `Esc` or use the close button to save a nonempty conversation to local history; reopening starts a new conversation. Use **History** to review the current paper's previous conversations; they are not automatically included in the new conversation's context.
 
 ### 2.11 Read an arXiv paper in full-document translation
 
