@@ -65,6 +65,21 @@ async function fixture() {
 }
 
 describe.skipIf(!existsSync(chromePath))("website conversation names", () => {
+  it("waits for a history row to stop moving before opening its rename control", async () => {
+    const { page } = await fixture();
+    await page.evaluate(() => {
+      document
+        .querySelector("button")!
+        .animate(
+          [{ transform: "translateX(0)" }, { transform: "translateX(20px)" }],
+          { duration: 2200 },
+        );
+    });
+    expect(
+      await renameWebConversation(page, "zai", page.url(), "Paper A"),
+    ).toBe(true);
+  });
+
   it("waits for the current conversation to appear in the history list", async () => {
     const { page } = await fixture();
     await page.evaluate(() => {
