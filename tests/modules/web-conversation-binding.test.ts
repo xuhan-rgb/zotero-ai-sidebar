@@ -352,6 +352,7 @@ async function fixtureAgent(
     submissions,
     titles,
     renames,
+    diagnostics: () => errors,
     threads,
     failures,
     historyFailures,
@@ -465,7 +466,7 @@ describe.skipIf(!existsSync(chromePath))(
           await agent.send("named", "paper-a", "chatglm", "论文 A: Test Paper"),
         ).toMatchObject({ state: "completed" });
         const cid = agent.submissions[0].cid;
-        expect(agent.renames).toEqual([
+        expect(agent.renames, agent.diagnostics()).toEqual([
           { conversation_id: cid, title: "论文 A: Test Paper" },
         ]);
         agent.titles.set(cid, "My manual title");

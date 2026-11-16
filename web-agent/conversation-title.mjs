@@ -29,6 +29,9 @@ export async function renameWebConversation(page, provider, boundURL, title) {
   let editor;
   let cancel;
   try {
+    if (!sameConversation()) return false;
+    // Answer rendering can finish before the website refreshes its history.
+    await row.waitFor({ state: "visible", timeout: 2500 });
     if (!sameConversation() || (await row.count()) !== 1) return false;
     if (glm) {
       await row.locator(".option").click({ timeout: 1500 });
@@ -88,7 +91,8 @@ export async function renameWebConversation(page, provider, boundURL, title) {
       { timeout: 2000 },
     );
     return true;
-  } catch {
+  } catch (error) {
+    console.warn("[web-agent] conversation rename failed:", error.message);
     return false;
   } finally {
     if (editor && (await editor.isVisible().catch(() => false)))

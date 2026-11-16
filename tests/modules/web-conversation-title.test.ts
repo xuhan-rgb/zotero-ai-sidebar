@@ -65,6 +65,18 @@ async function fixture() {
 }
 
 describe.skipIf(!existsSync(chromePath))("website conversation names", () => {
+  it("waits for the current conversation to appear in the history list", async () => {
+    const { page } = await fixture();
+    await page.evaluate(() => {
+      const row = document.querySelector("button")!;
+      row.remove();
+      setTimeout(() => document.body.append(row), 250);
+    });
+    expect(
+      await renameWebConversation(page, "zai", page.url(), "Paper A"),
+    ).toBe(true);
+  });
+
   it("saves a paper title through Z.ai's rename control and confirms its response", async () => {
     const { page, writes } = await fixture();
     expect(
