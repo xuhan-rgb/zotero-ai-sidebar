@@ -2,6 +2,12 @@
 
 版本更新记录。已发布构建与发布说明见 [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases)；[English](CHANGELOG.md)。
 
+## v0.8.21
+
+- **Quick Ask**：避免流式回答时反复播放入场动画；支持拖动窗口、在鼠标附近打开，并从标题栏调整模型设置。
+- **本地历史**：非空 Quick Ask 对话保存在本地供回看，不会自动加入新对话的上下文。
+- **升级方法**：安装新版 XPI 后重启 Zotero。Quick Ask 本地历史独立于研究对话同步。
+
 ## v0.8.20
 
 本次重新打包补齐此前未发布的工作区改动。已安装旧版 v0.8.20 的用户，请重新下载替换后的 XPI，手动覆盖安装并重启 Zotero。

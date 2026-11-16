@@ -2,6 +2,12 @@
 
 Version history. For published builds and release details, see [GitHub Releases](https://github.com/xuhan-rgb/zotero-ai-sidebar/releases); [中文](CHANGELOG.zh-CN.md).
 
+## v0.8.21
+
+- **Quick Ask**: prevent repeated entrance animations during streamed responses; drag the window or open it near the mouse, and adjust its model settings from the title bar.
+- **Local history**: save nonempty Quick Ask conversations for review without adding previous sessions to a new conversation's context.
+- **Upgrade**: install the new XPI and restart Zotero. Local Quick Ask history is stored separately from research chat sync.
+
 ## v0.8.20
 
 This release has been rebuilt to include the previously unpublished workspace changes below. If you installed the earlier v0.8.20 package, download the replacement XPI and install it manually, then restart Zotero.
